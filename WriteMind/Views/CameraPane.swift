@@ -1,3 +1,4 @@
+import AppKit
 import SwiftUI
 
 /// The right pane: whatever camera the Input Devices menu picked.
@@ -38,21 +39,19 @@ struct CameraPane: View {
                             .offset(zoomOffset(in: geo.size))
                             .clipped()
                         SectionBox(section: $section, size: geo.size,
-                                   onWholePicture: { section = wholePictureBox(pane: geo.size) })
+                                   busy: store.isCapturing,
+                                   onWholePicture: { section = wholePictureBox(pane: geo.size) },
+                                   onInsert: { mode in insertSection(mode, pane: geo.size) },
+                                   onRead: { readSection(pane: geo.size) })
                             .disabled(store.selectedNote == nil)
                         if appState.cameraZooming {
                             BoxDragger(hint: "Drag a box — the pane shows that much") { box in
                                 appState.cameraZoom = CameraZoom.compose(box, over: appState.cameraZoom,
                                                                          in: geo.size)
                                 appState.cameraZooming = false
-                                publishRegion(pane: geo.size)
                             }
                         }
                     }
-                    .onChange(of: geo.size) { _, size in publishRegion(pane: size) }
-                    .onChange(of: appState.cameraZoom) { _, _ in publishRegion(pane: geo.size) }
-                    .onChange(of: appState.cameraRotation) { _, _ in publishRegion(pane: geo.size) }
-                    .onAppear { publishRegion(pane: geo.size) }
                 }
             case .starting:
                 ProgressView().controlSize(.large).tint(.white)
@@ -143,26 +142,32 @@ struct CameraPane: View {
         return visible
     }
 
-    /// What the capture button will bring in, in the frame's own
-    /// fractions: the box drawn on the picture if there is one, otherwise
-    /// whatever the pane is zoomed into, otherwise nothing at all — which
-    /// means the whole frame.
-    private func publishRegion(pane: CGSize) {
-        guard let frame = camera.currentFrame() else { appState.cameraRegion = nil; return }
+    /// The box as an object on the page: the picture as it is, or the
+    /// writing inside it lifted as ink.
+    private func insertSection(_ mode: NotebookCapture.Mode, pane: CGSize) {
+        guard let region = boxRegion(pane: pane) else { return }
+        appState.penActive = false
+        store.captureNotebook(frame: camera.currentFrame(), quarterTurns: appState.cameraRotation / 90,
+                              colour: NSColor(appState.penColor), mode: mode, region: region)
+        section = nil
+    }
+
+    /// The box read into the note as words.
+    private func readSection(pane: CGSize) {
+        guard let region = boxRegion(pane: pane) else { return }
+        store.readCamera(frame: camera.currentFrame(), quarterTurns: appState.cameraRotation / 90,
+                         region: region)
+        section = nil
+    }
+
+    /// The box that was drawn, in the frame's own fractions.
+    private func boxRegion(pane: CGSize) -> CGRect? {
+        guard let section, let frame = camera.currentFrame() else { return nil }
         let raw = frame.extent.size
         let upright = appState.cameraIsTurned ? CGSize(width: raw.height, height: raw.width) : raw
-
-        let wanted: CGRect?
-        if let section {
-            // A box drawn on a zoomed picture is somewhere else on the real one.
-            wanted = appState.cameraZoom.map { CameraZoom.unzoomed(section, box: $0, in: pane) } ?? section
-        } else if let zoom = appState.cameraZoom {
-            wanted = CameraZoom.unzoomed(CGRect(origin: .zero, size: pane), box: zoom, in: pane)
-        } else {
-            wanted = nil
-        }
-        guard let wanted else { appState.cameraRegion = nil; return }
-        appState.cameraRegion = NotebookCapture.region(from: wanted, frame: upright, in: pane)
+        // A box drawn on a zoomed picture is somewhere else on the real one.
+        let drawn = appState.cameraZoom.map { CameraZoom.unzoomed(section, box: $0, in: pane) } ?? section
+        return NotebookCapture.region(from: drawn, frame: upright, in: pane)
     }
 
     private func corner(icon: String, label: String, help: String, isOn: Bool = false,
@@ -264,11 +269,37 @@ private struct BoxDragger: View {
     }
 }
 
-private struct SectionBox: View {
+/// Not private: `action` is the rule that decides what a click means, and
+/// it is tested.
+struct SectionBox: View {
+
+    /// What the end of a gesture means.
+    enum Action: Equatable { case keep, clear, whole }
+
+    /// Four points of slack, so a click stays a click.
+    static func isDrag(_ translation: CGSize) -> Bool {
+        max(abs(translation.width), abs(translation.height)) >= 4
+    }
+
+    /// A drag leaves its box alone; one click clears it; two take the whole
+    /// picture. The second click of a double arrives as its own event, so
+    /// the first has already cleared by then — which is what makes the
+    /// clearing instant.
+    static func action(translation: CGSize, clicks: Int) -> Action {
+        if isDrag(translation) { return .keep }
+        return clicks >= 2 ? .whole : .clear
+    }
+
     @Binding var section: CGRect?
     let size: CGSize
+    /// True while a capture is already running.
+    var busy = false
     /// Put the box round the whole picture, without dragging one.
     let onWholePicture: () -> Void
+    /// The box as a picture, or as ink.
+    var onInsert: ((NotebookCapture.Mode) -> Void)?
+    /// The box read into the note as words.
+    var onRead: (() -> Void)?
 
     var body: some View {
         ZStack(alignment: .topLeading) {
@@ -281,30 +312,67 @@ private struct SectionBox: View {
                                style: StrokeStyle(lineWidth: 1.5, dash: [6, 4]))
             }
             .contentShape(Rectangle())
-            // Four points of slack, so a click stays a click and only a
-            // real drag draws a box.
+            // ONE gesture for all three. A `.onTapGesture` pair would make
+            // the single click WAIT to find out whether a second one is
+            // coming — a visible pause before the box clears (Sean,
+            // 2026-09-19: "clicking to exit after selecting a section of
+            // the page is slow"). AppKit already knows how many clicks it
+            // has seen, so the click is answered the moment it lands.
             .gesture(
-                DragGesture(minimumDistance: 4, coordinateSpace: .local)
+                DragGesture(minimumDistance: 0, coordinateSpace: .local)
                     .onChanged { value in
+                        guard SectionBox.isDrag(value.translation) else { return }
                         section = CanvasGeometry.rect(from: value.startLocation, to: value.location)
                     }
+                    .onEnded { value in
+                        switch SectionBox.action(translation: value.translation,
+                                                 clicks: NSApp.currentEvent?.clickCount ?? 1) {
+                        case .keep: break
+                        case .clear: section = nil
+                        case .whole: onWholePicture()
+                        }
+                    }
             )
-            // The two-tap gesture is declared FIRST, or a double-click is
-            // read as two clears.
-            .onTapGesture(count: 2) { onWholePicture() }
-            .onTapGesture { section = nil }
 
             if let section {
-                Text("The capture button brings in this box")
-                    .font(.caption)
-                    .foregroundStyle(.white)
-                    .padding(.horizontal, 10)
-                    .padding(.vertical, 5)
-                    .background(.black.opacity(0.55), in: Capsule())
-                    .position(x: min(max(section.midX, 130), max(size.width - 130, 130)),
-                              y: min(section.maxY + 20, max(size.height - 16, 16)))
-                    .allowsHitTesting(false)
+                // Three things can be done with a box, so here are three
+                // buttons — not a sentence about a button somewhere else
+                // (Sean, 2026-09-19).
+                HStack(spacing: 6) {
+                    choice("Image", icon: "photo",
+                           help: "Put the picture inside the box on the page, as it is") {
+                        onInsert?(.raw)
+                    }
+                    choice("Writing", icon: "scribble.variable",
+                           help: "Lift the writing inside the box onto the page as ink") {
+                        onInsert?(.ink)
+                    }
+                    choice("Text", icon: "text.viewfinder",
+                           help: "Read the writing inside the box into the note as words") {
+                        onRead?()
+                    }
+                }
+                .disabled(busy)
+                .opacity(busy ? 0.6 : 1)
+                .position(x: min(max(section.midX, 150), max(size.width - 150, 150)),
+                          y: min(section.maxY + 22, max(size.height - 18, 18)))
             }
         }
     }
+    private func choice(_ title: String, icon: String, help: String,
+                        action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Label(title, systemImage: icon)
+                .font(.system(size: 12, weight: .semibold))
+                .foregroundStyle(.white)
+                .padding(.horizontal, 10)
+                .padding(.vertical, 6)
+                .background(.black.opacity(0.62), in: Capsule())
+                .overlay(Capsule().strokeBorder(Color.white.opacity(0.28)))
+                .contentShape(Capsule())
+        }
+        .buttonStyle(.plain)
+        .help(help)
+    }
+
 }

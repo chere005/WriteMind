@@ -203,3 +203,46 @@ final class NoteTreeTests: XCTestCase {
         XCTAssertFalse(made.isRealFolder)
     }
 }
+
+/// Making a folder does not change where the next note goes (Sean,
+/// 2026-09-19: "after adding a section it shouldn't be selected").
+@MainActor
+final class SectionSelectionTests: XCTestCase {
+    private var dir: URL!
+    private var store: NoteStore!
+
+    override func setUp() async throws {
+        dir = FileManager.default.temporaryDirectory.appending(path: "WriteMindTests-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        try Data("# Trip\n".utf8).write(to: dir.appending(path: "Trip.md"))
+        store = NoteStore(directory: dir)
+    }
+
+    override func tearDown() async throws {
+        store = nil
+        try? FileManager.default.removeItem(at: dir)
+    }
+
+    func testANewSectionIsNotSelected() throws {
+        XCTAssertNil(store.selectedSectionID)
+        let made = try XCTUnwrap(store.createSection(named: "Ideas"))
+        XCTAssertNotEqual(store.selectedSectionID, made.id, "making it does not pick it")
+        XCTAssertNil(store.selectedSectionID)
+    }
+
+    func testANewNoteStillGoesWhereTheSelectionSays() throws {
+        let made = try XCTUnwrap(store.createSection(named: "Ideas"))
+        store.selectedSectionID = made.id
+        store.createNote()
+        let inside = try FileManager.default.contentsOfDirectory(atPath: made.url.path)
+        XCTAssertTrue(inside.contains { $0.hasSuffix(".md") }, "the note landed in the picked section")
+    }
+
+    func testClearingTheSelectionSendsNotesBackToTheTop() throws {
+        let made = try XCTUnwrap(store.createSection(named: "Ideas"))
+        store.selectedSectionID = made.id
+        store.selectedSectionID = nil
+        XCTAssertEqual(store.targetSection.url.standardizedFileURL, dir.standardizedFileURL,
+                       "with nothing picked, a new note goes to the notes folder itself")
+    }
+}

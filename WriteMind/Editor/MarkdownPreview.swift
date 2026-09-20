@@ -29,8 +29,21 @@ struct MarkdownPreview: View {
     /// How far the preview has scrolled, so the drawing layer can scroll
     /// with it and a picture stays beside the block it was put next to.
     var onScroll: ((CGFloat) -> Void)?
+    /// The notebook sections that are folded away — the same set the
+    /// markdown editor uses, so the notebook is the same on both sides.
+    var collapsed: Set<String> = []
+    var onToggleSection: ((String) -> Void)?
 
     @State private var rowHeights: [Int: CGFloat] = [:]
+    /// The fence lines of the code block being typed in. The editor shows
+    /// the code alone; these go back round it on every keystroke.
+    @State private var fence: Fence?
+
+    struct Fence: Equatable {
+        var open: String
+        var close: String
+        var language: CodeLanguage { CodeLanguage.from(fence: MarkdownFormatting.fenceLanguage(open)) ?? .plain }
+    }
 
     @State private var editingRange: NSRange?
     @State private var draft = ""
@@ -40,11 +53,17 @@ struct MarkdownPreview: View {
 
     private static let space = "WriteMindPreview"
     private static let topInset: CGFloat = 22
+    /// The insertion strip between two cells. It is part of the stack, so
+    /// the brackets and the picture bands have to count it — leaving it out
+    /// put every bracket a strip higher than its cell, and the error piled
+    /// up down the page (Sean, 2026-09-19: "notebook bar placement bugs").
+    static let gapHeight: CGFloat = 14
 
     /// What each block has to move down by to clear the pictures.
     private var pushes: [Int: CGFloat] {
         PreviewLayout.padding(rows: items.map { ($0.id, rowHeights[$0.id] ?? 0) },
-                              spacing: 0, top: Self.topInset, bands: keepClear)
+                              spacing: Self.gapHeight, top: Self.topInset + Self.gapHeight,
+                              bands: keepClear)
     }
 
     var body: some View {
@@ -82,6 +101,17 @@ struct MarkdownPreview: View {
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(.horizontal, 28)
             .padding(.vertical, Self.topInset)
+            // The cell brackets, in the margin the page already leaves.
+            .overlay(alignment: .topTrailing) {
+                CellBrackets(brackets: cellBrackets,
+                             onSelect: { beginEditing($0) },
+                             onToggle: { onToggleSection?($0) })
+                    .frame(height: 4000, alignment: .top)
+                    // Clear of the scroller, and clear of the page's own
+                    // right margin.
+                    .padding(.trailing, 4)
+                    .allowsHitTesting(editable)
+            }
         }
         .coordinateSpace(name: Self.space)
         .onPreferenceChange(PreviewRowHeights.self) { heights in
@@ -129,8 +159,17 @@ struct MarkdownPreview: View {
         let isEditing: Bool
     }
 
+    /// What a folded section hides, in the markdown.
+    private var hidden: [NSRange] {
+        NotebookOutline.hiddenRanges(in: markdown, collapsed: collapsed)
+    }
+
     private var items: [Item] {
-        let parsed = MarkdownParser.positioned(from: markdown)
+        let folded = hidden
+        let parsed = MarkdownParser.positioned(from: markdown).filter { block in
+            // A block inside a closed section is not on the page at all.
+            !folded.contains { NSIntersectionRange($0, block.range).length == block.range.length }
+        }
         guard let editing = editingRange, editable else {
             return parsed.map { Item(id: $0.range.location, range: $0.range, block: $0.block, isEditing: false) }
         }
@@ -159,6 +198,41 @@ struct MarkdownPreview: View {
         return items
     }
 
+    /// A bracket for every cell, and one further out for every section
+    /// that holds them.
+    private var cellBrackets: [CellBrackets.Bracket] {
+        let shown = items
+        guard !shown.isEmpty else { return [] }
+        let places = PreviewLayout.positions(rows: shown.map { ($0.id, rowHeights[$0.id] ?? 0) },
+                                             spacing: Self.gapHeight, top: Self.topInset + Self.gapHeight,
+                                             bands: keepClear)
+        let sections = NotebookOutline.sections(in: markdown)
+        var out: [CellBrackets.Bracket] = []
+
+        for item in shown {
+            guard let place = places[item.id], place.bottom - place.top > 1 else { continue }
+            let owner = NotebookOutline.section(containing: item.range.location, in: sections)
+            out.append(CellBrackets.Bracket(key: "cell:\(item.id)", depth: (owner?.depth ?? -1) + 1,
+                                            top: place.top, bottom: place.bottom,
+                                            selected: editingRange == item.range, range: item.range))
+        }
+
+        for section in sections {
+            let inside = shown.filter {
+                NSIntersectionRange($0.range, section.range).length == $0.range.length
+            }
+            let places = inside.compactMap { places[$0.id] }
+            guard let first = places.map(\.top).min(), let last = places.map(\.bottom).max(),
+                  last - first > 1
+            else { continue }
+            out.append(CellBrackets.Bracket(key: section.key, depth: section.depth,
+                                            top: first, bottom: last,
+                                            collapsed: collapsed.contains(section.key),
+                                            foldable: true, range: section.range))
+        }
+        return out
+    }
+
     @ViewBuilder
     private func row(_ item: Item) -> some View {
         if item.isEditing {
@@ -167,14 +241,21 @@ struct MarkdownPreview: View {
                         bridge: bridge,
                         focusToken: focusToken,
                         caretAtStart: caretAtStart,
-                        placeholder: "Write something — ⌘1 a title, ⇧⌘L a list, ⌃⌘Q a quote",
+                        placeholder: fence == nil
+                            ? "Write something — ⌘1 a title, ⇧⌘L a list, ⌃⌘Q a quote"
+                            : "Type the code",
                         keepsNewlines: Self.keepsNewlines(item.block),
+                        language: fence?.language,
                         onSplit: { head, tail in split(head: head, tail: tail) },
                         onDeleteEmpty: { removeBlock() },
                         onMove: { move($0) })
-                .padding(.horizontal, 8)
-                .padding(.vertical, 6)
-                .background(Color.accentColor.opacity(0.07), in: RoundedRectangle(cornerRadius: 6))
+                .padding(.horizontal, fence == nil ? 8 : 12)
+                .padding(.vertical, fence == nil ? 6 : 10)
+                // A code block being typed in keeps looking like a code
+                // block, so nothing jumps when it is clicked.
+                .background(fence == nil ? AnyShapeStyle(Color.accentColor.opacity(0.07))
+                                         : AnyShapeStyle(CodeColours.background),
+                            in: RoundedRectangle(cornerRadius: 6))
                 .overlay(RoundedRectangle(cornerRadius: 6).strokeBorder(Color.accentColor.opacity(0.35)))
                 .padding(.vertical, 2)
         } else if let block = item.block {
@@ -194,25 +275,39 @@ struct MarkdownPreview: View {
 
     /// The line between two blocks: hover it and it offers to put one there.
     @ViewBuilder
+    /// The space between two cells. The pointer turns on its side there
+    /// and a bar runs across the page — Wolfram's insertion point, and
+    /// Jupyter's (Sean, 2026-09-19: "there should be the horizontal cursor
+    /// and bar for inserting between cells"). Clicking it opens a new cell,
+    /// and a new cell is always plain text.
     private func gap(at offset: Int) -> some View {
         if editable {
             ZStack(alignment: .leading) {
-                Color.clear.frame(height: 12)
+                Color.clear.frame(height: Self.gapHeight)
                 if hoveredGap == offset {
                     HStack(spacing: 6) {
-                        Image(systemName: "plus.circle.fill").font(.system(size: 12))
-                        Rectangle().frame(height: 1)
+                        Image(systemName: "plus.circle.fill").font(.system(size: 11))
+                        Capsule().frame(height: 2)
                     }
-                    .foregroundStyle(Color.accentColor.opacity(0.75))
+                    .foregroundStyle(Color.accentColor)
+                    .transition(.opacity)
                 }
             }
             .contentShape(Rectangle())
-            .onHover { inside in
-                if inside { hoveredGap = offset }
-                else if hoveredGap == offset { hoveredGap = nil }
+            .onContinuousHover(coordinateSpace: .local) { phase in
+                switch phase {
+                case .active:
+                    if hoveredGap != offset { hoveredGap = offset }
+                    // Set on every move, not pushed once: the text views
+                    // either side put their own cursors back the moment the
+                    // pointer touches them.
+                    NSCursor.iBeamCursorForVerticalLayout.set()
+                case .ended:
+                    if hoveredGap == offset { hoveredGap = nil }
+                }
             }
             .onTapGesture { insertBlock(at: offset) }
-            .help("Add a block here")
+            .help("A new cell here — plain text, whatever is above it")
         }
     }
 
@@ -227,8 +322,11 @@ struct MarkdownPreview: View {
             guard let range = editingRange else { return }
             let ns = markdown as NSString
             guard NSMaxRange(range) <= ns.length else { return }
-            markdown = ns.replacingCharacters(in: range, with: typed)
-            editingRange = NSRange(location: range.location, length: (typed as NSString).length)
+            let stored = fence.map {
+                MarkdownFormatting.refenced(open: $0.open, body: typed, close: $0.close)
+            } ?? typed
+            markdown = ns.replacingCharacters(in: range, with: stored)
+            editingRange = NSRange(location: range.location, length: (stored as NSString).length)
         })
     }
 
@@ -236,7 +334,16 @@ struct MarkdownPreview: View {
         guard editable else { return }
         let ns = markdown as NSString
         guard NSMaxRange(range) <= ns.length else { return }
-        draft = ns.substring(with: range)
+        let source = ns.substring(with: range)
+        // A fenced block is opened as its CODE: the fences stay put and
+        // what is typed is coloured for the language they name.
+        if let parts = MarkdownFormatting.fenced(source) {
+            fence = Fence(open: parts.open, close: parts.close)
+            draft = parts.body
+        } else {
+            fence = nil
+            draft = source
+        }
         editingRange = range
         self.caretAtStart = caretAtStart
         focusToken += 1
@@ -280,6 +387,9 @@ struct MarkdownPreview: View {
         guard editable else { return }
         let (updated, caret) = PreviewEditing.insertBlock(in: markdown, at: offset)
         markdown = updated
+        // Always a plain text cell, whatever the cell above it was (Sean,
+        // 2026-09-19: "default is always just text").
+        fence = nil
         draft = ""
         editingRange = NSRange(location: caret, length: 0)
         caretAtStart = true
@@ -288,7 +398,7 @@ struct MarkdownPreview: View {
     }
 
     private func split(head: String, tail: String) {
-        guard let range = editingRange else { return }
+        guard let range = editingRange, fence == nil else { return }
         let (updated, editing) = PreviewEditing.split(markdown, at: range, head: head, tail: tail)
         markdown = updated
         draft = tail

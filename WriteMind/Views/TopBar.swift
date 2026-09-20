@@ -10,6 +10,8 @@ enum ToolGroup: String, CaseIterable, Identifiable {
     // with each other or with dropping a picture on the page (Sean,
     // 2026-09-19: "flowcharts and maths deserve their own sections for now,
     // they're basically completely separate things at this point").
+    // `capture` is the pen's section — the name is what the collapsed
+    // state was saved under, so it stays.
     case style, structure, insert, maths, flowchart, capture
 
     var id: String { rawValue }
@@ -21,7 +23,7 @@ enum ToolGroup: String, CaseIterable, Identifiable {
         case .insert: return "Insert"
         case .maths: return "Maths"
         case .flowchart: return "Flow Chart"
-        case .capture: return "Capture"
+        case .capture: return "Pen"
         }
     }
 
@@ -32,7 +34,7 @@ enum ToolGroup: String, CaseIterable, Identifiable {
         case .insert: return "plus.square.on.square"
         case .maths: return "function"
         case .flowchart: return "flowchart"
-        case .capture: return "camera.viewfinder"
+        case .capture: return "pencil"
         }
     }
 }
@@ -61,17 +63,6 @@ struct TopBar: View {
     /// The pen only draws over the source pane.
     private var canDraw: Bool { store.selectedNote != nil && appState.mode == .editor }
 
-    private var captureHelp: String {
-        guard camera.status == .running else {
-            return "Turn a camera on first (Input Devices) to bring a notebook page in"
-        }
-        switch appState.captureMode {
-        case .ink: return "Straightened, with the page's printed dots taken out"
-        case .page: return "The whole page as a picture, straightened and trimmed to its edges"
-        case .raw: return "The camera picture exactly as it is"
-        }
-    }
-
     var body: some View {
         HStack(spacing: 2) {
             // The collapse button lives ON the sidebar; this is the way back
@@ -96,26 +87,18 @@ struct TopBar: View {
             // 2026-09-18).
             BarDivider()
 
-            // The three ways to look at a note, left to right: the raw
-            // markdown, the note rendered where it is written, the note as
-            // a page. This one lights up while the markers are showing.
-            BarButton(systemImage: "doc.plaintext", label: "Markdown Markers",
-                      help: appState.showMarkers
-                          ? "Hide the markers and render the note where you write it"
-                          : "Show the markdown exactly as it is written",
-                      keys: ["⌥", "⌘", "M"],
-                      isOn: appState.showMarkers) {
-                appState.showMarkers.toggle()
-            }
-            .disabled(store.selectedNote == nil || appState.mode != .editor)
-
             // ONE BUTTON, lit while the preview is up (Sean, 2026-09-18) —
             // not a two-segment picker. It also keeps the bar inside the pane,
             // which a 180pt segmented control did not.
-            BarButton(systemImage: "doc.richtext", label: "Markdown Preview",
+            // ONE switch, two states: the markdown as it is written, and
+            // the note rendered and still typed into (Sean, 2026-09-19:
+            // "switching between raw markdown, and the rendered but
+            // editable wysiwyg"). There is no third button beside it.
+            BarButton(systemImage: appState.mode == .preview ? "doc.richtext" : "doc.plaintext",
+                      label: appState.mode == .preview ? "Rendered" : "Markdown",
                       help: appState.mode == .preview
-                          ? "Back to the markdown editor"
-                          : "Show the note as it is read",
+                          ? "Showing the note rendered — click for the markdown behind it"
+                          : "Showing the markdown — click to render it and go on typing",
                       keys: ["⇧", "⌘", "P"],
                       isOn: appState.mode == .preview) {
                 appState.toggleMode()
@@ -323,11 +306,9 @@ struct TopBar: View {
             // Things dropped on the page: a picture, a floating box of
             // words. They work in the preview too.
             Group {
-                BarButton(systemImage: "photo.badge.plus", label: "Add Image",
-                          help: "Put a picture on the page — ⌘V pastes one") {
-                    appState.penActive = false
-                    store.chooseImage()
-                }
+                // Adding a picture is an Insert ▸ Image away (⇧⌘I), not a
+                // button on the bar (Sean, 2026-09-19: "the insert image
+                // button should be in a menu bar entry under insert").
                 BarButton(systemImage: "character.textbox", label: "Text Box",
                           help: "A box of words that floats over the page; the note's text keeps clear of it") {
                     appState.penActive = false
@@ -340,34 +321,12 @@ struct TopBar: View {
 
     @ViewBuilder
     private var captureTools: some View {
-        // The notebook on the camera: the icon captures, its chevron picks
-        // what arrives — the writing, the whole page, or the raw picture.
-        BarSplit(isOn: false) {
-            BarButton(systemImage: "camera.viewfinder", label: "Capture Notebook Page",
-                      help: captureHelp, bare: true) {
-                appState.penActive = false
-                // Zoomed in, the button brings in what the pane is showing
-                // and no more (Sean, 2026-09-19).
-                store.captureNotebook(frame: camera.currentFrame(),
-                                      quarterTurns: appState.cameraRotation / 90,
-                                      colour: NSColor(appState.penColor),
-                                      mode: appState.captureMode,
-                                      region: appState.cameraRegion)
-            }
-            .disabled(camera.status != .running || store.isCapturing || store.selectedNote == nil)
-        } menu: {
-            Picker("Bring in", selection: $appState.captureMode) {
-                ForEach(NotebookCapture.Mode.allCases) { mode in
-                    Text(mode.title).tag(mode)
-                }
-            }
-            .pickerStyle(.inline)
-        } menuTip: {
-            BarTip(title: "What to Capture", detail: "Just the writing, the whole page, or the raw picture")
-        }
-
         // The pen: the icon picks it up or puts it down (never opens its
-        // settings — Sean, 2026-09-18); the chevron does that.
+        // settings — Sean, 2026-09-18); the chevron does that. The capture
+        // button that used to sit beside it is gone: the camera pane's own
+        // three buttons say what to do with a box, and there is nothing
+        // left for a button over here to mean (Sean, 2026-09-19: "get rid
+        // of the capture button in the toolbar").
         BarSplit(isOn: appState.penActive) {
             BarButton(systemImage: "pencil", label: "Pen",
                       help: appState.penActive ? "Put the pen down" : "Draw over the note",

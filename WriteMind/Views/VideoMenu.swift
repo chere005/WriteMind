@@ -15,7 +15,7 @@ struct VideoMenu: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
-            Text("Picture").font(.headline)
+            Text("Picture").font(.headline).foregroundStyle(.primary)
 
             HStack(spacing: 6) {
                 item("Turn Left", icon: "rotate.left", help: "A quarter turn anticlockwise",
@@ -28,7 +28,6 @@ struct VideoMenu: View {
                  help: "The whole camera picture again, at the size it comes in",
                  wide: true, enabled: live && appState.cameraZoom != nil) {
                 appState.cameraZoom = nil
-                appState.cameraRegion = nil
             }
 
             item("Resize by Square", icon: "square.dashed",
@@ -44,6 +43,7 @@ struct VideoMenu: View {
                 Text("Showing \(Int((box.width * box.height * 100).rounded()))% of the picture")
                     .font(.caption)
                     .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
             }
 
             Divider()
@@ -61,6 +61,13 @@ struct VideoMenu: View {
         }
         .padding(14)
         .frame(width: 244)
+        // The popover hangs off a control inside a BarSplit, which tints
+        // ITS contents with the accent colour while the video is on — and
+        // SwiftUI carries that tint into the popover, so every label came
+        // out faint blue on the dark panel (Sean, 2026-09-19: "the opacity
+        // is weird here, make the text readable"). Pinned here.
+        .foregroundStyle(.primary)
+        .tint(.accentColor)
     }
 
     private func item(_ title: String, icon: String, help: String, wide: Bool = false,
@@ -69,16 +76,19 @@ struct VideoMenu: View {
         Button(action: action) {
             Label(title, systemImage: icon)
                 .font(.system(size: 12, weight: .medium))
+                // Readable either way: what cannot be done goes grey, not
+                // transparent. A 40% label on a translucent panel over a
+                // camera picture is not text anybody can read.
+                .foregroundStyle(enabled ? AnyShapeStyle(.primary) : AnyShapeStyle(.tertiary))
                 .frame(maxWidth: wide ? .infinity : nil, alignment: .leading)
                 .padding(.horizontal, 10)
                 .padding(.vertical, 7)
-                .background(isOn ? Color.accentColor.opacity(0.22) : Color.primary.opacity(0.07),
+                .background(isOn ? Color.accentColor.opacity(0.22) : Color.primary.opacity(0.08),
                             in: RoundedRectangle(cornerRadius: 6))
                 .contentShape(RoundedRectangle(cornerRadius: 6))
         }
         .buttonStyle(.plain)
         .disabled(!enabled)
-        .opacity(enabled ? 1 : 0.4)
         .help(help)
     }
 }

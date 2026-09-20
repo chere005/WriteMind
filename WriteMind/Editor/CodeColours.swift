@@ -45,6 +45,22 @@ enum CodeColours {
             : NSColor(white: 0, alpha: 0.05)
     })
 
+    /// The same colours, straight onto a text storage — the code block
+    /// being typed in.
+    static func style(_ storage: NSTextStorage, language: CodeLanguage, font: NSFont,
+                      paragraph: NSParagraphStyle) {
+        let whole = NSRange(location: 0, length: storage.length)
+        storage.beginEditing()
+        storage.setAttributes([.font: font, .foregroundColor: NSColor.labelColor,
+                               .paragraphStyle: paragraph], range: whole)
+        for token in CodeHighlighter.tokens(in: storage.string, language: language) {
+            let range = NSIntersectionRange(token.range, whole)
+            guard range.length > 0 else { continue }
+            storage.addAttribute(.foregroundColor, value: colour(for: token.kind), range: range)
+        }
+        storage.endEditing()
+    }
+
     /// The code set in the preview: monospaced, with the same colours.
     static func attributed(_ code: String, language: CodeLanguage, size: CGFloat = 13) -> AttributedString {
         let text = code as NSString

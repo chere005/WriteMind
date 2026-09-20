@@ -81,6 +81,12 @@ struct SidebarView: View {
                     .padding(.vertical, 6)
                     .padding(.horizontal, 6)
                 }
+                // The empty space under the rows is "no section": clicking
+                // it puts the next new note back at the top level (Sean,
+                // 2026-09-19: "clicking outside a section in this bar
+                // should deselect a section").
+                .contentShape(Rectangle())
+                .onTapGesture { store.selectedSectionID = nil }
                 .dropDestination(for: SidebarItem.self) { items, _ in
                     drop(items, into: store.root)
                 }

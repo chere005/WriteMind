@@ -194,3 +194,55 @@ final class FoldCommandTests: XCTestCase {
         XCTAssertEqual(NotebookOutline.section(containing: inOne, in: sections)?.key, "One")
     }
 }
+
+/// The cell brackets down the right-hand side: they have to be drawn, they
+/// have to be where the cells are, and a click has to find them.
+final class NotebookGutterTests: XCTestCase {
+    private func gutter(_ brackets: [NotebookGutter.Bracket]) -> NotebookGutter {
+        let view = NotebookGutter(frame: NSRect(x: 0, y: 0, width: NotebookGutter.width, height: 200))
+        view.brackets = brackets
+        return view
+    }
+
+    private func inkedPixels(_ view: NSView) -> Int {
+        guard let rep = view.bitmapImageRepForCachingDisplay(in: view.bounds) else { return 0 }
+        view.cacheDisplay(in: view.bounds, to: rep)
+        var count = 0
+        for x in 0..<rep.pixelsWide {
+            for y in 0..<rep.pixelsHigh where (rep.colorAt(x: x, y: y)?.alphaComponent ?? 0) > 0.1 {
+                count += 1
+            }
+        }
+        return count
+    }
+
+    func testABracketIsActuallyDrawn() {
+        let empty = inkedPixels(gutter([]))
+        let one = inkedPixels(gutter([.init(key: "One", depth: 0, top: 20, bottom: 120, collapsed: false)]))
+        XCTAssertGreaterThan(one, empty + 50, "the bracket put ink on the gutter")
+    }
+
+    func testAClosedCellIsDrawnDifferentlyFromAnOpenOne() {
+        let open = inkedPixels(gutter([.init(key: "One", depth: 0, top: 20, bottom: 120, collapsed: false)]))
+        let shut = inkedPixels(gutter([.init(key: "One", depth: 0, top: 20, bottom: 120, collapsed: true)]))
+        XCTAssertGreaterThan(shut, open, "a closed cell carries a triangle as well")
+    }
+
+    func testASelectedCellIsDrawnHeavier() {
+        let plain = inkedPixels(gutter([.init(key: "One", depth: 0, top: 20, bottom: 120, collapsed: false)]))
+        let picked = inkedPixels(gutter([.init(key: "One", depth: 0, top: 20, bottom: 120,
+                                               collapsed: false, selected: true)]))
+        XCTAssertGreaterThan(picked, plain)
+    }
+
+    func testNestedCellsAreDrawnSideBySide() {
+        let one = inkedPixels(gutter([.init(key: "One", depth: 0, top: 20, bottom: 120, collapsed: false)]))
+        let two = inkedPixels(gutter([.init(key: "One", depth: 0, top: 20, bottom: 120, collapsed: false),
+                                      .init(key: "Two", depth: 1, top: 60, bottom: 110, collapsed: false)]))
+        XCTAssertGreaterThan(two, one, "the inner one is drawn as well, further in")
+    }
+
+    func testTheGutterIsWideEnoughForSeveralLevels() {
+        XCTAssertGreaterThanOrEqual(NotebookGutter.width, 20)
+    }
+}

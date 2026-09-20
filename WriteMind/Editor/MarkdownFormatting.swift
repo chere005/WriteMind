@@ -261,6 +261,34 @@ enum MarkdownFormatting {
         return rest
     }
 
+    /// A fenced block taken apart, so the preview can let the CODE be
+    /// typed while the fences stay where they are (Sean, 2026-09-19: "i
+    /// want to be able to type code in the code block"). Nil when this is
+    /// not a fenced block.
+    static func fenced(_ source: String) -> (open: String, body: String, close: String)? {
+        var lines = source.components(separatedBy: "\n")
+        guard let first = lines.first, first.trimmingCharacters(in: .whitespaces).hasPrefix("```")
+        else { return nil }
+        let open = lines.removeFirst()
+        var close = ""
+        if let last = lines.last, last.trimmingCharacters(in: .whitespaces) == "```" {
+            close = lines.removeLast()
+        }
+        return (open, lines.joined(separator: "\n"), close)
+    }
+
+    /// And put back together again.
+    static func refenced(open: String, body: String, close: String) -> String {
+        var out = open + "\n" + body
+        if !close.isEmpty { out += "\n" + close }
+        return out
+    }
+
+    /// The language a fence names, for colouring what is typed into it.
+    static func fenceLanguage(_ open: String) -> String {
+        String(open.trimmingCharacters(in: .whitespaces).dropFirst(3)).trimmingCharacters(in: .whitespaces)
+    }
+
     // MARK: - Tables
 
     /// A table on lines of its own, with the first header cell selected so

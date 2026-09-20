@@ -20,6 +20,10 @@ struct BlockEditor: NSViewRepresentable {
     /// A list, a quote or a fenced block: Return adds a line to it rather
     /// than starting a new block.
     var keepsNewlines = false
+    /// Set for a fenced code block: what is being typed is CODE, so it is
+    /// coloured for its language instead of being read as markdown (Sean,
+    /// 2026-09-19: "i want to be able to type code in the code block").
+    var language: CodeLanguage?
     var onSplit: ((String, String) -> Void)?
     var onDeleteEmpty: (() -> Void)?
     var onMove: ((Move) -> Void)?
@@ -52,6 +56,7 @@ struct BlockEditor: NSViewRepresentable {
         view.placeholder = placeholder
         view.baseFont = font
         view.string = text
+        context.coordinator.language = language
         context.coordinator.restyle(view)
         return view
     }
@@ -61,8 +66,9 @@ struct BlockEditor: NSViewRepresentable {
         view.placeholder = placeholder
         bridge.textView = view
 
-        if view.baseFont != font {
+        if view.baseFont != font || context.coordinator.language != language {
             view.baseFont = font
+            context.coordinator.language = language
             context.coordinator.restyle(view)
         }
         // Only take the text from outside when the outside is what changed —
@@ -111,6 +117,8 @@ struct BlockEditor: NSViewRepresentable {
         let undoManager = UndoManager()
         /// Draws `- ` as a round bullet while the block is being edited.
         let bullets = BulletGlyphs()
+        /// The language of the code being typed, when it is code.
+        var language: CodeLanguage?
 
         init(_ parent: BlockEditor) { self.parent = parent }
 
@@ -119,7 +127,13 @@ struct BlockEditor: NSViewRepresentable {
         func restyle(_ view: BlockTextView) {
             guard let storage = view.textStorage else { return }
             let selection = view.selectedRanges
-            MarkdownSourceStyle.apply(to: storage, base: view.baseFont, paragraph: BlockTextView.paragraphStyle)
+            if let language, language != .plain {
+                CodeColours.style(storage, language: language, font: view.baseFont,
+                                  paragraph: BlockTextView.paragraphStyle)
+            } else {
+                MarkdownSourceStyle.apply(to: storage, base: view.baseFont,
+                                          paragraph: BlockTextView.paragraphStyle)
+            }
             view.typingAttributes = [.font: view.baseFont,
                                      .foregroundColor: NSColor.textColor,
                                      .paragraphStyle: BlockTextView.paragraphStyle]

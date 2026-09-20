@@ -105,6 +105,13 @@ struct MarkdownTextView: NSViewRepresentable {
         gutter.onToggle = { [weak coordinator = context.coordinator] key in
             coordinator?.parent.onToggleSection?(key)
         }
+        // Clicking a bracket picks the cell up — its heading and everything
+        // under it — the way a Wolfram notebook does (Sean, 2026-09-19: "i
+        // want to select, hide, etc").
+        gutter.onSelect = { [weak coordinator = context.coordinator, weak tv] range in
+            guard let coordinator, let tv else { return }
+            coordinator.select(range, in: tv)
+        }
         tv.addSubview(gutter)
         context.coordinator.gutter = gutter
 
@@ -179,6 +186,40 @@ struct MarkdownTextView: NSViewRepresentable {
     static func exclusionRects(bands: [CGRect], scrollOffset: CGFloat, inset: CGFloat) -> [CGRect] {
         bands.map { band in
             CGRect(x: -10_000, y: band.minY - 6 + scrollOffset - inset, width: 20_000, height: band.height + 12)
+        }
+    }
+
+    /// A picture may not land in the MIDDLE of a cell (Sean, 2026-09-19:
+    /// "images and captures can't break the text in a group"). A band that
+    /// would cut a block in half is stretched UP to that block's first
+    /// line, so the whole block goes below the picture and the cell stays
+    /// in one piece. A band that already falls between two blocks is left
+    /// exactly where it is.
+    static func snappedToCells(_ rects: [CGRect], in tv: NSTextView) -> [CGRect] {
+        guard !rects.isEmpty, let layout = tv.layoutManager, let container = tv.textContainer else {
+            return rects
+        }
+        let text = tv.string as NSString
+        guard text.length > 0 else { return rects }
+        layout.ensureLayout(for: container)
+        let used = layout.usedRect(for: container)
+        let blocks = MarkdownParser.positioned(from: tv.string)
+        let padding = container.lineFragmentPadding
+
+        return rects.map { rect in
+            guard rect.minY > used.minY, rect.minY < used.maxY else { return rect }
+            let glyph = layout.glyphIndex(for: CGPoint(x: padding + 1, y: rect.minY), in: container)
+            let character = min(layout.characterIndexForGlyph(at: glyph), text.length - 1)
+            // Whichever cell that line belongs to — a paragraph, a list, a
+            // quote, a fenced block — or the paragraph, when nothing claims it.
+            let cell = blocks.first { NSLocationInRange(character, $0.range) }?.range
+                ?? text.paragraphRange(for: NSRange(location: character, length: 0))
+            guard cell.length > 0, cell.location < text.length else { return rect }
+            let first = layout.glyphIndexForCharacter(at: cell.location)
+            let line = layout.lineFragmentRect(forGlyphAt: first, effectiveRange: nil)
+            guard line.minY < rect.minY - 0.5 else { return rect }
+            return CGRect(x: rect.minX, y: line.minY,
+                          width: rect.width, height: rect.maxY - line.minY)
         }
     }
 
@@ -282,6 +323,17 @@ struct MarkdownTextView: NSViewRepresentable {
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.15, execute: work)
         }
 
+        /// What a bracket holds, selected.
+        func select(_ wanted: NSRange, in tv: NSTextView) {
+            let length = (tv.string as NSString).length
+            let range = NSIntersectionRange(wanted, NSRange(location: 0, length: length))
+            guard range.length > 0 else { return }
+            tv.window?.makeFirstResponder(tv)
+            tv.setSelectedRange(range)
+            tv.scrollRangeToVisible(range)
+            refreshBrackets(in: tv)
+        }
+
         /// The caret moved: the paragraph it left hides its markers again
         /// and the one it arrived in shows them.
         func textViewDidChangeSelection(_ notification: Notification) {
@@ -310,8 +362,9 @@ struct MarkdownTextView: NSViewRepresentable {
         func applyExclusions() {
             guard let scroll = scrollView, let tv = scroll.documentView as? NSTextView,
                   let container = tv.textContainer else { return }
-            let rects = MarkdownTextView.exclusionRects(bands: bands, scrollOffset: 0,
+            let plain = MarkdownTextView.exclusionRects(bands: bands, scrollOffset: 0,
                                                         inset: tv.textContainerInset.height)
+            let rects = MarkdownTextView.snappedToCells(plain, in: tv)
             guard rects != lastExclusions else { return }
             lastExclusions = rects
             container.exclusionPaths = rects.map { NSBezierPath(rect: $0) }
@@ -342,20 +395,55 @@ struct MarkdownTextView: NSViewRepresentable {
         /// Where each section's bracket goes, measured off the laid-out text.
         func refreshBrackets(in tv: NSTextView) {
             guard let gutter, let layout = tv.layoutManager, let container = tv.textContainer else { return }
+            // The frame by hand, every time. At makeNSView the text view is
+            // still zero-sized, and an autoresizing mask that starts from
+            // nothing has nothing to grow from — which is why the brackets
+            // were not there at all (Sean, 2026-09-19: "where's
+            // wolfram/jupyter style notebook implementation?").
+            let wanted = NSRect(x: tv.bounds.width - NotebookGutter.width, y: 0,
+                                width: NotebookGutter.width, height: max(tv.bounds.height, 1))
+            if gutter.frame != wanted { gutter.frame = wanted }
             let text = tv.string as NSString
             let origin = tv.textContainerOrigin
-            gutter.brackets = NotebookOutline.sections(in: tv.string).compactMap { section in
+            // EVERY cell gets a bracket, and the sections that group them
+            // get one further out — Wolfram's own furniture (Sean,
+            // 2026-09-19: "i want wolfram/jupyter style notebook brackets").
+            let sections = NotebookOutline.sections(in: tv.string)
+            let selection = tv.selectedRange()
+
+            func bracket(key: String, depth: Int, range: NSRange, foldable: Bool) -> NotebookGutter.Bracket? {
+                let clipped = NSIntersectionRange(range, NSRange(location: 0, length: text.length))
+                guard clipped.length > 0 else { return nil }
+                let glyphs = layout.glyphRange(forCharacterRange: clipped, actualCharacterRange: nil)
+                let box = layout.boundingRect(forGlyphRange: glyphs, in: container)
+                guard box.height > 1 else { return nil }
+                let picked = selection.length > 0
+                    && NSIntersectionRange(selection, clipped).length == clipped.length
+                return NotebookGutter.Bracket(key: key, depth: depth,
+                                              top: box.minY + origin.y, bottom: box.maxY + origin.y,
+                                              collapsed: collapsed.contains(key), selected: picked,
+                                              range: clipped, foldable: foldable)
+            }
+
+            var brackets = sections.compactMap { section -> NotebookGutter.Bracket? in
                 let end = min(max(section.contentEnd, NSMaxRange(section.headingRange)), text.length)
                 let start = min(section.range.location, text.length)
                 guard end > start else { return nil }
-                let characters = NSRange(location: start, length: end - start)
-                let glyphs = layout.glyphRange(forCharacterRange: characters, actualCharacterRange: nil)
-                let box = layout.boundingRect(forGlyphRange: glyphs, in: container)
-                guard box.height > 1 else { return nil }
-                return NotebookGutter.Bracket(key: section.key, depth: section.depth,
-                                              top: box.minY + origin.y, bottom: box.maxY + origin.y,
-                                              collapsed: collapsed.contains(section.key))
+                return bracket(key: section.key, depth: section.depth,
+                               range: NSRange(location: start, length: end - start), foldable: true)
             }
+
+            // The cells themselves: one per block, drawn inside whichever
+            // section holds them.
+            for block in MarkdownParser.positioned(from: tv.string) {
+                let owner = NotebookOutline.section(containing: block.range.location, in: sections)
+                let depth = (owner?.depth ?? -1) + 1
+                if let cell = bracket(key: "cell:\(block.range.location)", depth: depth,
+                                      range: block.range, foldable: false) {
+                    brackets.append(cell)
+                }
+            }
+            gutter.brackets = brackets
         }
 
         /// The caret never sits in a line nobody can see: it steps to the

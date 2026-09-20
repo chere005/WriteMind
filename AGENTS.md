@@ -7,7 +7,25 @@ and is imported here; this file holds only what is true of THIS repo.
 A macOS-only writing app: a markdown editor on the left, a live camera on the
 right, a sidebar of notes that are plain `.md` files in `~/Documents/WriteMind`.
 Native SwiftUI + AppKit, one Xcode project, no web layer, no server, no package
-manager, no dependencies. `README.md` is the map.
+manager, no dependencies. The README is deliberately short: the tour is
+`docs/FEATURES.md`, building and shipping is `docs/BUILDING.md`, the open
+list is `docs/TODO.md`, and THIS file is how the code is put together.
+
+- [Standing rules](#standing-rules) — the things that cost real time when
+  they are broken: whose data the notes are, what a section is, how the app
+  is signed, and the one that catches everybody, **deploy after every small
+  change**.
+- [How it is wired](#how-it-is-wired) — a file-by-file map of the app, the
+  shortcuts, and the rules each part follows.
+- [Traps that have cost real time here](#traps-that-have-cost-real-time-here)
+  — read this before debugging anything that looks impossible.
+
+Two words on the shape of the thing. The NOTE is a markdown file and nothing
+else; everything that is not markdown — pen strokes, pictures, flow-chart
+nodes, text boxes — lives in a hidden sidecar beside it and is drawn on a
+layer over the text. The camera pane is a viewfinder: it finds a notebook
+page, squares it up, and hands the result to the same drawing layer. Nothing
+here is a database, and nothing rewrites a file the user did not type in.
 
 Started 2026-09-18 on Sean's word, from the AgentSuite baseline. It is not a
 Mind-suite clone: it shares no canon bytes with CalMind's lineage and never

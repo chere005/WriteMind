@@ -40,6 +40,9 @@ struct DrawingCanvas: View {
     /// and the word that it has been.
     var pendingLabelEdit: UUID?
     var onLabelEditStarted: (() -> Void)?
+    /// Something on the layer is picked, or nothing is — the menu bar needs
+    /// to know, so ⌘Z can be the drawing's.
+    var onSelectionChanged: ((Bool) -> Void)?
     /// ⌘Z and ⇧⌘Z while the layer owns them. Each returns true when it had
     /// something to do; false hands the key on to the text underneath.
     var onUndo: (() -> Bool)?
@@ -159,6 +162,7 @@ struct DrawingCanvas: View {
                 selection = []; hovered = nil; cropping = nil; styling = nil; editingLabel = nil
             }
             .onChange(of: deselectToken) { _, _ in selection = []; cropping = nil; styling = nil; editingLabel = nil }
+            .onChange(of: selection) { _, picked in onSelectionChanged?(!picked.isEmpty) }
             .onChange(of: penActive) { _, _ in
                 selection = []; hovered = nil; cropping = nil; styling = nil; editingLabel = nil
             }

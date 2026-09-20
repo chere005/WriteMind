@@ -93,9 +93,28 @@ struct WriteMindApp: App {
                     .keyboardShortcut(.rightArrow, modifiers: [.command, .option, .shift])
             }
 
-            // The drawing keeps its own history — a stroke is not a text
-            // edit — so it gets its own pair of commands as well as ⌘Z while
-            // the pen is up (Sean, 2026-09-19: "add undo when drawing").
+            // ⌘Z ITSELF, not a monitor underneath it. The Edit menu's own
+            // Undo is a key equivalent, and a key equivalent is answered by
+            // the menu before any local event monitor sees it — which is
+            // why undo in drawing mode went to the TEXT (Sean, 2026-09-19:
+            // "fix undo in drawing mode"). This item decides where it goes
+            // and hands it to the responder chain when it is not the
+            // drawing's.
+            CommandGroup(replacing: .undoRedo) {
+                Button("Undo") {
+                    if appState.drawingOwnsUndo, store.undoDrawing() { return }
+                    NSApp.sendAction(Selector(("undo:")), to: nil, from: nil)
+                }
+                .keyboardShortcut("z", modifiers: .command)
+
+                Button("Redo") {
+                    if appState.drawingOwnsUndo, store.redoDrawing() { return }
+                    NSApp.sendAction(Selector(("redo:")), to: nil, from: nil)
+                }
+                .keyboardShortcut("z", modifiers: [.command, .shift])
+            }
+
+            // And the drawing's own pair, whatever has the keyboard.
             CommandGroup(after: .undoRedo) {
                 Button("Undo Drawing") { store.undoDrawing() }
                     .keyboardShortcut("z", modifiers: [.command, .option])
@@ -120,6 +139,7 @@ struct WriteMindApp: App {
             // section of the toolbar should be collapsable"). The menu bar
             // is also where a shortcut is discoverable.
             FormatMenu(appState: appState, store: store)
+            InsertMenu(appState: appState, store: store)
 
             InputDevicesMenu(camera: camera)
         }
@@ -199,10 +219,6 @@ struct FormatMenu: Commands {
             Button("\(appState.bulletStyle.title) List") { editor.list(appState.bulletStyle) }
                 .keyboardShortcut("l", modifiers: [.command, .shift])
             Button("Quote") { editor.quote() }.keyboardShortcut("q", modifiers: [.command, .control])
-            Button("Code Block") { editor.codeBlock(language: appState.codeLanguage.fence) }
-                .keyboardShortcut("8", modifiers: .command)
-            Button("Table") { editor.insertTable(grid: appState.tableGrid) }
-                .keyboardShortcut("t", modifiers: [.command, .control])
             Divider()
             Button("Decrease Indentation") { editor.outdent() }.keyboardShortcut("[", modifiers: .command)
             Button("Increase Indentation") { editor.indent() }.keyboardShortcut("]", modifiers: .command)
@@ -211,6 +227,44 @@ struct FormatMenu: Commands {
                 .keyboardShortcut(.upArrow, modifiers: [.command, .control])
             Button("Move Section Down") { editor.moveSection(up: false) }
                 .keyboardShortcut(.downArrow, modifiers: [.command, .control])
+        }
+    }
+}
+
+/// The Insert menu: the things that go ON a note rather than change how it
+/// reads — a picture, a box of words, a table, a block of code (Sean,
+/// 2026-09-19: "the insert image should be in a menu bar entry under
+/// insert").
+struct InsertMenu: Commands {
+    @ObservedObject var appState: AppState
+    @ObservedObject var store: NoteStore
+
+    var body: some Commands {
+        CommandMenu("Insert") {
+            Button("Image…") {
+                appState.penActive = false
+                store.chooseImage()
+            }
+            .keyboardShortcut("i", modifiers: [.command, .shift])
+            .disabled(store.selectedNote == nil)
+
+            Button("Text Box") {
+                appState.penActive = false
+                store.addTextBox(colorHex: appState.penColorHex)
+            }
+            .disabled(store.selectedNote == nil)
+
+            Divider()
+
+            Button("Table") { appState.editor.insertTable(grid: appState.tableGrid) }
+                .keyboardShortcut("t", modifiers: [.command, .control])
+                .disabled(store.selectedNote == nil)
+
+            Button("\(appState.codeLanguage == .plain ? "Code Block" : appState.codeLanguage.title + " Block")") {
+                appState.editor.codeBlock(language: appState.codeLanguage.fence)
+            }
+            .keyboardShortcut("8", modifiers: .command)
+            .disabled(store.selectedNote == nil)
         }
     }
 }

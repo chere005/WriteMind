@@ -76,6 +76,14 @@ final class NotebookGutter: NSView {
         var top: CGFloat
         var bottom: CGFloat
         var collapsed: Bool
+        /// The cell is picked: its bracket is drawn heavy, the way a
+        /// Wolfram notebook shows a selected cell.
+        var selected = false
+        /// What a click on it selects.
+        var range = NSRange(location: 0, length: 0)
+        /// A group — a heading and everything under it — which a
+        /// double-click folds away. A plain cell is not foldable.
+        var foldable = false
     }
 
     static let width: CGFloat = 22
@@ -83,7 +91,10 @@ final class NotebookGutter: NSView {
     private static let tick: CGFloat = 5
 
     var brackets: [Bracket] = [] { didSet { if brackets != oldValue { needsDisplay = true } } }
+    /// A double-click on a group: fold it, or open it again.
     var onToggle: ((String) -> Void)?
+    /// A single click: select what that bracket holds.
+    var onSelect: ((NSRange) -> Void)?
     private var hovered: String?
     private var tracking: NSTrackingArea?
 
@@ -97,12 +108,15 @@ final class NotebookGutter: NSView {
     override func draw(_ dirtyRect: NSRect) {
         for bracket in brackets {
             let line = x(for: bracket.depth)
-            let colour: NSColor = bracket.key == hovered
+            let colour: NSColor = bracket.selected || bracket.key == hovered
                 ? .controlAccentColor
                 : NSColor.tertiaryLabelColor
             colour.setStroke()
             let path = NSBezierPath()
-            path.lineWidth = bracket.key == hovered ? 1.8 : 1.2
+            // A group's bracket is heavier than a plain cell's, so the
+            // nesting reads at a glance.
+            let base: CGFloat = bracket.foldable ? 1.5 : 1.1
+            path.lineWidth = bracket.selected ? base + 1.2 : (bracket.key == hovered ? base + 0.6 : base)
             path.lineCapStyle = .round
             path.move(to: CGPoint(x: line - Self.tick, y: bracket.top))
             path.line(to: CGPoint(x: line, y: bracket.top))
@@ -146,10 +160,18 @@ final class NotebookGutter: NSView {
         if hovered != nil { hovered = nil; needsDisplay = true }
     }
 
+    /// One click picks the cell up, two fold it away — Wolfram's own
+    /// gesture, and the one Sean asked for (2026-09-19: "i want to select,
+    /// hide, etc"). The click count comes from the event, so neither waits
+    /// on the other.
     override func mouseDown(with event: NSEvent) {
         let point = convert(event.locationInWindow, from: nil)
         guard let bracket = bracket(at: point) else { return }
-        onToggle?(bracket.key)
+        if event.clickCount >= 2, bracket.foldable {
+            onToggle?(bracket.key)
+        } else {
+            onSelect?(bracket.range)
+        }
     }
 
     /// Only a click ON a bracket counts; everywhere else the gutter is not
@@ -159,11 +181,12 @@ final class NotebookGutter: NSView {
         return bracket(at: local) == nil ? nil : self
     }
 
+    /// The NEAREST bracket, not the first: the levels are five points
+    /// apart, and a tolerance that reaches the next one over would always
+    /// answer with whichever was first in the list.
     private func bracket(at point: CGPoint) -> Bracket? {
-        brackets.first { bracket in
-            let line = x(for: bracket.depth)
-            return abs(point.x - line) <= 6
-                && point.y >= bracket.top - 4 && point.y <= bracket.bottom + 4
-        }
+        brackets
+            .filter { point.y >= $0.top - 4 && point.y <= $0.bottom + 4 && abs(point.x - x(for: $0.depth)) <= 4 }
+            .min { abs(point.x - x(for: $0.depth)) < abs(point.x - x(for: $1.depth)) }
     }
 }

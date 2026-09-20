@@ -19,10 +19,6 @@ final class AppState: ObservableObject {
     /// Quarter turns of the video pane, kept because a camera that is mounted
     /// sideways stays mounted sideways.
     @Published var cameraRotation: Int { didSet { defaults.set(cameraRotation, forKey: Keys.cameraRotation) } }
-    /// What the viewfinder button brings in: the writing, or the whole page.
-    @Published var captureMode: NotebookCapture.Mode {
-        didSet { defaults.set(captureMode.rawValue, forKey: Keys.captureMode) }
-    }
     @Published var penColorHex: String { didSet { defaults.set(penColorHex, forKey: Keys.penColorHex) } }
     /// The part of the video the pane is zoomed into, in pane fractions of
     /// the unzoomed picture (Sean, 2026-09-19: "drag a square to resize
@@ -37,10 +33,6 @@ final class AppState: ObservableObject {
     /// the video (Sean, 2026-09-19: "picture and whole screen should be
     /// dropdowns from the show video button").
     @Published var cameraZooming = false
-    /// What that zoom is in the FRAME's own fractions — worked out by the
-    /// camera pane, used by the capture button so what is brought in is
-    /// what is on show.
-    @Published var cameraRegion: CGRect?
     /// What the list button writes: dots, dashes or numbers — dots by
     /// default (Sean, 2026-09-19).
     @Published var bulletStyle: MarkdownFormatting.ListStyle {
@@ -90,6 +82,19 @@ final class AppState: ObservableObject {
             connectActive = false
         }
     }
+    /// Whether anything on the drawing layer is picked. The canvas keeps
+    /// its own selection; this is the part the menu bar needs to know, so
+    /// ⌘Z can go to the drawing rather than the text.
+    @Published var canvasSelection = false
+
+    /// Whose ⌘Z it is. The drawing's while the pen is up, while something
+    /// on the layer is picked, while a shape is waiting to be put down, or
+    /// while the arrow tool is on — the four times the last thing done was
+    /// done on the layer (Sean, 2026-09-19: "fix undo in drawing mode").
+    var drawingOwnsUndo: Bool {
+        penActive || connectActive || placing != nil || canvasSelection
+    }
+
     /// True while a block in the preview is open for editing. The bar's
     /// buttons work on that block, so they are live on that side too.
     @Published var blockEditing = false
@@ -106,7 +111,6 @@ final class AppState: ObservableObject {
         static let showCamera = "showCamera"
         static let penWidth = "penWidth"
         static let cameraRotation = "cameraRotation"
-        static let captureMode = "captureMode"
         static let penColorHex = "penColorHex"
         static let cameraZoom = "cameraZoom"
         static let bulletStyle = "bulletStyle"
@@ -134,7 +138,6 @@ final class AppState: ObservableObject {
         showCamera = true
         penWidth = defaults.object(forKey: Keys.penWidth) as? Double ?? 3
         cameraRotation = defaults.object(forKey: Keys.cameraRotation) as? Int ?? 0
-        captureMode = NotebookCapture.Mode(rawValue: defaults.string(forKey: Keys.captureMode) ?? "") ?? .ink
         penColorHex = defaults.string(forKey: Keys.penColorHex) ?? Self.presetColors[0]
         if let box = defaults.array(forKey: Keys.cameraZoom) as? [Double], box.count == 4 {
             cameraZoom = CGRect(x: box[0], y: box[1], width: box[2], height: box[3])
@@ -145,7 +148,11 @@ final class AppState: ObservableObject {
         tableGrid = defaults.object(forKey: Keys.tableGrid) as? Bool ?? true
         codeLanguage = CodeLanguage(rawValue: defaults.string(forKey: Keys.codeLanguage) ?? "") ?? .plain
         collapsedToolGroups = Set(defaults.stringArray(forKey: Keys.collapsedToolGroups) ?? [])
-        showMarkers = defaults.object(forKey: Keys.showMarkers) as? Bool ?? false
+        // The markdown pane shows the markdown: that is what it is FOR,
+        // and the rendered-and-editable side is the other button (Sean,
+        // 2026-09-19). ⌥⌘M still hides them for anyone who wants the
+        // source rendered in place.
+        showMarkers = defaults.object(forKey: Keys.showMarkers) as? Bool ?? true
         textFamily = defaults.string(forKey: Keys.textFamily) ?? "System"
         textSize = defaults.object(forKey: Keys.textSize) as? Double ?? 15
         textColorHex = defaults.string(forKey: Keys.textColorHex) ?? Self.presetColors[3]

@@ -13,6 +13,21 @@ enum PreviewLayout {
     /// A little air between a picture and the block under it.
     static let margin: CGFloat = 6
 
+    /// Where every block ends up, in the scroll content's own coordinates —
+    /// what the cell brackets are drawn from.
+    static func positions(rows: [(id: Int, height: CGFloat)], spacing: CGFloat, top: CGFloat,
+                          bands: [CGRect]) -> [Int: (top: CGFloat, bottom: CGFloat)] {
+        let pushes = padding(rows: rows, spacing: spacing, top: top, bands: bands)
+        var out: [Int: (top: CGFloat, bottom: CGFloat)] = [:]
+        var y = top
+        for row in rows {
+            y += pushes[row.id] ?? 0
+            out[row.id] = (y, y + row.height)
+            y += row.height + spacing
+        }
+        return out
+    }
+
     /// How much each block has to be pushed down, by its id. Blocks that do
     /// not move are not in the result.
     static func padding(rows: [(id: Int, height: CGFloat)], spacing: CGFloat, top: CGFloat,

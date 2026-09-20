@@ -72,3 +72,31 @@ final class CameraZoomTests: XCTestCase {
                        accuracy: 0.001)
     }
 }
+
+/// What a gesture on the camera picture means. The click is answered from
+/// AppKit's own click count rather than by waiting to see whether a second
+/// one arrives (Sean, 2026-09-19: "clicking to exit after selecting a
+/// section of the page is slow").
+final class SectionBoxGestureTests: XCTestCase {
+    func testARealDragLeavesItsBoxAlone() {
+        XCTAssertEqual(SectionBox.action(translation: CGSize(width: 40, height: 3), clicks: 1), .keep)
+        XCTAssertEqual(SectionBox.action(translation: CGSize(width: 0, height: -30), clicks: 1), .keep)
+    }
+
+    func testAClickClearsAndTwoTakeTheWholePicture() {
+        XCTAssertEqual(SectionBox.action(translation: .zero, clicks: 1), .clear)
+        XCTAssertEqual(SectionBox.action(translation: CGSize(width: 2, height: 2), clicks: 1), .clear,
+                       "a shaky hand is still a click")
+        XCTAssertEqual(SectionBox.action(translation: .zero, clicks: 2), .whole)
+        XCTAssertEqual(SectionBox.action(translation: .zero, clicks: 3), .whole)
+    }
+
+    func testTheSlackIsFourPoints() {
+        XCTAssertFalse(SectionBox.isDrag(CGSize(width: 3.9, height: 3.9)))
+        XCTAssertTrue(SectionBox.isDrag(CGSize(width: 4, height: 0)))
+    }
+
+    func testADoubleClickIsNotReadAsADragEvenIfTheHandMoves() {
+        XCTAssertEqual(SectionBox.action(translation: CGSize(width: 3, height: 1), clicks: 2), .whole)
+    }
+}

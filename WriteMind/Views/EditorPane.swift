@@ -68,7 +68,9 @@ struct EditorPane: View {
                                         onScroll: { offset in
                                             scrollOffset = offset
                                             store.canvasScroll = offset
-                                        })
+                                        },
+                                        collapsed: store.collapsedHere,
+                                        onToggleSection: { store.toggleSection($0) })
                             .id(note.id)
                     }
                     // The drawing belongs to the note, so it shows in both
@@ -90,6 +92,7 @@ struct EditorPane: View {
                                   connectActive: appState.connectActive,
                                   pendingLabelEdit: store.pendingLabelEdit,
                                   onLabelEditStarted: { store.pendingLabelEdit = nil },
+                                  onSelectionChanged: { appState.canvasSelection = $0 },
                                   onUndo: { store.undoDrawing() },
                                   onRedo: { store.redoDrawing() },
                                   placing: appState.placing,

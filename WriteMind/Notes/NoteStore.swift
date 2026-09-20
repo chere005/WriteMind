@@ -488,6 +488,32 @@ final class NoteStore: ObservableObject {
     /// The page of the notebook on the camera, as ink on the drawing layer
     /// (Sean, 2026-09-18). The work runs off the main thread; the object is
     /// added, and the sidecar written, back on it.
+    /// The words inside the box on the camera, straight into the note —
+    /// no picture at all (Sean, 2026-09-19: "the ocr of the selection").
+    func readCamera(frame: CIImage?, quarterTurns: Int, region: CGRect?) {
+        guard selectedNote != nil, !isCapturing else { return }
+        guard let frame else { notice("There is no camera picture to read."); return }
+        guard let result = NotebookCapture.capture(.raw, from: frame, quarterTurns: quarterTurns,
+                                                   colour: .black, rememberedRatio: nil, region: region),
+              let cgImage = result.image.cgImage(forProposedRect: nil, context: nil, hints: nil)
+        else { notice("There is nothing to read in that box."); return }
+
+        let anchor = caretAnchor?()?.maxY
+        isCapturing = true
+        Task {
+            let lines = await Task.detached(priority: .userInitiated) {
+                TextRecognition.lines(in: cgImage)
+            }.value
+            isCapturing = false
+            guard !lines.isEmpty else { notice("No text could be read in that box."); return }
+            let read = lines.joined(separator: "\n")
+            if insertBelow?(read, anchor ?? 0) != true {
+                text += (text.isEmpty || text.hasSuffix("\n") ? "" : "\n") + read + "\n"
+            }
+            notice(lines.count == 1 ? "Read 1 line into the note." : "Read \(lines.count) lines into the note.")
+        }
+    }
+
     func captureNotebook(frame: CIImage?, quarterTurns: Int, colour: NSColor,
                          mode: NotebookCapture.Mode = .ink, region: CGRect? = nil) {
         guard selectedNote != nil, !isCapturing else { return }
@@ -838,7 +864,10 @@ final class NoteStore: ObservableObject {
         }
         appendToOrder(name: url.lastPathComponent, folder: folder)
         reload()
-        selectedSectionID = url.path
+        // A new section is NOT selected. Selecting it silently moves where
+        // the next new note lands, which is not what making a folder means
+        // (Sean, 2026-09-19: "after adding a section it shouldn't be
+        // selected").
         return section(withURL: url)
     }
 

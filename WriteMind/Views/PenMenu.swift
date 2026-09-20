@@ -92,6 +92,8 @@ struct PenMenu: View {
         }
         .padding(16)
         .frame(width: 330)
+        .foregroundStyle(.primary)
+        .tint(.accentColor)
     }
 
     private var objectCount: String {

@@ -313,3 +313,28 @@ final class DrawingUndoTests: XCTestCase {
         XCTAssertFalse(store.canRedoDrawing, "the branch that was undone is gone")
     }
 }
+
+/// Whose ⌘Z it is (Sean, 2026-09-19: "fix undo in drawing mode").
+@MainActor
+final class UndoOwnershipTests: XCTestCase {
+    func testTheDrawingOwnsItWhileThePenIsUp() {
+        let state = AppState(defaults: UserDefaults(suiteName: "WriteMindTests-\(UUID().uuidString)")!)
+        XCTAssertFalse(state.drawingOwnsUndo, "with nothing going on, ⌘Z is the text's")
+        state.penActive = true
+        XCTAssertTrue(state.drawingOwnsUndo)
+        state.penActive = false
+        XCTAssertFalse(state.drawingOwnsUndo)
+    }
+
+    func testItAlsoOwnsItWithSomethingPickedOrArmed() {
+        let state = AppState(defaults: UserDefaults(suiteName: "WriteMindTests-\(UUID().uuidString)")!)
+        state.canvasSelection = true
+        XCTAssertTrue(state.drawingOwnsUndo, "something is picked on the layer")
+        state.canvasSelection = false
+        state.placing = .shape(.oval)
+        XCTAssertTrue(state.drawingOwnsUndo, "a shape is waiting to be put down")
+        state.placing = nil
+        state.connectActive = true
+        XCTAssertTrue(state.drawingOwnsUndo, "the arrow tool is on")
+    }
+}

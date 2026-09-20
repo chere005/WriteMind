@@ -1,13 +1,9 @@
-# WriteMind — the open list (2026-09-19)
+# What is next
 
-Read AGENTS.md first; everything that was in this file's "done" list has
-been written into AGENTS.md and README.md. The unit suite is at 285 passing.
+The open list. Everything already built is in [FEATURES.md](FEATURES.md); how
+it is built is in [AGENTS.md](../AGENTS.md).
 
-The repo still has NO commits and no `origin`, so `tools/dtp.sh` refuses to
-run. Shipping is `sh tools/deploy.sh` — and it happens after EVERY small
-change, which is now a standing rule in AGENTS.md.
-
-## What is left
+## Open
 
 1. **Watch it in use.** Everything below was reasoned and unit-tested, not
    watched: the sidebar drag without edit mode, marks dragged out, ⌥-drag
