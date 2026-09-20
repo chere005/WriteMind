@@ -58,12 +58,23 @@ final class NoteStore: ObservableObject {
               let loaded = DrawingStore.loadImage(picture.file, in: owningFolder(for: note.url)),
               let cgImage = loaded.cgImage(forProposedRect: nil, context: nil, hints: nil)
         else { return }
-        let bottom = item.bounds(in: paneSize).maxY
+        let box = item.bounds(in: paneSize)
+        let bottom = box.maxY
         isCapturing = true
         Task {
-            let lines = await Task.detached(priority: .userInitiated) { TextRecognition.lines(in: cgImage) }.value
+            let reading = await Task.detached(priority: .userInitiated) {
+                TextRecognition.read(cgImage)
+            }.value
             isCapturing = false
-            guard !lines.isEmpty else { notice("No text could be read in that picture."); return }
+            // A sketched flow chart comes in as real nodes and arrows,
+            // under the picture it was read from (Sean, 2026-09-19).
+            let chart = flowChart(from: reading, under: box)
+            let lines = reading.lines
+            guard !lines.isEmpty else {
+                notice(chart.isEmpty ? "No text could be read in that picture."
+                                     : "Brought the flow chart in under the picture.")
+                return
+            }
             let read = lines.joined(separator: "\n")
             if insertBelow?(read, bottom) != true {
                 text += (text.isEmpty || text.hasSuffix("\n") ? "" : "\n") + read + "\n"
@@ -74,8 +85,30 @@ final class NoteStore: ObservableObject {
             // but insert the text underneath it"). ⌘Z takes the words back
             // out; the drawing was never touched.
             _ = note
-            notice(lines.count == 1 ? "Read 1 line into the note." : "Read \(lines.count) lines into the note.")
+            let words = lines.count == 1 ? "Read 1 line into the note." : "Read \(lines.count) lines into the note."
+            notice(chart.isEmpty ? words : words + " The flow chart came with it.")
         }
+    }
+
+    /// The chart a reading found, put on the layer under `box` — or
+    /// nothing, which is what a page of prose gives.
+    @discardableResult
+    private func flowChart(from reading: TextRecognition.Reading, under box: CGRect) -> [CanvasItem] {
+        guard let page = reading.page, paneSize.width > 1, paneSize.height > 1 else { return [] }
+        let items = FlowChartReading.items(ink: page.marks.writingMask(),
+                                           width: page.width, height: page.height,
+                                           words: reading.words, in: paneSize,
+                                           colorHex: "#1C1C1E", lineWidth: 2)
+        guard !items.isEmpty else { return [] }
+        // Under the picture, in a band of its own size — the same rule the
+        // words follow.
+        let landing = CGRect(x: box.minX, y: min(box.maxY + 12, paneSize.height - 40),
+                             width: box.width, height: box.height)
+        let placed = FlowChartReading.placed(items, into: landing, pane: paneSize)
+        beginDrawingChange()
+        drawing.items.append(contentsOf: placed)
+        drawing.reconnect(in: paneSize)
+        return placed
     }
     @Published private(set) var lastSaved: Date?
 
@@ -501,16 +534,28 @@ final class NoteStore: ObservableObject {
         let anchor = caretAnchor?()?.maxY
         isCapturing = true
         Task {
-            let lines = await Task.detached(priority: .userInitiated) {
-                TextRecognition.lines(in: cgImage)
+            let reading = await Task.detached(priority: .userInitiated) {
+                TextRecognition.read(cgImage)
             }.value
             isCapturing = false
-            guard !lines.isEmpty else { notice("No text could be read in that box."); return }
+            // The same for a box on the camera: a sketch in it arrives as
+            // a chart, placed where a capture would have landed.
+            let landing = CGRect(x: paneSize.width * 0.1, y: (anchor ?? 0) + 12,
+                                 width: paneSize.width * 0.8, height: paneSize.height * 0.5)
+            let chart = flowChart(from: reading, under: CGRect(x: landing.minX, y: landing.minY - 12,
+                                                               width: landing.width, height: 0))
+            let lines = reading.lines
+            guard !lines.isEmpty else {
+                notice(chart.isEmpty ? "No text could be read in that box."
+                                     : "Brought the flow chart in.")
+                return
+            }
             let read = lines.joined(separator: "\n")
             if insertBelow?(read, anchor ?? 0) != true {
                 text += (text.isEmpty || text.hasSuffix("\n") ? "" : "\n") + read + "\n"
             }
-            notice(lines.count == 1 ? "Read 1 line into the note." : "Read \(lines.count) lines into the note.")
+            let words = lines.count == 1 ? "Read 1 line into the note." : "Read \(lines.count) lines into the note."
+            notice(chart.isEmpty ? words : words + " The flow chart came with it.")
         }
     }
 
@@ -695,11 +740,20 @@ final class NoteStore: ObservableObject {
     /// text (Sean, 2026-09-18: "placed where the cursor is and aligned with
     /// the text") — or the middle of what is on screen when there is no
     /// caret to go by. `width` and `height` in points; the flag says which.
+    /// Where the editor would like an object of this size to go: in the
+    /// gap AFTER the caret's cell, never beside a line of it (Sean,
+    /// 2026-09-19: "inserted grabbed drawings and images are their own
+    /// object that can only go between cells"). The words a picture is
+    /// read into still land at the cursor; it is the OBJECT that has to
+    /// sit between two cells.
+    var cellBoundary: ((CGFloat) -> CGFloat?)?
+
     private func anchoredCenter(width: CGFloat, height: CGFloat) -> (center: CGPoint, anchored: Bool) {
         let pane = paneSize
         guard let line = caretAnchor?() else { return (visibleCenter, false) }
         let x = min(line.minX + width / 2, max(width / 2, pane.width - width / 2))
-        let y = line.maxY + 8 + height / 2
+        let gap = cellBoundary?(line.maxY) ?? line.maxY
+        let y = gap + 8 + height / 2
         return (CGPoint(x: x / pane.width, y: y / pane.height), true)
     }
 

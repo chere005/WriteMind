@@ -3,17 +3,13 @@
 The open list. Everything already built is in [FEATURES.md](FEATURES.md); how
 it is built is in [AGENTS.md](../AGENTS.md).
 
-## Being worked on
-
-- **Drawn shapes and flow charts, off the page.** Reading a photographed
-  sketch as real nodes and arrows: a rectangle round some words becomes a
-  node with those words as its label, an arrow between two boxes becomes a
-  connector joining them. Three approaches are being measured against a
-  drawn corpus — contour geometry, primitive fitting, and the grouping that
-  turns loose shapes into a chart — before any of it is written.
-
 ## Open
 
+- **Flow charts, further.** Rectangles, rounded rectangles, ovals and
+  diamonds come off a sketch; triangles, parallelograms, ticks and crosses
+  are deliberately left as ink. The composite (hole-finding grouping +
+  classifier veto) is measured on drawn corpora and in the suite, not yet
+  on a photograph of a real whiteboard.
 - **Table editing on the rendered page.** A table opens as its markdown
   today. It should be a grid you tab through, with rows and columns added
   and taken away.

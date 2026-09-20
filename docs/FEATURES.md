@@ -70,6 +70,17 @@ is how the code is put together.
   raised digits and all. The picture itself is put away rather than deleted,
   and the Revert button on the bar brings it back and takes the words out
   again.
+- **A flow chart sketched on paper comes in as a flow chart.** Reading a
+  picture that holds one brings the boxes in as nodes — rectangles, rounded
+  rectangles, ovals and diamonds — with the words inside them as their
+  labels, and the arrows between them as real connectors that follow the
+  nodes when they move. It is deliberately hard to trigger: a node is found
+  as the PAPER a drawn outline encloses (which survives an arrow touching
+  the box), every candidate is named again by a classifier that refuses
+  anything it cannot name, a line with nothing at either end is never a
+  connector, an arrowhead is only drawn where a barb was actually seen,
+  and nothing at all comes out unless the page holds two nodes, or one with
+  an arrow on it. A page of ordinary writing gives nothing.
 - **Printed dots are not text.** A dot-grid page is recognised by the
   regularity of its dots, which are painted out in the paper's own colour
   before anything is read — so a row of dots never arrives as "・・・".

@@ -55,6 +55,39 @@ final class EditorBridge {
                       width: max(0, line.width - 2 * padding), height: line.height)
     }
 
+    /// The nearest gap BETWEEN two cells to the document y given — the
+    /// bottom of one block and the top of the next. A picture goes there
+    /// rather than beside a line, because an object may not break a cell
+    /// (Sean, 2026-09-19: "inserted grabbed drawings and images are their
+    /// own object that can only go between cells"). Nil without a text
+    /// view, and nil for an empty note, where anywhere will do.
+    func cellBoundary(near y: CGFloat) -> CGFloat? {
+        guard let tv = textView, let layout = tv.layoutManager, let container = tv.textContainer else {
+            return nil
+        }
+        layout.ensureLayout(for: container)
+        let text = tv.string as NSString
+        guard text.length > 0 else { return nil }
+        let origin = tv.textContainerOrigin
+
+        /// The document y of a character's own line, top and bottom.
+        func band(_ character: Int) -> (top: CGFloat, bottom: CGFloat) {
+            let glyph = layout.glyphIndexForCharacter(at: min(character, text.length - 1))
+            let line = layout.lineFragmentRect(forGlyphAt: glyph, effectiveRange: nil)
+            return (line.minY + origin.y, line.maxY + origin.y)
+        }
+
+        var boundaries: [CGFloat] = []
+        for block in MarkdownParser.positioned(from: tv.string) {
+            let start = min(block.range.location, text.length - 1)
+            let end = min(max(NSMaxRange(block.range) - 1, start), text.length - 1)
+            boundaries.append(band(start).top)
+            boundaries.append(band(end).bottom)
+        }
+        guard let nearest = boundaries.min(by: { abs($0 - y) < abs($1 - y) }) else { return nil }
+        return nearest
+    }
+
     /// Put `text` into the note as lines of its own at the first line that
     /// starts at or below `y` (the document's coordinates — under a picture),
     /// or at the very end when nothing does. The caret ends up after it.

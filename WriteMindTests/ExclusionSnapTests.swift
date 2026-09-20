@@ -75,3 +75,62 @@ final class ExclusionSnapTests: XCTestCase {
         XCTAssertEqual(MarkdownTextView.snappedToCells([band], in: tv), [band])
     }
 }
+
+/// A picture goes in the gap between two cells, never beside a line of one
+/// (Sean, 2026-09-19: "inserted grabbed drawings and images are their own
+/// object that can only go between cells").
+final class CellBoundaryTests: XCTestCase {
+    private func bridge(_ text: String) -> (EditorBridge, NSTextView) {
+        let view = NSTextView(usingTextLayoutManager: false)
+        view.isRichText = false
+        view.font = MarkdownTextView.font
+        view.textContainer?.lineFragmentPadding = 0
+        view.textContainer?.containerSize = NSSize(width: 300, height: CGFloat.greatestFiniteMagnitude)
+        view.textContainer?.widthTracksTextView = false
+        view.string = text
+        view.layoutManager?.ensureLayout(for: view.textContainer!)
+        let bridge = EditorBridge()
+        bridge.textView = view
+        return (bridge, view)
+    }
+
+    private func lineTop(_ view: NSTextView, at character: Int) -> CGFloat {
+        let layout = view.layoutManager!
+        return layout.lineFragmentRect(forGlyphAt: layout.glyphIndexForCharacter(at: character),
+                                       effectiveRange: nil).minY + view.textContainerOrigin.y
+    }
+
+    func testAPointInsideACellSnapsToThatCellsEdge() throws {
+        let long = "One two three four five six seven eight nine ten eleven twelve thirteen fourteen."
+        let note = "Title line\n\n\(long)\n\nAfter.\n"
+        let (bridge, view) = bridge(note)
+        let paragraph = (note as NSString).range(of: long)
+        let top = lineTop(view, at: paragraph.location)
+
+        // A point two lines into the paragraph comes back as one of that
+        // paragraph's own edges, never a point inside it.
+        let inside = top + 30
+        let snapped = try XCTUnwrap(bridge.cellBoundary(near: inside))
+        XCTAssertNotEqual(snapped, inside)
+        XCTAssertTrue(abs(snapped - top) < 1 || snapped > inside,
+                      "snapped to \(snapped), the cell starts at \(top)")
+    }
+
+    func testAPointAlreadyInAGapStaysWhereItIs() throws {
+        let note = "One\n\nTwo\n\nThree\n"
+        let (bridge, view) = bridge(note)
+        let second = (note as NSString).range(of: "Two")
+        let top = lineTop(view, at: second.location)
+        let snapped = try XCTUnwrap(bridge.cellBoundary(near: top))
+        XCTAssertEqual(snapped, top, accuracy: 0.5)
+    }
+
+    func testAnEmptyNoteHasNoBoundaries() {
+        let (bridge, _) = bridge("")
+        XCTAssertNil(bridge.cellBoundary(near: 10))
+    }
+
+    func testWithNoTextViewItAnswersNothing() {
+        XCTAssertNil(EditorBridge().cellBoundary(near: 10))
+    }
+}

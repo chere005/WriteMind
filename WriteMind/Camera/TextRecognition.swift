@@ -7,19 +7,36 @@ import Vision
 /// reading order (Sean, 2026-09-18: "transform an image … into its text and
 /// insert that text below the image").
 enum TextRecognition {
+    /// Everything one pass of Vision found: the words as markdown lines,
+    /// and the raw material a flow chart is read from.
+    struct Reading {
+        var lines: [String] = []
+        var page: Page?
+        var words: [HandwritingMarks.Word] = []
+    }
+
+    /// One pass, used for both. Vision is the expensive part, so the chart
+    /// reader gets the same observations the words came from.
+    static func read(_ image: CGImage) -> Reading {
+        let flattened = onWhite(image) ?? image
+        let page = Page.of(flattened)
+        let prepared = page?.cleaned ?? flattened
+        let observations = readBest(prepared)
+        var reading = Reading(lines: compose(observations, page: page), page: page)
+        if let page {
+            for observation in observations {
+                guard let best = observation.topCandidates(1).first else { continue }
+                reading.words += words(of: best, in: page)
+            }
+        }
+        return reading
+    }
+
     /// Lines of text, top to bottom. Empty when nothing could be read.
     /// What comes back is markdown: a word with a line through it arrives
     /// struck out, a word with a ring round it in bold, an arrow as an
     /// arrow, and a line of algebra as this app's maths (Sean, 2026-09-19).
-    static func lines(in image: CGImage) -> [String] {
-        // A captured chunk of writing is ink on nothing at all; Vision reads
-        // dark on light, so everything goes on white first — and a printed
-        // dot grid is painted out before it can be read as punctuation.
-        let flattened = onWhite(image) ?? image
-        let page = Page.of(flattened)
-        let prepared = page?.cleaned ?? flattened
-        return compose(readBest(prepared), page: page)
-    }
+    static func lines(in image: CGImage) -> [String] { read(image).lines }
 
     /// The reading Vision makes most sense of. Japanese first when this Mac
     /// has it: an English-first request reads a Japanese page as NOTHING at

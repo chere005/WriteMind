@@ -107,6 +107,10 @@ struct EditorPane: View {
                     // Pictures land under the caret while the source editor
                     // is up; the preview's blocks have their own text views.
                     store.caretAnchor = { appState.mode == .editor ? appState.editor.caretLineFrame() : nil }
+                    store.cellBoundary = { y in
+                        guard appState.mode == .editor else { return nil }
+                        return appState.editor.cellBoundary(near: y)
+                    }
                     store.afterPlacing = { if appState.mode == .editor { appState.editor.breakLineAtCaret() } }
                     store.insertBelow = { text, y in
                         guard appState.mode == .editor else { return false }
