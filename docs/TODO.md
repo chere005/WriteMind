@@ -30,18 +30,6 @@ it is built is in [AGENTS.md](../AGENTS.md).
   editor's bar got.
 - **A tagged release.** The lane runs now that there is a remote
   (`sh tools/dtp.sh`), but nothing is tagged and the version is still 0.1.0.
-
-## Watch it in use
-
-None of this can be driven from a script; it was reasoned about and
-unit-tested, not watched:
-
-- dragging notes and sections in the sidebar, with edit mode off
-- dragging a mark out of the palette; ⌥-dragging an arrow between two nodes,
-  then dragging one of its segment circles
-- the cell brackets: clicking one, double-clicking a group, ⌥⌘← and ⌥⌘→
-- Read Text on a Japanese page and on a dot-grid page
-- the camera's box: drag, click to clear, double-click for the whole picture,
-  then Image / Writing / Text
-- the video dropdown: turn, original size, resize by square, whole screen
-- the grips that fold each section of the toolbar away
+- **Checking it in the running app.** The sidebar drag, the cell brackets,
+  the camera's box and the toolbar's grips are reasoned about and
+  unit-tested; driving the real window is the agent's job, not the reader's.
