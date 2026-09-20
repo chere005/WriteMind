@@ -10,22 +10,19 @@ it is built is in [AGENTS.md](../AGENTS.md).
   are deliberately left as ink. The composite (hole-finding grouping +
   classifier veto) is measured on drawn corpora and in the suite, not yet
   on a photograph of a real whiteboard.
-- **Table editing on the rendered page.** A table opens as its markdown
-  today. It should be a grid you tab through, with rows and columns added
-  and taken away.
-- **Markers inside an open cell.** The markdown pane hides `**`, `#` and a
-  link's URL and shows them only on the caret's own paragraph. The rendered
-  page's cell editor does not do this yet, so clicking a heading still shows
-  its hashes for as long as you are in it.
-- **OCR, further.** Strikethrough, rings, arrows and algebra are read. Not
-  read: tables drawn by hand, checkboxes, and an arrow that belongs BETWEEN
-  two words of a line (it lands on a line of its own at the right height).
+- **OCR, further.** Strikethrough, rings, arrows, checkboxes, algebra, an
+  arrow between two words of a line and a table drawn by hand are all read
+  now. A filled square bullet wider than the ink mask's local window still
+  reads as an empty checkbox, and a drawn table is only read when it is
+  ruled: a table of columns lined up by eye, with no lines drawn, is still
+  read as prose.
 - **Deleting across a hidden marker.** A selection that spans one `**` of a
   pair can leave `**bold*` behind. The delete should take the pair.
-- **The camera pane's own buttons** never had the tooltip treatment the
-  editor's bar got.
+- **The two panes are close to the same height, not exactly.** The blank
+  line between cells and a fence's own lines are drawn at the rendered
+  page's gap, and the heading ladder already matches — but a code block's
+  twelve points of padding, a table's cell padding and a quote's bar are
+  the rendered page's alone, so a note with many of those still differs by
+  a few points a block.
 - **A tagged release.** The lane runs now that there is a remote
   (`sh tools/dtp.sh`), but nothing is tagged and the version is still 0.1.0.
-- **Checking it in the running app.** The sidebar drag, the cell brackets,
-  the camera's box and the toolbar's grips are reasoned about and
-  unit-tested; driving the real window is the agent's job, not the reader's.

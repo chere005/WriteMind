@@ -21,12 +21,53 @@ is how the code is put together.
   italic and slightly bigger than the body text. From the `aA` menu, the
   Format menu, or ⌘1 title, ⌘2 chapter, ⌘3 author, ⌘4–⌘6 section to
   subsubsection, ⌘7 back to body.
+- **A table drawn on the page comes in as a table.** Rule a grid in the
+  notebook, write in the boxes, and the capture reads it as a markdown
+  table — the top row as the header — instead of as loose lines of words.
+  The grid is found from the ruled lines, so a paragraph is never mistaken
+  for one.
+- **Tables are a grid you type in.** On the rendered page a table is not
+  its markdown any more: click a cell and type, Tab along the row and down
+  to the next, Shift-Tab back, and Tab past the last cell adds a row. The
+  strip under the table adds and takes away rows and columns. The file
+  keeps its pipe-and-dash lines, grid or no grid, and the bracket beside
+  the table still opens the raw markdown.
+- **Code cells behave like a code editor.** In a fenced block, `(`, `[`,
+  `{`, `"`, `'` and a backtick bring their partner; typing the closer
+  steps over it; a bracket typed with something selected wraps it;
+  backspace between the two takes both; and Tab — or Shift-Tab — indents
+  by a four-space-wide tab, every line of a selection at once. Colouring
+  knows C, C++, Python, TypeScript, Rust, Java, Bash, Zsh and Wolfram.
+- **Split a cell, merge two.** ⌃D cuts the cell the cursor is in, in two,
+  at the cursor; ⌃M joins it to the one below (or, in the last cell, to the
+  one above). Both work in the markdown and on the rendered page. A fence
+  is never cut in half, and a heading will not swallow the cell under it.
+- **A cell is a thing you can hold.** Click its bracket and the whole
+  cell is picked up, not a run of characters: type and it is replaced,
+  ⌃⌫ takes it away and the stack closes behind it, ⌃⇧D puts a copy under
+  it, ⌃⇧↑ and ⌃⇧↓ move it, and dragging its bracket up or down moves it
+  too. The same on both sides of the app, the way a Mathematica notebook
+  behaves (Sean, 2026-09-20).
+- **The insertion line between cells.** Move the pointer into the space
+  between two cells and it turns on its side; a line runs across the page
+  with a `+` at the margin, and a click opens a new cell there. Both sides
+  of the app have it — the markdown pane and the rendered page — the way a
+  Mathematica notebook does.
+- **The same place, whichever mode.** Switching between the markdown and
+  the rendered page reopens on the cell you were looking at, and every
+  picture, capture, drawing and text box remembers the cell it sits beside
+  and is put back beside it. Drag one somewhere else and it belongs to the
+  cell it was dropped at.
 - **Sections of a note are cells.** A heading owns everything under it
   until the next heading of its rank, and the brackets down the right-hand
   side show the nesting the way a Wolfram notebook does. Click one to fold
   that section away — the note itself is untouched, the caret steps over
   what is hidden, and what you closed is still closed when you come back.
   ⌃⌘↑ and ⌃⌘↓ move the whole section, everything nested in it included.
+- **Code is what is inside backticks, and nothing else.** ``` for a
+  block, ` for a span, `` `` `` for a span with a backtick in it (Sean,
+  2026-09-20). Four spaces at the front of a line is indentation — it is
+  drawn indented and stays a paragraph — so Tab is safe anywhere.
 - **Indentation that follows the structure.** ⌘] and ⌘[ — or Tab and
   Shift-Tab — move the lines you're on in and out; a quote gains another
   level, anything else gains two spaces. Backspace inside a line's
@@ -48,7 +89,9 @@ is how the code is put together.
   the viewfinder button brings the page in: found and squared up first, so a
   notebook that was crooked in the frame comes in straight. The chevron
   beside it picks what arrives — **just the writing**, lifted off the paper
-  in the pen's colour with the printed dots left behind, **the whole
+  in the pen's colour with the printed dots left behind — traced into
+  outlines and brought in as a vector, so blowing it up keeps the strokes
+  sharp — **the whole
   page** as a picture, trimmed to its edges, or **the raw picture** exactly
   as the camera sees it. Either way it is an object you
   can move, scale and rotate like any other, and every page comes in at the
@@ -114,12 +157,19 @@ is how the code is put together.
   following, and where you let go is where it stays. A bar picks the head at
   either end (or none) and a solid, dashed or dotted line. Delete a node and
   its arrows go with it.
-- **Text boxes.** The text-box button drops a box you type straight into;
+- **Text boxes.** The text-box button drops a card you type straight into;
   it floats over the page like a picture — drag, scale, turn, arrow to it —
-  and grows to fit what you wrote.
-- **The note keeps clear of pictures.** A picture, a captured page or a
-  text box takes its band of the page: the note's text runs above it and
-  carries on below, never through it, and the cursor cannot land beside it.
+  and grows to fit what you write, line by line as you write it. What you
+  type sits exactly where it will be drawn, in the same font and the same
+  padding, so nothing shifts when the caret leaves. Give the card a fill and
+  the words are checked against it: ink that would be unreadable on that
+  colour is swapped for black or white.
+- **The note keeps clear of what is on the layer.** A picture, a captured
+  page, a text box — and ink, and a flow chart — takes its band of the
+  page: a drawing gets a cell of its own, as tall as the drawing, and the
+  note's text runs above it and carries on below, never through it, and the
+  cursor cannot land beside it. Strokes that touch, or nearly touch, share
+  one band, so a sketch of forty of them opens one gap and not forty.
   A pasted or captured picture lands just under the line the cursor is on,
   flush with the text, and the cursor moves to the line after it — until
   you drag it somewhere else.
@@ -142,7 +192,10 @@ is how the code is put together.
   sidebar's header; the notes pane from the corner of the video. ⌃⌘S, ⌃⌘E,
   ⌃⌘C.
 - **A pen — and every stroke is an object.** The pen button puts a drawing
-  layer over the editor; the menu under it picks the size and the colour (a
+  layer over the note, in the markdown and on the rendered page alike (the
+  drawing belongs to the note, not to one way of looking at it), and the
+  pointer becomes a pencil over that pane and nowhere else; the menu under
+  it picks the size and the colour (a
   circular colour well plus six swatches). ⌘Z undoes a stroke while the pen
   is up — ⇧⌘Z puts it back — and Undo Drawing sits in the Edit menu at ⌥⌘Z
   whatever has the keyboard. Put the pen down and the drawings become
