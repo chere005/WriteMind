@@ -35,8 +35,7 @@ struct EditorPane: View {
                                          onLinkTrigger: { caret in beginLink(from: note, caret: caret) },
                                          onPasteImage: { store.pasteImage(from: $0) },
                                          onClick: { textClicks += 1 },
-                                         cursor: appState.penActive ? DrawingCursors.pencil
-                                             : (appState.connectActive ? .crosshair : nil),
+                                         cursor: appState.paneCursor,
                                          onScroll: { offset in
                                              scrollOffset = offset
                                              store.canvasScroll = offset
@@ -46,15 +45,16 @@ struct EditorPane: View {
                                          collapsed: store.collapsedHere,
                                          onToggleSection: { store.toggleSection($0) },
                                          showMarkers: appState.showMarkers,
-                                         // The pencil owns the note pane in
-                                         // drawing mode (Sean, 2026-09-20:
-                                         // "cursor only becomes a pen in the
-                                         // notes pane in drawing mode!!!!!"),
-                                         // and so does the arrow tool and a
-                                         // placement waiting to land.
-                                         seamsEnabled: !appState.penActive
-                                             && !appState.connectActive
-                                             && appState.placing == nil)
+                                         // The seams are the notebook's, so
+                                         // they are there only in cursor
+                                         // mode (Sean, 2026-09-20: "cursor
+                                         // only becomes a pen in the notes
+                                         // pane in drawing mode!!!!!"); the
+                                         // pen, the select marquee, the
+                                         // arrow tool and a placement
+                                         // waiting to land each have the
+                                         // whole pane.
+                                         seamsEnabled: !appState.canvasOwnsPane)
                     } else {
                         MarkdownPreview(markdown: $store.text,
                                         onFollow: { store.follow(destination: $0) },
@@ -71,17 +71,15 @@ struct EditorPane: View {
                                         // The same switch, off the same
                                         // expression: the two panes are
                                         // the same notebook.
-                                        seamsEnabled: !appState.penActive
-                                            && !appState.connectActive
-                                            && appState.placing == nil)
+                                        seamsEnabled: !appState.canvasOwnsPane)
                             .id(note.id)
                     }
                     // The drawing belongs to the note, so it shows in both
-                    // modes. With the pen up it takes the whole pane; with the
-                    // pen down it takes only the objects on it, and the text
-                    // underneath gets everything else.
+                    // modes. In pen and select mode it takes the whole pane;
+                    // in cursor mode it takes only the objects on it, and the
+                    // text underneath gets everything else.
                     DrawingCanvas(drawing: $store.drawing,
-                                  penActive: appState.penActive,
+                                  mode: appState.canvasMode,
                                   color: appState.penColor,
                                   width: appState.penWidth,
                                   mediaDirectory: store.owningFolder(for: note.url),
@@ -131,7 +129,14 @@ struct EditorPane: View {
                         Text(notice).foregroundStyle(Color.accentColor).lineLimit(1)
                     }
                     Spacer()
-                    if appState.penActive { Label("Pen", systemImage: "pencil.tip").foregroundStyle(Color.accentColor) }
+                    // WHICH MODE, in the footer. A pane that swallows
+                    // every click needs somewhere on screen that says why
+                    // it does — and the mode is remembered across a launch,
+                    // so the answer cannot be "you only just pressed it".
+                    if appState.canvasMode != .cursor {
+                        Label(appState.canvasMode.title, systemImage: appState.canvasMode.icon)
+                            .foregroundStyle(Color.accentColor)
+                    }
                     if !store.drawing.isEmpty {
                         Text(store.drawing.items.count == 1 ? "1 object" : "\(store.drawing.items.count) objects")
                     }

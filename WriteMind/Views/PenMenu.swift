@@ -1,18 +1,30 @@
 import SwiftUI
 
-/// The small menu under the pen button: size, colour, and a way to start over.
+/// The small menu under the pen button: which of the three modes the pane is
+/// in, the pen's size and colour, and a way to start over.
 struct PenMenu: View {
     @EnvironmentObject private var appState: AppState
     @EnvironmentObject private var store: NoteStore
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
-            HStack {
-                Text("Pen").font(.headline)
-                Spacer()
-                Toggle("On", isOn: $appState.penActive)
-                    .toggleStyle(.switch)
-                    .controlSize(.small)
+            Text("Pen").font(.headline)
+
+            // The switch that was here said On and Off, and there are three
+            // answers now (Sean, 2026-09-20: "the pen button section should
+            // allow choosing between pen mode, cursor mode, and pointer
+            // select mode"). One picker, so picking one is putting the
+            // others down.
+            HStack(spacing: 12) {
+                Text("Mode").frame(width: 36, alignment: .leading)
+                Picker("Mode", selection: $appState.canvasMode) {
+                    ForEach(AppState.CanvasMode.allCases) { mode in
+                        Text(mode.title).tag(mode)
+                    }
+                }
+                .pickerStyle(.segmented)
+                .labelsHidden()
+                .help(appState.canvasMode.help)
             }
 
             HStack(spacing: 12) {
@@ -73,7 +85,7 @@ struct PenMenu: View {
                     .disabled(store.drawing.isEmpty)
                 Spacer()
                 Button {
-                    appState.penActive = false
+                    appState.canvasMode = .cursor
                     store.chooseImage()
                 } label: {
                     Label("Add Image", systemImage: "photo.badge.plus")
@@ -83,9 +95,9 @@ struct PenMenu: View {
 
             Divider()
 
-            // Everything on this layer is its own object, so it is worth
-            // saying how to get hold of one.
-            Text("With the pen down: drag an object to move it, and use the handles to turn, resize or delete it. Hold ⌘ and drag to draw a box round several — anything it touches comes along. Pictures can be pasted straight in.")
+            // Three modes over one page, so it is worth saying which of
+            // them a drag belongs to.
+            Text("Cursor is the notebook's: the words, the bars between the cells and the brackets take the clicks, and an object can still be dragged by hand or worked with its handles. Pen draws. Select pulls a rectangle and takes everything it touches, which ⌘ and drag still does from cursor mode. Pictures can be pasted straight in.")
                 .font(.caption)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)

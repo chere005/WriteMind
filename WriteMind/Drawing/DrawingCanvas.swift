@@ -3,15 +3,20 @@ import SwiftUI
 
 /// The drawing layer over the editor.
 ///
-/// With the pen up it takes every click and draws. With the pen down it takes
-/// only the clicks that land on an object — everything else falls through to
-/// the text underneath — so a drawing can be dragged, scaled and rotated
-/// without the editor losing a single keystroke (Sean, 2026-09-18). Holding
-/// ⌘ turns the whole pane into a marquee: anything the rectangle touches is
-/// selected, whole or not.
+/// In pen mode it takes every click and draws; in select mode it takes every
+/// click and pulls a rectangle round whatever it touches. In cursor mode it
+/// takes only the clicks that land on an object — everything else falls
+/// through to the text underneath — so a drawing can be dragged, scaled and
+/// rotated without the editor losing a single keystroke (Sean, 2026-09-18).
+/// Holding ⌘ there is the marquee as well, which is where select mode came
+/// from and is why the modifier still works.
 struct DrawingCanvas: View {
     @Binding var drawing: Drawing
-    let penActive: Bool
+    /// Whose pane it is (`AppState.CanvasMode`). The pen was a boolean
+    /// until 2026-09-20 and everything here that asks whether it is up
+    /// still asks, through `penActive`.
+    let mode: AppState.CanvasMode
+    private var penActive: Bool { mode == .pen }
     let color: Color
     let width: Double
     /// Where the pictures are, so they can be drawn.
@@ -116,8 +121,8 @@ struct DrawingCanvas: View {
 
                 Canvas { context, size in render(&context, size: size) }
                     .contentShape(CanvasHitShape(items: drawing.visibleItems,
-                                                 everything: penActive || commandDown || connectActive
-                                                     || placing != nil,
+                                                 everything: mode != .cursor || commandDown
+                                                     || connectActive || placing != nil,
                                                  offset: scrollOffset))
                     .gesture(drag(in: geo.size))
                     .onContinuousHover(coordinateSpace: .local) { phase in
@@ -170,7 +175,10 @@ struct DrawingCanvas: View {
             }
             .onChange(of: deselectToken) { _, _ in selection = []; cropping = nil; styling = nil; editingLabel = nil }
             .onChange(of: selection) { _, picked in onSelectionChanged?(!picked.isEmpty) }
-            .onChange(of: penActive) { _, _ in
+            // A mode change leaves nothing behind it: not a selection, not
+            // a crop half-dragged, not an arrow's style bar, not a label
+            // being typed. Each of those is a conversation with one mode.
+            .onChange(of: mode) { _, _ in
                 selection = []; hovered = nil; cropping = nil; styling = nil; editingLabel = nil
             }
             .onChange(of: connectActive) { _, _ in
@@ -787,6 +795,20 @@ struct DrawingCanvas: View {
             return
         }
         if penActive { interaction = .drawing; return }
+        // Select mode: the drag is a rectangle wherever it starts — never
+        // a stroke, never a move, and never a click that reaches the words
+        // (Sean, 2026-09-20: "pointer select mode which draws rectangles
+        // that can select drawn (or captured) stuff"). ⇧ adds to what is
+        // already picked, as it does under ⌘. ⌥ from a node draws its line
+        // here as it does under the pen, above: a modifier held down is
+        // asked for by hand, and that is what overrides a mode.
+        if mode == .select {
+            let additive = NSEvent.modifierFlags.contains(.shift)
+            if !additive { selection = [] }
+            interaction = .marquee(start: point, additive: additive)
+            marquee = CGRect(origin: point, size: .zero)
+            return
+        }
         if connectActive {
             interaction = .connecting(from: point, node: drawing.attachable(at: point, in: size))
             connectPreview = (point, point)
@@ -995,7 +1017,11 @@ struct DrawingCanvas: View {
             // set here outlives them until the next entry, and the next move
             // sets it again (Sean, 2026-09-18: "still see a normal cursor").
             if penActive { DrawingCursors.pencil.set() }
-            guard !penActive else { hovered = nil; return }
+            // Only the cursor mode hovers. The other two have the whole
+            // pane, so nothing is "under the pointer" to pick up, and
+            // handles drawn round a hovered object would promise a drag
+            // that starts a marquee instead.
+            guard mode == .cursor else { hovered = nil; return }
             hovered = drawing.index(at: doc(point), in: size).map { drawing.items[$0].id }
         case .ended:
             // Leaving the ink for a handle beside it must not take the handle
@@ -1015,6 +1041,10 @@ struct DrawingCanvas: View {
         if interaction == .moving || (interaction == .handle && hoveredHandles.contains("move")) {
             return .closedHand
         }
+        // The crosshair everywhere a rectangle can be pulled, which in
+        // select mode is everywhere but the handles round the selection —
+        // those are still buttons and still take a drag of their own.
+        if mode == .select { return hoveredHandles.isEmpty ? .crosshair : .openHand }
         if commandDown, NSEvent.modifierFlags.contains(.command), !drawing.isEmpty { return .crosshair }
         if hovered != nil || !hoveredHandles.isEmpty { return .openHand }
         return nil

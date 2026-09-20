@@ -1,8 +1,51 @@
+import AppKit
 import SwiftUI
 
 /// UI-only state: which pane is showing, whether the sidebar is out, and the pen.
 final class AppState: ObservableObject {
     enum Mode: String { case editor, preview }
+
+    /// Who the pane belongs to, one answer at a time (Sean, 2026-09-20:
+    /// "the pen button section should allow choosing between pen mode,
+    /// cursor mode, and pointer select mode which draws rectangles that
+    /// can select drawn (or captured) stuff… pen and pointer select mode
+    /// operate in the same space (along with placed squares and such.. the
+    /// cursor interacts with the notebook (which is markdown)").
+    ///
+    /// Two of the three are the drawing layer's and one is the notebook's,
+    /// which is the whole distinction: in `cursor` the clicks go through to
+    /// the words, the seams and the brackets, and in the other two they do
+    /// not go through at all.
+    enum CanvasMode: String, CaseIterable, Identifiable {
+        case cursor, pen, select
+
+        var id: String { rawValue }
+
+        /// The app's own words for them, on the picker and in the footer.
+        var title: String {
+            switch self {
+            case .cursor: return "Cursor"
+            case .pen: return "Pen"
+            case .select: return "Select"
+            }
+        }
+
+        var icon: String {
+            switch self {
+            case .cursor: return "cursorarrow"
+            case .pen: return "pencil.tip"
+            case .select: return "rectangle.dashed"
+            }
+        }
+
+        var help: String {
+            switch self {
+            case .cursor: return "The notebook takes the clicks — the words, the bars between the cells, the brackets. Objects on the page can still be dragged by hand."
+            case .pen: return "Draw over the note."
+            case .select: return "Drag a rectangle over the page: everything it touches is selected, and nothing is drawn."
+            }
+        }
+    }
 
     /// A `/link` waiting for its target: which note it was typed in, roughly
     /// where, and what the note was called so the banner can say so.
@@ -65,20 +108,33 @@ final class AppState: ObservableObject {
     /// Set while the user is picking what a `/link` should point at.
     @Published var pendingLink: PendingLink?
     @Published var mode: Mode = .editor
-    @Published var penActive: Bool = false {
-        didSet { if penActive, connectActive { connectActive = false } }
+    /// What the pane is for right now. Remembered like the pen's size and
+    /// colour: it is a tool that was picked, not a thing that happened.
+    @Published var canvasMode: CanvasMode = .cursor {
+        didSet {
+            defaults.set(canvasMode.rawValue, forKey: Keys.canvasMode)
+            // The two one-gesture tools are not modes, and holding one
+            // while a mode is on would be two answers to "what does this
+            // drag do".
+            guard canvasMode != .cursor else { return }
+            if connectActive { connectActive = false }
+            if placing != nil { placing = nil }
+        }
     }
+    /// The pen, which is a question about the mode and not a flag of its
+    /// own any more — everything that used to ask still asks.
+    var penActive: Bool { canvasMode == .pen }
     /// The arrow tool (Sean, 2026-09-18): drag from node to node. One tool
     /// at a time — picking it up puts the pen down, and the other way round.
     @Published var connectActive: Bool = false {
-        didSet { if connectActive, penActive { penActive = false } }
+        didSet { if connectActive, canvasMode != .cursor { canvasMode = .cursor } }
     }
     /// The shape or mark armed by the palette, waiting for the drag that
     /// says where it goes (Sean, 2026-09-19). One tool at a time.
     @Published var placing: CanvasPlacement? {
         didSet {
             guard placing != nil else { return }
-            penActive = false
+            canvasMode = .cursor
             connectActive = false
         }
     }
@@ -86,6 +142,30 @@ final class AppState: ObservableObject {
     /// its own selection; this is the part the menu bar needs to know, so
     /// ⌘Z can go to the drawing rather than the text.
     @Published var canvasSelection = false
+
+    /// Whether the drawing layer has the pane, so that no click reaches the
+    /// notebook underneath: either of the layer's own two modes, or one of
+    /// the tools that takes the pane for a single gesture and hands it back.
+    ///
+    /// ONE answer. The seams, the pointer and the hit testing all used to
+    /// spell out the same three booleans separately, and a fourth thing to
+    /// hold the pane meant finding all three lists again.
+    var canvasOwnsPane: Bool {
+        canvasMode != .cursor || connectActive || placing != nil
+    }
+
+    /// What the pointer is over the note pane, or nil to leave it to the
+    /// notebook — which in cursor mode has four answers of its own (the
+    /// bar between two cells, the hand over the + and over the brackets,
+    /// the I-beam over the words) and is not ours to overwrite.
+    var paneCursor: NSCursor? {
+        if placing != nil || connectActive { return .crosshair }
+        switch canvasMode {
+        case .pen: return DrawingCursors.pencil
+        case .select: return .crosshair
+        case .cursor: return nil
+        }
+    }
 
     /// Whose ⌘Z it is. The drawing's while the pen is up, while something
     /// on the layer is picked, while a shape is waiting to be put down, or
@@ -112,6 +192,7 @@ final class AppState: ObservableObject {
         static let penWidth = "penWidth"
         static let cameraRotation = "cameraRotation"
         static let penColorHex = "penColorHex"
+        static let canvasMode = "canvasMode"
         static let cameraZoom = "cameraZoom"
         static let bulletStyle = "bulletStyle"
         static let tableGrid = "tableGrid"
@@ -139,6 +220,11 @@ final class AppState: ObservableObject {
         penWidth = defaults.object(forKey: Keys.penWidth) as? Double ?? 3
         cameraRotation = defaults.object(forKey: Keys.cameraRotation) as? Int ?? 0
         penColorHex = defaults.string(forKey: Keys.penColorHex) ?? Self.presetColors[0]
+        // A launch comes up in whichever mode it was left in, and the
+        // footer says which one that is — a pane that swallows clicks
+        // with nothing on screen to say why is the trap the hidden video
+        // pane was (Sean, 2026-09-19).
+        canvasMode = CanvasMode(rawValue: defaults.string(forKey: Keys.canvasMode) ?? "") ?? .cursor
         if let box = defaults.array(forKey: Keys.cameraZoom) as? [Double], box.count == 4 {
             cameraZoom = CGRect(x: box[0], y: box[1], width: box[2], height: box[3])
         } else {

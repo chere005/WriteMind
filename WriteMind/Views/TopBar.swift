@@ -317,7 +317,7 @@ struct TopBar: View {
                 // button should be in a menu bar entry under insert").
                 BarButton(systemImage: "character.textbox", label: "Text Box",
                           help: "A box of words that floats over the page; the note's text keeps clear of it") {
-                    appState.penActive = false
+                    appState.canvasMode = .cursor
                     store.addTextBox(colorHex: appState.penColorHex)
                 }
             }
@@ -337,12 +337,15 @@ struct TopBar: View {
             BarButton(systemImage: "pencil", label: "Pen",
                       help: appState.penActive ? "Put the pen down" : "Draw over the note",
                       isOn: appState.penActive, bare: true) {
-                appState.penActive.toggle()
+                // The icon is the pen, so it says pen or it says nothing:
+                // it goes back to the cursor from wherever it was, and the
+                // three-way pick is under the chevron beside it.
+                appState.canvasMode = appState.penActive ? .cursor : .pen
             }
         } chevron: {
             Button { showPenMenu.toggle() } label: { BarChevron() }
                 .buttonStyle(.plain)
-                .barTip(BarTip(title: "Pen", detail: "Size and colour"))
+                .barTip(BarTip(title: "Pen", detail: "Cursor, pen or select — and the pen's size and colour"))
                 .accessibilityLabel("Pen Options")
                 .popover(isPresented: $showPenMenu, arrowEdge: .bottom) { PenMenu() }
         }

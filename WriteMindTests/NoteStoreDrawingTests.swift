@@ -315,9 +315,9 @@ final class UndoOwnershipTests: XCTestCase {
     func testTheDrawingOwnsItWhileThePenIsUp() {
         let state = AppState(defaults: UserDefaults(suiteName: "WriteMindTests-\(UUID().uuidString)")!)
         XCTAssertFalse(state.drawingOwnsUndo, "with nothing going on, ⌘Z is the text's")
-        state.penActive = true
+        state.canvasMode = .pen
         XCTAssertTrue(state.drawingOwnsUndo)
-        state.penActive = false
+        state.canvasMode = .cursor
         XCTAssertFalse(state.drawingOwnsUndo)
     }
 

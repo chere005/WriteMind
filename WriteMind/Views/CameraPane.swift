@@ -161,7 +161,7 @@ struct CameraPane: View {
     /// writing inside it lifted as ink.
     private func insertSection(_ mode: NotebookCapture.Mode, pane: CGSize) {
         guard let region = boxRegion(pane: pane) else { return }
-        appState.penActive = false
+        appState.canvasMode = .cursor
         store.captureNotebook(frame: camera.currentFrame(), quarterTurns: appState.cameraRotation / 90,
                               colour: NSColor(appState.penColor), mode: mode, region: region)
         section = nil

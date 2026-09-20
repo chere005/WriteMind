@@ -155,6 +155,30 @@ CoreMind's `bin/report-status.sh`.
   `BlockTextView` inherits it and asks `EditorBridge.pasteImage`). The
   monitor returns nil to swallow a key — anything it does not take must be
   returned unchanged or typing dies.
+- **THE PANE HAS ONE MODE, and only one of the three is the notebook's.**
+  Sean, 2026-09-20: "the pen button section should allow choosing between
+  pen mode, cursor mode, and pointer select mode… pen and pointer select
+  mode operate in the same space (along with placed squares and such.. the
+  cursor interacts with the notebook (which is markdown)".
+  `AppState.CanvasMode` is that switch — `cursor`, `pen`, `select` — kept in
+  the defaults like the pen's size and colour, and named in the footer
+  whenever it is not `cursor`, because a pane that swallows every click and
+  comes up that way after a launch needs somewhere on screen that says why.
+  `penActive` is a question about the mode now and is stored nowhere.
+  The arrow tool and an armed placement are NOT modes: they take the pane
+  for one gesture and hand it back, so picking either puts the mode back to
+  `cursor` and picking a mode puts them away. TWO READERS, and everything
+  else asks one of them rather than spelling the flags out again —
+  `canvasOwnsPane` (do the clicks reach the notebook: the seams on both
+  panes, the layer's hit shape) and `paneCursor` (what the pointer is over
+  the pane: the pencil, the crosshair, or nil for "the notebook's own
+  four"). The list used to be written out in three places, and a fourth
+  thing holding the pane meant finding all three.
+  Select mode is the ⌘-drag marquee made a mode, not moved: ⌘ still pulls
+  a rectangle in cursor mode, and both end in `Drawing.ids(touching:)`,
+  which skips a hidden picture exactly as `index(at:)` and `bounds(of:)`
+  do — a rectangle over blank space must not hand ⌫ something nothing on
+  screen said was there.
 - **The pencil cursor wins by swallowing cursorUpdate events.** A
   cursorUpdate event is how AppKit hands a view its turn to set the cursor
   — the text view's I-beam, the window's arrow — and cursor rects, a pushed

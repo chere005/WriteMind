@@ -274,14 +274,14 @@ struct InsertMenu: Commands {
     var body: some Commands {
         CommandMenu("Insert") {
             Button("Image…") {
-                appState.penActive = false
+                appState.canvasMode = .cursor
                 store.chooseImage()
             }
             .keyboardShortcut("i", modifiers: [.command, .shift])
             .disabled(store.selectedNote == nil)
 
             Button("Text Box") {
-                appState.penActive = false
+                appState.canvasMode = .cursor
                 store.addTextBox(colorHex: appState.penColorHex)
             }
             .disabled(store.selectedNote == nil)

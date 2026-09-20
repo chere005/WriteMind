@@ -73,7 +73,7 @@ final class PenAcrossModesTests: XCTestCase {
 
     func testThePenStaysUpWhenTheRenderedPageComesUp() {
         let app = state()
-        app.penActive = true
+        app.canvasMode = .pen
         app.toggleMode()
         XCTAssertEqual(app.mode, .preview)
         XCTAssertTrue(app.penActive, "the pen used to be put down by the switch")

@@ -206,8 +206,13 @@ struct Drawing: Codable, Equatable {
     /// Every item the marquee touches. Touching is enough — Sean, 2026-09-18:
     /// "if it's in the selection rectangle, it's included, the whole drawing
     /// doesn't need to be highlighted".
+    ///
+    /// A hidden picture is as if it were not on the pane at all, here as in
+    /// `index(at:)` and `bounds(of:)`: a rectangle dragged over the blank
+    /// space it used to fill would otherwise hand it to ⌫, and nothing on
+    /// screen would have said it was there.
     func ids(touching rect: CGRect, in size: CGSize) -> Set<UUID> {
-        Set(items.filter { $0.intersects(rect, in: size) }.map(\.id))
+        Set(items.filter { !$0.isHidden && $0.intersects(rect, in: size) }.map(\.id))
     }
 
     subscript(id id: UUID) -> CanvasItem? {

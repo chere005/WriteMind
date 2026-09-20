@@ -83,9 +83,9 @@ is how the code is put together.
   back to plain text, which is what every bar starts out as. (A table is
   not on the list — a grid is not a line; Insert ▸ Table, ⌃⌘T.) On a
   note with nothing in it yet the line sits where the first cell will
-  land, not against the top of the pane. With the
-  pen up there are no
-  seams at all — the pencil owns the note pane. The markdown pane and the
+  land, not against the top of the pane. The seams belong to cursor
+  mode: in pen or select mode the drawing layer has the pane and there
+  are no seams at all. The markdown pane and the
   rendered page do exactly the same thing, the way a Mathematica notebook
   does on both.
 - **The arrow keys walk cell, line, cell.** The line is not only what a
@@ -229,18 +229,22 @@ is how the code is put together.
 - **Collapse what you're not using.** The notes list and the video from the
   sidebar's header; the notes pane from the corner of the video. ⌃⌘S, ⌃⌘E,
   ⌃⌘C.
-- **A pen — and every stroke is an object.** The pen button puts a drawing
-  layer over the note, in the markdown and on the rendered page alike (the
-  drawing belongs to the note, not to one way of looking at it), and the
-  pointer becomes a pencil over that pane and nowhere else; the menu under
-  it picks the size and the colour (a
-  circular colour well plus six swatches). ⌘Z undoes a stroke while the pen
-  is up — ⇧⌘Z puts it back — and Undo Drawing sits in the Edit menu at ⌥⌘Z
-  whatever has the keyboard. Put the pen down and the drawings become
-  things you can handle: drag one to move it, or use the buttons that appear
-  — move, turn, resize, delete. Hold **⌘ and drag** for a selection box —
-  anything it *touches* comes with it, whole or not. Clicks that land
-  anywhere else still go to the text.
+- **Three modes over one page: cursor, pen, select.** The drawing layer is
+  there in the markdown and on the rendered page alike — the drawing belongs
+  to the note, not to one way of looking at it — and the pen button's menu
+  says which of the three the pane is in. **Cursor** is the notebook's: the
+  words, the bars between the cells and the brackets take the clicks, and
+  the drawings are things you can handle — drag one to move it, or use the
+  buttons that appear (move, turn, resize, delete). **Pen** draws, and the
+  pointer is a pencil over that pane and nowhere else. **Select** pulls a
+  rectangle anywhere on the page and takes everything it *touches*, whole
+  or not, with the pointer a crosshair and nothing reaching the text; hold
+  **⌘ and drag** to do the same from cursor mode. The mode is remembered
+  between launches and the footer names it whenever it is not the cursor.
+  The pen button itself is still the pen, on and off; its menu also picks
+  the size and the colour (a circular colour well plus six swatches). ⌘Z
+  undoes a stroke while the pen is up — ⇧⌘Z puts it back — and Undo Drawing
+  sits in the Edit menu at ⌥⌘Z whatever has the keyboard.
 - **Pictures on the page.** The image button adds one, ⌘V pastes one, and
   they behave like any other object on the layer. Files live in
   `.drawings/media/`; a note's own copies go with it when it moves and go
