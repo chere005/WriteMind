@@ -35,7 +35,24 @@ bottom of the page. Anywhere inside a seam the pointer is the horizontal
 I-beam (`NSCursor.iBeamCursorForVerticalLayout`). A click inside a seam
 ARMS it: a line is drawn across the page at the seam's middle and stays;
 that line IS the cursor, so the text caret is not drawn while a seam is
-armed. The first thing typed opens a new cell at the seam and goes into
+armed. **Both cursors go horizontal between cells** (Sean, 2026-09-20:
+"the mouse cursor and text cursor should both become horizontal between
+cells") — the pointer, and the caret itself, which is the bar.
+
+And the caret gets into a seam by more than a click. Arming is what the
+caret's POSITION means, not a mode a click turns on: whenever the caret
+lands on a separator blank line between two cells — by arrow key, by ⌃D,
+by a click — the seam is armed and the bar is the caret. Whenever it
+lands anywhere else, the seam disarms and the ordinary caret comes back.
+Careful with the two ambiguous places: offset 0 is both "the seam above
+the first cell" and "the first character of the first cell", and the
+note's length is both the last seam and the end of the last cell. There
+the caret cannot say on its own which is meant, so arming there stays
+explicit — set by the click or the split that put it there, cleared by
+the next move. Careful too with a `.blank` cell: the middle lines of a
+run of blank lines are the note's CONTENT, and the caret on one of them
+is an ordinary caret. Only the first and last blank line of a run are
+separators (`MarkdownSourceStyle.structuralLines`). The first thing typed opens a new cell at the seam and goes into
 it; the line goes. Escape, an arrow key, or a click anywhere else disarms
 without writing anything — clicking about the page leaves no empty cells
 behind. Return while armed opens an empty cell there.
@@ -246,7 +263,16 @@ the minimum; an empty note is one seam.
 - Armed = cursor. `onArm`: `tv.armedSeam = offset`, `tv.setSelectedRange
   ({offset, 0})`, first responder, and `tv.insertionPointColor = .clear`;
   `disarm` restores the colour (keep the original in a property, read it
-  once at `makeNSView`). The line stays drawn while armed.
+  once at `makeNSView`). The line stays drawn while armed, and it is the
+  only cursor on the page — the pointer is horizontal over the seam and
+  the caret IS the bar.
+- Arming follows the caret, not only the click. In
+  `textViewDidChangeSelection`, an empty selection whose offset sits on a
+  separator blank line arms that seam; anything else disarms. So ↓ out of
+  the bottom of a cell lands on the bar, ↓ again enters the next cell, and
+  ⌃D leaves the bar between the two halves it just made. Keep the explicit
+  arm for the two ends of the note, where the offset alone cannot say
+  whether the seam or the cell is meant.
 - Opening: `PasteAwareTextView.insertText(_:replacementRange:)` (already
   overridden) calls `PreviewEditing.insertBlock(in: string, at: offset)`,
   applies it through `shouldChangeText`/`insertText`/`didChangeText` at
@@ -283,8 +309,12 @@ the minimum; an empty note is one seam.
   rows; the top inset above the first row; the whole tail under the
   last), full width, `contentShape(Rectangle())`, hover → horizontal
   I-beam and the hover line, click → arm. Replace the 80 pt tail strip.
-- Armed state: `@State private var armedSeam: Int?`. The armed seam
-  draws the line and holds focus: give the seam view `.focusable()` with
+- Armed state: `@State private var armedSeam: Int?` — and here too the bar
+  is the only cursor: pointer horizontal over the seam, no text caret
+  anywhere while one is armed. Opening a cell for editing disarms; moving
+  the block editor's caret off either end of its cell arms the seam on
+  that side, so ↓ and ↑ walk cell, bar, cell the way they do in the
+  markdown pane. The armed seam draws the line and holds focus: give the seam view `.focusable()` with
   a `@FocusState` and `.onKeyPress(phases: .down)`. Escape → disarm.
   Return → `insertBlock(at: offset)` (which opens the editor on the new
   empty cell) and disarm. A printable character → `insertBlock(at:)`,
