@@ -69,6 +69,12 @@ struct MarkdownPreview: View {
     @State private var focusToken = 0
     @State private var caretAtStart = false
     @State private var hoveredSeam: SeamID?
+    /// What this page's seams last put on the pointer, so one of them
+    /// can tell its own cursor from the hand a bracket set on the way
+    /// past. Every one of them writes it: which seam put it up is
+    /// `hoveredSeam`'s question, and this one is only "is it still
+    /// there".
+    @State private var seamCursor: NSCursor?
     /// The seam the bar is sitting in, waiting to be typed into. Nothing
     /// is written there until a key says so (Sean, 2026-09-20: "when
     /// clicking in between, the horizontal line appears and that is where
@@ -499,8 +505,10 @@ struct MarkdownPreview: View {
                         // Set on every move, not pushed once: the text
                         // views either side put their own cursors back
                         // the moment the pointer touches them.
-                        Self.cursor(hovering: true,
-                                    onPlus: Self.plusTarget(in: seam).contains(point))?.set()
+                        let put = Self.cursor(hovering: true,
+                                              onPlus: Self.plusTarget(in: seam).contains(point))
+                        put?.set()
+                        if seamCursor !== put { seamCursor = put }
                     case .ended:
                         // Whether the pointer was on THIS seam, read
                         // before it is forgotten: the seam it has moved
@@ -513,7 +521,9 @@ struct MarkdownPreview: View {
                         // followed the pointer over the words, the
                         // toolbar and the sidebar — the same trap
                         // `CursorLayer` was written for.
-                        Self.cursor(hovering: false, ours: ours)?.set()
+                        let back = Self.cursor(hovering: false, ours: ours, put: seamCursor)
+                        if ours { seamCursor = nil }
+                        back?.set()
                     }
                 }
                 .onTapGesture { arm(id) }
@@ -536,8 +546,16 @@ struct MarkdownPreview: View {
     /// the seam because that is where this pane's hover reports from.
     /// Both panes put their + at their own left margin and neither
     /// measures the rest of it.
+    ///
+    /// WITHOUT the markdown pane's four points of slack, because here
+    /// the press is not this rect: it is a real `Button` inside an
+    /// `HStack` that starts at `sideInset`, and the hand shown outside
+    /// it fell through to the seam's own tap, which arms the bar and
+    /// opens no menu at all. The pane that reads this rect for the
+    /// click keeps the slack; the pane that only draws a cursor with it
+    /// cannot afford a point of it.
     static func plusTarget(in seam: CellSeams.Seam) -> CGRect {
-        CellSeams.plusTarget(in: seam, leading: sideInset).offsetBy(dx: 0, dy: -seam.top)
+        CellSeams.plusTarget(in: seam, leading: sideInset, grip: 0).offsetBy(dx: 0, dy: -seam.top)
     }
 
     /// What the pointer should be over a seam, and what it should be put
@@ -552,16 +570,26 @@ struct MarkdownPreview: View {
     /// `NSCursor.set()` is global and sticks until something else sets
     /// one. Nothing on the rendered page does: the blocks are SwiftUI
     /// `Text` with no cursor rects at all. So a seam hands the arrow
-    /// back on the way out — but only its OWN. What is on screen cannot
-    /// answer that: the hand over a + and the hand over a bracket are
-    /// the same object, and the seam the pointer has ARRIVED at is
-    /// often told before the one it left, so taking back "the cursor I
-    /// recognise" was itself a flicker. `ours` is the seam's own answer
-    /// to "was the pointer on me", and a seam that never had it leaves
-    /// it alone.
-    static func cursor(hovering: Bool, onPlus: Bool = false, ours: Bool = false) -> NSCursor? {
+    /// back on the way out — but only its OWN, and BOTH halves of that
+    /// are needed, because each alone is a way to take a cursor that
+    /// was never ours.
+    ///
+    /// `ours` is the seam's own answer to "was the pointer on me", and
+    /// it is what tells one seam from the next: the seam the pointer
+    /// has ARRIVED at is often told before the one it left, so leaving
+    /// A took back the cursor B had just set. But only a seam writes
+    /// that down, and a seam is not the only thing on this page that
+    /// claims the pointer — the gutter's brackets set the hand and the
+    /// split divider its own resize cursor on the way in, and leaving
+    /// sideways onto one then put a plain arrow over it. `put` is what
+    /// this page's seams last set, and if that is not still what is on
+    /// screen then somebody else has the pointer and it is not ours to
+    /// hand back.
+    static func cursor(hovering: Bool, onPlus: Bool = false, ours: Bool = false,
+                       put: NSCursor? = nil, current: NSCursor = .current) -> NSCursor? {
         if hovering { return onPlus ? .pointingHand : .iBeamCursorForVerticalLayout }
-        return ours ? .arrow : nil
+        guard ours, let put, current === put else { return nil }
+        return .arrow
     }
 
     // MARK: - The seams
@@ -697,7 +725,7 @@ struct MarkdownPreview: View {
     private func selectCells(_ ranges: [NSRange]) {
         guard editable else { return }
         disarm()
-        hoveredSeam = nil
+        dropHover()
         editingRange = nil
         selectedCells = ranges
         guard !ranges.isEmpty else { return }
@@ -824,6 +852,23 @@ struct MarkdownPreview: View {
         focusedSeam = nil
     }
 
+    /// The seam under the pointer stops being one, though the pointer
+    /// has not moved: a cell opened where it was, or the brackets took
+    /// the page.
+    ///
+    /// The cursor has to be handed back HERE. `.ended` comes later, when
+    /// the pointer finally moves, and by then no seam answers for it —
+    /// so the horizontal I-beam went with the pointer to the toolbar and
+    /// the sidebar, which is the leak the hand-back exists to stop. The
+    /// same question `.ended` asks, so that a cursor somebody else has
+    /// set in the meantime is still left alone.
+    private func dropHover() {
+        let back = Self.cursor(hovering: false, ours: true, put: seamCursor)
+        hoveredSeam = nil
+        seamCursor = nil
+        back?.set()
+    }
+
     /// A key while this seam is armed.
     private func key(_ press: KeyPress, in id: SeamID) -> KeyPress.Result {
         guard armedSeam == id else { return .ignored }
@@ -895,7 +940,7 @@ struct MarkdownPreview: View {
     /// it, and the new cell being edited with what was typed already in it.
     private func openSeam(_ key: SeamKey, as type: CellTypes.Kind, at offset: Int) {
         disarm()
-        hoveredSeam = nil
+        dropHover()
         guard let opened = Self.opened(key, as: type, at: offset, in: markdown) else { return }
         markdown = opened.markdown
         // Plain text unless the + on this bar said otherwise, whatever the
@@ -1120,7 +1165,7 @@ struct MarkdownPreview: View {
         caretAtStart = true
         focusToken += 1
         disarm()
-        hoveredSeam = nil
+        dropHover()
     }
 
     private func split(head: String, tail: String) {

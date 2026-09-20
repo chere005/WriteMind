@@ -69,7 +69,20 @@ final class CellInsertions: NSView {
     }
     /// Which seam the pointer is in, for the mark that follows it.
     /// It moves the + as well as the bar, so the cursor rects go with it.
-    private var hovered: CellSeams.Seam? { didSet { if hovered != oldValue { markChanged() } } }
+    ///
+    /// AN OFFSET, and looked up again every time, for the same reason
+    /// `armedOffset` is one: the note reflows under a pointer that has
+    /// not moved — a character typed at the end of it is enough — and a
+    /// seam remembered as a rectangle is then a rectangle of nothing.
+    /// The bar drawn across a line of words was only ugly; the +'s
+    /// POINTING HAND, which both views now cut into their cursor rects
+    /// from this, is a promise: a press there opens nothing at all,
+    /// because `mouseDown` measures against the seams as they are.
+    private var hoveredOffset: Int? { didSet { if hoveredOffset != oldValue { markChanged() } } }
+    private var hovered: CellSeams.Seam? {
+        guard let hoveredOffset else { return nil }
+        return seams.first { $0.offset == hoveredOffset }
+    }
     private var tracking: NSTrackingArea?
 
     /// The caret was put in a seam: whoever owns the keyboard is told, and
@@ -189,8 +202,18 @@ final class CellInsertions: NSView {
     /// bracket gutter: a section's bracket runs down the seams between its
     /// cells as well as the cells, and a layer over the whole width would
     /// swallow every click on one.
+    ///
+    /// And nothing at all for a point that is not on this layer, which
+    /// is not the belt-and-braces it looks like: the text view under it
+    /// asks this about the POINTER — a window location, which AppKit is
+    /// happy to give for a pointer parked on the sidebar or in another
+    /// window. Every seam runs to the left edge and the tail is most of
+    /// a short note, so a negative x with an ordinary y was a seam, and
+    /// `NSCursor.set()` is global (Sean, 2026-09-20, twice: the
+    /// horizontal I-beam over the words, the toolbar and the sidebar).
     func seam(at point: CGPoint) -> CellSeams.Seam? {
-        guard !isHidden, point.x < bounds.width - NotebookGutter.width else { return nil }
+        guard !isHidden, bounds.contains(point),
+              point.x < bounds.width - NotebookGutter.width else { return nil }
         return CellSeams.seam(at: point.y, in: seams)
     }
 
@@ -211,9 +234,15 @@ final class CellInsertions: NSView {
         tracking = area
     }
 
+    /// The pointer is at a point of this layer. Named rather than left
+    /// inside `mouseMoved` because which seam it is in is geometry, and
+    /// geometry is the half of this that can be tested without an
+    /// NSEvent and a window.
+    func hover(at point: CGPoint) { hoveredOffset = seam(at: point)?.offset }
+
     override func mouseMoved(with event: NSEvent) {
         let point = convert(event.locationInWindow, from: nil)
-        hovered = seam(at: point)
+        hover(at: point)
         // On its side over the seam, because what goes in here goes in
         // BETWEEN two things rather than between two letters, and a hand
         // over the +, because that is a button. Set for the whole of
@@ -258,7 +287,7 @@ final class CellInsertions: NSView {
     }
 
     override func mouseExited(with event: NSEvent) {
-        hovered = nil
+        hoveredOffset = nil
     }
 
     override func mouseDown(with event: NSEvent) {

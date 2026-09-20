@@ -819,14 +819,36 @@ tools/                    build.sh run.sh test.sh (both source signing.sh)
      follows it until the pointer moves, so the bar sat under an upright
      cursor until it was nudged. `PasteAwareTextView.mouseEntered` and
      the tail of its `updateTrackingAreas` put the seam's cursor back;
-     `CellInsertions.mouseEntered` does the same for the layer.
+     `CellInsertions.mouseEntered` does the same for the layer. **Only
+     for a pointer that is on the page**, though, and that is the trap
+     inside the answer: `mouseLocationOutsideOfEventStream` is a WINDOW
+     location and AppKit gives it wherever the pointer is, `NSCursor.set()`
+     is global, and the sidebar and the toolbar install no cursor of
+     their own to take one back. Every seam runs to the left edge and the
+     tail is most of a short note, so a pointer parked on the sidebar
+     converted to a negative x inside a seam and went horizontal there.
+     Two checks: `visibleRect.contains` at the call (`bounds` is not
+     enough — the text view is the scroll view's document view, so the
+     formatting bar above the pane maps into the note as soon as it is
+     scrolled), and `CellInsertions.seam(at:)` answering nothing for a
+     point that is not on the layer at all.
   On the rendered page there was a fifth with the same face: the seam
   handed the cursor back by looking at what was on screen
   (`current == .iBeamCursorForVerticalLayout`), and the seam the pointer
   ARRIVES at is often told before the one it left, so leaving A took back
-  the cursor B had just set. `MarkdownPreview.cursor` takes `ours` — the
-  seam's own answer to "was the pointer on me" — and a seam hands back
-  only what it put up. Which view's `cursorUpdate` wins at runtime is not
+  the cursor B had just set. `MarkdownPreview.cursor` takes BOTH halves
+  of "only what I put up", because either alone takes a cursor that is
+  not ours: `ours` — the seam's own answer to "was the pointer on me",
+  which is what tells one seam from the next — and `put`, what this
+  page's seams last set, still being what is on screen. Only a seam
+  writes `hoveredSeam`, and a seam is not the only thing here that
+  claims the pointer: the gutter's brackets are an overlay over the
+  right-hand end of every seam and set the hand on the way IN, so
+  `ours` alone put a plain arrow over a bracket that is still clickable.
+  And a hover the CODE clears — `openSeam`, `insertBlock`, `selectCells`
+  — hands the cursor back itself (`dropHover`), because the `.ended`
+  that arrives later answers for nobody and the horizontal I-beam left
+  with the pointer. Which view's `cursorUpdate` wins at runtime is not
   unit-testable; the geometry under all of it is, and is.
 - **The + on the bar is a button, so it takes the pointing hand** — the
   same cursor the notebook brackets in the gutter use, so the app says
@@ -836,9 +858,16 @@ tools/                    build.sh run.sh test.sh (both source signing.sh)
   generous than the ten-point dot, because a small control is hard to hit
   exactly, and CLIPPED TO THE SEAM, because the click is — the layer
   takes no mouse down outside a seam, so a hand five points up in the
-  cell above would promise a press that never arrives. The only thing the
-  two panes do not share is where their own left margin is
-  (`CellInsertions.plusLeading`, `MarkdownPreview.sideInset`).
+  cell above would promise a press that never arrives. THE SLACK IS ONLY
+  HONEST WHERE THE SAME RECT IS READ FOR THE PRESS, which is the markdown
+  pane, where `pressesPlus` measures the click against it. On the
+  rendered page the press is a real SwiftUI `Button` at the margin and
+  the rect is nothing but a cursor, so it takes `grip: 0` and the hand
+  sits inside the button — four points of hand to the left of it fell
+  through to the seam's own tap, which arms the bar and opens no menu:
+  the same broken promise, sideways. The other thing the two panes do not
+  share is where their own left margin is (`CellInsertions.plusLeading`,
+  `MarkdownPreview.sideInset`).
 - **A stored property called `body` in a `View` is a redeclaration**, and
   `swiftc -parse` will not tell you — it type-checks fine and fails in the
   build. Three of the maths views had `let body: WLExpr` before they were

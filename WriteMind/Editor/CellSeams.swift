@@ -241,12 +241,19 @@ enum CellSeams {
     /// mouse down outside a seam — so a pointer that turned into a hand
     /// five points up into the cell above would be promising a press
     /// that never arrives.
-    static func plusTarget(in seam: Seam, leading: CGFloat) -> CGRect {
+    ///
+    /// `grip` is nought for a pane whose + is a real button. The slack
+    /// is only ever honest where the same rect is read for the press:
+    /// the markdown pane measures the click against this, the rendered
+    /// page has a SwiftUI `Button` at its margin and this is nothing but
+    /// the cursor, and four points of hand outside the button is the
+    /// broken promise the clipping exists to stop, sideways.
+    static func plusTarget(in seam: Seam, leading: CGFloat, grip: CGFloat = plusGrip) -> CGRect {
         let target = plus(onTheLineAt: seam.line, leading: leading)
-        let top = max(target.minY - plusGrip, seam.top)
-        let bottom = min(target.maxY + plusGrip, seam.bottom)
-        return CGRect(x: target.minX - plusGrip, y: top,
-                      width: target.width + plusGrip * 2, height: max(0, bottom - top))
+        let top = max(target.minY - grip, seam.top)
+        let bottom = min(target.maxY + grip, seam.bottom)
+        return CGRect(x: target.minX - grip, y: top,
+                      width: target.width + grip * 2, height: max(0, bottom - top))
     }
 
     /// Whether a point is on the +. Inclusive on all four edges, the way

@@ -254,17 +254,38 @@ final class PreviewSeamIdentityTests: XCTestCase {
         // the horizontal I-beam followed the pointer over the words, the
         // toolbar and the sidebar.
         XCTAssertTrue(MarkdownPreview.cursor(hovering: true) === NSCursor.iBeamCursorForVerticalLayout)
-        XCTAssertTrue(MarkdownPreview.cursor(hovering: false, ours: true) === NSCursor.arrow)
+        XCTAssertTrue(MarkdownPreview.cursor(hovering: false, ours: true,
+                                             put: .iBeamCursorForVerticalLayout,
+                                             current: .iBeamCursorForVerticalLayout) === NSCursor.arrow)
+        // Including the hand, when the pointer left from the + itself —
+        // straight up into the cell above, where nothing sets a cursor
+        // at all.
+        XCTAssertTrue(MarkdownPreview.cursor(hovering: false, ours: true, put: .pointingHand,
+                                             current: .pointingHand) === NSCursor.arrow)
     }
 
     func testACursorSomebodyElseSetIsLeftAlone() {
         // Taking one back that was never ours is the same bug the other
         // way round: the pen's pencil, the split divider's resize cursor
-        // — and, now the + has one, the hand a gutter bracket set, which
-        // is the very same object as the hand a + sets and so cannot be
-        // told apart by looking at it. The seam answers for itself
-        // instead: it hands back only what it put up.
-        XCTAssertNil(MarkdownPreview.cursor(hovering: false, ours: false))
+        // — and the hand a gutter bracket set, which is the very same
+        // object as the hand a + sets and so cannot be told apart by
+        // looking at it alone. BOTH halves answer, because each alone
+        // lets one of these through.
+        XCTAssertNil(MarkdownPreview.cursor(hovering: false, ours: false,
+                                            put: .iBeamCursorForVerticalLayout,
+                                            current: .iBeamCursorForVerticalLayout),
+                     "the seam next door was told first and put this up")
+        XCTAssertNil(MarkdownPreview.cursor(hovering: false, ours: true,
+                                            put: .iBeamCursorForVerticalLayout,
+                                            current: .pointingHand),
+                     "the bracket the pointer moved sideways onto, which set the hand on the way in")
+        XCTAssertNil(MarkdownPreview.cursor(hovering: false, ours: true,
+                                            put: .iBeamCursorForVerticalLayout,
+                                            current: .resizeLeftRight),
+                     "and the divider between the note and the camera")
+        XCTAssertNil(MarkdownPreview.cursor(hovering: false, ours: true, put: nil,
+                                            current: .iBeamCursorForVerticalLayout),
+                     "a seam that put nothing up hands nothing back")
     }
 
     func testThePointerIsAHandOverThePlusBecauseThePlusIsAButton() {
@@ -287,5 +308,24 @@ final class PreviewSeamIdentityTests: XCTestCase {
         XCTAssertFalse(target.contains(CGPoint(x: 300, y: 4)), "the bar beside it is not a button")
         XCTAssertGreaterThanOrEqual(target.minY, 0, "and never outside the view that reports it")
         XCTAssertLessThanOrEqual(target.maxY, seam.bottom - seam.top)
+    }
+
+    func testTheRenderedPagesHandIsNoWiderThanTheButtonUnderIt() {
+        // The markdown pane reads the very same rect for the CLICK, so
+        // four points of slack round the dot is generosity there. Here
+        // the press is a real `Button` in an `HStack` that starts at the
+        // page's margin and this rect is nothing but the cursor: a hand
+        // to the left of the button falls through to the seam's own tap,
+        // which arms the bar and opens no menu at all — the promise the
+        // clipping exists to stop, sideways.
+        let seam = CellSeams.Seam(top: 100, bottom: 108, offset: 12, line: 104)
+        let target = MarkdownPreview.plusTarget(in: seam)
+        XCTAssertGreaterThanOrEqual(target.minX, MarkdownPreview.sideInset)
+        XCTAssertLessThanOrEqual(target.maxX, MarkdownPreview.sideInset + CellSeams.plusSize)
+        XCTAssertFalse(target.contains(CGPoint(x: MarkdownPreview.sideInset - 2, y: 4)),
+                       "the points to the left of the + are not pressable on this pane")
+        XCTAssertLessThan(CellSeams.plusTarget(in: seam, leading: CellInsertions.plusLeading).minX,
+                          CellInsertions.plusLeading,
+                          "and the pane whose click reads the rect still has its slack")
     }
 }

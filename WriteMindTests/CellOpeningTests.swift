@@ -123,6 +123,44 @@ final class SeamMeasurementTests: XCTestCase {
         XCTAssertNil(view.seam(at: CGPoint(x: 20, y: 200)), "a cell belongs to the text view")
     }
 
+    func testAPointerThatIsNotOnTheLayerIsInNoSeamAtAll() {
+        // The text view underneath asks this about the pointer's WINDOW
+        // location — whenever AppKit rebuilds its tracking areas, which
+        // is every scroll and every relayout — and answers with a cursor
+        // that is global. A pointer parked on the notes sidebar is a
+        // NEGATIVE x, and every seam runs to the left edge of the page,
+        // so it landed in one: the sidebar's pointer went horizontal and
+        // stayed that way, because nothing over there sets a cursor of
+        // its own (Sean, 2026-09-20, twice: the I-beam over the words,
+        // the toolbar and the sidebar).
+        let view = layer([CellSeams.Seam(top: 0, bottom: 400, offset: 0, line: 4)])
+        XCTAssertNotNil(view.seam(at: CGPoint(x: 20, y: 120)),
+                        "the premise: the tail seam is most of a short note")
+        XCTAssertNil(view.seam(at: CGPoint(x: -260, y: 120)), "the notes sidebar")
+        XCTAssertNil(view.cursor(at: CGPoint(x: -260, y: 120)))
+    }
+
+    func testTheMarkFollowsItsSeamWhenTheNoteMovesUnderAStillPointer() {
+        // The hovered seam used to be kept as it was measured, and a
+        // note grows under a pointer that has not moved the moment
+        // anything is typed at the end of it. The bar painted across a
+        // line of words was only ugly; the +'s POINTING HAND, which
+        // both views cut into their cursor rects from this, promises a
+        // press that cannot arrive — `mouseDown` measures against the
+        // seams as they are now.
+        let view = layer([CellSeams.Seam(top: 100, bottom: 140, offset: 5, line: 104)])
+        view.hover(at: CGPoint(x: 20, y: 120))
+        XCTAssertTrue(view.pointerPlus?.contains(CGPoint(x: 9, y: 104)) ?? false,
+                      "the + is on the bar of the seam the pointer is in")
+        view.measure([CellSeams.Seam(top: 120, bottom: 160, offset: 5, line: 124)])
+        XCTAssertTrue(view.pointerPlus?.contains(CGPoint(x: 9, y: 124)) ?? false,
+                      "a line typed above it pushed the seam down and the + went with it")
+        XCTAssertFalse(view.pointerPlus?.contains(CGPoint(x: 9, y: 104)) ?? true,
+                       "and left no hand over the words it used to be a space between")
+        view.measure([])
+        XCTAssertNil(view.pointerPlus, "a seam that is gone draws no + at all")
+    }
+
     func testWithThePenUpTheLayerAnswersNothingAtAll() {
         // The pencil owns the note pane in drawing mode (Sean, 2026-09-20:
         // "cursor only becomes a pen in the notes pane in drawing

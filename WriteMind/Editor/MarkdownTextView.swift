@@ -1025,8 +1025,21 @@ class PasteAwareTextView: NSTextView {
         // nothing else will put the bar's cursor back until it does
         // (Sean, 2026-09-20: "it does flicker sometimes back to a
         // cursor").
+        //
+        // Only for a pointer that is really on the page, though. This is
+        // asked of the WINDOW, which answers wherever the pointer is —
+        // the sidebar, the toolbar, off the screen — and `NSCursor.set()`
+        // is global, so a cursor set from here for a pointer somewhere
+        // else stays on it: nothing over there installs one of its own to
+        // take it back. VISIBLE rect and not `bounds`, which is the check
+        // the pen can afford three lines of its own away: this view is
+        // the scroll view's document view and is taller than the pane, so
+        // the formatting bar ABOVE it converts to a y inside the note as
+        // soon as the note is scrolled.
         guard let window else { return }
-        seamCursor(at: convert(window.mouseLocationOutsideOfEventStream, from: nil))?.set()
+        let pointer = convert(window.mouseLocationOutsideOfEventStream, from: nil)
+        guard visibleRect.contains(pointer) else { return }
+        seamCursor(at: pointer)?.set()
     }
 
     /// The pointer over the text — and over the spaces between the cells,
