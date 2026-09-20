@@ -112,11 +112,19 @@ final class PreviewSeamKeyTests: XCTestCase {
         XCTAssertEqual(MarkdownPreview.seamKey(characters: "d", modifiers: .control), .pass)
     }
 
-    func testAnArrowOrADeleteIsNotACharacterEither() {
+    func testAnArrowWalksOffTheBarIntoTheCellBesideIt() {
         // AppKit hands the function keys over as characters in Unicode's
-        // private use area, so "not a control character" is not enough.
-        XCTAssertEqual(MarkdownPreview.seamKey(characters: "\u{F701}", modifiers: []), .pass,
+        // private use area, so "not a control character" is not enough to
+        // recognise one. ↓ and ↑ walk cell, bar, cell here the way they
+        // do in the markdown pane; before, they were dropped, the page
+        // scrolled away under the bar and it stayed armed off-screen.
+        XCTAssertEqual(MarkdownPreview.seamKey(characters: "\u{F701}", modifiers: []), .step(up: false),
                        "the down arrow")
+        XCTAssertEqual(MarkdownPreview.seamKey(characters: "\u{F700}", modifiers: []), .step(up: true),
+                       "the up arrow")
+    }
+
+    func testADeleteOrATabIsNotACharacterEither() {
         XCTAssertEqual(MarkdownPreview.seamKey(characters: "\u{7F}", modifiers: []), .pass, "delete")
         XCTAssertEqual(MarkdownPreview.seamKey(characters: "\t", modifiers: []), .pass)
         XCTAssertEqual(MarkdownPreview.seamKey(characters: "", modifiers: []), .pass)
@@ -201,5 +209,52 @@ final class PreviewSeamKeyTests: XCTestCase {
             XCTAssertNil(MarkdownPreview.opened(key, at: 12, in: note),
                          "\(characters.debugDescription) writes nothing")
         }
+    }
+}
+
+/// The two things the rendered page's seams got wrong that nothing else
+/// could catch: which seam is which, and where the pointer goes.
+final class PreviewSeamIdentityTests: XCTestCase {
+    func testAnEmptyCellAtTheEndOfANoteLeavesTwoSeamsAtTheSameOffset() {
+        // "Only cell" with a Return pressed in the tail seam: the new
+        // cell is empty, so the seam above it and the tail under it both
+        // open at 11. Everything keyed by offset then answered for both —
+        // the plus-and-bar drawn twice, two views claiming one focus.
+        let rows: [(id: Int, height: CGFloat)] = [(id: 0, height: 40), (id: 11, height: 0)]
+        let seams = MarkdownPreview.seams(rows: rows, noteLength: 11, pageHeight: 600)
+        XCTAssertEqual(seams.filter { $0.offset == 11 }.count, 2)
+        XCTAssertNotEqual(MarkdownPreview.SeamID(index: 1, offset: 11),
+                          MarkdownPreview.SeamID(index: 2, offset: 11),
+                          "their place down the page is what tells them apart")
+    }
+
+    func testThereIsAlwaysASeamUnderTheLastCellForTheDownArrowToLandOn() {
+        // ↓ off the end of the last cell arms the tail seam. It used to
+        // call insertBlock at the end of the note instead — a keypress
+        // that wrote two newlines into the file and left an empty cell
+        // behind, every time it was pressed.
+        for note in ["Only cell", "First cell\n\nSecond cell", ""] {
+            let blocks = MarkdownParser.positioned(from: note)
+            let rows = blocks.map { (id: $0.range.location, height: CGFloat(30)) }
+            let seams = MarkdownPreview.seams(rows: rows, noteLength: (note as NSString).length,
+                                              pageHeight: 600)
+            XCTAssertEqual(seams.count, blocks.count + 1, "one below the last cell, in \(note.debugDescription)")
+        }
+    }
+
+    func testThePointerIsHandedBackOnTheWayOutOfASeam() {
+        // NSCursor.set() is global and sticks. There is no text view
+        // under the pointer on this side to put its own cursor back, so
+        // the horizontal I-beam followed the pointer over the words, the
+        // toolbar and the sidebar.
+        XCTAssertTrue(MarkdownPreview.cursor(hovering: true) === NSCursor.iBeamCursorForVerticalLayout)
+        XCTAssertTrue(MarkdownPreview.cursor(hovering: false,
+                                             current: .iBeamCursorForVerticalLayout) === NSCursor.arrow)
+    }
+
+    func testACursorSomebodyElseSetIsLeftAlone() {
+        // Taking one back that was never ours is the same bug the other
+        // way round: the pen's pencil, the split divider's resize cursor.
+        XCTAssertNil(MarkdownPreview.cursor(hovering: false, current: .pointingHand))
     }
 }

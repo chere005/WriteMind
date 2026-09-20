@@ -23,20 +23,26 @@ final class CellInsertions: NSView {
             guard seams != oldValue else { return }
             needsDisplay = true
             window?.invalidateCursorRects(for: self)
-            // The note was re-laid out under the armed bar — the pane was
-            // resized, or a section opened. The seam it is in has moved,
-            // not gone: the offset is what was armed, the geometry is
-            // whatever the layout says now.
-            if let armed, let moved = seams.first(where: { $0.offset == armed.offset }) {
-                self.armed = moved
-            }
         }
     }
-    /// The seam the bar is sitting in, waiting to be typed into. Nothing is
-    /// written to the note until something is (Sean, 2026-09-20: "if i
-    /// start typing it inserts a cell immediately after the cursor/line
-    /// which disappear"), so clicking about the page leaves no empty cells.
-    private(set) var armed: CellSeams.Seam? { didSet { if armed != oldValue { needsDisplay = true } } }
+    /// The seam the bar is sitting in, BY OFFSET, waiting to be typed into.
+    /// Nothing is written to the note until something is (Sean, 2026-09-20:
+    /// "if i start typing it inserts a cell immediately after the
+    /// cursor/line which disappear"), so clicking about the page leaves no
+    /// empty cells.
+    ///
+    /// An offset and not a rectangle, because the rectangle goes stale: the
+    /// pane is resized, a section opens, the note is swapped for another
+    /// one, and the bar was left painted across a page at a y that meant
+    /// nothing. Looking the geometry up in `seams` every time it is drawn
+    /// means the bar either moves with its seam or stops being drawn. The
+    /// text view's `armedSeam` is what sets this — one writer, so the caret
+    /// and the bar cannot disagree about whether a seam is armed.
+    var armedOffset: Int? { didSet { if armedOffset != oldValue { needsDisplay = true } } }
+    private var armed: CellSeams.Seam? {
+        guard let armedOffset else { return nil }
+        return seams.first { $0.offset == armedOffset }
+    }
     private var hovered: CellSeams.Seam?
     private var tracking: NSTrackingArea?
 
@@ -125,12 +131,13 @@ final class CellInsertions: NSView {
 
     override func mouseDown(with event: NSEvent) {
         guard let seam = seam(at: convert(event.locationInWindow, from: nil)) else { return }
-        armed = seam
+        // The text view is told, and it tells this layer back through
+        // `armedOffset`. Setting it here as well would be a second writer.
         onArm?(seam.offset)
     }
 
     /// The bar goes out when the caret goes anywhere else.
-    func disarm() { armed = nil }
+    func disarm() { armedOffset = nil }
 
     /// Only a point inside a seam belongs to this layer; every other click
     /// goes to the text underneath. NSView's own hit testing skips a hidden

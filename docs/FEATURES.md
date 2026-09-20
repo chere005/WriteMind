@@ -54,11 +54,17 @@ is how the code is put together.
   its side; click and a line runs across the page with a `+` at the
   margin. That line is the cursor: the caret stops being drawn, and the
   first thing typed becomes a cell of its own there, Return opens an
-  empty one, and Escape, an arrow or a click anywhere else takes the line
-  back without leaving an empty cell behind. With the pen up there are no
+  empty one, and Escape or a click anywhere else takes the line back
+  without leaving an empty cell behind. With the pen up there are no
   seams at all — the pencil owns the note pane. The markdown pane and the
   rendered page do exactly the same thing, the way a Mathematica notebook
   does on both.
+- **The arrow keys walk cell, line, cell.** The line is not only what a
+  click makes: ↓ off the bottom of a cell lands ON it, ↓ again goes into
+  the next cell, and ↑ comes back the same way. Getting there by arrow
+  and getting there by click leave the page in the same state — type and
+  you get a new cell between the two, not a character that welds them
+  into one.
 - **The same place, whichever mode.** Switching between the markdown and
   the rendered page reopens on the cell you were looking at.
 - **Sections of a note are cells.** A heading owns everything under it

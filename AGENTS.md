@@ -186,6 +186,28 @@ CoreMind's `bin/report-status.sh`.
   `CellInsertions` only draws it and takes the click; on the rendered
   page the seam is a view of its own, armed by `MarkdownPreview.arm`,
   and `MarkdownPreview.seamKey` says what a key pressed in one means.
+- **Arming is a reading of where the caret is, not a mode a click turns
+  on.** `CellSeams.arm` answers it from the selection alone, and
+  `textViewDidChangeSelection` is the only place the markdown pane sets
+  `armedSeam` from — so ↓ onto the blank line between two cells arms
+  that seam (it used to be an ordinary caret there, and one character
+  merged the two cells into one paragraph), and everything that moves
+  the selection without a mouse down — a bracket click, ⌘A, a toolbar
+  command, `/link`, a note switch — disarms by arriving somewhere else.
+  Two places the offset cannot speak for: 0 is both the seam above the
+  first cell and the start of it, and the note's length is both the tail
+  seam and the end of the last cell, so an arm AT the caret's own offset
+  always stands and the next move clears it. **One writer.** The text
+  view's `armedSeam` is it; `CellInsertions.armedOffset` mirrors it
+  through `onArmChanged` and looks the geometry up in its own `seams`
+  every time it draws, because a stored rectangle goes stale — the old
+  one was left painted across the next note at a y that meant nothing.
+- **A funnel is not only keystrokes.** `insertText(_:replacementRange:)`
+  opens an armed seam only when the range is `{NSNotFound, 0}`, which is
+  what AppKit passes for typing. A caller that NAMES a range means that
+  range: `EditorBridge.insert(_:belowDocumentY:)` is the only route the
+  words read off a picture have, and opening the seam instead dropped
+  them wherever the bar happened to be.
 - **A middle click on a tab needs AppKit, and hit testing is not enough.**
   SwiftUI has no middle-button gesture, and an NSView behind the tab that
   claimed `otherMouseDown` in `hitTest` never received it. `MiddleClickCatcher`

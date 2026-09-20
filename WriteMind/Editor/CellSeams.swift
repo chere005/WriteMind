@@ -1,4 +1,5 @@
 import CoreGraphics
+import Foundation
 
 /// The spaces between the cells: where the horizontal cursor lives and
 /// where a new cell is born.
@@ -98,6 +99,51 @@ enum CellSeams {
         // shorter than the minimum. The upper one answers; either is a fair
         // reading of a point that is inside both.
         seams.first { $0.contains(y) }
+    }
+
+    /// The seam an empty selection is sitting IN, as the offset a cell
+    /// would be opened at — nil when the caret is in a cell and the
+    /// ordinary caret belongs there.
+    ///
+    /// Arming is what the caret's POSITION means, not a mode a click turns
+    /// on (Sean, 2026-09-20: "the mouse cursor and text cursor should both
+    /// become horizontal between cells"). So ↓ out of the bottom of a cell
+    /// lands on the bar, ↓ again enters the next cell, and ⌃D leaves the
+    /// bar between the two halves it just made. Without this, arrowing onto
+    /// the blank line between two cells and typing merged them: the
+    /// character went in on a line of its own and the parser joined all
+    /// three into one paragraph.
+    ///
+    /// `current` is what is armed already, and it stands while the caret is
+    /// still where the arming put it. That covers the two places the offset
+    /// alone cannot speak for: offset 0 is both the seam above the first
+    /// cell and the first character of it, and the note's length is both
+    /// the tail seam and the end of the last cell. It also covers an
+    /// ordinary click in a seam, which leaves the caret at the first
+    /// character of the cell BELOW.
+    static func arm(caret: NSRange, in markdown: String, current: Int?) -> Int? {
+        // A selection of anything at all is not a caret in a seam — ⌘A and
+        // a bracket click both used to leave the bar armed behind them,
+        // and the next character typed threw the selection away.
+        guard caret.length == 0 else { return nil }
+        let offset = caret.location
+        if let current, current == offset { return current }
+        let ns = markdown as NSString
+        guard offset > 0, offset < ns.length else { return nil }
+        // Cheap first. This runs on every caret move, which means on every
+        // keystroke, and parsing the whole note for each of them would sit
+        // on the typing. Only a caret on a blank line can be in a seam.
+        let line = ns.lineRange(for: NSRange(location: offset, length: 0))
+        guard offset < NSMaxRange(line),
+              ns.substring(with: line).trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        else { return nil }
+        // And only the first and last blank line of a run separate two
+        // cells; the ones between them are a `.blank` cell — the note's own
+        // content, where an ordinary caret belongs.
+        guard MarkdownSourceStyle.structuralLines(in: markdown)
+            .contains(where: { NSLocationInRange(offset, $0) }) else { return nil }
+        return MarkdownParser.positioned(from: markdown)
+            .first { $0.range.location >= offset }?.range.location ?? ns.length
     }
 
     /// Which edge of a seam stays put when it is too thin to be hit.

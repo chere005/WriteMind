@@ -131,14 +131,17 @@ struct MarkdownTextView: NSViewRepresentable {
         // the way of every click that is not in a seam.
         let insertions = CellInsertions(frame: tv.bounds)
         insertions.autoresizingMask = [.width, .height]
-        insertions.onArm = { [weak tv, weak insertions] offset in
+        insertions.onArm = { [weak tv] offset in
             guard let tv = tv as? PasteAwareTextView else { return }
             tv.armedSeam = offset
-            tv.onDisarm = { [weak insertions] in insertions?.disarm() }
             tv.setSelectedRange(NSRange(location: min(offset, (tv.string as NSString).length),
                                         length: 0))
             tv.window?.makeFirstResponder(tv)
         }
+        // The text view's `armedSeam` is the one truth about whether a
+        // seam is armed; this is how the layer hears it, whoever set it —
+        // a click, an arrow key, a note switch, the pen going up.
+        tv.onArmChanged = { [weak insertions] offset in insertions?.armedOffset = offset }
         tv.addSubview(insertions)
         context.coordinator.insertions = insertions
 
@@ -183,6 +186,14 @@ struct MarkdownTextView: NSViewRepresentable {
 
         if context.coordinator.documentID != documentID {
             context.coordinator.documentID = documentID
+            // The bar belongs to the note it was armed in. This pane is
+            // NOT rebuilt on a switch — only the rendered page carries
+            // `.id(note.id)` — so an armed seam that is not put out here
+            // arrives in the next note with a stale offset, no caret at
+            // all (the colour comes back through this property and no
+            // other), and a bar painted across a page at a y that means
+            // nothing.
+            (tv as? PasteAwareTextView)?.armedSeam = nil
             tv.string = text
             tv.undoManager?.removeAllActions()
             tv.setSelectedRange(NSRange(location: 0, length: 0))
@@ -191,6 +202,10 @@ struct MarkdownTextView: NSViewRepresentable {
             return
         }
         if tv.string != text {
+            // The same for an edit that arrived from outside — the folder
+            // watch picking up another app's save, or undo from the menu.
+            // Neither goes through `mouseDown` or `doCommand`.
+            (tv as? PasteAwareTextView)?.armedSeam = nil
             let selection = tv.selectedRange()
             tv.string = text
             let clamped = NSRange(location: min(selection.location, (text as NSString).length), length: 0)
@@ -232,6 +247,14 @@ struct MarkdownTextView: NSViewRepresentable {
                                      text.lineRange(for: NSRange(location: end, length: 0)))
             let glyphs = layout.glyphRange(forCharacterRange: lines, actualCharacterRange: nil)
             let rect = layout.boundingRect(forGlyphRange: glyphs, in: container)
+            // A block inside a closed section is laid out with no height
+            // at all (`FoldingTypesetter`) and is not on the page: it is
+            // still parsed, so leaving it in piled a seam per hidden block
+            // on the fold, each widened to the 8 pt minimum about the same
+            // point, over the top of the text below. `refreshBrackets`
+            // has always made the same check, which is why the brackets
+            // looked right while the pointer did not.
+            guard rect.height > 1 else { continue }
             boxes.append(CellSeams.Box(top: rect.minY + origin.y, bottom: rect.maxY + origin.y,
                                        offset: block.range.location))
         }
@@ -500,6 +523,27 @@ struct MarkdownTextView: NSViewRepresentable {
         func textViewDidChangeSelection(_ notification: Notification) {
             guard let tv = notification.object as? NSTextView else { return }
             tv.updateHiddenMarkers(hiding)
+            // Where the caret IS says whether a seam is armed (the plan's
+            // step 3, from Sean, 2026-09-20: "the mouse cursor and text
+            // cursor should both become horizontal between cells"). Only
+            // a click used to arm one, so ↓ onto the blank line between
+            // two cells and a character merged them into one paragraph —
+            // and everything that moves the selection without a mouse
+            // down (a bracket click, ⌘A, a toolbar command, `/link`) left
+            // the bar armed behind it, ready to throw the selection away.
+            if let tv = tv as? PasteAwareTextView {
+                let wanted = parent.seamsEnabled
+                    ? CellSeams.arm(caret: tv.selectedRange(), in: tv.string, current: tv.armedSeam)
+                    : nil
+                // Only a seam the PAGE has. A caret on the blank line
+                // beside a closed section reads as a separator in the
+                // text and is not one on the page — the cells inside the
+                // fold are not laid out — and arming it would turn the
+                // caret off with no bar drawn in its place.
+                tv.armedSeam = wanted.flatMap { offset in
+                    insertions?.seams.contains { $0.offset == offset } == true ? offset : nil
+                }
+            }
             refreshBrackets(in: tv)
         }
 
@@ -751,13 +795,16 @@ class PasteAwareTextView: NSTextView {
             // and that is where the cursor is"), so the caret is not
             // drawn as well — two cursors is what he was looking at.
             insertionPointColor = armedSeam == nil ? caretColour : .clear
-            if armedSeam == nil { onDisarm?() }
+            onArmChanged?(armedSeam)
         }
     }
     /// The caret's own colour, read once when the editor is built, so it
     /// can come back when the seam goes.
     var caretColour: NSColor = .textColor
-    var onDisarm: (() -> Void)?
+    /// The layer that draws the bar, told of every change and not only of
+    /// the disarms: the caret arms a seam too now, and a bar the layer was
+    /// never told about would be a cursor nobody can see.
+    var onArmChanged: ((Int?) -> Void)?
 
     /// Open the cell an armed seam stands for, if one is armed. The offset
     /// is taken and the bar put out BEFORE the note is touched, so the
@@ -771,6 +818,17 @@ class PasteAwareTextView: NSTextView {
     }
 
     override func insertText(_ string: Any, replacementRange: NSRange) {
+        // A range the caller NAMED means that range. Typing arrives with
+        // {NSNotFound, 0} — AppKit's way of saying "wherever the caret is"
+        // — and where the caret is, is the seam; but this is the same
+        // funnel `EditorBridge.insert(_:belowDocumentY:)` puts the words
+        // read off a picture through, and those go under the picture, not
+        // at a bar somebody armed at the top of the note ten minutes ago.
+        // The bar goes out, because the offset it held has just moved.
+        guard replacementRange.location == NSNotFound else {
+            armedSeam = nil
+            return super.insertText(string, replacementRange: replacementRange)
+        }
         guard openArmedSeam() else {
             return super.insertText(string, replacementRange: replacementRange)
         }
