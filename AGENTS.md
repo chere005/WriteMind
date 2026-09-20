@@ -1,0 +1,637 @@
+# Working in WriteMind
+
+The baseline for all of Sean's repos lives in ~/GIT/AgentSuite/AGENTS.md
+and is imported here; this file holds only what is true of THIS repo.
+@../AgentSuite/AGENTS.md
+
+A macOS-only writing app: a markdown editor on the left, a live camera on the
+right, a sidebar of notes that are plain `.md` files in `~/Documents/WriteMind`.
+Native SwiftUI + AppKit, one Xcode project, no web layer, no server, no package
+manager, no dependencies. `README.md` is the map.
+
+Started 2026-09-18 on Sean's word, from the AgentSuite baseline. It is not a
+Mind-suite clone: it shares no canon bytes with CalMind's lineage and never
+will (there is no TypeScript here to share). It IS in the suite's release
+machinery — CoreMind's `bin/dtp.sh` and `bin/deploy.sh` know it as an
+independent target, and its lane reports to seancheren.com/status through
+CoreMind's `bin/report-status.sh`.
+
+## Standing rules
+
+- **`~/Documents/WriteMind` is Sean's data.** The files there are his notes,
+  readable by anything that opens markdown. The app writes ONLY the note that
+  is open, only after he typed in it (a 500 ms debounce), and only through
+  `NoteStore.saveNow()`. Nothing rewrites, renames or reorders a file on its
+  own; a rename or a trash is a gesture in the sidebar. Tests never touch that
+  folder — `DrawingStoreTests` makes its own temp directory, and the parser
+  and formatting tests are pure.
+- **A SECTION IS A FOLDER.** The sidebar tree is the folder tree under the
+  notes directory — `Ideas/` is a section, `Ideas/2026/` a subsection — so a
+  note moved in WriteMind is moved in Finder and vice versa. Nothing is
+  invented and nothing is a database. The section selected in the sidebar is
+  where a new note goes (`NoteStore.targetSection`, falling back to the open
+  note's own folder, then the root). Dragging a row MOVES THE FILE; trashing
+  a section trashes its notes, the same as Finder, and recoverable the same
+  way.
+- **The row order is the one thing the filesystem cannot hold.** Markdown
+  files have no order and a listing is alphabetical, so a dragged row's place
+  lives in `.writemind/order.json` — a list of names per folder, relative to
+  the root. Anything not named there sorts after what is, newest first, so a
+  note made outside WriteMind still appears. Every operation that adds,
+  renames, moves or trashes a row keeps that file honest; a stale name in it
+  is harmless, an ABSENT one is what makes a new note appear at the bottom.
+- **A folder can be out of the project and still on disk.** "Remove Folder
+  from Project" on a section puts its path in `Project.excluded` (and the
+  session's, for a project with no file); `NoteTree.read(excluding:)` skips
+  it and the footer's Folder ▸ Hidden Folders brings it back. It exists
+  because Move to Trash on a folder really moves it (Sean, 2026-09-18, after
+  it took his notes with it). Every hand-off of `projects.folders` to
+  `store.setFolders` passes `excluding: projects.excluded` too.
+- **The drawing is a sidecar, not a note edit.** Pen strokes live in
+  `~/Documents/WriteMind/.drawings/<note>.json` (hidden, one file per note,
+  removed when the drawing is cleared) so the notes folder stays a folder of
+  markdown. `DrawingStore` follows a rename and a trash; a note file with no
+  sidecar is the normal case.
+- **A project is a list of folders in a JSON file** (`Project`,
+  `.writemind-project`) — Sublime Text's shape. What is NOT in it is the
+  session: which notes are open, which one is in front, and any text that had
+  not reached disk. That lives in Application Support, one file per project
+  plus a `default.json` for "no project yet" (`ProjectSession`), which is why
+  closing an unsaved project is safe and why a launch comes back where it
+  left off. The session's file name is the project's name plus a hash of its
+  full path — two projects called the same thing in different folders must
+  not share one.
+- **A STABLE SIGNATURE IS WHAT MAKES "ALWAYS ALLOW" HOLD.** macOS remembers
+  a camera or folder grant against the app's CODE SIGNATURE, so ad-hoc
+  signing — a different signature every build — made every rebuild look like
+  a new app and ask again. `tools/setup-signing.sh` puts a self-signed
+  code-signing certificate in the login keychain and `tools/build.sh` uses it
+  when it is there (`WRITEMIND_SIGN_IDENTITY` overrides; a real Apple
+  Development identity works too). Without it the build still works and says
+  out loud that the prompts will come back. The keychain asks for a password
+  once, in a dialog — that is macOS's question to Sean, not something to
+  script around. Two things had to be right before it worked, both of them
+  silent failures: **the PKCS#12 must use the old PBE algorithms**
+  (`-keypbe PBE-SHA1-3DES -certpbe PBE-SHA1-3DES -macalg sha1`, and a
+  non-empty password), because OpenSSL 3's defaults make `security import`
+  report "MAC verification failed (wrong password?)", which is not a password
+  problem at all; and **the identity's name has spaces**, so passing it
+  through a shell string that gets split turned
+  `CODE_SIGN_IDENTITY=WriteMind Local Signing` into the build action 'Local'.
+  Proof it works is the designated requirement being IDENTICAL across two
+  builds: `identifier "com.seancheren.WriteMind" and certificate leaf = H"…"`.
+  Check that, not just that the build passed. **And check it after
+  `tools/test.sh` too**: `xcodebuild test` rebuilds and re-signs the very
+  same Debug bundle, and while test.sh signed ad-hoc and build.sh used the
+  certificate, the two took turns at being "a new app" — every test run
+  undid the grant, and Sean was asked again and again (2026-09-18). Both
+  scripts now source `tools/signing.sh` and call its `signed_xcodebuild`;
+  any new script that runs xcodebuild into build/DerivedData must do the
+  same. The test host also no longer touches what the prompts guard:
+  `TestHost.isActive` (XCTest in the environment or the process) sends
+  `NoteStore()` to a scratch folder and stops `CameraController` reconnecting
+  the remembered camera. Builds from Xcode's own Run button still sign ad-hoc
+  (`CODE_SIGN_IDENTITY = "-"` in the pbxproj) and will ask.
+- **Every captured page is the same size, by memory not by measurement.**
+  Squaring a page up (CIPerspectiveCorrection) returns a rectangle whose
+  proportions depend on how the page was tilted towards the camera, so
+  measuring each capture made every page a slightly different size. The
+  notebook's page shape (long side ÷ short side) is learned from the first
+  page that was actually found and kept in `notebookPageShape`; later pages
+  within 12% of it are resampled to exactly that shape, further off
+  re-learns (a different notebook, or the page sideways). A frame with no
+  page found is never remembered. The picture then lands at the page's
+  scale: `NotebookCapture.placement` fits a whole page into 60% of the pane
+  and puts the writing where it was on that page, so captures line up.
+- **Every NSTextView gets its OWN undo manager.** Left to itself an
+  NSTextView registers its undo actions on the window's undo manager, and
+  both editors here are torn down routinely — a `BlockEditor` whenever its
+  block stops being edited, the source `MarkdownTextView` whenever the
+  preview comes up. ⌘Z afterwards invoked an action whose text view had
+  been freed, and the app died in `_NSUndoStack popAndInvoke` (crash report
+  WriteMind-2026-09-18-034439.ips). Each coordinator owns an `UndoManager`,
+  hands it over in `undoManager(for:)`, and empties it in
+  `dismantleNSView`. Any new text view must do the same.
+- **DEPLOY AFTER EVERY SMALL CHANGE.** Sean, 2026-09-19: "always deploy
+  after a small change". The installed bundle is the only place he sees this
+  app, so a finished change is not finished until it is in
+  `/Applications/WriteMind.app`. The loop per change is: patch,
+  `sh tools/test.sh`, quit the running copy, `sh tools/deploy.sh`,
+  `open /Applications/WriteMind.app`, then the one-line reply. Never hold a
+  finished change back waiting for the next one and never stack three asks
+  behind one build — a build carrying five changes is one version he cannot
+  pin a regression to.
+- **Do not rebuild under a running app.** `tools/build.sh` and
+  `tools/test.sh` rewrite build/DerivedData/…/WriteMind.app in place, and
+  test.sh launches it as the test host on top of that. An instance Sean
+  opened from that bundle while a build was rewriting it gets killed by the
+  kernel when it pages in code that no longer matches its signature — which
+  looks like "the app closes as soon as it opens" (Sean, 2026-09-18). Run
+  the builds and the tests first, launch with `tools/run.sh` last, and then
+  leave the bundle alone.
+- **The drawing layer never has keyboard focus, so it WATCHES keys.**
+  `DrawingCanvas.watchKeys` is a local NSEvent monitor: ⌫/⌦ delete the
+  explicit selection (never a merely hovered object), ↩/esc finish or drop a
+  crop, and ⌘V takes a picture off the pasteboard when the first responder
+  is not one of our `PasteAwareTextView`s (those paste pictures themselves;
+  `BlockTextView` inherits it and asks `EditorBridge.pasteImage`). The
+  monitor returns nil to swallow a key — anything it does not take must be
+  returned unchanged or typing dies.
+- **The pencil cursor wins by swallowing cursorUpdate events.** A
+  cursorUpdate event is how AppKit hands a view its turn to set the cursor
+  — the text view's I-beam, the window's arrow — and cursor rects, a pushed
+  cursor and setting the pencil on every hover all lost to it (Sean, three
+  times, 2026-09-18). `CursorLayer.CursorRectView` runs a local NSEvent
+  monitor: while it has a cursor and the pointer is over it, cursorUpdate
+  events are returned as nil and every mouseMoved/drag sets the pencil. The
+  text view under the pen (`PasteAwareTextView.cursorOverride`) answers with
+  the pencil too, for the moves the monitor lets through — and, since even
+  that let an I-beam through now and then (a fourth report), it drops its
+  own tracking areas while the override is set (`updateTrackingAreas`), so
+  no cursor event reaches it at all; and the layer sets the pencil once
+  more on the next run-loop turn, after whatever the dispatch did. The
+  pencil itself is black with a white halo at 28pt — the first, a thin white
+  glyph, was invisible on the page.
+- **A middle click on a tab needs AppKit, and hit testing is not enough.**
+  SwiftUI has no middle-button gesture, and an NSView behind the tab that
+  claimed `otherMouseDown` in `hitTest` never received it. `MiddleClickCatcher`
+  keeps a weak table of its views and one `otherMouseDown` monitor asks each
+  view whether the click is inside its `visibleRect` (converted into the
+  view's own coordinates — SwiftUI's global space and the window's disagree
+  about the titlebar), then swallows the event.
+- **Arrows are two-point items with attachments; `reconnect` keeps them
+  honest.** A `ConnectorItem` stores its two ends as pane fractions plus an
+  optional node id per end. It has a transform like everything else so the
+  shared move/scale/rotate maths works on it, but `Drawing.reconnect(in:)` —
+  called after every `apply` in the canvas and after a new arrow — bakes that
+  transform back into the points and then puts every attached end on the
+  edge of its node (`boundaryPoint`: the outermost crossing of the node's
+  outline). Anything that moves items must call it, or arrows lag behind.
+  Deleting goes through `Drawing.removing`, which takes attached arrows too.
+  Shapes are unit-square polylines scaled into a box (`ShapeItem.Kind`); the
+  drawn path may be a true curve (oval, rounded rectangle) while the
+  polyline is what is hit and what arrows land on.
+- **The drawing layer scrolls with the text.** Objects are in the
+  DOCUMENT: their pane fractions are measured from the document's top, and
+  `DrawingCanvas` draws and hits everything `scrollOffset` higher — the
+  editor reports its clip-view scroll through `MarkdownTextView.onScroll`,
+  `EditorPane` hands it to the canvas and to `NoteStore.canvasScroll`, so a
+  new object lands in the visible part (`visibleCenter`). Every incoming
+  gesture point goes through `doc(_:)` and every handle position through
+  `screen(_:)`/`clamp`; a new gesture or overlay must do the same or it will
+  be a scroll's worth off. The preview does not scroll the layer (its
+  offset is 0 there). The first cut kept objects on the pane and the text's
+  exclusion bands moved with the scroll — a picture taller than the pane
+  then pushed the text out of reach for good.
+- **A new picture goes under the caret.** `NoteStore.caretAnchor` (set by
+  `EditorPane`, nil outside the source editor) gives the caret's line from
+  `EditorBridge.caretLineFrame` — the text view's coordinates ARE the
+  layer's document coordinates — and `anchoredCenter` puts the picture 8pt
+  under that line, flush with the text's left edge; `afterPlacing` then has
+  the editor break the line at the caret, and the exclusion band carries
+  the new line below the picture. Shapes and text boxes still land in the
+  middle of what is on screen.
+- **The text runs round pictures through exclusion paths.** A picture's or
+  text box's band (`EditorPane.keepClear`, document points) becomes a
+  full-width text container exclusion rect (`MarkdownTextView.exclusionRects`,
+  up by the container inset). After setting them, `applyExclusions` calls
+  `ensureLayout` and `sizeToFit`: left to itself the text view kept its old
+  height and the pushed-down text sat below its bottom edge where nothing
+  could scroll to it. Text boxes (`ShapeItem.Kind.text`) are excluded like
+  pictures; ink and shapes are not. **The source editor is TextKit 1
+  because of this**: with `usingTextLayoutManager: true` a full-width
+  exclusion rect made the whole note disappear (TextKit 2 never stepped
+  past the band); TextKit 1 lays out below it as documented.
+- **A picture on the pasteboard does not enable Paste by itself.** A
+  plain-text NSTextView validates the Edit menu's Paste item against what it
+  can read — text — so with only a screenshot on the pasteboard the item is
+  disabled and ⌘V is swallowed before `paste(_:)` runs; copied text pasted
+  fine, which hid it for three reports. `PasteAwareTextView.
+  validateUserInterfaceItem` says yes when `holdsPicture` does. Read a paste
+  problem from /tmp/writemind-debug.log (`DebugLog`), not the unified log:
+  NSLog from a launched app is redacted there as <private>, and a `log`
+  shell function shadows /usr/bin/log in Sean's shell besides.
+- **A refused folder is not a dead end.** `NoteStore` reports `accessDenied`
+  when the folder cannot be read or created, and the sidebar offers "Choose
+  Folder…" — a folder the user PICKS is granted by macOS there and then,
+  whatever the Documents permission said, and the choice is remembered in
+  `notesDirectoryPath`. `useDefaultFolder()` goes back to
+  `~/Documents/WriteMind`.
+- **No sandbox, on purpose.** The app reads a real folder in Sean's home and
+  writes there; sandboxing would move that to a container and require a
+  user-selected bookmark for the folder he actually asked for. It is a local
+  app, not a store app: `CODE_SIGN_IDENTITY = "-"` in the pbxproj, no team,
+  hardened runtime off, and the scripts swap in the local certificate (see
+  the signature trap above). Camera access is a TCC prompt keyed to the bundle
+  id `com.seancheren.WriteMind` plus the usage string in the generated
+  Info.plist (`INFOPLIST_KEY_NSCameraUsageDescription` in the pbxproj).
+- **A first launch never asks for the camera.** `CameraController` only
+  reconnects a device the user already picked (`lastCameraDeviceID` in
+  UserDefaults); the prompt fires the first time the Input Devices menu is
+  used. Keep it that way — a writing app that opens with a camera dialog is
+  the wrong first impression.
+- **The heading ladder is Sean's naming, and it is six deep** (2026-09-18):
+  Title `#` · Header `##` · Section `###` · Subsection `####` ·
+  Subsubsection `#####` · **Author subheader `######`**, which the preview
+  renders ITALIC AND SLIGHTLY BIGGER than body (17pt against 15) rather than
+  as a smaller sixth-rank heading — that inversion is the point of it, so do
+  not "fix" it to match a web renderer. `MarkdownFormatting.Heading` owns the
+  names and the markers; the bar's ⌘1–⌘7 (⌘1 title, ⌘2 chapter, ⌘3 author, ⌘4–⌘6 sections, ⌘7 body) and the preview's
+  `headingFont` both read from it. Applying a level a line already has takes
+  it back to body.
+- **Indenting with a caret moves the whole paragraph** (Sean, 2026-09-18:
+  "indenting text indents the whole block of text, not just the first line").
+  `blockOrSelection` widens a caret to the run of plain paragraph lines
+  around it; a list item, a quote line, a heading and a fence each stand
+  alone, because Tab on the second bullet has to nest THAT bullet and not the
+  list. A real selection is always taken as given.
+- **Tab, Shift-Tab and Backspace are structure keys.** Tab indents the lines
+  the selection touches, Shift-Tab outdents, and Backspace outdents ONLY
+  while the caret is still inside the line's prefix (`prefixLength`) — past
+  that it must stay an ordinary backspace or the note cannot be edited.
+  They go through `textView(_:doCommandBy:)`, so one code path serves the
+  keys and the ⌘[ / ⌘] buttons. Indent nests a quote (`> ` again) and shifts
+  anything else by two spaces; outdent takes spaces first, then a quote
+  marker, so Shift-Tab on a top-level quote unquotes it.
+- **The bar has to fit the pane it lives in.** It is inside the editor pane,
+  so its width is whatever the split gives it, and an HStack that does not
+  fit overflows in BOTH directions — the first cut pushed Bold out under the
+  sidebar and cut the right-hand control off at the divider. That is why the
+  preview is ONE lit button rather than a segmented pair (Sean, 2026-09-18:
+  "preview is a single button that is highlighted when active"), why the
+  icons are 12.5pt in 24pt squares with no spacing between them, and why the
+  bar is `.clipped()`. Adding a control means checking it still fits a
+  half-width window.
+- **`/link` writes an anchor into the OTHER note.** Typing `/link` at a word
+  boundary raises the banner; the target is whatever note is open when "Link
+  Here" is pressed, at the caret or over the highlighted run. A highlighted
+  run becomes `<mark id="wm-…">…</mark>` — which is both the anchor and the
+  annotation Sean asked for, "that it's highlighted and linked to"; a heading
+  needs nothing written (its slug IS the anchor); any other block gets
+  `<a id="wm-…"></a>` in front of it. All portable HTML, never a private
+  marker. `NoteStore.completeLink` edits the TARGET through the open note and
+  the SOURCE on disk, then re-opens the source — the editor never shows a
+  stale copy of a file that changed underneath it.
+- **The preview is editable, block by block, and that is the whole trick.**
+  Clicking a rendered block opens a field holding THAT BLOCK'S markdown,
+  styled as the block, and the commit replaces only that block's source
+  range. The document is never round-tripped from attributed text back to
+  markdown — that conversion is lossy, and losing it would be losing Sean's
+  notes. `MarkdownParser.positioned` is what makes it possible: every block
+  carries the range it was parsed from. Changing the parser means keeping
+  those ranges exact.
+- **Font, size and colour are `<span style="…">` on the selection.** Sean
+  chose that over a document-wide typeface (2026-09-18) — same trade as
+  `<u>`: portable HTML that other markdown readers understand. Only the
+  ticked parts go in, and "System" means no `font-family` at all.
+  `MarkdownInline` renders those spans and folds the span's font together
+  with the bold/italic the markdown already carried, rather than overwriting
+  it — that is what `inlinePresentationIntent` is being read for.
+- **⌘D is Sublime's, and it is bulletproof on purpose.** The ranges handed
+  back to AppKit are clamped, sorted, de-duplicated and non-overlapping
+  (`MarkdownFormatting.normalise`) because `selectedRanges` DROPS THE WHOLE
+  SELECTION if any of that is wrong, and a stale range outliving an edit is
+  the normal case, not an edge one. The run is word-bounded once a press
+  expanded a caret into a word, and it ENDS on any edit or on a selection the
+  run did not make — otherwise the next ⌘D hunts for whatever the last run
+  was looking at. ⌃⌘G takes every occurrence at once.
+- **Text transforms are pure functions with tests beside them.** The
+  toolbar's bold/italic/underline/bullets are `MarkdownFormatting` (an
+  `Edit` = range + replacement + selection, applied by `EditorBridge` through
+  the NSTextView so undo sees it); the preview is `MarkdownParser` (blocks)
+  and `MarkdownInline` (spans); the sidebar title is `Note.make`. Views only
+  call them. A behaviour change lands there, with its test in
+  `WriteMindTests/`, never in a view.
+- **Underline is `<u>…</u>`.** Markdown has no underline; the tag is the
+  portable answer and the preview renders it as an attribute. Do not invent a
+  marker that only this app reads.
+- **The pbxproj uses synchronized root groups** (`objectVersion = 77`): every
+  file under `WriteMind/` is in the app target and every file under
+  `WriteMindTests/` is in the test target, without editing the project file.
+  Adding a Swift file is creating it. The version lives in that file too —
+  `MARKETING_VERSION`, once per configuration, four in all — and the release
+  lane rewrites every occurrence and refuses to ship if they disagree.
+- **`sh tools/dtp.sh` / `sh tools/tdtp.sh`.** The deploy IS the Mac bundle:
+  `tools/deploy.sh` builds Release into `dist/WriteMind.app`, smokes it (it
+  launches and stays up eight seconds), and installs it at
+  `/Applications/WriteMind.app` — before the tag, so a broken build leaves
+  the version untagged and the re-run reuses it. Then a bare `x.y.0` tag and
+  an atomic push. `--web` / `--mac` are accepted for CoreMind's orchestrator
+  and change nothing; `--ios` / `--android` are refused by name.
+- **One heavy build at a time** (baseline). `xcodebuild` here is one; a
+  device or desktop build in a sibling repo is another. Queue, never overlap.
+
+## How it is wired
+
+```
+WriteMind/
+  WriteMindApp.swift      @main; the window; the menus — File > New Note,
+                          View > sidebar / preview toggles, and the
+                          "Input Devices" menu (InputDevicesMenu) listing
+                          every camera with a checkmark on the live one
+  AppState.swift          UI state: sidebar shown, editor/preview mode, pen
+  TestHost.swift          the unit-test host keeps out of ~/Documents
+                          and off the camera
+                          on/off, pen width and colour (persisted), and the
+                          EditorBridge the toolbar talks through
+  Notes/Note.swift        a row: url, modified, title (first # heading, else
+                          the file name), a two-line snippet
+  Notes/NoteStore.swift   ~/Documents/WriteMind: the list, the open note's
+                          text and drawing, debounced autosave, a
+                          DispatchSource watch on the folder so an edit in
+                          another app shows up, new/rename/trash
+  Camera/CameraController.swift
+                          AVCaptureDevice discovery (built-in, external,
+                          Continuity, Desk View), the session, permission,
+                          select/turn off, hot-plug refresh
+  Camera/CameraPreview.swift
+                          AVCaptureVideoPreviewLayer in an NSView
+  Camera/TextRecognition.swift
+                          the words in a picture, by Vision, as lines in
+                          reading order — flattened on white first, since a
+                          captured chunk of writing is ink on nothing; what
+                          is read with little confidence or is not mostly
+                          letters (a doodle, the dot grid) is dropped
+  Camera/NotebookCapture.swift
+                          a notebook page off the camera: Vision finds the
+                          page (document segmentation, then rectangles),
+                          CIPerspectiveCorrection squares it, PageShape
+                          trims its edge and resamples it to one remembered
+                          size, and then Mode.page keeps the photo (a JPEG)
+                          while Mode.ink keeps the writing — a local-mean
+                          threshold keeps what is darker than the paper round
+                          it, and connected-component filtering drops the
+                          printed dots and the page edge. A `region` (a box
+                          drawn on the video pane) goes through Homography —
+                          the perspective, inverted — to its box on the
+                          page. Placement puts the result where it was on
+                          the page, at the page's scale. The mask, shape,
+                          homography and placement maths are pure and tested
+  Editor/MarkdownTextView.swift
+                          the NSTextView (plain text; smart quotes and dashes
+                          OFF because they corrupt markdown; spelling on).
+                          Return at the end of a list item carries the list
+                          on (EditorBridge.continueList)
+  Editor/BulletGlyphs.swift
+                          `- ` drawn as a round bullet: a TextKit 1 layout
+                          delegate swaps the dash's glyph, the file keeps the
+                          dash
+  Editor/MarkdownFormatting.swift
+                          toggleWrap / toggleBullets — pure, tested
+  Editor/EditorBridge.swift
+                          applies an Edit through the text view (undo-safe)
+  Editor/MarkdownBlocks.swift
+                          MarkdownParser (headings, paragraphs, bullets,
+                          numbered, quotes, fenced code, rules) and
+                          MarkdownInline (Foundation's inline markdown + <u>)
+  Editor/MarkdownPreview.swift
+                          the rendered view, block by block — and the editor
+                          on that side: click a block and it opens in a
+                          BlockEditor; the gap between two blocks adds one;
+                          Return splits, ⌫ in an empty block removes it, the
+                          arrows walk between blocks. Every keystroke goes
+                          straight into the note at the block's own range
+  Editor/BlockEditor.swift
+                          one block in a real NSTextView, sized to its text,
+                          handed to the EditorBridge so the whole bar works
+                          on it. Return in a list carries the list on
+  Editor/PreviewEditing.swift
+                          the document surgery — insert, split, remove, list
+                          continuation. Pure, tested
+  Editor/MarkdownSourceStyle.swift
+                          the block's markdown styled as it is typed: markers
+                          fade, bold is bold, headings are their size, maths
+                          and links are coloured. Runs are pure and tested
+  Drawing/Drawing.swift   the objects on the drawing layer: Stroke
+                          (normalised 0…1 points, hex colour, width),
+                          ImageItem (a file in .drawings/media, its centre,
+                          its width as a fraction of the pane, its aspect),
+                          ItemTransform (dx/dy as fractions, scale, rotation),
+                          CanvasItem, Drawing, and DrawingStore — the sidecar,
+                          the pictures, and the sweep of the ones no note
+                          points at any more
+  Drawing/Shapes.swift    ShapeItem (nodes and marks: unit outlines, paths)
+                          and ConnectorItem (arrows: heads, line style,
+                          attachments)
+  Drawing/DrawingGeometry.swift
+                          where an object actually is: base points, the
+                          matrix (rotate and scale about its own centre IN
+                          VIEW POINTS, then translate), hit testing on the
+                          ink, marquee intersection (touching is enough), and
+                          CanvasEdit — the move/scale/rotate maths a group and
+                          a single object share. Pure, and tested
+  Drawing/DrawingCanvas.swift
+                          the layer: one Canvas, plus the handles. With the
+                          pen up it takes the whole pane and draws; with the
+                          pen down its contentShape is only the objects, so
+                          every other click reaches the text. ⌘ makes the
+                          whole pane a marquee
+  Drawing/CursorLayer.swift
+                          the pencil (and open/closed hand) cursor, as a real
+                          AppKit cursor rect over the text view
+  Notes/MarkdownLinking.swift
+                          `/link`: the trigger, the anchors (mark / heading
+                          slug / <a id>), and the markdown a link is made of
+  Editor/MarkdownSpans.swift
+                          <span style> on the selection, and ⌘D's search
+  Math/WLExpression.swift Wolfram Language — the canonical form maths is kept
+                          in (Sean, 2026-09-18). WLParser reads it, WLPrinter
+                          writes it back in one spelling
+  Math/MathTypesetter.swift
+                          the glyph tables (Pi → π, \[Alpha] → α, Sin → sin)
+                          and inline maths as an AttributedString with real
+                          raised and lowered scripts
+  Math/MathView.swift     maths on its own line, in two dimensions: stacked
+                          fractions, ∑ with its bounds, √ with its roof
+  Math/MathTemplates.swift
+                          the palette — every entry writes WL with #1, #2 …
+                          filled in from its fields
+  Views/ContentView.swift top bar over [sidebar | HSplitView(editor, camera)]
+  Views/TopBar.swift      text style menu (the heading ladder) · B I U ·
+                          bullets · quote · code block · T · outdent/indent ·
+                          maths ·
+                          image · shapes · marks · capture · pen · the
+                          preview toggle. 11pt icons in 22pt squares, one
+                          point apart; a control with a menu carries its
+                          chevron inside itself (SplitBarControl). Plus the
+                          show-sidebar button, which appears here only while
+                          the sidebar is hidden — the HIDE button is on the
+                          sidebar itself (Sean, 2026-09-18)
+  Views/PenMenu.swift     the popover under the pen: size slider, circular
+                          ColorPicker plus six preset swatches, undo/redo of
+                          anything that happened on the layer, clear, Add
+                          Image, and how to get hold of an object
+  Views/TextStyleMenu.swift
+                          the T popover: font, size, colour, and which of the
+                          three the span actually carries
+  Views/LinkBanner.swift  "Select section to point to", up until the target
+                          is picked or the user backs out
+  Notes/NoteTree.swift    NoteSection (a folder), the recursive read, and
+                          NoteOrder (.writemind/order.json)
+  Notes/Project.swift     the .writemind-project file and the cached session
+  Notes/ProjectStore.swift
+                          the open project: folders, its file, save/open
+  Views/TabBar.swift      the open notes, the one in front lit, shown even
+                          with nothing open; ⌘W closes a tab rather than
+                          the window, a middle click too. The
+                          wheel walks along the row a tab at a time, the +
+                          tab at the end is New Note, and the button on the
+                          right lists everything open (Sean, 2026-09-18)
+  Views/MathMenu.swift    the maths dropdown: one scrolling pane of shapes,
+                          the fields for the one picked, the WL it writes
+                          (editable), and how it will be set
+  Views/SidebarView.swift the tree, flattened to the rows that show; the
+                          video toggle, edit mode (duplicate and trash on
+                          every row — the trash arms red on one click and
+                          acts on the next, no dialog), new section, new
+                          note; drag to move a note or a section into
+                          another section
+  Views/EditorPane.swift  editor or preview with the DrawingCanvas over it,
+                          and a status line (file, words, saved time)
+  Views/ShapeMenu.swift   the Shapes popover (nodes, the arrow tool) and the
+                          Marks popover (checks, crosses, stars, arrows)
+  Views/CameraPane.swift  the preview, or a placeholder that says why not;
+                          rotate buttons and the section selector (drag a
+                          box, then Writing or Page)
+  Support/Color+Hex.swift #RRGGBB both ways
+  Assets.xcassets/AppIcon.appiconset
+                          every size of the icon, RENDERED — never edited —
+                          by tools/make-icons.sh from assets/logo-square.svg
+WriteMindTests/           XCTest, @testable import WriteMind
+assets/                   logo.svg — the WM mark, the family's one-stroke
+                          monogram (CalMind CM, AcctMind AM) in ink blue;
+                          logo-square.svg, the full-bleed cut for the icon;
+                          logo-512.png for the README
+tools/                    build.sh run.sh test.sh (both source signing.sh)
+                          setup-signing.sh make-icons.sh build-platforms.sh
+                          smoke.sh deploy.sh dtp.sh tdtp.sh
+```
+
+- **Shortcuts**: ⌘N new note · ⌃⌘S sidebar · ⌃⌘E notes pane · ⌃⌘C camera
+  pane · ⇧⌘P editor/preview · ⌘B ⌘I ⌘U · ⇧⌘X strikethrough · ⇧⌘L the list
+  (dots, dashes or numbers, whichever the chevron picked) · ⌃⌘Q quote ·
+  ⌘[ ⌘] outdent/indent (⇥ and ⇧⇥ too) · ⌘1–⌘7 the heading ladder (title,
+  chapter, author, section, subsection, subsubsection, body) · ⌘8 code
+  block · ⌃⌘T table · ⌃⌘↑/↓ move section · ⌥⌘Z / ⇧⌥⌘Z undo and redo the
+  DRAWING (⌘Z does it too while the pen is up) · ⌘D select next occurrence,
+  ⌃⌘G all of them · ⌥⌘R refresh cameras · ⇧⌘O open the notes folder.
+- **EVERY FORMATTING SHORTCUT LIVES IN THE FORMAT MENU**, not on the toolbar
+  button that does the same thing. A button inside a collapsed section of the
+  bar is not in the view tree, and a `.keyboardShortcut` attached to it stops
+  working the moment that section is put away (Sean, 2026-09-19: "each
+  section of the toolbar should be collapsable"). `FormatMenu` in
+  WriteMindApp.swift is the one place they are declared; the buttons carry
+  the keys in their tooltips only.
+- **The toolbar is sections, and a section can be put away.** `ToolGroup`
+  (Style, Structure, Insert, Maths, Flow Chart, Capture — maths and flow
+  charts are their own, Sean 2026-09-19: "basically completely separate
+  things"); `BarGroup` draws one, the grip at its end collapses it, the
+  bar's context menu lists them all, and `AppState.collapsedToolGroups`
+  remembers. Tooltips are the app's own (`BarTip`, an anchor preference
+  hosted by the bar), not `.help()`: they appear after a beat and then keep
+  up with the pointer. `.help()` is still what `BarButton` uses OUTSIDE the
+  bar — the sidebar header — through `\.barTipsEnabled`.
+- **Colours are given twice, light and dark.** `CodeColours.pair(light:dark:)`
+  builds an `NSColor` that answers the appearance it is asked in. Nothing
+  that carries text uses `controlAccentColor`: the accent can be yellow, and
+  yellow on white is not text (Sean, 2026-09-19: "be mindful of text color").
+- **A missing SF Symbol draws NOTHING.** `parallelogram` is macOS 15's, and
+  on 14 the palette button came out blank (2026-09-19). `SymbolTests` walks
+  every shape, tool group and list style and fails on a name this macOS does
+  not have; add new icons to it.
+- **Folding is a typesetter, not an edit.** A closed notebook section is
+  laid out with zero-height line fragments (`FoldingTypesetter`) and not
+  drawn (`FoldingLayoutManager`) — the note's text is never touched, so
+  nothing can be lost by collapsing. `NotebookOutline` works out the
+  sections and their keys (the heading's words, plus an ordinal for
+  repeats), `NoteStore.collapsedSections` remembers them per note and
+  `ProjectSession` persists them. The caret is snapped out of a hidden range
+  and an edit that would reach into one opens the section instead.
+- **A flow-chart line is routed, and the route is baked in.**
+  `Drawing.reconnect(in:)` runs `ConnectorRouting.path` for every connector
+  with an end on a node and stores the corners in `ConnectorItem.bends`, so
+  drawing, hit testing and the handles all read one list of points. The
+  router tries all four sides by all four sides and takes the fewest corners,
+  then the shortest; a path that crosses a node is not a candidate, and the
+  detours are only reached when nothing direct is clear. A segment dragged by
+  hand becomes a `SegmentOverride` that survives re-routing. reconnect only
+  writes an item back when it CHANGED — it runs on every layout pass, and an
+  unconditional assignment would schedule a save each time.
+- **The top bar is a view inside the editor pane, not an NSToolbar.** Sean,
+  2026-09-18: "menubar should only be on the edit text pane" — it sits over
+  the text (and over the preview, and over the empty state), never across the
+  sidebar or the camera, and is "always there" whatever the columns do.
+- **Every launch comes up side by side.** `AppState.init` sets `showEditor`
+  and `showCamera` to true whatever the defaults hold (Sean, 2026-09-19:
+  "default video always to side by side"). Hiding a pane is a gesture for a
+  minute, not a preference — and a launch that came up with the video hidden
+  cost him a hunt for the way back. The keys are still written on every
+  toggle; they are simply not read at startup.
+- **EVERY BUTTON HAS EXACTLY ONE PLACE.** Sean, 2026-09-19: "there should
+  only be one show/hide button for the video feed.. do an audit of the
+  placement of all buttons in the app and clean it up". The rule that came
+  out of that audit: **a pane's switch lives on a DIFFERENT pane, once** —
+  because a switch on the pane it hides cannot bring it back.
+  - the VIDEO's switch: the editor's bar, right of the preview button, and
+    nowhere else (it used to be in the sidebar header too — removed).
+  - the NOTES pane's switch: the video's top-right corner.
+  - the SIDEBAR's: its own header, with the way back on the editor's bar,
+    shown only while the sidebar is hidden — the two are never both up.
+  - ⌃⌘S / ⌃⌘E / ⌃⌘C in the View menu for all three. A MENU item is not a
+    second button; a second button on screen is.
+  The one duplicate that stays is New Note (sidebar header, the `+` tab,
+  ⌘N) — Sean asked for the tab knowing it repeats the button.
+  The rest of the inventory, so the next audit has a baseline: sidebar
+  header (collapse, edit, new section, new note); sidebar row in edit mode
+  (duplicate, trash); sidebar footer (the Folder menu); the tab bar (tabs,
+  `+`, the overflow list); the editor bar (the six ToolGroups, then preview
+  and video); the video's corner (select section, zoom, fit-when-zoomed,
+  rotate left, rotate right, notes pane); the drawing layer's handles
+  (rotate, scale, move, trash, and per-kind: crop and read for a picture,
+  style for a connector, a circle per segment for a routed one).
+- **A recursive SwiftUI view cannot be type-checked** — "opaque return type
+  was inferred in terms of itself". The sidebar builds `[SidebarRow]` first
+  and draws a flat ForEach; a tree that draws itself by recursion does not
+  compile, and flattening is faster anyway.
+- **The sidebar is a plain HStack child**, shown or hidden with a transition,
+  rather than a NavigationSplitView column — the split view owns its own
+  toolbar and collapse gestures, and the bar above has to stay put.
+
+## Traps that have cost real time here
+
+- **`@Published` fires in `willSet`.** Inside a `$selection.sink`,
+  `self.selection` is still the OLD note. The first cut of `NoteStore` saved
+  the outgoing note correctly and then re-loaded it instead of the new one.
+  The sink uses the value the publisher hands it; `loadText(for:)` takes an
+  id for exactly this reason.
+- **A SwiftUI patch that asserts its way through several files can leave the
+  tree half-edited.** Two changes here were written into some files and not
+  others because a later `assert old in s` failed and the earlier writes had
+  already landed — the camera-pane button went missing from the bar that way
+  and was only caught by reading the app's accessibility tree, not by the
+  build, which was perfectly happy. Check the thing you added is actually
+  there.
+- **A `Codable` default value is not a decoding default.** The synthesized
+  `init(from:)` ignores `= ItemTransform()` and fails on a sidecar written
+  before that property existed — and `DrawingStore.load` turns a decode
+  failure into an empty drawing, so old drawings would have silently
+  vanished. `Stroke`, `ImageItem` and `Drawing` decode by hand, with
+  `decodeIfPresent`, and `Drawing` still reads the old `strokes` array.
+- **A pushed `NSCursor` loses to the text view.** `NSTextView` sets the
+  I-beam from its own tracking area on every mouse move, so `.onHover` +
+  `NSCursor.push()` flickered straight back to a text cursor — which is why
+  the pen had no pencil. `CursorLayer` is an AppKit view above it with a real
+  cursor rect (and a tracking area as the belt to those braces), and
+  `hitTest` returning nil so it never takes a click.
+- **A stored property called `body` in a `View` is a redeclaration**, and
+  `swiftc -parse` will not tell you — it type-checks fine and fails in the
+  build. Three of the maths views had `let body: WLExpr` before they were
+  renamed to `term`.
+- **The background app tools cannot drive a SwiftUI drag.** `app_drag`
+  reports "delivered via raw input" and nothing happens — worse, one landed
+  in the note as a stray character. Buttons and menus are fine through the
+  accessibility tree; anything that needs a real mouse drag (drawing, moving
+  an object, a marquee) has to be tried by hand.
+- **The shell's working directory persists between tool calls** (baseline).
+  Every script here starts with `cd "$(dirname "$0")/.."` so it does not
+  matter where it was invoked from.

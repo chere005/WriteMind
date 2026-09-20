@@ -1,0 +1,94 @@
+import CoreGraphics
+import Foundation
+
+/// What the next drag on the pane puts down. Picking a shape or a mark from
+/// the palette arms this; the drag that follows says where the thing starts
+/// and where it ends (Sean, 2026-09-19: "when selecting a mark when i click
+/// i start the mark and drag and release where the mark ends"). A click with
+/// no drag still works — the object arrives at its own size, as it used to.
+enum CanvasPlacement: Equatable {
+    case shape(ShapeItem.Kind)
+    case line(start: ConnectorItem.Head, end: ConnectorItem.Head)
+
+    var title: String {
+        switch self {
+        case .shape(let kind): return kind.title
+        case .line(.none, .none): return "Line"
+        case .line(.arrow, .arrow): return "Double-headed Arrow"
+        case .line: return "Arrow"
+        }
+    }
+
+    /// Under this, the drag was a click.
+    static let dragThreshold: CGFloat = 4
+    /// Nothing smaller than this goes down: a shape two points across is a
+    /// slip of the hand, not a shape.
+    static let minimumSide: CGFloat = 12
+
+    static func isDrag(from: CGPoint, to: CGPoint) -> Bool {
+        max(abs(to.x - from.x), abs(to.y - from.y)) >= dragThreshold
+    }
+
+    /// The box a drag puts the shape in. A node takes the rectangle that was
+    /// dragged; a mark keeps its square, anchored where the drag began and
+    /// growing the way it went, so a check mark is never stretched.
+    static func box(from: CGPoint, to: CGPoint, kind: ShapeItem.Kind, in size: CGSize) -> CGRect {
+        guard isDrag(from: from, to: to) else {
+            let width = (kind.isNode ? 0.18 : 0.07) * size.width
+            return CGRect(x: from.x - width / 2, y: from.y - width * kind.defaultAspect / 2,
+                          width: width, height: width * kind.defaultAspect)
+        }
+        if kind.isNode {
+            let box = CGRect(x: min(from.x, to.x), y: min(from.y, to.y),
+                             width: abs(to.x - from.x), height: abs(to.y - from.y))
+            return CGRect(x: box.minX, y: box.minY,
+                          width: max(box.width, minimumSide), height: max(box.height, minimumSide))
+        }
+        let side = max(max(abs(to.x - from.x), abs(to.y - from.y)), minimumSide)
+        return CGRect(x: to.x >= from.x ? from.x : from.x - side,
+                      y: to.y >= from.y ? from.y : from.y - side,
+                      width: side, height: side)
+    }
+
+    /// The shape a drag makes, in the pane's fractions.
+    static func shape(_ kind: ShapeItem.Kind, from: CGPoint, to: CGPoint, in size: CGSize,
+                      colorHex: String, lineWidth: Double) -> ShapeItem? {
+        guard size.width > 1, size.height > 1 else { return nil }
+        let box = self.box(from: from, to: to, kind: kind, in: size)
+        let stroke = kind.isNode ? min(max(lineWidth, 1.5), 4) : min(max(lineWidth, 2), 8)
+        return ShapeItem(kind: kind,
+                         center: CGPoint(x: box.midX / size.width, y: box.midY / size.height),
+                         width: box.width / size.width,
+                         aspect: box.height / max(box.width, 1),
+                         colorHex: colorHex, lineWidth: stroke)
+    }
+
+    /// The line a drag makes. A click puts down a short horizontal one.
+    static func connector(from: CGPoint, to: CGPoint, in size: CGSize,
+                          startHead: ConnectorItem.Head, endHead: ConnectorItem.Head,
+                          colorHex: String, lineWidth: Double) -> ConnectorItem? {
+        guard size.width > 1, size.height > 1 else { return nil }
+        var a = from, b = to
+        if !isDrag(from: from, to: to) {
+            let reach = 0.08 * size.width
+            a = CGPoint(x: from.x - reach, y: from.y)
+            b = CGPoint(x: from.x + reach, y: from.y)
+        }
+        return ConnectorItem(start: CGPoint(x: a.x / size.width, y: a.y / size.height),
+                             end: CGPoint(x: b.x / size.width, y: b.y / size.height),
+                             startHead: startHead, endHead: endHead,
+                             colorHex: colorHex, lineWidth: min(max(lineWidth, 1.5), 6))
+    }
+
+    /// The object itself, ready to go on the layer.
+    func item(from: CGPoint, to: CGPoint, in size: CGSize, colorHex: String, lineWidth: Double) -> CanvasItem? {
+        switch self {
+        case .shape(let kind):
+            return Self.shape(kind, from: from, to: to, in: size,
+                              colorHex: colorHex, lineWidth: lineWidth).map { .shape($0) }
+        case .line(let start, let end):
+            return Self.connector(from: from, to: to, in: size, startHead: start, endHead: end,
+                                  colorHex: colorHex, lineWidth: lineWidth).map { .connector($0) }
+        }
+    }
+}

@@ -1,0 +1,16 @@
+# xcodebuild output (tools/build.sh, tools/test.sh) and the staged bundle
+build/
+dist/
+DerivedData/
+
+# Xcode's per-user state; the shared scheme under xcshareddata IS tracked
+*.xcodeproj/xcuserdata/
+*.xcodeproj/project.xcworkspace/xcuserdata/
+*.xcworkspace/xcuserdata/
+
+# Claude Code machine-local state; launch.json would be repo config and tracked
+.claude/*
+!.claude/launch.json
+
+*.log
+.DS_Store

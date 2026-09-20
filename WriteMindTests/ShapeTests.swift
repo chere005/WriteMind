@@ -1,0 +1,182 @@
+import AppKit
+import XCTest
+@testable import WriteMind
+
+private let pane = CGSize(width: 1000, height: 500)
+
+/// Flow-chart nodes, the arrows between them, and the marks.
+final class ShapeTests: XCTestCase {
+    private func node(_ kind: ShapeItem.Kind = .rectangle, at x: Double) -> ShapeItem {
+        ShapeItem(kind: kind, center: CGPoint(x: x, y: 0.5), width: 0.2, aspect: 0.5, colorHex: "#000000")
+    }
+
+    private func arrow(from a: ShapeItem, to b: ShapeItem) -> ConnectorItem {
+        ConnectorItem(start: .zero, end: .zero, startNode: a.id, endNode: b.id, colorHex: "#000000")
+    }
+
+    func testShapesAndConnectorsSurviveTheSidecar() throws {
+        let a = node(at: 0.2), b = node(.oval, at: 0.7)
+        var drawing = Drawing(items: [.shape(a), .shape(b)])
+        drawing.items.append(.connector(ConnectorItem(
+            start: CGPoint(x: 0.2, y: 0.5), end: CGPoint(x: 0.7, y: 0.5), startNode: a.id, endNode: b.id,
+            startHead: .arrow, endHead: .arrow, line: .dashed, colorHex: "#FF0000", lineWidth: 3)))
+        let data = try JSONEncoder().encode(drawing)
+        let back = try JSONDecoder().decode(Drawing.self, from: data)
+        XCTAssertEqual(back, drawing)
+        XCTAssertEqual(back.connectors.first?.line, .dashed)
+        XCTAssertEqual(back.shapes.map(\.kind), [.rectangle, .oval])
+    }
+
+    func testAnAttachedArrowLandsOnTheEdgesOfItsNodes() throws {
+        // a spans x 100…300 and b x 600…800 in the 1000-wide pane.
+        let a = node(at: 0.2), b = node(at: 0.7)
+        var drawing = Drawing(items: [.shape(a), .shape(b), .connector(arrow(from: a, to: b))])
+        drawing.reconnect(in: pane)
+        let joined = try XCTUnwrap(drawing.connectors.first)
+        XCTAssertEqual(joined.start.x, 0.3, accuracy: 0.001)
+        XCTAssertEqual(joined.start.y, 0.5, accuracy: 0.001)
+        XCTAssertEqual(joined.end.x, 0.6, accuracy: 0.001)
+        XCTAssertEqual(joined.end.y, 0.5, accuracy: 0.001)
+    }
+
+    func testAnArrowFollowsANodeThatMoves() throws {
+        let a = node(at: 0.2), b = node(at: 0.7)
+        var drawing = Drawing(items: [.shape(a), .shape(b), .connector(arrow(from: a, to: b))])
+        drawing.reconnect(in: pane)
+        var moved = try XCTUnwrap(drawing[id: b.id])
+        moved.transform.dy = 0.3   // b goes down by 150 points
+        drawing[id: b.id] = moved
+        drawing.reconnect(in: pane)
+        let joined = try XCTUnwrap(drawing.connectors.first)
+        XCTAssertGreaterThan(joined.end.y, 0.5, "the end went down with the node")
+        XCTAssertLessThan(joined.end.y, 0.8, "and stops at the node's edge, not at its centre")
+        // The node is now below and to the right, so the line turns a corner
+        // and comes down into the top of it (Sean, 2026-09-19: "lines are
+        // always straight with corners").
+        XCTAssertEqual(joined.end.x, 0.7, accuracy: 0.001, "in at the middle of the top edge")
+        XCTAssertFalse(joined.bends.isEmpty, "by way of a corner")
+        for point in joined.route {
+            XCTAssertTrue(point.x.isFinite && point.y.isFinite)
+        }
+    }
+
+    func testAnArrowsOwnMoveIsBakedIntoItsPoints() throws {
+        var drawing = Drawing(items: [.connector(ConnectorItem(
+            start: CGPoint(x: 0.2, y: 0.5), end: CGPoint(x: 0.4, y: 0.5), colorHex: "#000000"))])
+        var dragged = drawing.items[0]
+        dragged.transform.dx = 0.1
+        drawing.items[0] = dragged
+        drawing.reconnect(in: pane)
+        let baked = try XCTUnwrap(drawing.connectors.first)
+        XCTAssertEqual(baked.transform, ItemTransform())
+        XCTAssertEqual(baked.start.x, 0.3, accuracy: 0.001)
+        XCTAssertEqual(baked.end.x, 0.5, accuracy: 0.001)
+    }
+
+    func testDeletingANodeTakesItsArrowsWithIt() {
+        let a = node(at: 0.2), b = node(at: 0.7)
+        let free = ConnectorItem(start: CGPoint(x: 0.1, y: 0.9), end: CGPoint(x: 0.3, y: 0.9), colorHex: "#000000")
+        let drawing = Drawing(items: [.shape(a), .shape(b), .connector(arrow(from: a, to: b)), .connector(free)])
+        XCTAssertEqual(drawing.removing([a.id]).items.map(\.id), [b.id, free.id])
+    }
+
+    func testAnOvalIsHitInsideAndACheckMarkOnlyOnItsLine() {
+        // 200 × 200, centred at (500, 250).
+        let oval = CanvasItem.shape(ShapeItem(kind: .oval, center: CGPoint(x: 0.5, y: 0.5), width: 0.2,
+                                              aspect: 1, colorHex: "#000000"))
+        XCTAssertTrue(oval.hitTest(CGPoint(x: 500, y: 250), in: pane))
+        XCTAssertFalse(oval.hitTest(CGPoint(x: 410, y: 160), in: pane), "the corner of the box is outside the oval")
+        XCTAssertEqual(pane.width, 1000)
+        // 100 × 100 at (450…550, 200…300): the tick's short arm runs from
+        // (458, 255) to (488, 286).
+        let check = CanvasItem.shape(ShapeItem(kind: .check, center: CGPoint(x: 0.5, y: 0.5), width: 0.1,
+                                               aspect: 1, colorHex: "#000000", lineWidth: 4))
+        XCTAssertTrue(check.hitTest(CGPoint(x: 473, y: 270), in: pane))
+        XCTAssertFalse(check.hitTest(CGPoint(x: 460, y: 215), in: pane), "the empty top-left corner")
+        XCTAssertNotNil(Drawing(items: [oval]).attachable(at: CGPoint(x: 500, y: 250), in: pane))
+        XCTAssertNil(Drawing(items: [oval]).attachable(at: CGPoint(x: 100, y: 100), in: pane))
+    }
+
+    func testAnArrowIsHitAlongItsLine() {
+        let line = CanvasItem.connector(ConnectorItem(start: CGPoint(x: 0.2, y: 0.5), end: CGPoint(x: 0.4, y: 0.5),
+                                                      colorHex: "#000000"))
+        XCTAssertTrue(line.hitTest(CGPoint(x: 300, y: 252), in: pane))
+        XCTAssertFalse(line.hitTest(CGPoint(x: 300, y: 280), in: pane))
+    }
+
+    func testATextBoxIsANodeThatGrowsToItsText() {
+        XCTAssertTrue(ShapeItem.Kind.text.isNode)
+        XCTAssertTrue(ShapeItem.Kind.text.isClosed)
+        let short = ShapeItem.textAspect(for: "Hi", boxWidth: 200)
+        let long = ShapeItem.textAspect(for: String(repeating: "words and more words ", count: 12), boxWidth: 200)
+        XCTAssertGreaterThan(long, short * 3, "twelve lines are far taller than one")
+        XCTAssertGreaterThan(short, 0.08)
+        XCTAssertEqual(ShapeItem.textAspect(for: "anything", boxWidth: 5), 0.3, "no room: the default")
+    }
+
+    func testTheTextKeepsClearOfAPictureAsItScrolls() {
+        let band = CGRect(x: 100, y: 200, width: 300, height: 80)
+        let atTop = MarkdownTextView.exclusionRects(bands: [band], scrollOffset: 0, inset: 20)
+        XCTAssertEqual(atTop.count, 1)
+        XCTAssertEqual(atTop[0].minY, 200 - 6 - 20)
+        XCTAssertEqual(atTop[0].height, 80 + 12)
+        XCTAssertLessThan(atTop[0].minX, 0, "the band spans the whole width")
+        XCTAssertGreaterThan(atTop[0].maxX, 5_000)
+        // Scrolled down 150 points, the same picture sits 150 further into the document.
+        let scrolled = MarkdownTextView.exclusionRects(bands: [band], scrollOffset: 150, inset: 20)
+        XCTAssertEqual(scrolled[0].minY, atTop[0].minY + 150)
+        XCTAssertTrue(MarkdownTextView.exclusionRects(bands: [], scrollOffset: 9, inset: 20).isEmpty)
+    }
+
+    func testTheHeadHasItsTipAtTheEnd() {
+        let head = ConnectorItem.head(tip: CGPoint(x: 100, y: 50), from: CGPoint(x: 0, y: 50), lineWidth: 2)
+        XCTAssertEqual(head.boundingRect.maxX, 100, accuracy: 0.001)
+        XCTAssertEqual(head.boundingRect.width, ConnectorItem.headLength(for: 2), accuracy: 0.001)
+        XCTAssertEqual(CanvasGeometry.intersection(CGPoint(x: 0, y: 0), CGPoint(x: 10, y: 10),
+                                                   CGPoint(x: 0, y: 10), CGPoint(x: 10, y: 0)),
+                       CGPoint(x: 5, y: 5))
+        XCTAssertNil(CanvasGeometry.intersection(CGPoint(x: 0, y: 0), CGPoint(x: 10, y: 0),
+                                                 CGPoint(x: 0, y: 1), CGPoint(x: 10, y: 1)))
+    }
+}
+
+/// Every icon the palettes and the bar ask for has to exist on this macOS:
+/// a symbol that is not there draws nothing at all, and the button looks
+/// broken (2026-09-19, when `parallelogram` turned out to be macOS 15's).
+final class SymbolTests: XCTestCase {
+    func testEveryShapeAndMarkHasAnIconThatExists() {
+        for kind in ShapeItem.Kind.allCases {
+            XCTAssertNotNil(NSImage(systemSymbolName: kind.symbol, accessibilityDescription: nil),
+                            "\(kind.title) asks for the missing symbol \(kind.symbol)")
+        }
+    }
+
+    func testEveryToolbarSectionHasAnIconThatExists() {
+        for group in ToolGroup.allCases {
+            XCTAssertNotNil(NSImage(systemSymbolName: group.icon, accessibilityDescription: nil),
+                            "\(group.title) asks for the missing symbol \(group.icon)")
+        }
+    }
+
+    /// The camera pane's own icons are not in any enum, so they are listed
+    /// here by hand — `parallelogram` was missing on this macOS and drew
+    /// nothing at all (2026-09-19).
+    func testEveryCameraPaneIconExists() {
+        let icons = ["rectangle.dashed", "crop.rotate", "rotate.left", "rotate.right",
+                     "arrow.down.right.and.arrow.up.left", "square.dashed", "video", "video.fill",
+                     "video.slash", "video.badge.ellipsis", "exclamationmark.triangle",
+                     "doc.viewfinder", "scribble.variable", "xmark",
+                     "rectangle.righthalf.inset.filled", "rectangle.lefthalf.inset.filled"]
+        for icon in icons {
+            XCTAssertNotNil(NSImage(systemSymbolName: icon, accessibilityDescription: nil),
+                            "the camera pane asks for the missing symbol \(icon)")
+        }
+    }
+
+    func testEveryListStyleHasAnIconThatExists() {
+        for style in MarkdownFormatting.ListStyle.allCases {
+            XCTAssertNotNil(NSImage(systemSymbolName: style.systemImage, accessibilityDescription: nil),
+                            "\(style.title) asks for the missing symbol \(style.systemImage)")
+        }
+    }
+}
