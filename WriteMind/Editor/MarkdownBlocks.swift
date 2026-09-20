@@ -56,11 +56,10 @@ enum MarkdownParser {
         var blockStart = 0
         var blockEnd = 0
         var lineStart = 0
-        /// A run of blank lines being counted: which line it started on,
-        /// where in the text, and where it has reached.
+        /// A run of blank lines being counted: which line it started on
+        /// and where in the text that line began.
         var blankRunStart: Int?
         var blankRunFirst = 0
-        var blankRunEnd = 0
         var lineLengths: [Int] = []
 
         func emit(_ block: MarkdownBlock) {
@@ -94,6 +93,14 @@ enum MarkdownParser {
         func emitBlankRun(upTo lineIndex: Int, from start: Int) {
             let count = lineIndex - start
             guard count >= 3 else { return }
+            // emit reads blockStart and blockEnd, so this cell has to put
+            // them back: the line that ENDED the run has already moved
+            // blockEnd on to itself (it is read at the top of the loop),
+            // and a cell that kept the blank run's end left the next one
+            // with a range of negative length.
+            let openStart = blockStart
+            let openEnd = blockEnd
+            defer { blockStart = openStart; blockEnd = openEnd }
             let from = blankRunFirst + lineLengths[start]
             var to = from
             for index in (start + 1)..<(lineIndex - 1) { to += lineLengths[index] }
@@ -209,7 +216,6 @@ enum MarkdownParser {
         }
         flush()
         if let start = blankRunStart { emitBlankRun(upTo: allLines.count, from: start) }
-        _ = blankRunEnd
         return blocks
     }
 

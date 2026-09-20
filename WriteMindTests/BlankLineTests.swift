@@ -45,6 +45,19 @@ final class BlankLineTests: XCTestCase {
         XCTAssertLessThan(blocks[1].range.location, blocks[2].range.location)
     }
 
+    func testTheCellAfterAnEmptyCellCoversItsOwnText() {
+        // The blank cell used to leave the open block's end behind it, so
+        // the cell after it came out with a range of NEGATIVE length —
+        // {14, -2} for this note. Every seam and every edit of a rendered
+        // cell is measured off these ranges, so they have to be real.
+        let note = "baz\n" + String(repeating: "\n", count: 10) + "# asdf"
+        let blocks = MarkdownParser.positioned(from: note)
+        guard blocks.count == 3 else { return XCTFail("got \(kinds(note))") }
+        XCTAssertEqual(blocks[0].range, NSRange(location: 0, length: 3), "baz")
+        XCTAssertGreaterThan(blocks[2].range.length, 0)
+        XCTAssertEqual(blocks[2].range, NSRange(location: 14, length: 6), "# asdf, and only it")
+    }
+
     func testBlankLinesInsideAFenceAreStillCode() {
         XCTAssertEqual(kinds("```swift\nlet a = 1\n\n\n\nlet b = 2\n```"), ["code"])
     }
