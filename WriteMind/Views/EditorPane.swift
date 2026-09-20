@@ -67,7 +67,13 @@ struct EditorPane: View {
                                         onTopCell: { store.topCell = $0 },
                                         topCell: store.topCell,
                                         collapsed: store.collapsedHere,
-                                        onToggleSection: { store.toggleSection($0) })
+                                        onToggleSection: { store.toggleSection($0) },
+                                        // The same switch, off the same
+                                        // expression: the two panes are
+                                        // the same notebook.
+                                        seamsEnabled: !appState.penActive
+                                            && !appState.connectActive
+                                            && appState.placing == nil)
                             .id(note.id)
                     }
                     // The drawing belongs to the note, so it shows in both

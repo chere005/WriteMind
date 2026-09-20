@@ -179,8 +179,13 @@ CoreMind's `bin/report-status.sh`.
   clear and puts `caretColour` back the moment it goes, so every path that
   disarms — a key, a click, the pen going up — must go through that
   property and not round it, or the note is left with no caret at all.
-  Which seam a point is in is `CellSeams`, once, for both panes;
-  `CellInsertions` only draws it and takes the click.
+  Which seam a point is in is `CellSeams`, once, for both panes — the
+  markdown pane measures the cells' boxes off the layout manager
+  (`MarkdownTextView.cellBoxes`) and the rendered page off the stack
+  (`MarkdownPreview.seams`), and neither of them decides what a seam is.
+  `CellInsertions` only draws it and takes the click; on the rendered
+  page the seam is a view of its own, armed by `MarkdownPreview.arm`,
+  and `MarkdownPreview.seamKey` says what a key pressed in one means.
 - **A middle click on a tab needs AppKit, and hit testing is not enough.**
   SwiftUI has no middle-button gesture, and an NSView behind the tab that
   claimed `otherMouseDown` in `hitTest` never received it. `MiddleClickCatcher`

@@ -36,6 +36,12 @@ struct MarkdownPreview: View {
     /// markdown editor uses, so the notebook is the same on both sides.
     var collapsed: Set<String> = []
     var onToggleSection: ((String) -> Void)?
+    /// False while the pen, the arrow tool or a placement is up: the
+    /// pencil owns the note pane then (Sean, 2026-09-20: "cursor only
+    /// becomes a pen in the notes pane in drawing mode!!!!!"), so the
+    /// pointer is never horizontal and no seam can be armed. The same
+    /// switch the markdown pane has, off the same expression.
+    var seamsEnabled: Bool = true
 
     @State private var rowHeights: [Int: CGFloat] = [:]
     /// The fence lines of the code block being typed in. The editor shows
@@ -52,7 +58,19 @@ struct MarkdownPreview: View {
     @State private var draft = ""
     @State private var focusToken = 0
     @State private var caretAtStart = false
-    @State private var hoveredGap: Int?
+    @State private var hoveredSeam: Int?
+    /// The seam the bar is sitting in, waiting to be typed into — the
+    /// character offset a cell would be opened at. Nothing is written
+    /// there until a key says so (Sean, 2026-09-20: "when clicking in
+    /// between, the horizontal line appears and that is where the cursor
+    /// is"), so clicking about the page leaves no empty cells behind.
+    @State private var armedSeam: Int?
+    /// The armed seam holds the keyboard, because the bar IS the cursor
+    /// and there is no text view to hold it on this side.
+    @FocusState private var focusedSeam: Int?
+    /// How tall the window on the page is: the tail seam runs to the
+    /// bottom of it, so everything under the last cell can be typed in.
+    @State private var pageHeight: CGFloat = 0
 
     private static let space = "WriteMindPreview"
     /// The air above the first cell and below the last. Not private: the
@@ -78,8 +96,19 @@ struct MarkdownPreview: View {
     /// than its cell, and the error piled up down the page (Sean,
     /// 2026-09-19: "notebook bar placement bugs").
     static let gapHeight: CGFloat = 8
+    /// The air under the last cell. All of it is the tail seam now — the
+    /// gap, the strip the page used to offer a click on, and the margin
+    /// that was under them — because everything below the last cell is
+    /// one seam and there has to be somewhere to put a cell down there.
+    static let tailHeight: CGFloat = 80 + topInset + gapHeight
 
     var body: some View {
+        // The window on the page, measured from OUTSIDE the scroll view:
+        // the tail seam runs to the bottom of it. A preference from a
+        // GeometryReader in the scroll view's background never arrived —
+        // the tail came out 110 points tall against a 700 point window,
+        // so the space under a short note answered nothing.
+        GeometryReader { window in
         ScrollViewReader { page in
         ScrollView {
             VStack(alignment: .leading, spacing: 0) {
@@ -91,8 +120,13 @@ struct MarkdownPreview: View {
                 }
                 .frame(height: 0)
 
+                // A seam above every cell and one under the last: the
+                // page is cell, seam, cell, seam, and nothing else.
+                let seams = self.seams
+                let above = Dictionary(seams.dropLast().map { ($0.offset, $0) },
+                                       uniquingKeysWith: { first, _ in first })
                 ForEach(items) { item in
-                    gap(at: item.range.location)
+                    seamView(above[item.id])
                     row(item)
                         .id(item.id)
                         .background {
@@ -101,20 +135,19 @@ struct MarkdownPreview: View {
                                                        value: [item.id: proxy.size.height])
                             }
                         }
+                        // The page's margin is on the CELLS, not on the
+                        // stack: a seam is the full width of the page,
+                        // and a margin round the stack would have left a
+                        // strip down each side that answered nothing.
+                        .padding(.horizontal, Self.sideInset)
                 }
-                gap(at: (markdown as NSString).length)
-
-                if editable {
-                    // Somewhere to click that is not a block, to add one.
-                    Color.clear
-                        .frame(height: 80)
-                        .contentShape(Rectangle())
-                        .onTapGesture { insertBlock(at: (markdown as NSString).length) }
-                }
+                seamView(seams.last)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(.horizontal, Self.sideInset)
-            .padding(.vertical, Self.topInset)
+            // No padding above or below either: the air at the two ends
+            // of the page is SEAM, not margin, and the head and tail
+            // seams carry it themselves (`topInset` in the one,
+            // `tailHeight` in the other).
             // The cell brackets, in the margin the page already leaves.
             .overlay(alignment: .topTrailing) {
                 CellBrackets(brackets: cellBrackets,
@@ -151,6 +184,12 @@ struct MarkdownPreview: View {
         }
         .background(Color(nsColor: .textBackgroundColor))
         .onChange(of: editingRange) { _, range in onEditingChanged?(range != nil) }
+        // The pen going up takes the bar with it.
+        .onChange(of: seamsEnabled) { _, enabled in if !enabled { armedSeam = nil } }
+        .onChange(of: focusedSeam) { _, focused in
+            // Whatever else takes the keyboard takes it from the bar.
+            if armedSeam != nil, focused != armedSeam { armedSeam = nil }
+        }
         .onAppear {
             // Open where the markdown pane was left, on the same cell.
             if topCell > 0,
@@ -183,6 +222,9 @@ struct MarkdownPreview: View {
                   let onFollow, onFollow(destination) else { return .systemAction }
             return .handled
         })
+        .onAppear { pageHeight = window.size.height }
+        .onChange(of: window.size.height) { _, height in pageHeight = height }
+        }
         }
     }
 
@@ -317,48 +359,207 @@ struct MarkdownPreview: View {
         }
     }
 
-    /// The line between two blocks: hover it and it offers to put one there.
+    /// One seam: the WHOLE space between two cells, top to bottom and
+    /// edge to edge — the air above the first cell, the strip between two
+    /// of them, and everything under the last (Sean, 2026-09-20: "the
+    /// cursor should be horizontal any space between the two cells").
+    ///
+    /// The pointer turns on its side anywhere inside it and a click ARMS
+    /// it: a bar runs across the page and that bar is the cursor, which
+    /// is why no block is left open behind it. The note is not touched
+    /// until a key arrives — clicking about the page used to leave an
+    /// empty cell everywhere it had been.
     @ViewBuilder
-    /// The space between two cells. The pointer turns on its side there
-    /// and a bar runs across the page — Wolfram's insertion point, and
-    /// Jupyter's (Sean, 2026-09-19: "there should be the horizontal cursor
-    /// and bar for inserting between cells"). Clicking it opens a new cell,
-    /// and a new cell is always plain text.
-    private func gap(at offset: Int) -> some View {
-        if editable {
-            ZStack(alignment: .leading) {
-                Color.clear.frame(height: Self.gapHeight)
-                if hoveredGap == offset {
-                    HStack(spacing: 6) {
-                        Image(systemName: "plus.circle.fill").font(.system(size: 11))
-                        Capsule().frame(height: 2)
+    private func seamView(_ seam: CellSeams.Seam?) -> some View {
+        // A seam the page has not measured yet still holds the stack
+        // apart, or every cell would jump a gap up and back.
+        let height = seam.map { max(0, $0.bottom - $0.top) } ?? Self.gapHeight
+        if let seam, editable, seamsEnabled {
+            Color.clear
+                .frame(height: height)
+                .overlay {
+                    if armedSeam == seam.offset || hoveredSeam == seam.offset {
+                        HStack(spacing: 6) {
+                            Image(systemName: "plus.circle.fill").font(.system(size: 11))
+                            Capsule().frame(height: 2)
+                        }
+                        .foregroundStyle(Color.accentColor)
+                        // Drawn inside the page's margin though the seam
+                        // itself reaches both edges: the bar is furniture
+                        // and lines up with the words, the hit area is
+                        // the whole width.
+                        .padding(.horizontal, Self.sideInset)
+                        // An overlay, and taller than the seam it is in:
+                        // the strip between two cells is eight points and
+                        // the mark is twelve, and the page must not move
+                        // when the pointer arrives.
+                        .frame(height: 12)
+                        .transition(.opacity)
                     }
-                    .foregroundStyle(Color.accentColor)
-                    // Drawn over the seam, not inside it: the strip is
-                    // four points tall and the mark is bigger than that.
-                    .frame(height: 12)
-                    .transition(.opacity)
                 }
-            }
-            .contentShape(Rectangle())
-            .onContinuousHover(coordinateSpace: .local) { phase in
-                switch phase {
-                case .active:
-                    if hoveredGap != offset { hoveredGap = offset }
-                    // Set on every move, not pushed once: the text views
-                    // either side put their own cursors back the moment the
-                    // pointer touches them.
-                    NSCursor.iBeamCursorForVerticalLayout.set()
-                case .ended:
-                    if hoveredGap == offset { hoveredGap = nil }
+                .contentShape(Rectangle())
+                .onContinuousHover(coordinateSpace: .local) { phase in
+                    switch phase {
+                    case .active:
+                        if hoveredSeam != seam.offset { hoveredSeam = seam.offset }
+                        // Set on every move, not pushed once: the text
+                        // views either side put their own cursors back
+                        // the moment the pointer touches them.
+                        NSCursor.iBeamCursorForVerticalLayout.set()
+                    case .ended:
+                        if hoveredSeam == seam.offset { hoveredSeam = nil }
+                    }
                 }
-            }
-            .onTapGesture { insertBlock(at: offset) }
-            .help("A new cell here — plain text, whatever is above it")
+                .onTapGesture { arm(seam.offset) }
+                // The bar has to hear the keyboard, and there is no text
+                // view on this side to hear it for us.
+                .focusable()
+                .focusEffectDisabled()
+                .focused($focusedSeam, equals: seam.offset)
+                .onKeyPress(phases: .down) { press in key(press, in: seam) }
+                .help("Click for the line, then type — or Return for an empty cell")
+        } else {
+            // Read-only, or the pen is up: the space is still there, it
+            // just does nothing at all.
+            Color.clear.frame(height: height)
         }
     }
 
+    // MARK: - The seams
+
+    /// The spaces between the cells on this page.
+    private var seams: [CellSeams.Seam] {
+        Self.seams(rows: items.map { ($0.id, rowHeights[$0.id] ?? 0) },
+                   noteLength: (markdown as NSString).length, pageHeight: pageHeight)
+    }
+
+    /// The same seams the markdown pane has, measured off the stack
+    /// instead of off the glyphs: `CellSeams` is the one model, and the
+    /// two panes only differ in how they find the cells' boxes.
+    ///
+    /// `pageHeight` is the window on the page. The tail reaches the
+    /// bottom of it when the note is shorter than the window, and
+    /// `tailHeight` under the last cell when it is longer — either way
+    /// everything below the last cell is seam.
+    static func seams(rows: [(id: Int, height: CGFloat)], noteLength: Int,
+                      pageHeight: CGFloat) -> [CellSeams.Seam] {
+        let places = PreviewLayout.positions(rows: rows, spacing: gapHeight,
+                                             top: topInset + gapHeight)
+        let cells: [CellSeams.Box] = rows.compactMap { row in
+            guard let place = places[row.id] else { return nil }
+            return CellSeams.Box(top: place.top, bottom: place.bottom, offset: row.id)
+        }
+        let bottom = (cells.last?.bottom ?? 0) + tailHeight
+        return CellSeams.seams(cells: cells, pageTop: 0, pageBottom: max(pageHeight, bottom),
+                               noteLength: noteLength)
+    }
+
+    /// What a key pressed in an armed seam means.
+    ///
+    /// Pure, because the awkward ones are not obvious: an arrow and a
+    /// delete arrive as characters too — in Unicode's private use area,
+    /// where AppKit keeps the function keys — and ⌘S is not an S.
+    enum SeamKey: Equatable {
+        /// A printable character: the cell opens and this goes in it.
+        case write(String)
+        /// Return: an empty cell, open for typing.
+        case empty
+        /// Escape: the bar goes out and the note is untouched.
+        case disarm
+        /// Nobody's business here; whoever else wants the key can have it.
+        case pass
+    }
+
+    static func seamKey(characters: String, modifiers: EventModifiers) -> SeamKey {
+        if characters == "\u{1B}" { return .disarm }
+        if characters == "\r" || characters == "\n" { return .empty }
+        // ⌘S is not an S. Shift is, though — it is how a capital arrives.
+        guard modifiers.isDisjoint(with: [.command, .control]), !characters.isEmpty else { return .pass }
+        let printable = characters.unicodeScalars.allSatisfy { scalar in
+            !CharacterSet.controlCharacters.contains(scalar) && !(0xF700...0xF8FF).contains(scalar.value)
+        }
+        return printable ? .write(characters) : .pass
+    }
+
+    /// What that key does to the NOTE: the cell the seam stands for, with
+    /// what was typed already in it, and the range it is edited at.
+    ///
+    /// Nil for a key that only takes the bar back, and that is the whole
+    /// promise of the armed state — arming and then clicking away leaves
+    /// the markdown byte for byte as it was. The opening itself is
+    /// `PreviewEditing.insertBlock`, the same one rule both panes follow.
+    static func opened(_ key: SeamKey, at offset: Int, in markdown: String)
+        -> (markdown: String, editing: NSRange, draft: String)? {
+        let written: String
+        switch key {
+        case .write(let characters): written = characters
+        case .empty: written = ""
+        case .disarm, .pass: return nil
+        }
+        let (opened, caret) = PreviewEditing.insertBlock(in: markdown, at: offset)
+        let ns = opened as NSString
+        let place = min(max(caret, 0), ns.length)
+        let updated = ns.replacingCharacters(in: NSRange(location: place, length: 0), with: written)
+        return (updated, NSRange(location: place, length: (written as NSString).length), written)
+    }
+
     // MARK: - Editing
+
+    /// A click in a seam: the bar goes there and takes the keyboard.
+    /// Nothing is written — the note is not touched until a key arrives.
+    private func arm(_ offset: Int) {
+        guard editable, seamsEnabled else { return }
+        // The bar IS the cursor, so nothing else may be holding one: the
+        // block that was open closes, caret and all (Sean, 2026-09-20:
+        // "the mouse cursor and text cursor should both become horizontal
+        // between cells").
+        editingRange = nil
+        armedSeam = offset
+        focusedSeam = offset
+    }
+
+    /// A key while this seam is armed.
+    private func key(_ press: KeyPress, in seam: CellSeams.Seam) -> KeyPress.Result {
+        guard armedSeam == seam.offset else { return .ignored }
+        // Escape and Return by name: what `characters` carries for them is
+        // AppKit's business, and the meaning is not.
+        let characters: String
+        if press.key == .escape {
+            characters = "\u{1B}"
+        } else if press.key == .return {
+            characters = "\r"
+        } else {
+            characters = press.characters
+        }
+        let meaning = Self.seamKey(characters: characters, modifiers: press.modifiers)
+        switch meaning {
+        case .pass:
+            return .ignored
+        case .disarm:
+            armedSeam = nil
+            return .handled
+        case .empty, .write:
+            openSeam(meaning, at: seam.offset)
+            return .handled
+        }
+    }
+
+    /// The cell that key opens, put on the page: the note as `opened` made
+    /// it, and the new cell being edited with what was typed already in it.
+    private func openSeam(_ key: SeamKey, at offset: Int) {
+        armedSeam = nil
+        hoveredSeam = nil
+        guard let opened = Self.opened(key, at: offset, in: markdown) else { return }
+        markdown = opened.markdown
+        // Always a plain text cell, whatever the cell above it was (Sean,
+        // 2026-09-19: "default is always just text").
+        fence = nil
+        draft = opened.draft
+        editingRange = opened.editing
+        // Behind what was typed — which for an empty cell is the same place.
+        caretAtStart = false
+        focusToken += 1
+    }
 
     /// Every keystroke goes straight into the note, at the block's own range.
     /// Nothing is held back to be "committed", so a click anywhere else, a
@@ -379,6 +580,9 @@ struct MarkdownPreview: View {
 
     private func beginEditing(_ range: NSRange, caretAtStart: Bool = false) {
         guard editable else { return }
+        // Two cursors is what he was looking at before: a block with a
+        // caret in it is not a seam with a bar in it.
+        armedSeam = nil
         let ns = markdown as NSString
         guard NSMaxRange(range) <= ns.length else { return }
         let source = ns.substring(with: range)
@@ -499,7 +703,8 @@ struct MarkdownPreview: View {
         editingRange = NSRange(location: caret, length: 0)
         caretAtStart = true
         focusToken += 1
-        hoveredGap = nil
+        armedSeam = nil
+        hoveredSeam = nil
     }
 
     private func split(head: String, tail: String) {

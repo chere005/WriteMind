@@ -56,9 +56,9 @@ is how the code is put together.
   first thing typed becomes a cell of its own there, Return opens an
   empty one, and Escape, an arrow or a click anywhere else takes the line
   back without leaving an empty cell behind. With the pen up there are no
-  seams at all — the pencil owns the note pane. The markdown pane works
-  this way; the rendered page still opens its cell on the click, the way
-  a Mathematica notebook does on both.
+  seams at all — the pencil owns the note pane. The markdown pane and the
+  rendered page do exactly the same thing, the way a Mathematica notebook
+  does on both.
 - **The same place, whichever mode.** Switching between the markdown and
   the rendered page reopens on the cell you were looking at.
 - **Sections of a note are cells.** A heading owns everything under it
