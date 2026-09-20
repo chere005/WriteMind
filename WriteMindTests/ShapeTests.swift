@@ -118,8 +118,8 @@ final class ShapeTests: XCTestCase {
         let band = CGRect(x: 100, y: 200, width: 300, height: 80)
         let atTop = MarkdownTextView.exclusionRects(bands: [band], scrollOffset: 0, inset: 20)
         XCTAssertEqual(atTop.count, 1)
-        XCTAssertEqual(atTop[0].minY, 200 - 6 - 20)
-        XCTAssertEqual(atTop[0].height, 80 + 12)
+        XCTAssertEqual(atTop[0].minY, 200 - PreviewLayout.margin - 20)
+        XCTAssertEqual(atTop[0].height, 80 + PreviewLayout.margin * 2)
         XCTAssertLessThan(atTop[0].minX, 0, "the band spans the whole width")
         XCTAssertGreaterThan(atTop[0].maxX, 5_000)
         // Scrolled down 150 points, the same picture sits 150 further into the document.

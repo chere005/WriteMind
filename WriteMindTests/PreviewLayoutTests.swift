@@ -19,10 +19,11 @@ final class PreviewLayoutTests: XCTestCase {
         let pushes = PreviewLayout.padding(rows: rows([20, 20, 20, 20, 20]), spacing: 0, top: 0,
                                            bands: [band])
         XCTAssertNil(pushes[0], "0…20 is above it")
-        // 20…40 straddles the band's top (30 - the 6pt margin = 24).
+        // 20…40 straddles the band's top (30 − the margin).
         let push = try? XCTUnwrap(pushes[1])
         XCTAssertNotNil(push)
-        XCTAssertEqual(push ?? 0, 66, accuracy: 0.001, "down to the band's bottom plus its margin")
+        XCTAssertEqual(push ?? 0, 30 + 50 + PreviewLayout.margin - 20, accuracy: 0.001,
+                       "down to the band's bottom plus its margin")
         XCTAssertNil(pushes[2], "everything after it is carried along by the one push")
     }
 
@@ -33,26 +34,27 @@ final class PreviewLayoutTests: XCTestCase {
     }
 
     func testTwoPicturesInARowArePassedOneAfterTheOther() {
-        let first = CGRect(x: 0, y: 30, width: 100, height: 40)    // 24…76 with margins
-        let second = CGRect(x: 0, y: 80, width: 100, height: 40)   // 74…126
+        let first = CGRect(x: 0, y: 30, width: 100, height: 40)
+        let second = CGRect(x: 0, y: 80, width: 100, height: 40)
         let pushes = PreviewLayout.padding(rows: rows([20, 20]), spacing: 0, top: 0,
                                            bands: [first, second])
-        XCTAssertEqual(pushes[1] ?? 0, 106, accuracy: 0.001, "past both, not just the first")
+        XCTAssertEqual(pushes[1] ?? 0, 80 + 40 + PreviewLayout.margin - 20, accuracy: 0.001,
+                       "past both, not just the first")
     }
 
     func testTheTopInsetAndTheSpacingAreCountedIn() {
         let band = CGRect(x: 0, y: 100, width: 100, height: 20)
         let withInset = PreviewLayout.padding(rows: rows([20, 20, 20]), spacing: 10, top: 50,
                                               bands: [band])
-        // y: 50…70, then 80…100 (straddles 94…126), then on.
+        // y: 50…70, then 80…100, which straddles the band.
         XCTAssertNil(withInset[0])
-        XCTAssertEqual(withInset[1] ?? 0, 46, accuracy: 0.001)
+        XCTAssertEqual(withInset[1] ?? 0, 100 + 20 + PreviewLayout.margin - 80, accuracy: 0.001)
     }
 
     func testAPictureAboveEverythingPushesTheWholeNoteDown() {
         let band = CGRect(x: 0, y: 0, width: 100, height: 60)
         let pushes = PreviewLayout.padding(rows: rows([20, 20]), spacing: 0, top: 0, bands: [band])
-        XCTAssertEqual(pushes[0] ?? 0, 66, accuracy: 0.001)
+        XCTAssertEqual(pushes[0] ?? 0, 60 + PreviewLayout.margin, accuracy: 0.001)
         XCTAssertNil(pushes[1], "the second is carried by the first")
     }
 }
@@ -75,10 +77,10 @@ final class CellBracketTests: XCTestCase {
     func testAPictureMovesTheCellsBelowItAndTheirBracketsWithThem() {
         let band = CGRect(x: 0, y: 20, width: 100, height: 40)
         let places = PreviewLayout.positions(rows: rows([20, 20]), spacing: 0, top: 0, bands: [band])
-        // 0…20 straddles the band's top (20 − the 6pt margin = 14), so it
-        // goes under it, and the one after follows.
-        XCTAssertEqual(places[0]?.top ?? -1, 66, accuracy: 0.001)
-        XCTAssertEqual(places[1]?.top ?? 0, 86, accuracy: 0.001)
+        // 0…20 straddles the band's top (20 − the margin), so it goes
+        // under it, and the one after follows.
+        XCTAssertEqual(places[0]?.top ?? -1, 20 + 40 + PreviewLayout.margin, accuracy: 0.001)
+        XCTAssertEqual(places[1]?.top ?? 0, 20 + 40 + PreviewLayout.margin + 20, accuracy: 0.001)
     }
 
     func testABracketIsHitOnItsOwnLineAndNotOnTheNext() {

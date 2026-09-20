@@ -313,8 +313,12 @@ struct MarkdownTextView: NSViewRepresentable {
     /// inset, wider than any pane, with a little room above and below so a
     /// line does not touch the picture.
     static func exclusionRects(bands: [CGRect], scrollOffset: CGFloat, inset: CGFloat) -> [CGRect] {
-        bands.map { band in
-            CGRect(x: -10_000, y: band.minY - 6 + scrollOffset - inset, width: 20_000, height: band.height + 12)
+        // The same gap a cell leaves, above and below, so a drawing's cell
+        // is spaced like a cell of words (Sean, 2026-09-20).
+        let margin = PreviewLayout.margin
+        return bands.map { band in
+            CGRect(x: -10_000, y: band.minY - margin + scrollOffset - inset,
+                   width: 20_000, height: band.height + margin * 2)
         }
     }
 

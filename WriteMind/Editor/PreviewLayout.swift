@@ -10,8 +10,11 @@ import CoreGraphics
 /// a block's height does not change when it is pushed down, so this
 /// settles in one pass instead of oscillating.
 enum PreviewLayout {
-    /// A little air between a picture and the block under it.
-    static let margin: CGFloat = 6
+    /// The air round a drawing's band — the SAME gap that sits between two
+    /// cells, so a cell full of ink is spaced like every other cell (Sean,
+    /// 2026-09-20: "cells… don't seem to be sized correctly for free form
+    /// vs fixed objects and equidistant apart").
+    static var margin: CGFloat { MarkdownPreview.gapHeight }
 
     /// Where every block ends up, in the scroll content's own coordinates —
     /// what the cell brackets are drawn from.
