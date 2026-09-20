@@ -14,6 +14,14 @@ enum MarkdownBlock: Equatable {
     case quote(String)
     case code(language: String?, body: String)
     case rule
+    /// Empty lines a note holds on purpose. A run of blank lines between
+    /// two cells is one line to end the cell above, one to announce the
+    /// cell below, and whatever is left over in the middle is a cell of
+    /// its own (Sean, 2026-09-20: "the line after baz would be a part of
+    /// baz, the next line starts new data… so there's 3 cells there.. one
+    /// with 8 empty lines"). The spacing BETWEEN cells is the editor's;
+    /// these are the note's.
+    case blank(lines: Int)
     /// A GFM table. Whether it is drawn with grid lines is in the writing
     /// itself — see MarkdownTable.
     case table(MarkdownTable)
@@ -48,6 +56,12 @@ enum MarkdownParser {
         var blockStart = 0
         var blockEnd = 0
         var lineStart = 0
+        /// A run of blank lines being counted: which line it started on,
+        /// where in the text, and where it has reached.
+        var blankRunStart: Int?
+        var blankRunFirst = 0
+        var blankRunEnd = 0
+        var lineLengths: [Int] = []
 
         func emit(_ block: MarkdownBlock) {
             blocks.append(PositionedBlock(block: block, range: NSRange(location: blockStart, length: blockEnd - blockStart)))
@@ -72,6 +86,22 @@ enum MarkdownParser {
         }
 
         let allLines = markdown.components(separatedBy: .newlines)
+        lineLengths = allLines.map { ($0 as NSString).length + 1 }
+
+        /// The middle of a run of blank lines, as a cell. The first line
+        /// of the run and the last one are the separators either side of
+        /// it, so a run of one or two leaves nothing behind.
+        func emitBlankRun(upTo lineIndex: Int, from start: Int) {
+            let count = lineIndex - start
+            guard count >= 3 else { return }
+            let from = blankRunFirst + lineLengths[start]
+            var to = from
+            for index in (start + 1)..<(lineIndex - 1) { to += lineLengths[index] }
+            blockStart = from
+            blockEnd = max(from, to - 1)
+            emit(.blank(lines: count - 2))
+        }
+
         for (lineIndex, rawLine) in allLines.enumerated() {
             defer { lineStart += (rawLine as NSString).length + 1 }
             let lineEnd = lineStart + (rawLine as NSString).length
@@ -81,6 +111,19 @@ enum MarkdownParser {
             if !rawLine.trimmingCharacters(in: .whitespaces).isEmpty || code != nil {
                 blockEnd = lineEnd
             }
+            // A run of blank lines: the first ends the cell above it and
+            // the last announces the one below; whatever is between them
+            // is a cell of empty lines (Sean, 2026-09-20). Counted HERE,
+            // at the top, because every branch below this one continues.
+            if code == nil {
+                if rawLine.trimmingCharacters(in: .whitespaces).isEmpty {
+                    if blankRunStart == nil { blankRunStart = lineIndex; blankRunFirst = lineStart }
+                } else if let start = blankRunStart {
+                    emitBlankRun(upTo: lineIndex, from: start)
+                    blankRunStart = nil
+                }
+            }
+
             if var open = code {
                 if rawLine.trimmingCharacters(in: .whitespaces).hasPrefix("```") {
                     emit(.code(language: codeLanguage, body: open.joined(separator: "\n")))
@@ -165,6 +208,8 @@ enum MarkdownParser {
             emit(.code(language: codeLanguage, body: open.joined(separator: "\n")))
         }
         flush()
+        if let start = blankRunStart { emitBlankRun(upTo: allLines.count, from: start) }
+        _ = blankRunEnd
         return blocks
     }
 

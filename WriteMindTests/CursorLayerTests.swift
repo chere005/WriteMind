@@ -33,3 +33,31 @@ final class CursorLayerTests: XCTestCase {
         XCTAssertNil(cursor(at: CGPoint(x: 900, y: 300), wasInside: true, nil))
     }
 }
+
+/// The camera pane claims the arrow, so the pen's pencil cannot follow the
+/// pointer out of the note (Sean, 2026-09-20: "cursor only becomes a pen in
+/// the notes pane in drawing mode!!!!!").
+final class CursorOutsideTheNoteTests: XCTestCase {
+    func testTheLayerAnswersWithWhateverCursorItIsGiven() {
+        let pane = CGRect(x: 0, y: 0, width: 300, height: 300)
+        XCTAssertTrue(CursorLayer.CursorRectView.cursor(.arrow, at: CGPoint(x: 10, y: 10),
+                                                        in: pane, wasInside: false) === NSCursor.arrow)
+    }
+
+    func testAClaimedArrowBeatsWhateverWasSetBefore() {
+        // What the camera pane does: it claims the arrow for its own area,
+        // so the pencil set over the note does not carry into it.
+        let pane = CGRect(x: 0, y: 0, width: 300, height: 300)
+        let inside = CursorLayer.CursorRectView.cursor(.arrow, at: CGPoint(x: 150, y: 150),
+                                                       in: pane, wasInside: true)
+        XCTAssertTrue(inside === NSCursor.arrow)
+    }
+
+    func testTheNoteStillGetsThePencilBack() {
+        let pane = CGRect(x: 0, y: 0, width: 300, height: 300)
+        XCTAssertTrue(CursorLayer.CursorRectView.cursor(DrawingCursors.pencil,
+                                                        at: CGPoint(x: 150, y: 150),
+                                                        in: pane, wasInside: false)
+                      === DrawingCursors.pencil)
+    }
+}

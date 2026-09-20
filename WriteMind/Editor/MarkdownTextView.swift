@@ -403,6 +403,9 @@ struct MarkdownTextView: NSViewRepresentable {
         /// last became in the container's.
         var bands: [CGRect] = []
         private var lastExclusions: [CGRect] = []
+        /// True while a tidy is already on its way — the edit it makes
+        /// comes back through the same notifications that asked for it.
+        private var tidying = false
         /// The notebook's closed sections, and what was last folded away.
         var collapsed: Set<String> = []
         private var lastHidden: [NSRange] = []
@@ -536,7 +539,8 @@ struct MarkdownTextView: NSViewRepresentable {
         }
 
         /// The caret moved: the paragraph it left hides its markers again
-        /// and the one it arrived in shows them.
+        /// and the one it arrived in shows them — and the empty cell it
+        /// left, if it never became one, goes.
         func textViewDidChangeSelection(_ notification: Notification) {
             guard let tv = notification.object as? NSTextView else { return }
             tv.updateHiddenMarkers(hiding)

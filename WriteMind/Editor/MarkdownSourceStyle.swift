@@ -294,16 +294,29 @@ enum MarkdownSourceStyle {
     /// the file is shown as it is written, full-height blank lines and all.
     static func structuralLines(in source: String) -> [NSRange] {
         let ns = source as NSString
-        var out: [NSRange] = []
+        var runs: [[NSRange]] = []
+        var current: [NSRange] = []
         var index = 0
         while index < ns.length {
             let line = ns.lineRange(for: NSRange(location: index, length: 0))
             if ns.substring(with: line).trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                out.append(line)
+                current.append(line)
+            } else if !current.isEmpty {
+                runs.append(current)
+                current = []
             }
             index = max(NSMaxRange(line), index + 1)
         }
-        return out
+        if !current.isEmpty { runs.append(current) }
+
+        // The FIRST and LAST blank line of a run are the separators either
+        // side of what is between them; the rest are a cell of empty lines
+        // the note is holding on purpose, and they keep their height
+        // (Sean, 2026-09-20: "one with 8 empty lines.. and autospacing
+        // between the cells").
+        return runs.flatMap { run -> [NSRange] in
+            run.count <= 2 ? run : [run[0], run[run.count - 1]]
+        }
     }
 
     /// How tall a blank line is drawn. Nearly nothing: the gap between two

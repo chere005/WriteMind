@@ -67,6 +67,12 @@ struct CursorLayer: NSViewRepresentable {
                 monitor = nil
                 return
             }
+            // Without this the window is only told about mouse moves while
+            // the pointer is inside a tracking area — so the move that
+            // LEAVES this layer for the camera pane never arrived, and the
+            // pencil stayed on over there (Sean, 2026-09-20: "cursor only
+            // becomes a pen in the notes pane in drawing mode!!!!!").
+            window?.acceptsMouseMovedEvents = true
             guard monitor == nil else { return }
             monitor = NSEvent.addLocalMonitorForEvents(
                 matching: [.cursorUpdate, .mouseMoved, .leftMouseDragged, .mouseEntered, .mouseExited]) { [weak self] event in

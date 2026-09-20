@@ -677,6 +677,12 @@ struct MarkdownPreview: View {
                     .background(CodeColours.background, in: RoundedRectangle(cornerRadius: 6))
             case .table(let table):
                 TableBlock(table: table)
+            case .blank(let lines):
+                // A cell of empty lines: as tall as those lines, and
+                // clickable, so it can be typed into (Sean, 2026-09-20).
+                Color.clear
+                    .frame(height: CGFloat(lines) * 20)
+                    .frame(maxWidth: .infinity, alignment: .leading)
             case .rule:
                 Divider().padding(.vertical, 4)
             }

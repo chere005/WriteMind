@@ -101,6 +101,74 @@ enum NotebookCells {
         return whole.length > selection.length ? whole : nil
     }
 
+    /// One blank line between two cells, never a stack of them.
+    ///
+    /// A note is a stack of cells: they come one after another, and the
+    /// empty space between them is the editor's, not the file's (Sean,
+    /// 2026-09-20: "this space shouldn't be possible. cells come
+    /// immediately after each other"). A run of blank lines — left by a
+    /// deleted cell, or by leaning on Return — is squeezed back to the one
+    /// blank line that separates two cells.
+    ///
+    /// Two exceptions, both necessary: blank lines INSIDE a fence are
+    /// code, and the line the caret is on is the empty cell being typed
+    /// into, which cannot be taken away while it is being used.
+    ///
+    /// Nil when there is nothing to tidy, which is almost every keystroke.
+    static func tidied(_ text: String, caret: Int) -> (text: String, caret: Int)? {
+        let ns = text as NSString
+        guard ns.length > 0 else { return nil }
+        var lines: [(range: NSRange, blank: Bool, fenced: Bool)] = []
+        var index = 0
+        var inFence = false
+        while index < ns.length {
+            let line = ns.lineRange(for: NSRange(location: index, length: 0))
+            let body = ns.substring(with: line).trimmingCharacters(in: .whitespacesAndNewlines)
+            if body.hasPrefix("```") { inFence.toggle() }
+            lines.append((line, body.isEmpty && !inFence, inFence))
+            index = max(NSMaxRange(line), index + 1)
+        }
+
+        var keep = [Bool](repeating: true, count: lines.count)
+        var runStart: Int?
+        func settle(_ end: Int) {
+            guard let start = runStart else { return }
+            for i in start..<end where i != start {
+                // The caret's own blank line stays: it is the cell being
+                // typed into.
+                let line = lines[i].range
+                let holdsCaret = caret >= line.location && caret <= NSMaxRange(line)
+                keep[i] = holdsCaret
+            }
+            // A note does not begin with blank lines at all — not even
+            // the one a run keeps between two cells, because there is no
+            // cell above the first one.
+            if start == 0 { keep[0] = false }
+            runStart = nil
+        }
+        for (i, line) in lines.enumerated() {
+            if line.blank {
+                if runStart == nil { runStart = i }
+            } else {
+                settle(i)
+            }
+        }
+        settle(lines.count)
+
+        guard keep.contains(false) else { return nil }
+        var out = ""
+        var moved = caret
+        for (i, line) in lines.enumerated() {
+            let body = ns.substring(with: line.range)
+            if keep[i] {
+                out += body
+            } else if line.range.location < caret {
+                moved -= (body as NSString).length
+            }
+        }
+        return (out, min(max(moved, 0), (out as NSString).length))
+    }
+
     /// The block a character index falls in — the one it starts, when it
     /// sits exactly on a boundary.
     static func block(containing character: Int, in text: String) -> PositionedBlock? {

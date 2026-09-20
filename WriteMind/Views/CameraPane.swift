@@ -20,6 +20,14 @@ struct CameraPane: View {
     var body: some View {
         ZStack(alignment: .topTrailing) {
             Color.black
+            // The pen's pencil belongs to the note and nowhere else. A
+            // cursor set anywhere is set EVERYWHERE until something else
+            // sets one, and this pane set none — so the pencil followed
+            // the pointer over here (Sean, 2026-09-20: "cursor only
+            // becomes a pen in the notes pane in drawing mode!!!!!").
+            // Claiming the arrow is what takes it back.
+            CursorLayer(cursor: .arrow)
+                .allowsHitTesting(false)
             switch camera.status {
             case .running:
                 GeometryReader { geo in
