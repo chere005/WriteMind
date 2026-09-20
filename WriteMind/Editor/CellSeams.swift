@@ -211,6 +211,107 @@ enum CellSeams {
         return out
     }
 
+    // MARK: - The + at the end of the bar
+
+    /// How wide the + is drawn: a ten-point dot with a cross cut in it.
+    static let plusSize: CGFloat = 10
+    /// And how much slack there is round it. Sean, 2026-09-20: "it should
+    /// be a pointer over the + button" — a ten-point dot on an
+    /// eight-point bar is not a target anybody hits exactly, so the
+    /// pointer and the click both read four points more than is drawn.
+    static let plusGrip: CGFloat = 4
+
+    /// The dot itself, on the seam's own line.
+    ///
+    /// `leading` is the only thing the two panes do not share: the
+    /// markdown pane draws its + outside the text container's inset, the
+    /// rendered page inside its own margin. Everything else about it —
+    /// how big it is, that it is centred on `line`, how much slack it
+    /// answers for — is one answer here beside the line it sits on,
+    /// because a + measured twice is a + the two panes can disagree
+    /// about.
+    static func plus(onTheLineAt line: CGFloat, leading: CGFloat) -> CGRect {
+        CGRect(x: leading, y: line - plusSize / 2, width: plusSize, height: plusSize)
+    }
+
+    /// The patch of page the + answers for: the dot with its slack round
+    /// it, clipped to the seam it is drawn on.
+    ///
+    /// Clipped because the CLICK already is — the seam layer takes no
+    /// mouse down outside a seam — so a pointer that turned into a hand
+    /// five points up into the cell above would be promising a press
+    /// that never arrives.
+    static func plusTarget(in seam: Seam, leading: CGFloat) -> CGRect {
+        let target = plus(onTheLineAt: seam.line, leading: leading)
+        let top = max(target.minY - plusGrip, seam.top)
+        let bottom = min(target.maxY + plusGrip, seam.bottom)
+        return CGRect(x: target.minX - plusGrip, y: top,
+                      width: target.width + plusGrip * 2, height: max(0, bottom - top))
+    }
+
+    /// Whether a point is on the +. Inclusive on all four edges, the way
+    /// `Seam.contains` is: the bottom edge of a seam is in the seam, and
+    /// the + drawn across it has to be pressable at the same point.
+    static func onPlus(_ point: CGPoint, of seam: Seam, leading: CGFloat) -> Bool {
+        let target = plusTarget(in: seam, leading: leading)
+        guard target.height > 0 else { return false }
+        return point.x >= target.minX && point.x <= target.maxX
+            && point.y >= target.minY && point.y <= target.maxY
+    }
+
+    // MARK: - Holding the pointer still
+
+    /// Whether a fresh measurement is really a different set of seams.
+    ///
+    /// Both panes re-measure on every keystroke, every caret move, every
+    /// restyle and every scroll, off floats that come out of the text
+    /// layout. Treating a difference of a hundredth of a point as a move
+    /// tore the whole cursor-rect set down and built it again, and
+    /// between the two there is no rect of ours under the pointer — the
+    /// text view's upright I-beam is what is left (Sean, 2026-09-20: "it
+    /// does flicker sometimes back to a cursor"). A seam has moved when
+    /// the eye could see it move; below that the old seams stand and
+    /// nothing is torn down at all.
+    static func moved(_ seams: [Seam], from old: [Seam], tolerance: CGFloat = 0.5) -> Bool {
+        guard seams.count == old.count else { return true }
+        return zip(seams, old).contains { fresh, was in
+            fresh.offset != was.offset
+                || abs(fresh.top - was.top) > tolerance
+                || abs(fresh.bottom - was.bottom) > tolerance
+                || abs(fresh.line - was.line) > tolerance
+        }
+    }
+
+    /// What is left of a rect with a hole taken out of it: up to four
+    /// pieces, touching and never overlapping.
+    ///
+    /// Two cursor rects over one point is AppKit's choice to make and it
+    /// does not make ours (AGENTS.md: "Being ABOVE the text view does not
+    /// win the cursor either"), so the +'s rect is not laid ON the seam's
+    /// — the seam's is cut round it.
+    static func cut(_ rect: CGRect, around hole: CGRect) -> [CGRect] {
+        let hole = hole.intersection(rect)
+        guard !hole.isNull, !hole.isEmpty else { return rect.isEmpty ? [] : [rect] }
+        var out: [CGRect] = []
+        if hole.minY > rect.minY {
+            out.append(CGRect(x: rect.minX, y: rect.minY,
+                              width: rect.width, height: hole.minY - rect.minY))
+        }
+        if hole.maxY < rect.maxY {
+            out.append(CGRect(x: rect.minX, y: hole.maxY,
+                              width: rect.width, height: rect.maxY - hole.maxY))
+        }
+        if hole.minX > rect.minX {
+            out.append(CGRect(x: rect.minX, y: hole.minY,
+                              width: hole.minX - rect.minX, height: hole.height))
+        }
+        if hole.maxX < rect.maxX {
+            out.append(CGRect(x: hole.maxX, y: hole.minY,
+                              width: rect.maxX - hole.maxX, height: hole.height))
+        }
+        return out
+    }
+
     /// Which edge of a seam stays put when it is too thin to be hit.
     private enum Edge { case top, middle, bottom }
 

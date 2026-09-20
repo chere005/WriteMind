@@ -18,16 +18,37 @@ import AppKit
 /// ask it, and this layer only draws and takes the clicks.
 final class CellInsertions: NSView {
     /// The spaces between the cells, from `MarkdownTextView.seams(in:)`.
-    var seams: [CellSeams.Seam] = [] {
-        didSet {
-            guard seams != oldValue else { return }
-            needsDisplay = true
-            window?.invalidateCursorRects(for: self)
-            // And the text view under this layer, which cuts its own
-            // cursor rects from these same seams.
-            if let superview { window?.invalidateCursorRects(for: superview) }
-        }
+    /// Written through `measure` and nowhere else, so there is one place
+    /// that decides whether anything has actually changed.
+    private(set) var seams: [CellSeams.Seam] = []
+
+    /// A fresh measurement off the text layout, TAKEN only when a seam
+    /// has really moved.
+    ///
+    /// `refreshBrackets` hands one of these over on every keystroke,
+    /// every caret move, every restyle and every scroll, and each of
+    /// them tore the cursor rects down and built them again — the
+    /// pointer over a bar goes back to the text view's upright I-beam
+    /// for the moment in between (Sean, 2026-09-20: "it does flicker
+    /// sometimes back to a cursor"). An idle re-measure of the same
+    /// layout now changes nothing at all: the old seams stand, so the
+    /// rects under the pointer are never torn down while the page is
+    /// sitting still.
+    func measure(_ fresh: [CellSeams.Seam]) {
+        guard CellSeams.moved(fresh, from: seams) else { return }
+        seams = fresh
+        markChanged()
     }
+
+    /// The bar, the + on it and the pointer over them have moved. Both
+    /// views' cursor rects go: the text view underneath cuts its own out
+    /// of these same seams and out of the same + (`pointerPlus`).
+    private func markChanged() {
+        needsDisplay = true
+        window?.invalidateCursorRects(for: self)
+        if let superview { window?.invalidateCursorRects(for: superview) }
+    }
+
     /// The seam the bar is sitting in, BY OFFSET, waiting to be typed into.
     /// Nothing is written to the note until something is (Sean, 2026-09-20:
     /// "if i start typing it inserts a cell immediately after the
@@ -41,12 +62,14 @@ final class CellInsertions: NSView {
     /// means the bar either moves with its seam or stops being drawn. The
     /// text view's `armedSeam` is what sets this — one writer, so the caret
     /// and the bar cannot disagree about whether a seam is armed.
-    var armedOffset: Int? { didSet { if armedOffset != oldValue { needsDisplay = true } } }
+    var armedOffset: Int? { didSet { if armedOffset != oldValue { markChanged() } } }
     private var armed: CellSeams.Seam? {
         guard let armedOffset else { return nil }
         return seams.first { $0.offset == armedOffset }
     }
-    private var hovered: CellSeams.Seam?
+    /// Which seam the pointer is in, for the mark that follows it.
+    /// It moves the + as well as the bar, so the cursor rects go with it.
+    private var hovered: CellSeams.Seam? { didSet { if hovered != oldValue { markChanged() } } }
     private var tracking: NSTrackingArea?
 
     /// The caret was put in a seam: whoever owns the keyboard is told, and
@@ -61,15 +84,16 @@ final class CellInsertions: NSView {
     /// that sends the text view up here for `pointerSeams`.
     private var chosenType: CellTypes.Kind { (superview as? PasteAwareTextView)?.armedType ?? .text }
 
-    /// The + itself, on the seam's own line, and the patch of page that
-    /// counts as pressing it. Wider than the dot is drawn: a ten-point
-    /// target on a bar eight points tall is not one anybody hits.
-    static func plus(onTheLineAt line: CGFloat) -> NSRect {
-        NSRect(x: 4, y: line - 5, width: 10, height: 10)
-    }
+    /// Where this pane's left margin is. The only part of the + the two
+    /// panes do not share: here it sits outside the text container's
+    /// inset, on the rendered page inside its own margin. How big it is,
+    /// where on the seam it sits and how much slack it answers for are
+    /// `CellSeams`', beside the line it is drawn on.
+    static let plusLeading: CGFloat = 4
 
-    static func plusTarget(onTheLineAt line: CGFloat) -> NSRect {
-        plus(onTheLineAt: line).insetBy(dx: -4, dy: -4)
+    /// The + itself, on the seam's own line.
+    static func plus(onTheLineAt line: CGFloat) -> NSRect {
+        CellSeams.plus(onTheLineAt: line, leading: plusLeading)
     }
 
     /// The seam the bar and its + are DRAWN on: the armed one, or the
@@ -84,11 +108,11 @@ final class CellInsertions: NSView {
     private var marked: CellSeams.Seam? { armed ?? hovered }
 
     /// Whether a click is a press of the +. Only where the + is drawn:
-    /// `plusTarget` is nine points either side of the bar, which on an
-    /// ordinary eight-point seam is the whole of it.
+    /// the target is nine points either side of the bar, which on an
+    /// ordinary eight-point seam is the whole height of it.
     static func pressesPlus(at point: CGPoint, in seam: CellSeams.Seam,
                             drawnOn marked: CellSeams.Seam?) -> Bool {
-        marked == seam && plusTarget(onTheLineAt: seam.line).contains(point)
+        marked == seam && CellSeams.onPlus(point, of: seam, leading: plusLeading)
     }
 
     override var isFlipped: Bool { true }
@@ -126,6 +150,41 @@ final class CellInsertions: NSView {
     /// of the geometry is two answers to one question.
     var pointerSeams: [CellSeams.Seam] { isHidden ? [] : seams }
 
+    /// The + as the POINTER reads it: where a + is actually drawn, and
+    /// nothing at all when none is or the pen has the pane. The text
+    /// view underneath asks for this the way it asks for `pointerSeams`
+    /// — the + is a button and takes the hand, and a hand of ours laid
+    /// over an I-beam of the text view's is the argument the text view
+    /// wins.
+    var pointerPlus: NSRect? {
+        guard !isHidden, let marked else { return nil }
+        let target = CellSeams.plusTarget(in: marked, leading: Self.plusLeading)
+        return target.isEmpty ? nil : target
+    }
+
+    /// What the pointer should be at a point of this layer: the hand the
+    /// gutter's brackets already use over the + because the + is a
+    /// button (Sean, 2026-09-20: "it should be a pointer over the +
+    /// button"), the I-beam on its side over the rest of a seam, and
+    /// nothing at all over a cell, where the words are the text view's
+    /// business.
+    ///
+    /// ONE answer, read by this layer's `cursorUpdate`, by its cursor
+    /// rects and by the text view underneath — a cursorUpdate reaches
+    /// both views and whichever runs last wins, so two views deciding
+    /// separately is a disagreement one event wide, which is a flicker.
+    func cursor(at point: CGPoint) -> NSCursor? {
+        guard let seam = seam(at: point) else { return nil }
+        // `armed ?? seam` rather than `marked`: `hovered` is set by the
+        // move that arrives with the pointer and a cursorUpdate can
+        // arrive before it, so reading the point itself is the one
+        // answer that cannot be a move behind. Where a bar is already
+        // armed somewhere else nothing is drawn on this seam, and the
+        // pointer says so, exactly as `pressesPlus` does.
+        return Self.pressesPlus(at: point, in: seam, drawnOn: armed ?? seam)
+            ? .pointingHand : .iBeamCursorForVerticalLayout
+    }
+
     /// The seam a point is in, if any. Full width of the page EXCEPT the
     /// bracket gutter: a section's bracket runs down the seams between its
     /// cells as well as the cells, and a layer over the whole width would
@@ -138,47 +197,68 @@ final class CellInsertions: NSView {
     override func updateTrackingAreas() {
         super.updateTrackingAreas()
         if let tracking { removeTrackingArea(tracking) }
+        // `.cursorUpdate` is the one that matters: cursor RECTS are torn
+        // down and rebuilt every time the note reflows, and a tracking
+        // area is not. It is what keeps the pointer on its side across
+        // the rebuild, with the rects as the belt to those braces rather
+        // than the other way about (Sean, 2026-09-20: "make it less
+        // prone to flickering").
         let area = NSTrackingArea(rect: .zero,
-                                  options: [.mouseMoved, .mouseEnteredAndExited, .activeInKeyWindow,
-                                            .inVisibleRect],
+                                  options: [.mouseMoved, .mouseEnteredAndExited, .cursorUpdate,
+                                            .activeInKeyWindow, .inVisibleRect],
                                   owner: self)
         addTrackingArea(area)
         tracking = area
     }
 
     override func mouseMoved(with event: NSEvent) {
-        let seam = seam(at: convert(event.locationInWindow, from: nil))
-        if seam != hovered { hovered = seam; needsDisplay = true }
-        // On its side, because what goes in here goes in BETWEEN two
-        // things rather than between two letters. It is set for the whole
-        // seam, so the pointer does not flip on the way across one.
-        if seam != nil { NSCursor.iBeamCursorForVerticalLayout.set() }
+        let point = convert(event.locationInWindow, from: nil)
+        hovered = seam(at: point)
+        // On its side over the seam, because what goes in here goes in
+        // BETWEEN two things rather than between two letters, and a hand
+        // over the +, because that is a button. Set for the whole of
+        // each, so the pointer does not flip on the way across one.
+        cursor(at: point)?.set()
+    }
+
+    /// The move that arrives with the pointer is not the only way in:
+    /// AppKit hands a view a mouseEntered when its tracking areas are
+    /// rebuilt under a pointer that has not moved, and nothing else
+    /// follows it.
+    override func mouseEntered(with event: NSEvent) {
+        mouseMoved(with: event)
     }
 
     /// The pointer keeps its shape all the way across a seam, whatever
-    /// the text view thinks. A cursor rect is the strongest way to say so
-    /// — this layer is above the text view, so its rects win over the
-    /// I-beam the text view sets over the whole of itself — and the
-    /// cursorUpdate below is the belt to those braces, for the events
-    /// AppKit routes by hit testing instead (Sean, 2026-09-20: "cursor is
-    /// super buggy").
+    /// the text view thinks (Sean, 2026-09-20: "cursor is super buggy").
+    ///
+    /// These are the BELT now and the tracking area above is the braces,
+    /// which is the way round it should always have been: a rect is torn
+    /// down and built again every time the note reflows, and there is no
+    /// rect of ours under the pointer in between.
     override func resetCursorRects() {
         let width = max(0, bounds.width - NotebookGutter.width)
+        let plus = pointerPlus ?? .null
         for seam in seams where seam.bottom > seam.top {
-            addCursorRect(NSRect(x: 0, y: seam.top, width: width, height: seam.bottom - seam.top),
-                          cursor: .iBeamCursorForVerticalLayout)
+            let strip = NSRect(x: 0, y: seam.top, width: width, height: seam.bottom - seam.top)
+            // Cut round the +, never laid under it: two rects over one
+            // point and AppKit picks, and the one it picks is not ours.
+            for piece in CellSeams.cut(strip, around: plus) {
+                addCursorRect(piece, cursor: .iBeamCursorForVerticalLayout)
+            }
         }
+        if let plus = pointerPlus { addCursorRect(plus, cursor: .pointingHand) }
     }
 
     override func cursorUpdate(with event: NSEvent) {
-        guard seam(at: convert(event.locationInWindow, from: nil)) != nil else {
+        guard let cursor = cursor(at: convert(event.locationInWindow, from: nil)) else {
             return super.cursorUpdate(with: event)
         }
-        NSCursor.iBeamCursorForVerticalLayout.set()
+        cursor.set()
     }
 
     override func mouseExited(with event: NSEvent) {
-        if hovered != nil { hovered = nil; needsDisplay = true }
+        hovered = nil
     }
 
     override func mouseDown(with event: NSEvent) {
@@ -197,8 +277,8 @@ final class CellInsertions: NSView {
         let drawn = marked
         onArm?(seam.offset)
         guard Self.pressesPlus(at: point, in: seam, drawnOn: drawn) else { return }
-        CellTypeMenu.popUp(current: chosenType,
-                           at: NSPoint(x: 2, y: Self.plusTarget(onTheLineAt: seam.line).maxY),
+        let target = CellSeams.plusTarget(in: seam, leading: Self.plusLeading)
+        CellTypeMenu.popUp(current: chosenType, at: NSPoint(x: 2, y: target.maxY),
                            in: self) { [weak self] kind in self?.onChoose?(kind) }
     }
 

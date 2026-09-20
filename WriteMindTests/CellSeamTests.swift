@@ -286,3 +286,166 @@ final class PointerBandTests: XCTestCase {
         }
     }
 }
+
+/// The + at the left-hand end of the bar, as the POINTER reads it.
+///
+/// Sean, 2026-09-20: "it should be a pointer over the + button". The +
+/// is a button and the rest of the bar is not, so the one region both
+/// panes read it from lives beside the line they both draw it on.
+final class SeamPlusTests: XCTestCase {
+    /// The ordinary eight points between two cells.
+    private let seam = CellSeams.Seam(top: 60, bottom: 68, offset: 12, line: 64)
+    /// And the tail, which is everything under the last cell.
+    private let tail = CellSeams.Seam(top: 200, bottom: 600, offset: 44, line: 204)
+    private let leading: CGFloat = CellInsertions.plusLeading
+
+    func testTheTargetIsMoreGenerousThanTheDotItDraws() {
+        // A ten-point dot on an eight-point bar is not a target anybody
+        // hits exactly.
+        let dot = CellSeams.plus(onTheLineAt: seam.line, leading: leading)
+        let target = CellSeams.plusTarget(in: tail, leading: leading)
+        XCTAssertGreaterThan(target.width, dot.width)
+        XCTAssertGreaterThan(target.height, dot.height)
+        XCTAssertLessThan(target.minX, dot.minX, "and slack on the outside edge too")
+    }
+
+    func testTheTargetNeverLeavesTheSeamItIsDrawnOn() {
+        // The click cannot reach it from a cell — the layer takes no
+        // mouse down outside a seam — so a pointer that turned into a
+        // hand up in the cell above would promise a press that never
+        // arrives.
+        for seam in [seam, tail] {
+            let target = CellSeams.plusTarget(in: seam, leading: leading)
+            XCTAssertGreaterThanOrEqual(target.minY, seam.top, "\(seam)")
+            XCTAssertLessThanOrEqual(target.maxY, seam.bottom, "\(seam)")
+        }
+        XCTAssertEqual(CellSeams.plusTarget(in: seam, leading: leading).height, 8,
+                       "an ordinary seam is shorter than the slack, so the seam wins")
+    }
+
+    func testTheTargetDoesNotSwallowTheBarBesideIt() {
+        // The bar runs from eighteen points in to the far margin and
+        // arms the seam; only the + opens the menu.
+        XCTAssertLessThanOrEqual(CellSeams.plusTarget(in: tail, leading: leading).maxX, 18)
+        XCTAssertFalse(CellSeams.onPlus(CGPoint(x: 300, y: 204), of: tail, leading: leading),
+                       "the middle of the bar is not the button")
+    }
+
+    func testTheTargetIsOnTheSeamsOwnLineAndNotTheMiddleOfIt() {
+        // The tail seam is hundreds of points tall and its bar is drawn
+        // hard under the last cell.
+        let target = CellSeams.plusTarget(in: tail, leading: leading)
+        XCTAssertTrue(CellSeams.onPlus(CGPoint(x: leading + 5, y: tail.line), of: tail, leading: leading))
+        XCTAssertFalse(CellSeams.onPlus(CGPoint(x: leading + 5, y: 400), of: tail, leading: leading),
+                       "the empty page below the bar is seam, not button")
+        // Against the bar, give or take what the seam's own top edge
+        // clips off it — and nowhere near the middle of four hundred
+        // points of empty page.
+        XCTAssertLessThan(abs(target.midY - tail.line), CellSeams.plusSize / 2 + CellSeams.plusGrip)
+    }
+
+    func testTheBottomEdgeOfASeamIsOnThePlusTheWayItIsInTheSeam() {
+        // `Seam.contains` takes both its edges, and the + drawn across
+        // an eight-point seam has to be pressable at the same points.
+        XCTAssertTrue(seam.contains(seam.bottom))
+        XCTAssertTrue(CellSeams.onPlus(CGPoint(x: 9, y: seam.bottom), of: seam, leading: leading))
+    }
+}
+
+/// An idle re-measure is not a move.
+///
+/// The flicker (Sean, 2026-09-20: "it does flicker sometimes back to a
+/// cursor"): both panes re-measure the seams off the text layout on
+/// every keystroke, caret move, restyle and scroll, and every
+/// difference tore the cursor rects down and built them again — with
+/// the text view's upright I-beam in the gap.
+final class SeamSteadinessTests: XCTestCase {
+    private let page: [CellSeams.Box] = [(20, 60, 0), (80, 120, 12), (140, 200, 30)]
+
+    private var measured: [CellSeams.Seam] {
+        CellSeams.seams(cells: page, pageTop: 0, pageBottom: 300, noteLength: 44)
+    }
+
+    /// The same layout measured again, a few thousandths of a point out.
+    private func remeasured(_ seams: [CellSeams.Seam]) -> [CellSeams.Seam] {
+        seams.map {
+            CellSeams.Seam(top: $0.top + 0.004, bottom: $0.bottom - 0.002,
+                           offset: $0.offset, line: $0.line + 0.003)
+        }
+    }
+
+    func testTheSameLayoutMeasuredAgainIsNotAMove() {
+        let was = measured
+        let again = remeasured(was)
+        XCTAssertNotEqual(again, was, "the premise: the floats really do differ")
+        XCTAssertFalse(CellSeams.moved(again, from: was),
+                       "a hundredth of a point is not a seam moving")
+        XCTAssertFalse(CellSeams.moved(was, from: was))
+    }
+
+    func testASeamThatHasReallyMovedIsAMove() {
+        let was = measured
+        var shifted = was
+        shifted[1] = CellSeams.Seam(top: was[1].top + 14, bottom: was[1].bottom + 14,
+                                    offset: was[1].offset, line: was[1].line + 14)
+        XCTAssertTrue(CellSeams.moved(shifted, from: was), "a line of text was added above it")
+        XCTAssertTrue(CellSeams.moved(Array(was.dropLast()), from: was), "a cell went")
+        var renumbered = was
+        renumbered[2] = CellSeams.Seam(top: was[2].top, bottom: was[2].bottom,
+                                       offset: was[2].offset + 1, line: was[2].line)
+        XCTAssertTrue(CellSeams.moved(renumbered, from: was),
+                      "a character before it moves what it opens, not where it is")
+    }
+
+    func testTheToleranceIsBelowWhatAnEyeCanSeeAndNotAPointMore() {
+        // Half a point: a seam that has moved by a visible pixel is a
+        // move, or the bar would be drawn off the gap it belongs to.
+        let was = measured
+        let nudged = was.map {
+            CellSeams.Seam(top: $0.top + 1, bottom: $0.bottom + 1, offset: $0.offset, line: $0.line + 1)
+        }
+        XCTAssertTrue(CellSeams.moved(nudged, from: was))
+    }
+}
+
+/// A rect with a hole cut out of it, which is how the + gets its own
+/// cursor without two rects over one point (AGENTS.md: "Being ABOVE the
+/// text view does not win the cursor either").
+final class SeamCutTests: XCTestCase {
+    private let strip = CGRect(x: 0, y: 60, width: 400, height: 8)
+
+    func testAHoleThatTouchesNothingLeavesTheRectWhole() {
+        XCTAssertEqual(CellSeams.cut(strip, around: CGRect(x: 0, y: 200, width: 18, height: 18)), [strip])
+        XCTAssertEqual(CellSeams.cut(strip, around: .null), [strip])
+        XCTAssertEqual(CellSeams.cut(strip, around: .zero), [strip])
+    }
+
+    func testThePlusHoleLeavesTheRestOfTheBarBesideIt() {
+        let seam = CellSeams.Seam(top: 60, bottom: 68, offset: 12, line: 64)
+        let hole = CellSeams.plusTarget(in: seam, leading: CellInsertions.plusLeading)
+        let rest = CellSeams.cut(strip, around: hole)
+        XCTAssertEqual(rest, [CGRect(x: hole.maxX, y: 60, width: 400 - hole.maxX, height: 8)],
+                       "the + is at the left-hand end, so what is left is one piece")
+    }
+
+    func testThePiecesCoverTheRestOfTheRectAndNoneOfTheHole() {
+        let hole = CGRect(x: 100, y: 62, width: 20, height: 3)
+        let pieces = CellSeams.cut(strip, around: hole)
+        XCTAssertEqual(pieces.count, 4, "above, below, left and right of it")
+        XCTAssertEqual(pieces.reduce(0) { $0 + $1.width * $1.height },
+                       strip.width * strip.height - hole.width * hole.height, accuracy: 0.001)
+        for piece in pieces {
+            XCTAssertTrue(piece.intersection(hole).isEmpty, "\(piece) is over the +")
+            XCTAssertEqual(piece.intersection(strip), piece, "\(piece) is outside the seam")
+        }
+        for (one, other) in pieces.enumerated().flatMap({ index, piece in
+            pieces.dropFirst(index + 1).map { (piece, $0) }
+        }) {
+            XCTAssertTrue(one.intersection(other).isEmpty, "\(one) and \(other) overlap")
+        }
+    }
+
+    func testAHoleThatCoversTheWholeRectLeavesNothing() {
+        XCTAssertEqual(CellSeams.cut(strip, around: strip.insetBy(dx: -10, dy: -10)), [])
+    }
+}

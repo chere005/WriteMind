@@ -751,7 +751,7 @@ struct MarkdownTextView: NSViewRepresentable {
                 let wanted = NSRect(origin: .zero, size: NSSize(width: tv.bounds.width,
                                                                 height: max(tv.bounds.height, 1)))
                 if insertions.frame != wanted { insertions.frame = wanted }
-                insertions.seams = MarkdownTextView.seams(in: tv)
+                insertions.measure(MarkdownTextView.seams(in: tv))
             }
         }
 
@@ -982,11 +982,20 @@ class PasteAwareTextView: NSTextView {
     /// it rather than holding a second copy of the geometry.
     private var seamLayer: CellInsertions? { subviews.compactMap { $0 as? CellInsertions }.first }
 
-    /// The seam a point of this view is in, if any — none while the pen
-    /// is up, because the layer is hidden then and answers nothing.
-    private func seam(at point: NSPoint) -> CellSeams.Seam? {
+    /// What the seam layer wants the pointer to be at a point of this
+    /// view, and nil where it wants nothing and the words have it —
+    /// which is everywhere, while the pen is up and the layer is
+    /// hidden.
+    ///
+    /// ASKED rather than worked out here. This view used to decide for
+    /// itself that a seam means the I-beam on its side, which was the
+    /// same answer as the layer's right up until the + wanted a hand;
+    /// two views answering one point separately is a disagreement one
+    /// event wide, and the event that arrives last is the one the
+    /// pointer gets.
+    private func seamCursor(at point: NSPoint) -> NSCursor? {
         guard let seamLayer else { return nil }
-        return seamLayer.seam(at: convert(point, to: seamLayer))
+        return seamLayer.cursor(at: convert(point, to: seamLayer))
     }
 
     /// Shown over the text instead of the I-beam while set (the pen's pencil).
@@ -1008,7 +1017,16 @@ class PasteAwareTextView: NSTextView {
         super.updateTrackingAreas()
         if cursorOverride != nil {
             trackingAreas.forEach(removeTrackingArea)
+            return
         }
+        // Rebuilding them is itself one of the moments the I-beam comes
+        // back: NSTextView makes its tracking areas again on every
+        // scroll and every relayout, and the pointer has not moved, so
+        // nothing else will put the bar's cursor back until it does
+        // (Sean, 2026-09-20: "it does flicker sometimes back to a
+        // cursor").
+        guard let window else { return }
+        seamCursor(at: convert(window.mouseLocationOutsideOfEventStream, from: nil))?.set()
     }
 
     /// The pointer over the text — and over the spaces between the cells,
@@ -1031,6 +1049,11 @@ class PasteAwareTextView: NSTextView {
         let seams = seamLayer?.pointerSeams ?? []
         guard !seams.isEmpty else { return super.resetCursorRects() }
         let page = max(0, bounds.width - NotebookGutter.width)
+        // And the + is a button, so its patch of the bar is the hand —
+        // cut out of the seam's own rect and not laid over it, because
+        // this view and the layer above it disagreeing over one point
+        // is AppKit's choice to make and it does not make ours.
+        let plus = seamLayer?.pointerPlus ?? .null
         for band in CellSeams.bands(seams: seams, pageTop: bounds.minY, pageBottom: bounds.maxY) {
             let height = band.bottom - band.top
             guard band.horizontal else {
@@ -1038,8 +1061,12 @@ class PasteAwareTextView: NSTextView {
                               cursor: .iBeam)
                 continue
             }
-            addCursorRect(NSRect(x: bounds.minX, y: band.top, width: page, height: height),
-                          cursor: .iBeamCursorForVerticalLayout)
+            let strip = NSRect(x: bounds.minX, y: band.top, width: page, height: height)
+            for piece in CellSeams.cut(strip, around: plus) {
+                addCursorRect(piece, cursor: .iBeamCursorForVerticalLayout)
+            }
+            let onPlus = plus.intersection(strip)
+            if !onPlus.isNull, !onPlus.isEmpty { addCursorRect(onPlus, cursor: .pointingHand) }
             if page < bounds.width {
                 addCursorRect(NSRect(x: bounds.minX + page, y: band.top,
                                      width: bounds.width - page, height: height), cursor: .iBeam)
@@ -1058,21 +1085,31 @@ class PasteAwareTextView: NSTextView {
     /// (AGENTS.md: "The pencil cursor wins by swallowing cursorUpdate
     /// events"), which a seam cannot do because the text either side of
     /// it still wants its I-beam. So the text view knows about the
-    /// seams instead, and does not put the I-beam back over one.
+    /// seams instead, and does not put the I-beam back over one — it
+    /// asks the layer what the pointer should be and says the same
+    /// thing.
     override func cursorUpdate(with event: NSEvent) {
         if let cursorOverride { return cursorOverride.set() }
-        guard seam(at: convert(event.locationInWindow, from: nil)) == nil else {
-            return NSCursor.iBeamCursorForVerticalLayout.set()
+        guard let cursor = seamCursor(at: convert(event.locationInWindow, from: nil)) else {
+            return super.cursorUpdate(with: event)
         }
-        super.cursorUpdate(with: event)
+        cursor.set()
     }
 
     override func mouseMoved(with event: NSEvent) {
         super.mouseMoved(with: event)
         if let cursorOverride { return cursorOverride.set() }
-        if seam(at: convert(event.locationInWindow, from: nil)) != nil {
-            NSCursor.iBeamCursorForVerticalLayout.set()
-        }
+        seamCursor(at: convert(event.locationInWindow, from: nil))?.set()
+    }
+
+    /// NSTextView answers a mouseEntered with the I-beam as well, and
+    /// AppKit synthesises one whenever the tracking areas are rebuilt
+    /// under a pointer that never moved — so the bar was left with an
+    /// upright cursor on it until it was nudged.
+    override func mouseEntered(with event: NSEvent) {
+        super.mouseEntered(with: event)
+        if let cursorOverride { return cursorOverride.set() }
+        seamCursor(at: convert(event.locationInWindow, from: nil))?.set()
     }
 
     /// Paste stays ENABLED when the pasteboard holds a picture. A plain-text

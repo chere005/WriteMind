@@ -494,21 +494,26 @@ struct MarkdownPreview: View {
                 .contentShape(Rectangle())
                 .onContinuousHover(coordinateSpace: .local) { phase in
                     switch phase {
-                    case .active:
+                    case .active(let point):
                         if hoveredSeam != id { hoveredSeam = id }
                         // Set on every move, not pushed once: the text
                         // views either side put their own cursors back
                         // the moment the pointer touches them.
-                        Self.cursor(hovering: true)?.set()
+                        Self.cursor(hovering: true,
+                                    onPlus: Self.plusTarget(in: seam).contains(point))?.set()
                     case .ended:
-                        if hoveredSeam == id { hoveredSeam = nil }
+                        // Whether the pointer was on THIS seam, read
+                        // before it is forgotten: the seam it has moved
+                        // on to may have claimed the pointer already.
+                        let ours = hoveredSeam == id
+                        if ours { hoveredSeam = nil }
                         // And handed back on the way out. There is no
                         // text view under the pointer on this side to put
                         // its own cursor back, so the horizontal I-beam
                         // followed the pointer over the words, the
                         // toolbar and the sidebar — the same trap
                         // `CursorLayer` was written for.
-                        Self.cursor(hovering: false)?.set()
+                        Self.cursor(hovering: false, ours: ours)?.set()
                     }
                 }
                 .onTapGesture { arm(id) }
@@ -526,17 +531,37 @@ struct MarkdownPreview: View {
         }
     }
 
+    /// The + on the bar, in the seam view's OWN coordinates — the same
+    /// region `CellSeams` hands the markdown pane, moved to the top of
+    /// the seam because that is where this pane's hover reports from.
+    /// Both panes put their + at their own left margin and neither
+    /// measures the rest of it.
+    static func plusTarget(in seam: CellSeams.Seam) -> CGRect {
+        CellSeams.plusTarget(in: seam, leading: sideInset).offsetBy(dx: 0, dy: -seam.top)
+    }
+
     /// What the pointer should be over a seam, and what it should be put
     /// back to on the way out.
     ///
+    /// The + is a button, so over the + it is the hand — the same one
+    /// the notebook brackets in the gutter use, so the app says "this
+    /// does something" the one way (Sean, 2026-09-20: "it should be a
+    /// pointer over the + button"). Over the rest of the seam the I-beam
+    /// lies on its side.
+    ///
     /// `NSCursor.set()` is global and sticks until something else sets
     /// one. Nothing on the rendered page does: the blocks are SwiftUI
-    /// `Text` with no cursor rects at all. Nil means "leave whatever is
-    /// there alone" — a cursor somebody else has set on the way out is
-    /// theirs, and taking it would be the same bug the other way round.
-    static func cursor(hovering: Bool, current: NSCursor = .current) -> NSCursor? {
-        if hovering { return .iBeamCursorForVerticalLayout }
-        return current == .iBeamCursorForVerticalLayout ? .arrow : nil
+    /// `Text` with no cursor rects at all. So a seam hands the arrow
+    /// back on the way out — but only its OWN. What is on screen cannot
+    /// answer that: the hand over a + and the hand over a bracket are
+    /// the same object, and the seam the pointer has ARRIVED at is
+    /// often told before the one it left, so taking back "the cursor I
+    /// recognise" was itself a flicker. `ours` is the seam's own answer
+    /// to "was the pointer on me", and a seam that never had it leaves
+    /// it alone.
+    static func cursor(hovering: Bool, onPlus: Bool = false, ours: Bool = false) -> NSCursor? {
+        if hovering { return onPlus ? .pointingHand : .iBeamCursorForVerticalLayout }
+        return ours ? .arrow : nil
     }
 
     // MARK: - The seams

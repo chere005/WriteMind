@@ -254,13 +254,38 @@ final class PreviewSeamIdentityTests: XCTestCase {
         // the horizontal I-beam followed the pointer over the words, the
         // toolbar and the sidebar.
         XCTAssertTrue(MarkdownPreview.cursor(hovering: true) === NSCursor.iBeamCursorForVerticalLayout)
-        XCTAssertTrue(MarkdownPreview.cursor(hovering: false,
-                                             current: .iBeamCursorForVerticalLayout) === NSCursor.arrow)
+        XCTAssertTrue(MarkdownPreview.cursor(hovering: false, ours: true) === NSCursor.arrow)
     }
 
     func testACursorSomebodyElseSetIsLeftAlone() {
         // Taking one back that was never ours is the same bug the other
-        // way round: the pen's pencil, the split divider's resize cursor.
-        XCTAssertNil(MarkdownPreview.cursor(hovering: false, current: .pointingHand))
+        // way round: the pen's pencil, the split divider's resize cursor
+        // — and, now the + has one, the hand a gutter bracket set, which
+        // is the very same object as the hand a + sets and so cannot be
+        // told apart by looking at it. The seam answers for itself
+        // instead: it hands back only what it put up.
+        XCTAssertNil(MarkdownPreview.cursor(hovering: false, ours: false))
+    }
+
+    func testThePointerIsAHandOverThePlusBecauseThePlusIsAButton() {
+        // Sean, 2026-09-20: "it should be a pointer over the + button".
+        // The same hand the notebook brackets in the gutter use, so the
+        // app says "this does something" the one way.
+        XCTAssertTrue(MarkdownPreview.cursor(hovering: true, onPlus: true) === NSCursor.pointingHand)
+        XCTAssertTrue(MarkdownPreview.cursor(hovering: true, onPlus: false)
+                      === NSCursor.iBeamCursorForVerticalLayout)
+    }
+
+    func testTheRenderedPagesPlusIsWhereTheRenderedPageDrawsIt() {
+        // Its hover reports from the top-left of the seam's own view,
+        // and the + is drawn at this pane's margin on the seam's line.
+        let seam = CellSeams.Seam(top: 100, bottom: 108, offset: 12, line: 104)
+        let target = MarkdownPreview.plusTarget(in: seam)
+        XCTAssertEqual(target.midY, seam.line - seam.top, accuracy: 0.001)
+        XCTAssertTrue(target.contains(CGPoint(x: MarkdownPreview.sideInset + 2, y: 4)),
+                      "the + image itself")
+        XCTAssertFalse(target.contains(CGPoint(x: 300, y: 4)), "the bar beside it is not a button")
+        XCTAssertGreaterThanOrEqual(target.minY, 0, "and never outside the view that reports it")
+        XCTAssertLessThanOrEqual(target.maxY, seam.bottom - seam.top)
     }
 }

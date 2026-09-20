@@ -110,7 +110,7 @@ final class SeamMeasurementTests: XCTestCase {
 
     private func layer(_ seams: [CellSeams.Seam]) -> CellInsertions {
         let view = CellInsertions(frame: NSRect(x: 0, y: 0, width: 400, height: 800))
-        view.seams = seams
+        view.measure(seams)
         return view
     }
 

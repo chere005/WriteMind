@@ -763,6 +763,58 @@ tools/                    build.sh run.sh test.sh (both source signing.sh)
   `cursorUpdate` and `mouseMoved` over a seam with the horizontal I-beam,
   and cuts its cursor rects into `CellSeams.bands` so that no rect of its
   own ever covers a seam in the first place.
+- **A CURSOR RECT IS THE WRONG MECHANISM; A TRACKING AREA IS THE RIGHT
+  ONE.** The bar's cursor was right "in most of the right spots" and
+  dropped back to the I-beam now and then (Sean, 2026-09-20: "it does
+  flicker sometimes back to a cursor"). Four causes, none of them the
+  whole of it:
+  1. **Rects are torn down and rebuilt; a tracking area is not.**
+     `invalidateCursorRects` discards the set, and until
+     `resetCursorRects` runs again there is no rect of ours under the
+     pointer at all — the text view's I-beam is what is left. The seam
+     layer's tracking area now carries `.cursorUpdate`, so it owns the
+     cursor across every rebuild and the rects are the belt to those
+     braces rather than the mechanism.
+  2. **An idle re-measure counted as a move.** `refreshBrackets` measures
+     the seams off the text layout on every keystroke, every caret move,
+     every restyle (which invalidates the layout of the WHOLE note) and
+     every scroll, and `seams` invalidated both views' rects whenever any
+     float differed. `CellSeams.moved` compares with half a point of
+     tolerance and `CellInsertions.measure` keeps the old seams when
+     nothing has really moved, so a page sitting still tears nothing
+     down. `seams` is `private(set)` to keep that the only way in.
+  3. **Two views answering one point separately.** The layer said "a
+     seam is the horizontal I-beam" and the text view said it too, which
+     was the same answer until the + wanted a hand. Both now call
+     `CellInsertions.cursor(at:)`, and the text view cuts the +'s patch
+     out of its own rects (`CellSeams.cut`) instead of laying one over
+     the other.
+  4. **NSTextView answers a mouseEntered with the I-beam, and AppKit
+     synthesises one whenever the tracking areas are rebuilt under a
+     pointer that never moved** — every scroll, every relayout. Nothing
+     follows it until the pointer moves, so the bar sat under an upright
+     cursor until it was nudged. `PasteAwareTextView.mouseEntered` and
+     the tail of its `updateTrackingAreas` put the seam's cursor back;
+     `CellInsertions.mouseEntered` does the same for the layer.
+  On the rendered page there was a fifth with the same face: the seam
+  handed the cursor back by looking at what was on screen
+  (`current == .iBeamCursorForVerticalLayout`), and the seam the pointer
+  ARRIVES at is often told before the one it left, so leaving A took back
+  the cursor B had just set. `MarkdownPreview.cursor` takes `ours` — the
+  seam's own answer to "was the pointer on me" — and a seam hands back
+  only what it put up. Which view's `cursorUpdate` wins at runtime is not
+  unit-testable; the geometry under all of it is, and is.
+- **The + on the bar is a button, so it takes the pointing hand** — the
+  same cursor the notebook brackets in the gutter use, so the app says
+  "this does something" the one way (Sean, 2026-09-20: "it should be a
+  pointer over the + button"). Its region is `CellSeams.plusTarget`,
+  beside the `line` both panes already draw it on: four points more
+  generous than the ten-point dot, because a small control is hard to hit
+  exactly, and CLIPPED TO THE SEAM, because the click is — the layer
+  takes no mouse down outside a seam, so a hand five points up in the
+  cell above would promise a press that never arrives. The only thing the
+  two panes do not share is where their own left margin is
+  (`CellInsertions.plusLeading`, `MarkdownPreview.sideInset`).
 - **A stored property called `body` in a `View` is a redeclaration**, and
   `swiftc -parse` will not tell you — it type-checks fine and fails in the
   build. Three of the maths views had `let body: WLExpr` before they were
