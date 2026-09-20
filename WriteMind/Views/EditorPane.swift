@@ -45,7 +45,16 @@ struct EditorPane: View {
                                          topCell: store.topCell,
                                          collapsed: store.collapsedHere,
                                          onToggleSection: { store.toggleSection($0) },
-                                         showMarkers: appState.showMarkers)
+                                         showMarkers: appState.showMarkers,
+                                         // The pencil owns the note pane in
+                                         // drawing mode (Sean, 2026-09-20:
+                                         // "cursor only becomes a pen in the
+                                         // notes pane in drawing mode!!!!!"),
+                                         // and so does the arrow tool and a
+                                         // placement waiting to land.
+                                         seamsEnabled: !appState.penActive
+                                             && !appState.connectActive
+                                             && appState.placing == nil)
                     } else {
                         MarkdownPreview(markdown: $store.text,
                                         onFollow: { store.follow(destination: $0) },

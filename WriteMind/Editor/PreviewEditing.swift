@@ -14,9 +14,31 @@ enum PreviewEditing {
         let after = ns.substring(from: clamped)
 
         let lead = before.isEmpty ? "" : (before.hasSuffix("\n\n") ? "" : (before.hasSuffix("\n") ? "\n" : "\n\n"))
-        let trail = after.isEmpty ? "" : (after.hasPrefix("\n\n") ? "" : (after.hasPrefix("\n") ? "\n" : "\n\n"))
+        // The blank lines a new block needs under it, EXCEPT where the
+        // newlines already there are a cell of their own: a run of empty
+        // lines is the note's content, not spacing (Sean, 2026-09-20: "one
+        // with 8 empty lines"), so reading the first two of them as this
+        // block's separator ate two of his — an eight-line cell came back
+        // a six-line one.
+        let trail: String
+        if after.isEmpty {
+            trail = ""
+        } else if opensABlankCell(in: markdown, at: clamped) {
+            trail = "\n\n"
+        } else {
+            trail = after.hasPrefix("\n\n") ? "" : (after.hasPrefix("\n") ? "\n" : "\n\n")
+        }
         let caret = (before as NSString).length + (lead as NSString).length
         return (before + lead + trail + after, caret)
+    }
+
+    /// Whether the cell that starts exactly here is a run of blank lines.
+    private static func opensABlankCell(in markdown: String, at offset: Int) -> Bool {
+        MarkdownParser.positioned(from: markdown).contains { block in
+            guard block.range.location == offset else { return false }
+            if case .blank = block.block { return true }
+            return false
+        }
     }
 
     /// Return in the middle of a block: what is behind the caret stays, what

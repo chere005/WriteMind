@@ -21,6 +21,20 @@ final class PreviewEditingTests: XCTestCase {
         XCTAssertEqual(caret, 0)
     }
 
+    func testANewBlockBesideARunOfEmptyLinesKeepsEveryOneOfThem() {
+        // The newlines after the caret are that cell's own content, not
+        // the blank line this block needs under it (Sean, 2026-09-20: "one
+        // with 8 empty lines"). Reading them as the separator left the
+        // cell two lines shorter every time a cell was opened above it.
+        let note = "baz\n" + String(repeating: "\n", count: 10) + "# asdf"
+        let (markdown, caret) = PreviewEditing.insertBlock(in: note, at: 5)
+        XCTAssertEqual(caret, 5)
+        let blocks = MarkdownParser.blocks(from: (markdown as NSString)
+            .replacingCharacters(in: NSRange(location: caret, length: 0), with: "x"))
+        XCTAssertEqual(blocks, [.paragraph("baz"), .paragraph("x"), .blank(lines: 8),
+                                .heading(level: 1, text: "asdf")])
+    }
+
     func testANewBlockInAnEmptyNoteIsJustTheCaret() {
         let (markdown, caret) = PreviewEditing.insertBlock(in: "", at: 0)
         XCTAssertEqual(markdown, "")

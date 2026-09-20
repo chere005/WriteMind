@@ -6,51 +6,57 @@ import AppKit
 ///
 /// The rendered page has had one since the cells there are separate views
 /// with a strip between them. In the source there are no views to put a
-/// strip between, so this is a layer over the text: it knows where the gap
-/// between two blocks is, turns the pointer on its side when it is in one,
-/// draws the line across the page, and takes the click that opens a cell
-/// there. Everywhere else it is not in the way at all — the text view gets
-/// every event as before.
+/// strip between, so this is a layer over the text: it knows where the
+/// seams are, turns the pointer on its side anywhere inside one, draws the
+/// line across the page, and takes the click that arms it. Over a cell it
+/// is not in the way at all — the text view gets every event as before.
+///
+/// The WHOLE seam answers now, edge to edge (Sean, 2026-09-20: "the cursor
+/// should be horizontal any space between the two cells.. that's buggy").
+/// The three-point strip round a gap's middle that the pointer used to flip
+/// in and out of is gone: `CellSeams` says where the spaces are, both panes
+/// ask it, and this layer only draws and takes the clicks.
 final class CellInsertions: NSView {
-    /// A place a new cell can go: the middle of the gap between two blocks,
-    /// and the character offset a blank line would be typed at.
-    struct Gap: Equatable {
-        var y: CGFloat
-        var offset: Int
-        /// How far either side of `y` still counts as being in this gap.
-        var reach: CGFloat
+    /// The spaces between the cells, from `MarkdownTextView.seams(in:)`.
+    var seams: [CellSeams.Seam] = [] {
+        didSet {
+            guard seams != oldValue else { return }
+            needsDisplay = true
+            window?.invalidateCursorRects(for: self)
+            // The note was re-laid out under the armed bar — the pane was
+            // resized, or a section opened. The seam it is in has moved,
+            // not gone: the offset is what was armed, the geometry is
+            // whatever the layout says now.
+            if let armed, let moved = seams.first(where: { $0.offset == armed.offset }) {
+                self.armed = moved
+            }
+        }
     }
-
-    /// How far either side of a gap's middle the layer answers. SMALL on
-    /// purpose: it sits over the whole text view, and a reach that spilled
-    /// onto the lines either side took clicks meant for the words (Sean,
-    /// 2026-09-20: "cursor is super buggy").
-    static let minimumReach: CGFloat = 3
-
-    var gaps: [Gap] = [] { didSet { if gaps != oldValue { needsDisplay = true } } }
-    /// A click in a gap: the bar stays there, armed, and the first thing
-    /// typed opens a cell at that offset (Sean, 2026-09-20: "if i start
-    /// typing it inserts a cell immediately after the cursor/line which
-    /// disappear"). Nothing is written to the note until then, so clicking
-    /// about the page leaves no empty cells behind.
-    var onInsert: ((Int) -> Void)?
-    /// The gap the bar is sitting in, waiting to be typed into.
-    private(set) var armed: Gap? { didSet { if armed != oldValue { needsDisplay = true } } }
-    private var hovered: Gap?
+    /// The seam the bar is sitting in, waiting to be typed into. Nothing is
+    /// written to the note until something is (Sean, 2026-09-20: "if i
+    /// start typing it inserts a cell immediately after the cursor/line
+    /// which disappear"), so clicking about the page leaves no empty cells.
+    private(set) var armed: CellSeams.Seam? { didSet { if armed != oldValue { needsDisplay = true } } }
+    private var hovered: CellSeams.Seam?
     private var tracking: NSTrackingArea?
+
+    /// The caret was put in a seam: whoever owns the keyboard is told, and
+    /// the note itself is untouched until something is typed.
+    var onArm: ((Int) -> Void)?
 
     override var isFlipped: Bool { true }
 
     override func draw(_ dirtyRect: NSRect) {
-        // The armed bar stays drawn; the hovered one is only a hint.
-        guard let gap = armed ?? hovered else { return }
+        // The armed bar stays drawn — it IS the cursor; the hovered one is
+        // only a hint and goes with the pointer.
+        guard let seam = armed ?? hovered else { return }
         let accent = NSColor.controlAccentColor
         accent.withAlphaComponent(0.85).setFill()
         // The line runs the width of the page, the way a cell insertion
         // bar does in a notebook.
-        NSBezierPath(rect: NSRect(x: 18, y: gap.y - 1, width: max(0, bounds.width - 40), height: 2)).fill()
+        NSBezierPath(rect: NSRect(x: 18, y: seam.middle - 1, width: max(0, bounds.width - 40), height: 2)).fill()
         // And the plus that says what clicking it does.
-        let dot = NSRect(x: 4, y: gap.y - 5, width: 10, height: 10)
+        let dot = NSRect(x: 4, y: seam.middle - 5, width: 10, height: 10)
         NSBezierPath(ovalIn: dot).fill()
         NSColor.white.setStroke()
         let plus = NSBezierPath()
@@ -62,13 +68,13 @@ final class CellInsertions: NSView {
         plus.stroke()
     }
 
-    /// The gap a point is in, if any — the nearest one within its reach.
-    static func gap(at point: CGPoint, in gaps: [Gap]) -> Gap? {
-        gaps
-            // Never wider than the gap itself: the lines either side of it
-            // belong to the text view.
-            .filter { abs(point.y - $0.y) <= min(max($0.reach, minimumReach), 6) }
-            .min { abs(point.y - $0.y) < abs(point.y - $1.y) }
+    /// The seam a point is in, if any. Full width of the page EXCEPT the
+    /// bracket gutter: a section's bracket runs down the seams between its
+    /// cells as well as the cells, and a layer over the whole width would
+    /// swallow every click on one.
+    func seam(at point: CGPoint) -> CellSeams.Seam? {
+        guard !isHidden, point.x < bounds.width - NotebookGutter.width else { return nil }
+        return CellSeams.seam(at: point.y, in: seams)
     }
 
     override func updateTrackingAreas() {
@@ -83,12 +89,34 @@ final class CellInsertions: NSView {
     }
 
     override func mouseMoved(with event: NSEvent) {
-        let point = convert(event.locationInWindow, from: nil)
-        let gap = Self.gap(at: point, in: gaps)
-        if gap != hovered { hovered = gap; needsDisplay = true }
+        let seam = seam(at: convert(event.locationInWindow, from: nil))
+        if seam != hovered { hovered = seam; needsDisplay = true }
         // On its side, because what goes in here goes in BETWEEN two
-        // things rather than between two letters.
-        if gap != nil { NSCursor.iBeamCursorForVerticalLayout.set() }
+        // things rather than between two letters. It is set for the whole
+        // seam, so the pointer does not flip on the way across one.
+        if seam != nil { NSCursor.iBeamCursorForVerticalLayout.set() }
+    }
+
+    /// The pointer keeps its shape all the way across a seam, whatever
+    /// the text view thinks. A cursor rect is the strongest way to say so
+    /// — this layer is above the text view, so its rects win over the
+    /// I-beam the text view sets over the whole of itself — and the
+    /// cursorUpdate below is the belt to those braces, for the events
+    /// AppKit routes by hit testing instead (Sean, 2026-09-20: "cursor is
+    /// super buggy").
+    override func resetCursorRects() {
+        let width = max(0, bounds.width - NotebookGutter.width)
+        for seam in seams where seam.bottom > seam.top {
+            addCursorRect(NSRect(x: 0, y: seam.top, width: width, height: seam.bottom - seam.top),
+                          cursor: .iBeamCursorForVerticalLayout)
+        }
+    }
+
+    override func cursorUpdate(with event: NSEvent) {
+        guard seam(at: convert(event.locationInWindow, from: nil)) != nil else {
+            return super.cursorUpdate(with: event)
+        }
+        NSCursor.iBeamCursorForVerticalLayout.set()
     }
 
     override func mouseExited(with event: NSEvent) {
@@ -96,23 +124,19 @@ final class CellInsertions: NSView {
     }
 
     override func mouseDown(with event: NSEvent) {
-        let point = convert(event.locationInWindow, from: nil)
-        guard let gap = Self.gap(at: point, in: gaps) else { return }
-        armed = gap
-        onArm?(gap.offset)
+        guard let seam = seam(at: convert(event.locationInWindow, from: nil)) else { return }
+        armed = seam
+        onArm?(seam.offset)
     }
-
-    /// The caret was put in the gap: the note itself is untouched until
-    /// something is typed, and whoever owns the keyboard tells us when.
-    var onArm: ((Int) -> Void)?
 
     /// The bar goes out when the caret goes anywhere else.
     func disarm() { armed = nil }
 
-    /// Only a point inside a gap belongs to this layer; every other click
-    /// goes to the text underneath, which is most of them.
+    /// Only a point inside a seam belongs to this layer; every other click
+    /// goes to the text underneath. NSView's own hit testing skips a hidden
+    /// view and this override does not, so it has to ask: with the pen up
+    /// the layer is hidden and the pencil owns the pane.
     override func hitTest(_ point: NSPoint) -> NSView? {
-        let local = convert(point, from: superview)
-        return Self.gap(at: local, in: gaps) == nil ? nil : self
+        seam(at: convert(point, from: superview)) == nil ? nil : self
     }
 }

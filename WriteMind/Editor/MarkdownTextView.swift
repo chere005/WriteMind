@@ -38,6 +38,11 @@ struct MarkdownTextView: NSViewRepresentable {
     /// (Sean, 2026-09-19: "allow wysiwyg editing"). The paragraph the caret
     /// is in always shows its own, so they can be typed.
     var showMarkers: Bool = false
+    /// False while the pen, the arrow tool or a placement is up: the
+    /// pencil owns the note pane then (Sean, 2026-09-20: "cursor only
+    /// becomes a pen in the notes pane in drawing mode!!!!!"), so the
+    /// pointer is never horizontal and no seam can be armed.
+    var seamsEnabled: Bool = true
 
     func makeCoordinator() -> Coordinator { Coordinator(self) }
 
@@ -74,6 +79,9 @@ struct MarkdownTextView: NSViewRepresentable {
         tv.font = Self.font
         tv.textColor = .textColor
         tv.insertionPointColor = .textColor
+        // What the caret goes back to: it is hidden while a seam is armed,
+        // because the line across the page IS the cursor then.
+        tv.caretColour = tv.insertionPointColor
         tv.textContainerInset = NSSize(width: 24, height: 20)
         tv.minSize = NSSize(width: 0, height: 0)
         tv.maxSize = NSSize(width: CGFloat.greatestFiniteMagnitude, height: .greatestFiniteMagnitude)
@@ -120,12 +128,12 @@ struct MarkdownTextView: NSViewRepresentable {
         context.coordinator.gutter = gutter
 
         // The insertion line between two cells, over the text and out of
-        // the way of every click that is not in a gap.
+        // the way of every click that is not in a seam.
         let insertions = CellInsertions(frame: tv.bounds)
         insertions.autoresizingMask = [.width, .height]
         insertions.onArm = { [weak tv, weak insertions] offset in
             guard let tv = tv as? PasteAwareTextView else { return }
-            tv.armedGap = offset
+            tv.armedSeam = offset
             tv.onDisarm = { [weak insertions] in insertions?.disarm() }
             tv.setSelectedRange(NSRange(location: min(offset, (tv.string as NSString).length),
                                         length: 0))
@@ -165,6 +173,7 @@ struct MarkdownTextView: NSViewRepresentable {
             }
         }
 
+        context.coordinator.setSeams(enabled: seamsEnabled)
         context.coordinator.collapsed = collapsed
         context.coordinator.applyFolding()
         if context.coordinator.hiding.isEnabled == showMarkers {
@@ -198,61 +207,75 @@ struct MarkdownTextView: NSViewRepresentable {
         coordinator.undoManager.removeAllActions()
     }
 
-    /// Where a new cell can go: the middle of the blank space between two
-    /// blocks, and the offset a blank line would be typed at. The first
-    /// gap is above the first block and the last is under the last one, so
-    /// a cell can be opened at either end (Sean, 2026-09-19: "the
-    /// horizontal cursor and horizontal lines between cells like in
-    /// mathematica").
-    static func gaps(in tv: NSTextView) -> [CellInsertions.Gap] {
+    /// Where each cell is down the page, in the text view's own
+    /// coordinates: the top and bottom of the lines its block is laid out
+    /// on, and the character offset it begins at.
+    ///
+    /// Measured over WHOLE LINES rather than over the block's glyph range.
+    /// A `.blank` cell's range stops one line short of the lines it stands
+    /// for — its last character is the newline that ends the line before
+    /// the last — and measuring the range alone put 22 pt of the cell's
+    /// own body into the seam under it. Widening to the lines the range
+    /// touches is a no-op for a paragraph, a heading or a list, whose last
+    /// character is on the last line they occupy.
+    static func cellBoxes(in tv: NSTextView) -> [CellSeams.Box] {
         guard let layout = tv.layoutManager, let container = tv.textContainer else { return [] }
         let text = tv.string as NSString
         guard text.length > 0 else { return [] }
         layout.ensureLayout(for: container)
         let origin = tv.textContainerOrigin
-
-        func band(_ character: Int) -> (top: CGFloat, bottom: CGFloat) {
-            let glyph = layout.glyphIndexForCharacter(at: min(max(character, 0), text.length - 1))
-            let line = layout.lineFragmentRect(forGlyphAt: glyph, effectiveRange: nil)
-            return (line.minY + origin.y, line.maxY + origin.y)
+        var boxes: [CellSeams.Box] = []
+        for block in MarkdownParser.positioned(from: tv.string) {
+            let start = min(max(block.range.location, 0), text.length - 1)
+            let end = min(max(NSMaxRange(block.range), start), text.length - 1)
+            let lines = NSUnionRange(text.lineRange(for: NSRange(location: start, length: 0)),
+                                     text.lineRange(for: NSRange(location: end, length: 0)))
+            let glyphs = layout.glyphRange(forCharacterRange: lines, actualCharacterRange: nil)
+            let rect = layout.boundingRect(forGlyphRange: glyphs, in: container)
+            boxes.append(CellSeams.Box(top: rect.minY + origin.y, bottom: rect.maxY + origin.y,
+                                       offset: block.range.location))
         }
-
-        let blocks = MarkdownParser.positioned(from: tv.string)
-        guard !blocks.isEmpty else { return [] }
-        var gaps: [CellInsertions.Gap] = []
-        let first = band(blocks[0].range.location)
-        gaps.append(CellInsertions.Gap(y: max(0, first.top - 7), offset: blocks[0].range.location,
-                                       reach: CellInsertions.minimumReach))
-        for (above, below) in zip(blocks, blocks.dropFirst()) {
-            let bottom = band(max(NSMaxRange(above.range) - 1, above.range.location)).bottom
-            let top = band(below.range.location).top
-            gaps.append(CellInsertions.Gap(y: (bottom + top) / 2, offset: below.range.location,
-                                           reach: max(CellInsertions.minimumReach,
-                                                      min((top - bottom) / 2, 6))))
-        }
-        let last = blocks[blocks.count - 1]
-        let bottom = band(max(NSMaxRange(last.range) - 1, last.range.location)).bottom
-        gaps.append(CellInsertions.Gap(y: bottom + 7, offset: text.length,
-                                       reach: CellInsertions.minimumReach))
-        return gaps
+        return boxes
     }
 
-    /// A new, empty cell at `offset`: a blank line either side of the caret,
-    /// so what is typed next is its own block.
-    static func openCell(at offset: Int, in tv: NSTextView) {
+    /// The spaces between those cells: where the pointer is horizontal and
+    /// where a click opens a new cell (Sean, 2026-09-20: "the cursor
+    /// should be horizontal any space between the two cells").
+    ///
+    /// The page runs from the top of the text view to the bottom of the
+    /// text laid out in it — `usedRect` is in the CONTAINER's coordinates,
+    /// so it takes the origin too, or the tail seam starts an inset too
+    /// high — or to the bottom of the view when the note is shorter than
+    /// the window, so the empty space under the last cell is all seam.
+    static func seams(in tv: NSTextView) -> [CellSeams.Seam] {
+        guard let layout = tv.layoutManager, let container = tv.textContainer else { return [] }
+        let bottom = layout.usedRect(for: container).maxY + tv.textContainerOrigin.y
+        return CellSeams.seams(cells: cellBoxes(in: tv), pageTop: 0,
+                               pageBottom: max(tv.bounds.height, bottom),
+                               noteLength: (tv.string as NSString).length)
+    }
+
+    /// Open a cell at an armed seam: the blank lines that make what is
+    /// typed next a block of its own, and the caret between them.
+    ///
+    /// `PreviewEditing.insertBlock` decides what those lines are — one
+    /// rule for both panes — and only what it ADDS is typed in, at the
+    /// seam, rather than the whole note being replaced by its answer: undo
+    /// then takes the opening in one step and the restyle does not re-run
+    /// over every character of a long note.
+    static func openSeam(at offset: Int, in tv: NSTextView) {
         let text = tv.string as NSString
         let place = min(max(offset, 0), text.length)
-        var opening = "\n\n"
-        var caret = place + 1
-        if place == text.length {
-            // At the very end there is nothing under it to push down.
-            opening = text.length > 0 && text.character(at: text.length - 1) == 10 ? "\n" : "\n\n"
-            caret = place + (opening as NSString).length
+        let (updated, caret) = PreviewEditing.insertBlock(in: tv.string, at: place)
+        let added = (updated as NSString).length - text.length
+        guard added >= 0 else { return }
+        if added > 0 {
+            let opening = (updated as NSString).substring(with: NSRange(location: place, length: added))
+            let range = NSRange(location: place, length: 0)
+            guard tv.shouldChangeText(in: range, replacementString: opening) else { return }
+            tv.insertText(opening, replacementRange: range)
+            tv.didChangeText()
         }
-        let range = NSRange(location: place, length: 0)
-        guard tv.shouldChangeText(in: range, replacementString: opening) else { return }
-        tv.insertText(opening, replacementRange: range)
-        tv.didChangeText()
         tv.setSelectedRange(NSRange(location: min(caret, (tv.string as NSString).length), length: 0))
         tv.window?.makeFirstResponder(tv)
     }
@@ -341,6 +364,19 @@ struct MarkdownTextView: NSViewRepresentable {
         }
 
         func undoManager(for view: NSTextView) -> UndoManager? { undoManager }
+
+        /// The seams come and go with the pen: with it up the whole note
+        /// pane belongs to the pencil, so the layer is hidden — which is
+        /// also what stops it hit testing — and anything armed goes out.
+        func setSeams(enabled: Bool) {
+            guard let insertions else { return }
+            let away = !enabled
+            guard insertions.isHidden != away else { return }
+            insertions.isHidden = away
+            guard away else { return }
+            (insertions.superview as? PasteAwareTextView)?.armedSeam = nil
+            insertions.disarm()
+        }
 
         /// Style the source the way the preview's blocks are styled, then
         /// work out which markers can vanish and re-generate their glyphs.
@@ -578,7 +614,7 @@ struct MarkdownTextView: NSViewRepresentable {
                 let wanted = NSRect(origin: .zero, size: NSSize(width: tv.bounds.width,
                                                                 height: max(tv.bounds.height, 1)))
                 if insertions.frame != wanted { insertions.frame = wanted }
-                insertions.gaps = MarkdownTextView.gaps(in: tv)
+                insertions.seams = MarkdownTextView.seams(in: tv)
             }
         }
 
@@ -703,21 +739,58 @@ class PasteAwareTextView: NSTextView {
     var onClick: (() -> Void)?
     /// The general pasteboard, except in a test, which brings its own.
     var pasteboard: NSPasteboard = .general
-    /// A gap between two cells the caret is sitting in: nothing has been
-    /// written there, and the first character typed opens a cell first
-    /// (Sean, 2026-09-20: "if i start typing it inserts a cell immediately
-    /// after the cursor/line which disappear").
-    var armedGap: Int? {
-        didSet { if armedGap == nil { onDisarm?() } }
+    /// The seam between two cells the caret is sitting in: nothing has
+    /// been written there, and the first character typed opens a cell
+    /// first (Sean, 2026-09-20: "if i start typing it inserts a cell
+    /// immediately after the cursor/line which disappear").
+    var armedSeam: Int? {
+        didSet {
+            guard armedSeam != oldValue else { return }
+            // The line drawn across the page IS the cursor while a seam
+            // is armed (Sean, 2026-09-20: "the horizontal line appears
+            // and that is where the cursor is"), so the caret is not
+            // drawn as well — two cursors is what he was looking at.
+            insertionPointColor = armedSeam == nil ? caretColour : .clear
+            if armedSeam == nil { onDisarm?() }
+        }
     }
+    /// The caret's own colour, read once when the editor is built, so it
+    /// can come back when the seam goes.
+    var caretColour: NSColor = .textColor
     var onDisarm: (() -> Void)?
 
+    /// Open the cell an armed seam stands for, if one is armed. The offset
+    /// is taken and the bar put out BEFORE the note is touched, so the
+    /// insertion that opens the cell is not read as a second arming.
+    @discardableResult
+    private func openArmedSeam() -> Bool {
+        guard let offset = armedSeam else { return false }
+        armedSeam = nil
+        MarkdownTextView.openSeam(at: offset, in: self)
+        return true
+    }
+
     override func insertText(_ string: Any, replacementRange: NSRange) {
-        if let offset = armedGap {
-            armedGap = nil
-            MarkdownTextView.openCell(at: offset, in: self)
+        guard openArmedSeam() else {
+            return super.insertText(string, replacementRange: replacementRange)
         }
-        super.insertText(string, replacementRange: replacementRange)
+        // Opening the cell moved everything after the seam along, so the
+        // range the event arrived with means nothing now: what was typed
+        // goes where the caret was left, between the new blank lines.
+        super.insertText(string, replacementRange: NSRange(location: NSNotFound, length: 0))
+    }
+
+    /// A key while a seam is armed. Return opens the empty cell there;
+    /// everything else — an arrow, Escape, a delete — puts the bar out and
+    /// leaves the note exactly as it was, because clicking about the page
+    /// must never leave an empty cell behind.
+    override func doCommand(by selector: Selector) {
+        guard let offset = armedSeam else { return super.doCommand(by: selector) }
+        armedSeam = nil
+        guard selector == #selector(NSResponder.insertNewline(_:)) else {
+            return super.doCommand(by: selector)
+        }
+        MarkdownTextView.openSeam(at: offset, in: self)
     }
 
     /// Shown over the text instead of the I-beam while set (the pen's pencil).
@@ -785,6 +858,10 @@ class PasteAwareTextView: NSTextView {
         let taken = onPasteImage?(pasteboard) == true
         DebugLog.write("paste: in \(type(of: self)) handler=\(onPasteImage == nil ? "nil" : "set") taken=\(taken) types=\((pasteboard.types ?? []).map(\.rawValue).joined(separator: ","))")
         if taken { return }
+        // Text pasted into an armed seam is a new cell, the same as a
+        // character typed there. A picture is not — it floats over the
+        // note, and opening a cell for it would leave an empty one.
+        openArmedSeam()
         super.paste(sender)
     }
 
@@ -792,12 +869,13 @@ class PasteAwareTextView: NSTextView {
         let taken = onPasteImage?(pasteboard) == true
         DebugLog.write("pasteAsPlainText: in \(type(of: self)) handler=\(onPasteImage == nil ? "nil" : "set") taken=\(taken)")
         if taken { return }
+        openArmedSeam()
         super.pasteAsPlainText(sender)
     }
 
     override func mouseDown(with event: NSEvent) {
         // A click anywhere in the text puts the insertion bar out.
-        armedGap = nil
+        armedSeam = nil
         onClick?()
         super.mouseDown(with: event)
     }

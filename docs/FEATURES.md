@@ -48,11 +48,17 @@ is how the code is put together.
   it, ⌃⇧↑ and ⌃⇧↓ move it, and dragging its bracket up or down moves it
   too. The same on both sides of the app, the way a Mathematica notebook
   behaves (Sean, 2026-09-20).
-- **The insertion line between cells.** Move the pointer into the space
-  between two cells and it turns on its side; a line runs across the page
-  with a `+` at the margin, and a click opens a new cell there. Both sides
-  of the app have it — the markdown pane and the rendered page — the way a
-  Mathematica notebook does.
+- **The insertion line between cells.** The WHOLE space between two cells
+  answers, edge to edge — and so does the space above the first and
+  everything under the last. Move the pointer into one and it turns on
+  its side; click and a line runs across the page with a `+` at the
+  margin. That line is the cursor: the caret stops being drawn, and the
+  first thing typed becomes a cell of its own there, Return opens an
+  empty one, and Escape, an arrow or a click anywhere else takes the line
+  back without leaving an empty cell behind. With the pen up there are no
+  seams at all — the pencil owns the note pane. The markdown pane works
+  this way; the rendered page still opens its cell on the click, the way
+  a Mathematica notebook does on both.
 - **The same place, whichever mode.** Switching between the markdown and
   the rendered page reopens on the cell you were looking at.
 - **Sections of a note are cells.** A heading owns everything under it

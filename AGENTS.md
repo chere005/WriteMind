@@ -170,6 +170,17 @@ CoreMind's `bin/report-status.sh`.
   more on the next run-loop turn, after whatever the dispatch did. The
   pencil itself is black with a white halo at 28pt — the first, a thin white
   glyph, was invisible on the page.
+- **An armed seam IS the cursor, so the caret is turned off — and it has
+  to come back.** A click in the space between two cells arms it: the line
+  drawn across the page is where typing will go (Sean, 2026-09-20: "when
+  clicking in between, the horizontal line appears and that is where the
+  cursor is"), and a caret blinking somewhere else at the same time is two
+  cursors. `PasteAwareTextView.armedSeam` sets `insertionPointColor` to
+  clear and puts `caretColour` back the moment it goes, so every path that
+  disarms — a key, a click, the pen going up — must go through that
+  property and not round it, or the note is left with no caret at all.
+  Which seam a point is in is `CellSeams`, once, for both panes;
+  `CellInsertions` only draws it and takes the click.
 - **A middle click on a tab needs AppKit, and hit testing is not enough.**
   SwiftUI has no middle-button gesture, and an NSView behind the tab that
   claimed `otherMouseDown` in `hitTest` never received it. `MiddleClickCatcher`
