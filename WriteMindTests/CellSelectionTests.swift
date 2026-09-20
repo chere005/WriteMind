@@ -1,3 +1,5 @@
+import AppKit
+import SwiftUI
 import XCTest
 @testable import WriteMind
 
@@ -51,6 +53,29 @@ final class CellSelectionTests: XCTestCase {
         XCTAssertEqual(CellSelection.between(nowhere, cells[1], in: cells), [cells[1]])
     }
 
+    func testAnAnchorThatNoLongerNamesABracketIsDropped() {
+        // Both panes keep the last bracket clicked so shift-click can
+        // reach from it, and neither is rebuilt when the note changes or
+        // is swapped for another. `between` will not fail on a stale one
+        // — `index(of:)` falls back to raw offset overlap — so the run
+        // would light from whatever cell now sits at those offsets.
+        XCTAssertEqual(CellSelection.anchor(cells[1], in: cells), cells[1])
+        XCTAssertNil(CellSelection.anchor(NSRange(location: 13, length: 12), in: cells),
+                     "the second cell as it was before a word was typed above it")
+        XCTAssertNil(CellSelection.anchor(nil, in: cells))
+    }
+
+    func testAStaleAnchorWouldHaveReachedTheWrongRun() {
+        // Why it is asked at all, in one line: left to itself, a range
+        // from the note as it was extends from whatever it overlaps now.
+        let stale = NSRange(location: 13, length: 12)
+        XCTAssertEqual(CellSelection.between(stale, cells[2], in: cells).count, 2,
+                       "it resolves by overlap, and reaches a cell the user never clicked")
+        XCTAssertEqual(CellSelection.between(CellSelection.anchor(stale, in: cells) ?? cells[2],
+                                             cells[2], in: cells),
+                       [cells[2]], "one cell, and not the wrong two")
+    }
+
     func testTogglingTakesACellOutAndPutsItBack() {
         let both = CellSelection.toggling(cells[2], in: [cells[0]])
         XCTAssertEqual(both, [cells[0], cells[2]])
@@ -84,30 +109,179 @@ final class CellSelectionTests: XCTestCase {
     }
 }
 
-/// The gutter takes every click inside it — the bug this step began with
-/// was that it took only the four points either side of a bracket's line,
-/// so the mouse down at the top of a drag never reached the view at all.
+/// The gutter is drawn FROM the pane's selection, and the two questions a
+/// bracket answers — is it drawn heavy, is its cell being held — part
+/// company over the cell the caret merely sits in.
+final class GutterBracketTests: XCTestCase {
+    private let note = "First cell\n\nSecond cell\n\nThird cell"
+    private var cells: [NSRange] { MarkdownParser.positioned(from: note).map(\.range) }
+
+    private func brackets(selecting selection: [NSRange]) -> [NotebookGutter.Bracket] {
+        let tv = PasteAwareTextView(frame: NSRect(x: 0, y: 0, width: 400, height: 800))
+        tv.font = MarkdownTextView.font
+        tv.string = note
+        tv.textContainer?.containerSize = NSSize(width: 352, height: CGFloat.greatestFiniteMagnitude)
+        tv.textContainer?.widthTracksTextView = false
+        tv.layoutManager?.ensureLayout(for: tv.textContainer!)
+        tv.selectedRanges = selection.map { NSValue(range: $0) }
+        // Held weakly by the coordinator, so the test keeps it alive.
+        let gutter = NotebookGutter(frame: NSRect(x: 0, y: 0, width: NotebookGutter.width, height: 800))
+        let coordinator = MarkdownTextView(text: .constant(note), documentID: nil,
+                                           bridge: EditorBridge()).makeCoordinator()
+        coordinator.gutter = gutter
+        coordinator.refreshBrackets(in: tv)
+        return gutter.brackets.filter { !$0.foldable }
+    }
+
+    func testTheCaretsOwnCellIsDrawnHeavyAndIsNotHeld() {
+        // Which is the whole distinction: the caret lights the cell being
+        // typed in, on both sides, and that must not read as a cell the
+        // user picked up — there is always a caret somewhere.
+        let out = brackets(selecting: [NSRange(location: 2, length: 0)])
+        let first = out.first { NSEqualRanges($0.range, cells[0]) }
+        XCTAssertEqual(first?.selected, true)
+        XCTAssertEqual(first?.held, false)
+        XCTAssertEqual(out.filter(\.held).count, 0, "nothing is held by a caret")
+    }
+
+    func testACellTheSelectionCoversIsHeld() {
+        let out = brackets(selecting: [cells[0]])
+        XCTAssertEqual(out.first { NSEqualRanges($0.range, cells[0]) }?.held, true)
+        XCTAssertEqual(out.first { NSEqualRanges($0.range, cells[1]) }?.held, false)
+    }
+
+    func testTwoCellsWithAHoleBetweenThemAreBothHeld() {
+        let out = brackets(selecting: [cells[0], cells[2]])
+        XCTAssertEqual(out.filter(\.held).map(\.range), [cells[0], cells[2]])
+    }
+}
+
+/// A flipped host, so a point in the test reads the same way up as a point
+/// in the gutter and the conversions either side of an event are exact.
+private final class Pane: NSView {
+    override var isFlipped: Bool { true }
+}
+
+/// What a press on a bracket does — which of the two gestures it begins,
+/// and what a modifier makes of it.
 final class GutterClickTests: XCTestCase {
-    private func gutter() -> NotebookGutter {
-        let pane = NSView(frame: NSRect(x: 0, y: 0, width: 200, height: 200))
+    private let first = NSRange(location: 0, length: 10)
+    private let second = NSRange(location: 12, length: 11)
+
+    /// Two cells, one above the other. `lit` is a bracket drawn heavy,
+    /// `held` one a real selection covers — the distinction the gestures
+    /// turn on.
+    private func gutter(lit: Bool = false, held: Bool = false) -> NotebookGutter {
+        let pane = Pane(frame: NSRect(x: 0, y: 0, width: 200, height: 200))
         let view = NotebookGutter(frame: NSRect(x: 0, y: 0, width: NotebookGutter.width, height: 200))
-        view.brackets = [.init(key: "cell:0", depth: 0, top: 0, bottom: 20, collapsed: false,
-                               range: NSRange(location: 0, length: 10))]
+        view.brackets = [
+            .init(key: "cell:0", depth: 0, top: 0, bottom: 20, collapsed: false,
+                  selected: lit || held, held: held, range: first),
+            .init(key: "cell:12", depth: 0, top: 30, bottom: 50, collapsed: false,
+                  range: second)
+        ]
         pane.addSubview(view)
         return view
     }
 
-    func testAClickWhereThereIsNoBracketStaysInTheGutter() {
-        // Nothing happens, and it does not reach the text behind: a click
-        // on the note's furniture must not put a caret in the note. And a
-        // drag that starts here is a drag this view can follow.
+    /// A bracket at depth 0 is drawn six points in from the column's right
+    /// edge; these are points on its line.
+    private func onFirst(_ y: CGFloat = 10) -> CGPoint { CGPoint(x: NotebookGutter.width - 6, y: y) }
+    private func onSecond() -> CGPoint { CGPoint(x: NotebookGutter.width - 6, y: 40) }
+
+    private func mouse(_ type: NSEvent.EventType, at point: CGPoint, in view: NSView,
+                       modifiers: NSEvent.ModifierFlags = [], clicks: Int = 1) -> NSEvent {
+        NSEvent.mouseEvent(with: type, location: view.convert(point, to: nil),
+                           modifierFlags: modifiers, timestamp: 0, windowNumber: 0,
+                           context: nil, eventNumber: 0, clickCount: clicks, pressure: 1)!
+    }
+
+    // MARK: - Lit is not held
+
+    func testADragFromTheCaretsOwnBracketSelectsInsteadOfMovingTheCell() {
+        // There is always a caret somewhere, so there is always one
+        // bracket drawn heavy with nothing selected — and a press on it
+        // took the move branch, so a drag meant as a selection reordered
+        // the note (2026-09-20).
+        let view = gutter(lit: true)
+        var picked: [NSRange] = []
+        var moved: [NSRange] = []
+        view.onSelect = { picked.append($0) }
+        view.onMoveCell = { range, _ in moved.append(range) }
+        view.mouseDown(with: mouse(.leftMouseDown, at: onFirst(), in: view))
+        view.mouseUp(with: mouse(.leftMouseUp, at: onFirst(45), in: view))
+        XCTAssertEqual(picked, [first], "a plain click on it picks the cell up")
+        XCTAssertEqual(moved, [], "and dragging it takes cells, it does not reorder the note")
+    }
+
+    func testADragFromACellThatIsReallyHeldStillMovesIt() {
+        let view = gutter(held: true)
+        var moved: [(NSRange, Bool)] = []
+        view.onMoveCell = { moved.append(($0, $1)) }
+        view.mouseDown(with: mouse(.leftMouseDown, at: onFirst(), in: view))
+        view.mouseUp(with: mouse(.leftMouseUp, at: onFirst(45), in: view))
+        XCTAssertEqual(moved.count, 1)
+        XCTAssertEqual(moved.first?.0, first)
+        XCTAssertEqual(moved.first?.1, false, "dragged downwards")
+    }
+
+    func testCmdClickTakesTheCaretsCellWithItNoMore() {
+        // `picked` reads the brackets, and it used to read the flag that
+        // the caret's own cell sets: cmd-clicking one bracket selected
+        // two, and ⌃⌫ then took a cell nobody had clicked.
+        let view = gutter(lit: true)
+        var handed: [NSRange] = []
+        view.onSelectCells = { handed = $0 }
+        view.mouseDown(with: mouse(.leftMouseDown, at: onSecond(), in: view, modifiers: .command))
+        XCTAssertEqual(handed, [second])
+    }
+
+    func testCmdClickTakesAHeldCellBackOut() {
+        let view = gutter(held: true)
+        var handed: [NSRange] = []
+        view.onSelectCells = { handed = $0 }
+        view.mouseDown(with: mouse(.leftMouseDown, at: onFirst(), in: view, modifiers: .command))
+        XCTAssertEqual(handed, [], "the one cell that was held, taken out")
+    }
+
+    // MARK: - What the column swallows
+
+    func testAClickWhereThereIsNoBracketGoesToTheTextBehind() {
+        // The column is 22 of the text container's own 24 points of right
+        // margin. Taking every click in it meant the margin no longer put
+        // a caret at the end of the line — and, worse, the click never
+        // reached `PasteAwareTextView.mouseDown`, which is the one path
+        // that puts an armed seam out. The bar stayed drawn with no caret
+        // anywhere (AGENTS.md: "every path that disarms … must go through
+        // that property").
         let view = gutter()
-        XCTAssertTrue(view.hitTest(NSPoint(x: 11, y: 150)) === view, "far below the only bracket")
-        XCTAssertTrue(view.hitTest(NSPoint(x: 2, y: 8)) === view, "the far side of the column")
+        XCTAssertNil(view.hitTest(NSPoint(x: 11, y: 150)), "far below every bracket")
+        XCTAssertNil(view.hitTest(NSPoint(x: 2, y: 10)), "the far side of the column")
+    }
+
+    func testAClickOnABracketIsTheGuttersOwn() {
+        let view = gutter()
+        XCTAssertTrue(view.hitTest(onFirst()) === view)
     }
 
     func testAClickOutsideTheGutterIsNoneOfItsBusiness() {
         XCTAssertNil(gutter().hitTest(NSPoint(x: 100, y: 100)))
+    }
+}
+
+/// And the same two questions on the rendered page, where the gesture is a
+/// SwiftUI drag rather than a mouse down.
+final class RenderedBracketGestureTests: XCTestCase {
+    func testAPressThatDriftsThreePointsIsStillAClick() {
+        // Three points between press and release is ordinary with a
+        // mouse. A separate three-point slop settled the gesture as a
+        // drag that early, and the mouse up then never reached the click
+        // — so the cell never opened and a double-click never folded the
+        // section (2026-09-20).
+        XCTAssertFalse(CellBrackets.isDrag(travelled: 3))
+        XCTAssertFalse(CellBrackets.isDrag(travelled: -3))
+        XCTAssertTrue(CellBrackets.isDrag(travelled: CellBrackets.dragThreshold))
+        XCTAssertTrue(CellBrackets.isDrag(travelled: -20))
     }
 }
 

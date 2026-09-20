@@ -43,6 +43,21 @@ enum CellSelection {
         return Array(cells[min(first, second)...max(first, second)])
     }
 
+    /// A shift-click's anchor, if it still means anything. Both panes
+    /// keep the last bracket clicked plainly so shift-click can reach from
+    /// it, and an NSRange stops meaning that cell the moment the note
+    /// under it changes — or means a quite different one in the next note,
+    /// since neither gutter is rebuilt when the document is swapped.
+    ///
+    /// It has to be asked, because `between` will not fail on a stale one:
+    /// `index(of:)` falls back to raw offset overlap, so an anchor from
+    /// another note usually lands on SOME cell and the run lights from
+    /// there. Better one cell than the wrong six.
+    static func anchor(_ anchor: NSRange?, in brackets: [NSRange]) -> NSRange? {
+        guard let anchor, brackets.contains(where: { NSEqualRanges($0, anchor) }) else { return nil }
+        return anchor
+    }
+
     /// Cmd-click: the cell goes in if it was out, and out if it was in —
     /// which is the only way to leave a hole in the middle of a run.
     static func toggling(_ cell: NSRange, in selection: [NSRange]) -> [NSRange] {

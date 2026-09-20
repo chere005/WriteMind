@@ -79,6 +79,17 @@ final class NotebookGutter: NSView {
         /// The cell is picked: its bracket is drawn heavy, the way a
         /// Wolfram notebook shows a selected cell.
         var selected = false
+        /// And whether a real selection is what lights it, rather than the
+        /// caret merely sitting in it.
+        ///
+        /// Two flags because `selected` answers two questions and the
+        /// gestures need the narrower one. There is always a caret
+        /// somewhere, so there was always exactly one bracket calling
+        /// itself selected with nothing selected at all — and a press on
+        /// THAT one took the move branch, so a drag meant as a selection
+        /// reordered the note and a plain click on it did nothing
+        /// (2026-09-20).
+        var held = false
         /// What a click on it selects.
         var range = NSRange(location: 0, length: 0)
         /// A group — a heading and everything under it — which a
@@ -224,7 +235,7 @@ final class NotebookGutter: NSView {
         }
         let modifiers = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
         if modifiers.contains(.shift) {
-            onSelectCells?(CellSelection.between(anchor ?? picked.first ?? bracket.range,
+            onSelectCells?(CellSelection.between(reachFrom ?? picked.first ?? bracket.range,
                                                  bracket.range, in: cellRanges))
             return
         }
@@ -233,11 +244,17 @@ final class NotebookGutter: NSView {
             onSelectCells?(CellSelection.toggling(bracket.range, in: picked))
             return
         }
-        anchor = bracket.range
-        if bracket.selected {
+        // HELD, not lit: the caret's own cell is drawn heavy too, and
+        // dragging it would move a cell the user never picked up.
+        if bracket.held {
             gesture = .moving(cell: bracket.range, from: point.y)
             return
         }
+        // Only a press that picks anchors. A press that moves a cell is
+        // not "the last bracket clicked plainly", and the range it would
+        // leave behind means nothing the moment the move rewrites the
+        // note round it.
+        anchor = bracket.range
         gesture = .picking(anchor: bracket.range, cells: [bracket.range])
         onSelect?(bracket.range)
     }
@@ -263,18 +280,27 @@ final class NotebookGutter: NSView {
         onMoveCell?(cell, travelled < 0)
     }
 
-    /// The gutter takes every click inside it, bracket or no bracket.
+    /// The gutter takes the clicks it has a bracket for, and no others.
     ///
-    /// It used to refuse any point not within four of a bracket's own line,
-    /// and that is what made a drag DOWN the column select nothing at all:
-    /// the mouse down never reached this view, so there was no drag to
-    /// follow. A click on the empty part of the column now does nothing and
-    /// goes nowhere — it must not reach the text behind, which would put a
-    /// caret in the note for a click on its furniture. The seam layer stops
-    /// short of this column on purpose, so the two never fight over one.
+    /// It briefly took the whole 22-point column, which is 22 of the text
+    /// container's own 24 points of right margin — so a click in that
+    /// margin, which has always put the caret at the end of the line,
+    /// reached nothing at all. Worse, it never reached
+    /// `PasteAwareTextView.mouseDown`, and that is the path that puts an
+    /// armed seam out: the bar stayed drawn across the page with no caret
+    /// anywhere and no way to get rid of it, against the rule the seam
+    /// model is built on (AGENTS.md: "every path that disarms … must go
+    /// through that property").
+    ///
+    /// A drag down the column loses nothing by this: the press lands on a
+    /// bracket — that is what starting a drag from one means — and once
+    /// this view has the mouse down, every drag and the mouse up come here
+    /// whatever is under the pointer.
     override func hitTest(_ point: NSPoint) -> NSView? {
         guard !isHidden else { return nil }
-        return bounds.contains(convert(point, from: superview)) ? self : nil
+        let local = convert(point, from: superview)
+        guard bounds.contains(local), bracket(at: local) != nil else { return nil }
+        return self
     }
 
     /// The cells' brackets, down the page. A section's is not one of them:
@@ -294,9 +320,17 @@ final class NotebookGutter: NSView {
     /// is drawn FROM the pane's selection, so it keeps no second copy of it
     /// to go stale between a click and the next one.
     private var picked: [NSRange] {
-        brackets.filter { !$0.foldable && $0.selected }
+        brackets.filter { !$0.foldable && $0.held }
             .map(\.range)
             .sorted { $0.location < $1.location }
+    }
+
+    /// Where a shift-click reaches from, if that range still names a
+    /// bracket. An anchor outlives the note it was taken in — this view is
+    /// built once and shown every note — and `CellSelection.between`
+    /// resolves a stale one by raw offset overlap rather than failing.
+    private var reachFrom: NSRange? {
+        CellSelection.anchor(anchor, in: brackets.map(\.range))
     }
 
     /// The NEAREST bracket, not the first: the levels are five points

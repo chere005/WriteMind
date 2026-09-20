@@ -158,6 +158,51 @@ final class CellCommandTests: XCTestCase {
                        "Second cell\n\nThird cell\n\nFirst cell")
     }
 
+    // MARK: - Moving what is held
+
+    func testMovingCellsWithAHoleInThemWritesNothingTwice() {
+        // The bug this pass began with: the rendered page's bracket drag
+        // handed `edits` a closure that ignored the span it was given and
+        // moved the DRAGGED cell every time round. Three cells with holes
+        // between them are three spans, so the same move came back three
+        // times; the second and third were clamped to zero-length ranges,
+        // which are insertions, and the note grew two copies of the pair
+        // that had just moved.
+        let five = "A\n\nB\n\nC\n\nD\n\nE"
+        let cells = MarkdownParser.positioned(from: five).map(\.range)
+        XCTAssertEqual(applying(CellCommands.moving([cells[0], cells[2], cells[4]], up: false, in: five),
+                                to: five),
+                       "B\n\nA\n\nD\n\nC\n\nE")
+    }
+
+    func testTwoCellsNextToEachOtherMoveAsOneRun() {
+        // One span, so they change places with the cell beyond the run
+        // rather than with each other.
+        let cells = MarkdownParser.positioned(from: four).map(\.range)
+        XCTAssertEqual(applying(CellCommands.moving([cells[0], cells[1]], up: false, in: four), to: four),
+                       "Three\n\nOne\n\nTwo\n\nFour")
+    }
+
+    func testAMovedRunIsStillHeldWhereItLanded() {
+        // And so a second ⌃⇧↓ moves the same run again, instead of the
+        // rendered page letting go of it and opening one cell for typing.
+        let cells = MarkdownParser.positioned(from: four).map(\.range)
+        let run = [cells[0], cells[1]]
+        let edits = CellCommands.moving(run, up: false, in: four)
+        let moved = applying(edits, to: four)
+        let still = MarkdownPreview.stillHeld(after: edits.last!.selection, in: moved)
+        XCTAssertEqual(still.map { (moved as NSString).substring(with: $0) }, ["One", "Two"])
+    }
+
+    func testNothingIsStillHeldAfterTheCellsWereDeleted() {
+        let cells = MarkdownParser.positioned(from: four).map(\.range)
+        let edits = CellCommands.edits(over: [cells[0], cells[1]], in: four) {
+            CellCommands.delete($0, in: $1)
+        }
+        XCTAssertEqual(MarkdownPreview.stillHeld(after: edits.last!.selection,
+                                                 in: applying(edits, to: four)), [])
+    }
+
     func testNothingSelectedIsNothingDone() {
         XCTAssertTrue(CellCommands.edits(over: [], in: note) { CellCommands.delete($0, in: $1) }.isEmpty)
     }

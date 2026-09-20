@@ -54,10 +54,13 @@ is how the code is put together.
   it out, so a selection can have a hole in it. Everything a single cell
   answers to, a handful answers to together: type and all of them are
   replaced by what you typed, ⌃⌫ takes exactly them and closes the stack,
-  ⌃⇧D copies the run. A drag that starts on a bracket that is ALREADY
-  picked moves the cell instead — that is how both gestures live on one
-  column — and a click on the empty part of the column does nothing at
-  all.
+  ⌃⇧D copies the run, and ⌃⇧↑/⌃⇧↓ walk the whole run up or down the page
+  and leave it held, so pressing again moves the same run again. A drag
+  that starts on a bracket that is ALREADY HELD moves the run instead —
+  that is how both gestures live on one column. The bracket the caret is
+  merely sitting in does not count as held, or there would be nowhere to
+  start a selection from; and a click on the column where there is no
+  bracket goes to the text behind it, the way the right margin always has.
 - **The insertion line between cells.** The WHOLE space between two cells
   answers, edge to edge — and so does the space above the first and
   everything under the last. Move the pointer into one and it turns on

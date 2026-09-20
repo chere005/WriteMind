@@ -698,6 +698,25 @@ tools/                    build.sh run.sh test.sh (both source signing.sh)
   being unsorted — that is a different failure with the same face, and it
   is what the same symptom was blamed on when ⌘D's run first hit it. The
   coordinator answers both now, snapping each range out of what is folded.
+- **A LIT BRACKET IS NOT A HELD ONE.** The caret's own cell is drawn
+  heavy — that is what says which cell you are typing in, and the
+  rendered page lights the cell open for editing the same way — so there
+  is always exactly one bracket calling itself selected with nothing
+  selected at all. `Bracket.selected` means "draw this heavy";
+  `Bracket.held` means "a real selection covers this", and every GESTURE
+  reads `held`. Reading `selected` made a drag from the caret's own
+  bracket reorder the note, a plain click on it do nothing whatever, and
+  a cmd-click quietly add a cell nobody had clicked — three reviewers,
+  one root (2026-09-20). Both panes carry both flags.
+- **The gutter takes only the clicks it has a bracket for.** Its
+  22-point column is 22 of the text container's own 24 points of right
+  margin, so a `hitTest` that answers for the WHOLE column eats the click
+  that puts the caret at the end of a line — and, worse, the one that
+  reaches `PasteAwareTextView.mouseDown`, which is the path that puts an
+  armed seam out (2026-09-20: the bar stayed drawn with no caret
+  anywhere). A drag loses nothing by the narrower rule: the press lands
+  on a bracket, and after a mouse down every drag and the mouse up come
+  to that view whatever is under the pointer.
 - **The background app tools CAN drive a drag, and cannot hold a
   modifier.** `app_drag` says "delivered via raw input… unverified" and
   then works: a path of points arrives as a real `mouseDown` and a dozen

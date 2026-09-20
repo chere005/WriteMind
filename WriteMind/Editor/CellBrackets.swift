@@ -12,6 +12,12 @@ struct CellBrackets: View {
         var bottom: CGFloat
         var collapsed = false
         var selected = false
+        /// And whether a real selection is what lights it, rather than the
+        /// cell merely being open for typing. The gestures need the
+        /// narrower one: a drag off the open cell's bracket is a drag off
+        /// a cell nobody picked up, and it must select rather than move
+        /// (2026-09-20).
+        var held = false
         /// A heading's group: a double-click folds it.
         var foldable = false
         /// What a click selects, in the markdown.
@@ -43,10 +49,13 @@ struct CellBrackets: View {
     var onMoveCell: ((NSRange, Bool) -> Void)?
     /// How far it has to go before it is a move and not a click.
     static let dragThreshold: CGFloat = 10
-    /// And how far before it is a drag at all. Under this the press is a
-    /// click that wandered, and a click is settled when the mouse comes up
-    /// — which is what leaves the double-click to fold a section.
-    private static let dragSlop: CGFloat = 3
+    /// ONE threshold, for settling which gesture this is and for the move
+    /// itself. There was a three-point slop in front of it, and three
+    /// points of drift between press and release is ordinary with a
+    /// mouse: the press settled as a drag, the mouse-up never reached
+    /// `click(at:)`, and so a click that wandered neither opened the cell
+    /// nor folded the section it double-clicked (2026-09-20).
+    static func isDrag(travelled: CGFloat) -> Bool { abs(travelled) >= dragThreshold }
     @State private var hovered: String?
     /// Where a shift-click reaches FROM: the last bracket clicked plainly.
     @State private var anchor: NSRange?
@@ -137,7 +146,7 @@ struct CellBrackets: View {
     /// drag down a notebook's gutter looks like.
     private func drag(_ value: DragGesture.Value) {
         if pick == nil {
-            guard abs(value.location.y - value.startLocation.y) >= Self.dragSlop else { return }
+            guard Self.isDrag(travelled: value.location.y - value.startLocation.y) else { return }
             pick = began(at: value.startLocation)
         }
         guard case .picking(let anchor, let reported) = pick,
@@ -154,7 +163,9 @@ struct CellBrackets: View {
     /// is Mathematica's own rule.
     private func began(at start: CGPoint) -> Pick {
         guard let bracket = Self.bracket(at: start, in: brackets, width: Self.width) else { return .nothing }
-        if bracket.selected { return .moving(bracket.range) }
+        // HELD, not lit: the cell open for typing is drawn heavy too, and
+        // a drag off it is a drag off a cell nobody picked up.
+        if bracket.held { return .moving(bracket.range) }
         anchor = bracket.range
         onSelectCells?([bracket.range])
         return .picking(anchor: bracket.range, cells: [bracket.range])
@@ -164,7 +175,7 @@ struct CellBrackets: View {
         defer { pick = nil }
         if case .moving(let cell) = pick {
             let travelled = value.location.y - value.startLocation.y
-            if abs(travelled) >= Self.dragThreshold { onMoveCell?(cell, travelled < 0) }
+            if Self.isDrag(travelled: travelled) { onMoveCell?(cell, travelled < 0) }
             return
         }
         // A drag that took cells has already said everything it has to say.
@@ -179,7 +190,7 @@ struct CellBrackets: View {
         guard let bracket = Self.bracket(at: point, in: brackets, width: Self.width) else { return }
         let modifiers = NSApp.currentEvent?.modifierFlags.intersection(.deviceIndependentFlagsMask) ?? []
         if modifiers.contains(.shift) {
-            onSelectCells?(CellSelection.between(anchor ?? picked.first ?? bracket.range,
+            onSelectCells?(CellSelection.between(reachFrom ?? picked.first ?? bracket.range,
                                                  bracket.range, in: cellRanges))
             return
         }
@@ -212,8 +223,16 @@ struct CellBrackets: View {
     /// What is picked right now, as the brackets themselves say: this view
     /// is drawn FROM the page's selection and keeps no second copy of it.
     private var picked: [NSRange] {
-        brackets.filter { !$0.foldable && $0.selected }
+        brackets.filter { !$0.foldable && $0.held }
             .map(\.range)
             .sorted { $0.location < $1.location }
+    }
+
+    /// Where a shift-click reaches from, if that range still names a
+    /// bracket. `@State` outlives every edit and every note shown in this
+    /// pane, and `CellSelection.between` resolves a stale anchor by raw
+    /// offset overlap rather than failing.
+    private var reachFrom: NSRange? {
+        CellSelection.anchor(anchor, in: brackets.map(\.range))
     }
 }

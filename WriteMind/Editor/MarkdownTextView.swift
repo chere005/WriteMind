@@ -127,10 +127,16 @@ struct MarkdownTextView: NSViewRepresentable {
             guard let coordinator, let tv else { return }
             coordinator.select(ranges, in: tv)
         }
+        // Every cell that is HELD moves, and not only the one under the
+        // pointer: a bracket drag is the same command as ⌃⇧↑/⌃⇧↓, and
+        // dragging one cell out of a run of three that were picked up
+        // together is nobody's idea of moving them.
         gutter.onMoveCell = { [weak coordinator = context.coordinator, weak tv] range, up in
-            guard let coordinator, let tv,
-                  let edit = CellCommands.move(range, up: up, in: tv.string) else { return }
-            coordinator.apply(edit, in: tv)
+            guard let coordinator, let tv else { return }
+            let held = CellSelection.picked(cells: MarkdownParser.positioned(from: tv.string).map(\.range),
+                                            selection: tv.selectedRanges.map(\.rangeValue))
+            let cells = held.contains { NSEqualRanges($0, range) } ? held : [range]
+            coordinator.apply(CellCommands.moving(cells, up: up, in: tv.string), in: tv)
         }
         tv.addSubview(gutter)
         context.coordinator.gutter = gutter
@@ -488,6 +494,27 @@ struct MarkdownTextView: NSViewRepresentable {
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.15, execute: work)
         }
 
+        /// Several edits at once, in the order `CellCommands.edits` made
+        /// them — back to front, so an earlier one cannot move the
+        /// characters a later one names. One undo step, because taking or
+        /// moving three cells was one gesture.
+        func apply(_ edits: [MarkdownFormatting.Edit], in tv: NSTextView) {
+            guard let storage = tv.textStorage, !edits.isEmpty,
+                  tv.shouldChangeText(inRanges: edits.map { NSValue(range: $0.range) },
+                                      replacementStrings: edits.map(\.replacement)) else { return }
+            storage.beginEditing()
+            for edit in edits { storage.replaceCharacters(in: edit.range, with: edit.replacement) }
+            storage.endEditing()
+            tv.didChangeText()
+            // The LAST of them is the front-most edit, so its selection is
+            // the one nothing that came after has moved.
+            if let landing = edits.last?.selection {
+                tv.setSelectedRange(MarkdownFormatting.clamp(landing, to: (tv.string as NSString).length))
+                tv.scrollRangeToVisible(tv.selectedRange())
+            }
+            restyle(tv, force: true)
+        }
+
         /// One edit to the note, through the text view so undo sees it.
         func apply(_ edit: MarkdownFormatting.Edit, in tv: NSTextView) {
             guard let storage = tv.textStorage,
@@ -659,10 +686,15 @@ struct MarkdownTextView: NSViewRepresentable {
                 guard box.height > 1 else { return nil }
                 let picked = NotebookGutter.isPicked(clipped, selection: selection,
                                                      caretCell: foldable ? nil : caretCell)
+                // Lit and HELD are not the same thing: the caret's own
+                // cell is drawn heavy with nothing selected, and the
+                // gestures may not read that as a cell the user is
+                // holding (2026-09-20).
+                let held = CellSelection.covers(clipped, selection)
                 return NotebookGutter.Bracket(key: key, depth: depth,
                                               top: box.minY + origin.y, bottom: box.maxY + origin.y,
                                               collapsed: collapsed.contains(key), selected: picked,
-                                              range: clipped, foldable: foldable)
+                                              held: held, range: clipped, foldable: foldable)
             }
 
             var brackets = sections.compactMap { section -> NotebookGutter.Bracket? in

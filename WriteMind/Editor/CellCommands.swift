@@ -105,6 +105,20 @@ enum CellCommands {
         return MarkdownFormatting.Edit(range: span, replacement: swapped, selection: landing)
     }
 
+    /// Every held cell moved one place — a bracket dragged up or down
+    /// with more than one lit, and ⌃⇧↑/⌃⇧↓.
+    ///
+    /// It takes the CELLS and not the one under the pointer, and that is
+    /// the whole reason it is a function. The rendered page handed `edits`
+    /// a closure that threw away the span it was given and moved the
+    /// dragged cell every time round: a selection with a hole in it is two
+    /// spans, so the same move came back twice, and the second — clamped
+    /// to a zero-length range — is a pure insertion. The note grew a
+    /// second copy of the pair that had just moved (2026-09-20).
+    static func moving(_ cells: [NSRange], up: Bool, in text: String) -> [MarkdownFormatting.Edit] {
+        edits(over: cells, in: text) { move($0, up: up, in: $1) }
+    }
+
     /// Several cells at once — what ⌃⌫ and ⌃⇧D do when more than one
     /// bracket is lit (the plan's step 3).
     ///

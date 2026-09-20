@@ -182,7 +182,15 @@ struct MarkdownPreview: View {
                              onSelectCells: { selectCells($0) },
                              onToggle: { onToggleSection?($0) },
                              onMoveCell: { range, up in
-                                 cellEdit { _, text in CellCommands.move(range, up: up, in: text) }
+                                 // Through `moving`, which moves the SPANS:
+                                 // the closure this used to hand `cellEdit`
+                                 // threw its span away and moved the dragged
+                                 // cell once per span, so a selection with a
+                                 // hole in it wrote the swapped text into the
+                                 // note twice over (2026-09-20).
+                                 let cells = heldCells.contains { NSEqualRanges($0, range) }
+                                     ? heldCells : [range]
+                                 applyCellEdits(CellCommands.moving(cells, up: up, in: markdown))
                              })
                     // As tall as the brackets go, not a fixed 4000 points:
                     // past that the page had cells with no bracket beside
@@ -328,10 +336,15 @@ struct MarkdownPreview: View {
         for item in shown {
             guard let place = places[item.id], place.bottom - place.top > 1 else { continue }
             let depth = NotebookOutline.cellDepth(at: item.range.location, in: sections)
-            let picked = editingRange == item.range || CellSelection.covers(item.range, selectedCells)
+            // Lit and HELD are not the same thing: the cell open for
+            // typing is drawn heavy with nothing picked up, and the
+            // gestures may not read that as a cell being held
+            // (2026-09-20).
+            let held = CellSelection.covers(item.range, selectedCells)
             out.append(CellBrackets.Bracket(key: "cell:\(item.id)", depth: depth,
                                             top: place.top, bottom: place.bottom,
-                                            selected: picked, range: item.range))
+                                            selected: editingRange == item.range || held,
+                                            held: held, range: item.range))
         }
 
         for section in sections {
@@ -342,10 +355,11 @@ struct MarkdownPreview: View {
             guard let first = places.map(\.top).min(), let last = places.map(\.bottom).max(),
                   last - first > 1
             else { continue }
+            let held = CellSelection.covers(section.range, selectedCells)
             out.append(CellBrackets.Bracket(key: section.key, depth: section.depth,
                                             top: first, bottom: last,
                                             collapsed: collapsed.contains(section.key),
-                                            selected: CellSelection.covers(section.range, selectedCells),
+                                            selected: held, held: held,
                                             foldable: true, range: section.range))
         }
         return out
@@ -857,15 +871,47 @@ struct MarkdownPreview: View {
     /// take three cells at once: an edit made in front of another would
     /// have moved the characters the second one names.
     private func cellEdit(_ make: (NSRange, String) -> MarkdownFormatting.Edit?) {
-        let subjects = selectedCells.isEmpty
+        applyCellEdits(CellCommands.edits(over: heldCells, in: markdown, make: make))
+    }
+
+    /// The cells a whole-cell command acts on: every one whose bracket is
+    /// held, and the one open for typing (or the first) when none is.
+    private var heldCells: [NSRange] {
+        selectedCells.isEmpty
             ? [editingRange ?? items.first?.range].compactMap { $0 }
             : selectedCells
-        let edits = CellCommands.edits(over: subjects, in: markdown, make: make)
+    }
+
+    /// What is still held after a whole-cell command: the cells the edit's
+    /// landing selection covers.
+    ///
+    /// Three cells moved or duplicated stay held, so pressing ⌃⇧↓ twice
+    /// walks the same three down the page. The page used to let go of them
+    /// and open the landing cell for typing, and the second press then
+    /// moved one cell out of the run it had just made. The markdown pane
+    /// never had the fault — `tv.selectedRanges` keeps the run — and the
+    /// two panes are meant to behave the same (2026-09-20).
+    static func stillHeld(after landing: NSRange, in text: String) -> [NSRange] {
+        CellSelection.picked(cells: MarkdownParser.positioned(from: text).map(\.range),
+                             selection: [landing])
+    }
+
+    private func applyCellEdits(_ edits: [MarkdownFormatting.Edit]) {
         guard let landing = edits.last?.selection else { return }
         var text = markdown as NSString
         for edit in edits { text = text.replacingCharacters(in: edit.range, with: edit.replacement) as NSString }
         let updated = text as String
+        let wasHolding = !selectedCells.isEmpty
         markdown = updated
+        let still = Self.stillHeld(after: landing, in: updated)
+        if wasHolding, !still.isEmpty {
+            selectedCells = still
+            editingRange = nil
+            // The column keeps the keyboard, the way it had it before the
+            // command: what is held can be typed over, moved again, taken.
+            DispatchQueue.main.async { focusedBrackets = true }
+            return
+        }
         selectedCells = []
         // Follow the cell: to where it went, or to whatever moved up into
         // the place of the one that was taken away.
