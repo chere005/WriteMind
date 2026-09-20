@@ -75,6 +75,12 @@ struct MarkdownPreview: View {
     /// the cursor is"), so clicking about the page leaves no empty cells
     /// behind.
     @State private var armedSeam: SeamID?
+    /// What the + on that bar chose: the kind of cell the next thing typed
+    /// into it becomes (Sean, 2026-09-20: "pressing the + button on that
+    /// bar should bring up the list of style types that the next input
+    /// will create a cell the type of"). It rides with the arming and no
+    /// longer — `arm` puts it back to plain text every time.
+    @State private var armedType: CellTypes.Kind = .text
     /// The armed seam holds the keyboard, because the bar IS the cursor
     /// and there is no text view to hold it on this side.
     @FocusState private var focusedSeam: SeamID?
@@ -446,7 +452,14 @@ struct MarkdownPreview: View {
                 .overlay(alignment: .top) {
                     if armedSeam == id || hoveredSeam == id {
                         HStack(spacing: 6) {
-                            Image(systemName: "plus.circle.fill").font(.system(size: 11))
+                            // The + is a button, and the only thing on the
+                            // bar that is: the rest of the seam arms and
+                            // nothing more.
+                            Button { choose(in: id) } label: {
+                                Image(systemName: "plus.circle.fill").font(.system(size: 11))
+                            }
+                            .buttonStyle(.plain)
+                            .help("What the next thing typed here becomes")
                             Capsule().frame(height: 2)
                         }
                         .foregroundStyle(Color.accentColor)
@@ -578,26 +591,31 @@ struct MarkdownPreview: View {
         return printable ? .write(characters) : .pass
     }
 
-    /// What that key does to the NOTE: the cell the seam stands for, with
-    /// what was typed already in it, and the range it is edited at.
+    /// What that key does to the NOTE: the cell the seam stands for, of
+    /// whatever kind the + chose, with what was typed already in it, the
+    /// range it is edited at and the fences if it turned out to be code.
     ///
     /// Nil for a key that only takes the bar back, and that is the whole
     /// promise of the armed state — arming and then clicking away leaves
     /// the markdown byte for byte as it was. The opening itself is
-    /// `PreviewEditing.insertBlock`, the same one rule both panes follow.
-    static func opened(_ key: SeamKey, at offset: Int, in markdown: String)
-        -> (markdown: String, editing: NSRange, draft: String)? {
+    /// `CellTypes.open`, the same one rule both panes follow.
+    static func opened(_ key: SeamKey, as type: CellTypes.Kind = .text, at offset: Int,
+                       in markdown: String)
+        -> (markdown: String, editing: NSRange, draft: String, fence: Fence?)? {
         let written: String
         switch key {
         case .write(let characters): written = characters
         case .empty: written = ""
         case .disarm, .step, .pass: return nil
         }
-        let (opened, caret) = PreviewEditing.insertBlock(in: markdown, at: offset)
-        let ns = opened as NSString
-        let place = min(max(caret, 0), ns.length)
-        let updated = ns.replacingCharacters(in: NSRange(location: place, length: 0), with: written)
-        return (updated, NSRange(location: place, length: (written as NSString).length), written)
+        let opened = CellTypes.open(type, writing: written, in: markdown, at: offset)
+        let source = (opened.markdown as NSString).substring(with: opened.cell)
+        // A fenced cell is opened as its CODE, the way a click on one is:
+        // the fences stay put and what is typed is coloured for them.
+        guard let parts = MarkdownFormatting.fenced(source) else {
+            return (opened.markdown, opened.cell, source, nil)
+        }
+        return (opened.markdown, opened.cell, parts.body, Fence(open: parts.open, close: parts.close))
     }
 
     // MARK: - Cells held by their brackets
@@ -716,7 +734,26 @@ struct MarkdownPreview: View {
         editingRange = nil
         selectedCells = []
         armedSeam = id
+        armedType = .text
         focusedSeam = id
+    }
+
+    /// The + on the bar: the kinds of cell, and the one picked stays with
+    /// this seam until it disarms.
+    private func choose(in id: SeamID) {
+        let current = armedSeam == id ? armedType : .text
+        // Armed first, because the choice belongs to a bar that is up —
+        // and because the mark the + is drawn on is held on the page by
+        // the hover until then, and the pointer is about to be over a
+        // menu instead.
+        arm(id)
+        // A turn late, so that arming has reached the screen before the
+        // menu takes the run loop.
+        DispatchQueue.main.async {
+            CellTypeMenu.popUp(current: current, at: NSEvent.mouseLocation, in: nil) { kind in
+                armedType = kind
+            }
+        }
     }
 
     /// The bar goes out, and it lets the keyboard go with it.
@@ -728,6 +765,8 @@ struct MarkdownPreview: View {
     /// dropped.
     private func disarm() {
         armedSeam = nil
+        // The kind the + chose was this bar's, and the bar has gone.
+        armedType = .text
         focusedSeam = nil
     }
 
@@ -762,7 +801,9 @@ struct MarkdownPreview: View {
             walk(from: id, up: up)
             return .handled
         case .empty, .write:
-            openSeam(meaning, at: id.offset)
+            // The kind is read here, before `openSeam` disarms and puts
+            // it back to plain text.
+            openSeam(meaning, as: armedType, at: id.offset)
             return .handled
         }
     }
@@ -798,14 +839,15 @@ struct MarkdownPreview: View {
 
     /// The cell that key opens, put on the page: the note as `opened` made
     /// it, and the new cell being edited with what was typed already in it.
-    private func openSeam(_ key: SeamKey, at offset: Int) {
+    private func openSeam(_ key: SeamKey, as type: CellTypes.Kind, at offset: Int) {
         disarm()
         hoveredSeam = nil
-        guard let opened = Self.opened(key, at: offset, in: markdown) else { return }
+        guard let opened = Self.opened(key, as: type, at: offset, in: markdown) else { return }
         markdown = opened.markdown
-        // Always a plain text cell, whatever the cell above it was (Sean,
-        // 2026-09-19: "default is always just text").
-        fence = nil
+        // Plain text unless the + on this bar said otherwise, whatever the
+        // cell above it was (Sean, 2026-09-19: "default is always just
+        // text").
+        fence = opened.fence
         draft = opened.draft
         editingRange = opened.editing
         // Behind what was typed — which for an empty cell is the same place.

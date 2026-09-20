@@ -71,7 +71,15 @@ is how the code is put together.
   the cursor: the caret stops being drawn, no bracket is lit while it is
   up, and the first thing typed becomes a cell of its own there, Return
   opens an empty one, and Escape or a click anywhere else takes the line
-  back without leaving an empty cell behind. With the pen up there are no
+  back without leaving an empty cell behind. Press the `+` at the end of
+  the line and it drops the kinds of cell down — Body Text, the heading
+  ladder from Title to Subsubsection, the three lists, Quote, Code Block
+  — and the next thing typed makes a cell of the kind you picked, with
+  its marker already written and the caret after it. The choice belongs
+  to that line and goes with it: click the bar somewhere else and you are
+  back to plain text, which is what every bar starts out as. (A table is
+  not on the list — a grid is not a line; Insert ▸ Table, ⌃⌘T.) With the
+  pen up there are no
   seams at all — the pencil owns the note pane. The markdown pane and the
   rendered page do exactly the same thing, the way a Mathematica notebook
   does on both.

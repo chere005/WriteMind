@@ -150,14 +150,24 @@ enum MarkdownFormatting {
     /// Make every line the selection touches that heading level. Applying the
     /// level a line already has takes it back to body text, so the toolbar
     /// entry toggles.
-    static func setHeading(text: String, selection: NSRange, level: Heading) -> Edit {
+    ///
+    /// `evenIfEmpty` is for a cell that has only just been opened. A blank
+    /// line normally keeps its shape — ⌘1 over three paragraphs must not
+    /// write a marker on the empty lines holding them apart — but the cell
+    /// a seam opens IS blank, and the kind the + chose for it still has to
+    /// be written somewhere (Sean, 2026-09-20: "the next input will create
+    /// a cell the type of"). Only `CellTypes.opening` asks for it.
+    static func setHeading(text: String, selection: NSRange, level: Heading,
+                           evenIfEmpty: Bool = false) -> Edit {
         let ns = text as NSString
         let block = ns.lineRange(for: clamp(selection, to: ns.length))
         let first = ns.substring(with: block).components(separatedBy: "\n").first ?? ""
         let target: Heading = (headingLevel(of: first) == level && level != .body) ? .body : level
 
         return rewriteLines(text: text, selection: selection) { line in
-            guard !line.trimmingCharacters(in: .whitespaces).isEmpty else { return line }
+            guard !line.trimmingCharacters(in: .whitespaces).isEmpty else {
+                return evenIfEmpty ? line + target.marker : line
+            }
             let indent = leadingWhitespace(line)
             let rest = String(line.dropFirst(indent.count))
             return indent + target.marker + stripHeading(rest)

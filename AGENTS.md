@@ -200,6 +200,29 @@ CoreMind's `bin/report-status.sh`.
   2026-09-20: "the bar should go immediately after the last cell, not
   the random spot below it's currently at"). The line is against the
   cell it follows; the hit area is still the whole seam.
+- **The + on the bar chooses a KIND, and there is only one block
+  builder.** Sean, 2026-09-20: "pressing the + button on that bar should
+  bring up the list of style types that the next input will create a cell
+  the type of". It is not a second way to make a cell. The seam opens its
+  plain cell through `PreviewEditing.insertBlock` exactly as it always
+  did, and then `CellTypes.opening` runs the SAME command the Format menu
+  runs — `setHeading`, `toggleList`, `toggleQuote`, `codeBlock` — over the
+  cell that just opened. `CellTypes.open` is the whole rule and both panes
+  call it; anything that wants a new kind adds a case there and nowhere
+  else. Three things about it that are not obvious: the command is applied
+  while the cell is still EMPTY and the character is typed afterwards, so
+  `- `, `> `, `### ` and a pair of fences all leave the caret exactly
+  where the words go; `setHeading` needs `evenIfEmpty: true` for that,
+  because a blank line inside a selection must otherwise keep its shape;
+  and a TABLE IS NOT ON THE LIST, because `insertTable` writes its grid
+  over the range it is handed and would eat the character that opened the
+  cell. The choice lives on the armed seam and nowhere else
+  (`PasteAwareTextView.armedType`, `MarkdownPreview.armedType`) and goes
+  back to plain text the moment the bar moves or goes out — setting
+  `armedSeam` resets it, so no path can leave a stale kind behind. The
+  menu itself is `CellTypeMenu`, an NSMenu in BOTH panes: the mark the +
+  sits on is only drawn while its seam is hovered or armed, and a SwiftUI
+  `Menu` whose label goes off the page closes with it.
 - **Arming is a reading of where the caret is, not a mode a click turns
   on.** `CellSeams.arm` answers it from the selection alone, and
   `textViewDidChangeSelection` is the only place the markdown pane sets

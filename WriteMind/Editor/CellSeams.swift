@@ -151,8 +151,15 @@ enum CellSeams {
         // content, where an ordinary caret belongs.
         guard MarkdownSourceStyle.structuralLines(in: markdown)
             .contains(where: { NSLocationInRange(offset, $0) }) else { return nil }
-        return MarkdownParser.positioned(from: markdown)
-            .first { $0.range.location >= offset }?.range.location ?? ns.length
+        let blocks = MarkdownParser.positioned(from: markdown)
+        // And a blank line INSIDE a cell is not a space between two.
+        // `structuralLines` reads the note line by line and a fenced block
+        // is the one cell that can hold an empty line of its own, so an
+        // empty code cell — the very thing the + now opens — armed a bar
+        // over the caret sitting between its fences.
+        guard !blocks.contains(where: { $0.range.location < offset && offset < NSMaxRange($0.range) })
+        else { return nil }
+        return blocks.first { $0.range.location >= offset }?.range.location ?? ns.length
     }
 
     /// A stretch of the page as the POINTER reads it: a seam, where the

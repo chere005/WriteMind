@@ -52,6 +52,25 @@ final class CellInsertions: NSView {
     /// The caret was put in a seam: whoever owns the keyboard is told, and
     /// the note itself is untouched until something is typed.
     var onArm: ((Int) -> Void)?
+    /// The + on the bar was pressed and a kind picked off the menu.
+    var onChoose: ((CellTypes.Kind) -> Void)?
+
+    /// What the + last chose for the armed seam, for the tick beside it.
+    /// Read off the text view under this layer, where it lives, rather
+    /// than kept here as a second answer to one question — the same rule
+    /// that sends the text view up here for `pointerSeams`.
+    private var chosenType: CellTypes.Kind { (superview as? PasteAwareTextView)?.armedType ?? .text }
+
+    /// The + itself, on the seam's own line, and the patch of page that
+    /// counts as pressing it. Wider than the dot is drawn: a ten-point
+    /// target on a bar eight points tall is not one anybody hits.
+    static func plus(onTheLineAt line: CGFloat) -> NSRect {
+        NSRect(x: 4, y: line - 5, width: 10, height: 10)
+    }
+
+    static func plusTarget(onTheLineAt line: CGFloat) -> NSRect {
+        plus(onTheLineAt: line).insetBy(dx: -4, dy: -4)
+    }
 
     override var isFlipped: Bool { true }
 
@@ -64,8 +83,9 @@ final class CellInsertions: NSView {
         // The line runs the width of the page, the way a cell insertion
         // bar does in a notebook.
         NSBezierPath(rect: NSRect(x: 18, y: seam.line - 1, width: max(0, bounds.width - 40), height: 2)).fill()
-        // And the plus that says what clicking it does.
-        let dot = NSRect(x: 4, y: seam.line - 5, width: 10, height: 10)
+        // And the plus, which is a button: it brings up the kinds of cell
+        // the next thing typed here can be.
+        let dot = Self.plus(onTheLineAt: seam.line)
         NSBezierPath(ovalIn: dot).fill()
         NSColor.white.setStroke()
         let plus = NSBezierPath()
@@ -143,10 +163,20 @@ final class CellInsertions: NSView {
     }
 
     override func mouseDown(with event: NSEvent) {
-        guard let seam = seam(at: convert(event.locationInWindow, from: nil)) else { return }
+        let point = convert(event.locationInWindow, from: nil)
+        guard let seam = seam(at: point) else { return }
         // The text view is told, and it tells this layer back through
         // `armedOffset`. Setting it here as well would be a second writer.
+        //
+        // The + arms the seam too, and first: the choice belongs to an
+        // armed bar, and re-arming the seam that is already armed keeps
+        // whatever was chosen for it (the text view's own `armedSeam`
+        // only lets go when the bar MOVES).
         onArm?(seam.offset)
+        guard Self.plusTarget(onTheLineAt: seam.line).contains(point) else { return }
+        CellTypeMenu.popUp(current: chosenType,
+                           at: NSPoint(x: 2, y: Self.plusTarget(onTheLineAt: seam.line).maxY),
+                           in: self) { [weak self] kind in self?.onChoose?(kind) }
     }
 
     /// The bar goes out when the caret goes anywhere else.
@@ -158,5 +188,69 @@ final class CellInsertions: NSView {
     /// the layer is hidden and the pencil owns the pane.
     override func hitTest(_ point: NSPoint) -> NSView? {
         seam(at: convert(point, from: superview)) == nil ? nil : self
+    }
+}
+
+/// The list the + on the insertion bar brings up, for both panes.
+///
+/// An NSMenu, and popped by hand even on the rendered page, which is
+/// SwiftUI everywhere else. The mark the + sits on is drawn while its seam
+/// is hovered or armed; the moment a menu opens the pointer is over the
+/// MENU and not the seam, so the hover ends, and a SwiftUI `Menu` whose
+/// label is taken off the page goes with it. Arming the seam first and
+/// popping the menu ourselves means the bar stays because it is armed, and
+/// the menu outlives the pointer leaving the page.
+enum CellTypeMenu {
+    /// The menu, with a tick beside what is chosen now.
+    static func menu(current: CellTypes.Kind,
+                     choose: @escaping (CellTypes.Kind) -> Void) -> NSMenu {
+        let chooser = Chooser(choose: choose)
+        let menu = TypeMenu(title: "Cell Type")
+        // The menu keeps the closure alive. NSMenuItem holds its target
+        // weakly and sends the action from inside the menu's own tracking
+        // loop, so something has to, and the menu is the thing that
+        // outlives exactly as long as the choice can be made.
+        menu.chooser = chooser
+        menu.autoenablesItems = false
+        for (index, group) in CellTypes.groups.enumerated() {
+            if index > 0 { menu.addItem(.separator()) }
+            for kind in group {
+                let item = NSMenuItem(title: kind.name, action: #selector(Chooser.pick(_:)),
+                                      keyEquivalent: "")
+                item.target = chooser
+                item.representedObject = kind
+                item.state = kind == current ? .on : .off
+                menu.addItem(item)
+            }
+        }
+        return menu
+    }
+
+    /// At a point in a view, or — with no view — at a point on the screen,
+    /// which is all the rendered page can offer: there is no NSView of its
+    /// own behind that +.
+    static func popUp(current: CellTypes.Kind, at point: NSPoint, in view: NSView?,
+                      choose: @escaping (CellTypes.Kind) -> Void) {
+        menu(current: current, choose: choose).popUp(positioning: nil, at: point, in: view)
+    }
+
+    private final class TypeMenu: NSMenu {
+        var chooser: AnyObject?
+
+        override init(title: String) { super.init(title: title) }
+        // Never decoded: this menu is built in code every time it is
+        // popped, and nothing in the app archives one.
+        required init(coder: NSCoder) { fatalError("CellTypeMenu is not decoded") }
+    }
+
+    private final class Chooser: NSObject {
+        private let choose: (CellTypes.Kind) -> Void
+
+        init(choose: @escaping (CellTypes.Kind) -> Void) { self.choose = choose }
+
+        @objc func pick(_ sender: NSMenuItem) {
+            guard let kind = sender.representedObject as? CellTypes.Kind else { return }
+            choose(kind)
+        }
     }
 }

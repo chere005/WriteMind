@@ -156,6 +156,10 @@ struct MarkdownTextView: NSViewRepresentable {
         // seam is armed; this is how the layer hears it, whoever set it —
         // a click, an arrow key, a note switch, the pen going up.
         tv.onArmChanged = { [weak insertions] offset in insertions?.armedOffset = offset }
+        // And the + hands its choice back to the same one truth.
+        insertions.onChoose = { [weak tv] kind in
+            (tv as? PasteAwareTextView)?.armedType = kind
+        }
         tv.addSubview(insertions)
         context.coordinator.insertions = insertions
 
@@ -293,17 +297,20 @@ struct MarkdownTextView: NSViewRepresentable {
     }
 
     /// Open a cell at an armed seam: the blank lines that make what is
-    /// typed next a block of its own, and the caret between them.
+    /// typed next a block of its own, the marker for whatever kind the +
+    /// chose, and the caret where the words go.
     ///
-    /// `PreviewEditing.insertBlock` decides what those lines are — one
-    /// rule for both panes — and only what it ADDS is typed in, at the
-    /// seam, rather than the whole note being replaced by its answer: undo
-    /// then takes the opening in one step and the restyle does not re-run
-    /// over every character of a long note.
-    static func openSeam(at offset: Int, in tv: NSTextView) {
+    /// `CellTypes.open` decides all of that — one rule for both panes —
+    /// and only what it ADDS is typed in, at the seam, rather than the
+    /// whole note being replaced by its answer: undo then takes the
+    /// opening in one step and the restyle does not re-run over every
+    /// character of a long note. That holds with a kind chosen too,
+    /// because the command it runs only ever touches the line the caret
+    /// was left on, which is inside what the opening just added.
+    static func openSeam(at offset: Int, as type: CellTypes.Kind = .text, in tv: NSTextView) {
         let text = tv.string as NSString
         let place = min(max(offset, 0), text.length)
-        let (updated, caret) = PreviewEditing.insertBlock(in: tv.string, at: place)
+        let (updated, _, caret) = CellTypes.open(type, in: tv.string, at: place)
         let added = (updated as NSString).length - text.length
         guard added >= 0 else { return }
         if added > 0 {
@@ -890,9 +897,19 @@ class PasteAwareTextView: NSTextView {
             // and that is where the cursor is"), so the caret is not
             // drawn as well — two cursors is what he was looking at.
             insertionPointColor = armedSeam == nil ? caretColour : .clear
+            // A seam armed afresh is plain text, always (Sean,
+            // 2026-09-19: "default is always just text"). The choice is
+            // the bar's, so it goes when the bar moves or goes out, and
+            // the + sets it again afterwards.
+            armedType = .text
             onArmChanged?(armedSeam)
         }
     }
+    /// What the + on the bar chose: the kind of cell the next thing typed
+    /// into this seam becomes (Sean, 2026-09-20: "pressing the + button on
+    /// that bar should bring up the list of style types that the next
+    /// input will create a cell the type of").
+    var armedType: CellTypes.Kind = .text
     /// The caret's own colour, read once when the editor is built, so it
     /// can come back when the seam goes.
     var caretColour: NSColor = .textColor
@@ -907,8 +924,11 @@ class PasteAwareTextView: NSTextView {
     @discardableResult
     private func openArmedSeam() -> Bool {
         guard let offset = armedSeam else { return false }
+        // Both are read before the bar goes out: letting go of the seam is
+        // what puts the kind back to plain text.
+        let type = armedType
         armedSeam = nil
-        MarkdownTextView.openSeam(at: offset, in: self)
+        MarkdownTextView.openSeam(at: offset, as: type, in: self)
         return true
     }
 
@@ -939,11 +959,12 @@ class PasteAwareTextView: NSTextView {
     /// must never leave an empty cell behind.
     override func doCommand(by selector: Selector) {
         guard let offset = armedSeam else { return super.doCommand(by: selector) }
+        let type = armedType
         armedSeam = nil
         guard selector == #selector(NSResponder.insertNewline(_:)) else {
             return super.doCommand(by: selector)
         }
-        MarkdownTextView.openSeam(at: offset, in: self)
+        MarkdownTextView.openSeam(at: offset, as: type, in: self)
     }
 
     /// The layer that knows where the seams are. It is this view's own
