@@ -1,0 +1,137 @@
+import AppKit
+import SwiftUI
+
+/// A note on paper: the rendered page, the drawing over it, cut into sheets
+/// (Sean, 2026-09-19: "export as pdf").
+///
+/// **Why the preview's own views render the text.** The alternative was an
+/// `NSAttributedString` through an `NSLayoutManager`, which would mean a
+/// second renderer for headings, lists, tables, code and maths — two
+/// descriptions of one look, drifting apart from the first change. SwiftUI's
+/// `ImageRenderer` draws the very views the preview draws, straight into the
+/// PDF's `CGContext`, and what lands there is real text (`BT … TJ`) rather
+/// than a picture of text: it can be selected, searched and printed at any
+/// size. The drawing layer does NOT go through it — see `DrawingInk` for
+/// why a traced capture has to be stamped in by Core Graphics to stay
+/// vector.
+///
+/// The seam is `NotePDF.Piece`: a rectangle in the document and a closure
+/// that paints it. Everything above the seam is measurement, everything
+/// below it is `PagePlan`, and both can be tested without a window.
+@MainActor
+enum NoteExport {
+    /// The pane a note is measured against before the window has said how
+    /// wide it is — a note can be exported without ever having been shown.
+    static let fallbackPane = CGSize(width: 900, height: 600)
+
+    /// Paper is white whatever the window is.
+    static let paperHex = "#FFFFFF"
+
+    /// The note as PDF bytes, or nil if a context could not be opened.
+    ///
+    /// `pane` is the editor pane the drawing's objects were placed against:
+    /// the text is laid out at that width and the whole column is then
+    /// shrunk onto the paper, so a picture keeps the paragraph it was put
+    /// beside. Folded sections are NOT folded here — a note printed short
+    /// of the words it holds would be a note lost.
+    static func pdf(markdown: String, drawing: Drawing, media: URL?, pane: CGSize,
+                    paper: CGSize = PagePlan.paper, margin: CGFloat = PagePlan.margin) -> Data? {
+        let size = pane.width > 40 && pane.height > 40 ? pane : fallbackPane
+        let column = max(1, size.width - MarkdownPreview.sideInset * 2)
+
+        var data: Data?
+        // Light, always. The colours in this app answer the appearance they
+        // are drawn in, and the dark ones are white-on-black: rendered in a
+        // dark window they would come out as white text on white paper.
+        let onPaper = {
+            var pieces: [NotePDF.Piece] = []
+            let blocks = MarkdownParser.positioned(from: markdown)
+            let renderers = blocks.map { renderer(for: $0.block, width: column) }
+            var heights: [CGFloat] = []
+            for renderer in renderers {
+                var height: CGFloat = 0
+                renderer.render { measured, _ in height = measured.height }
+                heights.append(height)
+            }
+
+            // The same column the preview builds: the cells in order, each
+            // pushed clear of the drawings beside it.
+            let bands = InkBands.bands(for: drawing.visibleItems, in: size)
+            let places = PreviewLayout.positions(
+                rows: zip(blocks, heights).map { (id: $0.range.location, height: $1) },
+                spacing: MarkdownPreview.gapHeight,
+                top: MarkdownPreview.topInset + MarkdownPreview.gapHeight,
+                bands: bands)
+
+            for (index, block) in blocks.enumerated() {
+                guard heights[index] > 0, let place = places[block.range.location] else { continue }
+                let frame = CGRect(x: MarkdownPreview.sideInset, y: place.top,
+                                   width: column, height: heights[index])
+                let renderer = renderers[index]
+                pieces.append(NotePDF.Piece(frame: frame) { context in
+                    context.translateBy(x: frame.minX, y: frame.minY)
+                    // The renderer draws downwards from the origin, which
+                    // is what the document's coordinates already are.
+                    renderer.render { _, draw in draw(context) }
+                })
+            }
+
+            // Then the drawing, one BAND at a time: a sketch of forty
+            // strokes is one drawing (`InkBands` already decided that for
+            // the text to flow round), so it is one piece and can never be
+            // torn in half by a page break.
+            for (band, items) in groups(of: drawing, in: size, bands: bands) {
+                pieces.append(NotePDF.Piece(frame: band) { context in
+                    for item in items {
+                        DrawingInk.draw(item, in: context, size: size, media: media)
+                    }
+                })
+            }
+
+            data = NotePDF.data(pieces, documentWidth: size.width, paper: paper, margin: margin)
+        }
+
+        if let light = NSAppearance(named: .aqua) {
+            light.performAsCurrentDrawingAppearance(onPaper)
+        } else {
+            onPaper()
+        }
+        return data
+    }
+
+    /// Which objects belong to which band. Every visible object is inside
+    /// exactly one — the bands are the unions of their boxes — so this only
+    /// has to find it.
+    static func groups(of drawing: Drawing, in size: CGSize,
+                       bands: [CGRect]) -> [(band: CGRect, items: [CanvasItem])] {
+        var found: [Int: [CanvasItem]] = [:]
+        for item in drawing.visibleItems {
+            let box = item.bounds(in: size)
+            guard box.width.isFinite, box.height.isFinite, box.height > 0,
+                  let index = bands.firstIndex(where: { $0.minY <= box.minY && box.maxY <= $0.maxY })
+            else { continue }
+            found[index, default: []].append(item)
+        }
+        return found.keys.sorted().map { (bands[$0], found[$0] ?? []) }
+    }
+
+    /// One cell, as the preview draws it, on white paper.
+    private static func renderer(for block: MarkdownBlock, width: CGFloat) -> ImageRenderer<AnyView> {
+        let view = AnyView(
+            MarkdownPreview.BlockView(block: block)
+                .frame(width: width, alignment: .leading)
+                .padding(.vertical, 3)
+                .environment(\.notePaper, paperHex)
+                .environment(\.colorScheme, .light))
+        let renderer = ImageRenderer(content: view)
+        renderer.isOpaque = false
+        return renderer
+    }
+
+    // MARK: - The file
+
+    /// What the save panel should offer: the note's own name, as a PDF.
+    static func suggestedName(for note: URL) -> String {
+        note.deletingPathExtension().lastPathComponent + ".pdf"
+    }
+}
