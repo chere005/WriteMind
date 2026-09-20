@@ -5,6 +5,11 @@ it is built is in [AGENTS.md](../AGENTS.md).
 
 ## Open
 
+- **Cells are the note; everything else floats.** The plan, step by
+  step, is [PLAN-cells-and-floating.md](PLAN-cells-and-floating.md): cut
+  every object loose from the cells (no bands, no anchors, no pushes), then
+  make the whole seam between two cells the insertion cursor, in both
+  panes, with the armed line as the caret. Sean, 2026-09-20.
 - **Flow charts, further.** Rectangles, rounded rectangles, ovals and
   diamonds come off a sketch; triangles, parallelograms, ticks and crosses
   are deliberately left as ink. The composite (hole-finding grouping +
