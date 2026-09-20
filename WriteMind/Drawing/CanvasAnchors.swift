@@ -36,6 +36,38 @@ enum CanvasAnchors {
         }
     }
 
+    /// The page as a STACK: everything anchored to a cell sits immediately
+    /// under that cell, one gap below it, and keeps its own arrangement
+    /// (Sean, 2026-09-20: "all cells should come immediately after the
+    /// next one", "there shouldn't be space between these cells").
+    ///
+    /// Everything sharing an anchor moves together, by one delta, so two
+    /// drawings put side by side stay side by side — it is the group that
+    /// is a cell, not each stroke.
+    static func stacked(_ items: [CanvasItem], in size: CGSize, gap: CGFloat,
+                        bottom: (Int) -> CGFloat?) -> [CanvasItem] {
+        guard size.height > 1 else { return items }
+        var byAnchor: [Int: [Int]] = [:]
+        for (index, item) in items.enumerated() {
+            guard !item.isHidden, let anchor = item.anchor else { continue }
+            byAnchor[anchor, default: []].append(index)
+        }
+        guard !byAnchor.isEmpty else { return items }
+
+        var out = items
+        for (anchor, group) in byAnchor {
+            guard let under = bottom(anchor) else { continue }
+            var union = out[group[0]].bounds(in: size)
+            for index in group.dropFirst() { union = union.union(out[index].bounds(in: size)) }
+            let delta = (under + gap) - union.minY
+            guard abs(delta) > 0.5 else { continue }
+            for index in group {
+                out[index].transform.dy += Double(delta / size.height)
+            }
+        }
+        return out
+    }
+
     /// Whether anything actually moved — so a note that is already in the
     /// right place is not marked as changed.
     static func differ(_ before: [CanvasItem], _ after: [CanvasItem]) -> Bool {

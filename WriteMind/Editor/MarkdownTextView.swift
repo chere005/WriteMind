@@ -128,9 +128,13 @@ struct MarkdownTextView: NSViewRepresentable {
         // the way of every click that is not in a gap.
         let insertions = CellInsertions(frame: tv.bounds)
         insertions.autoresizingMask = [.width, .height]
-        insertions.onInsert = { [weak tv] offset in
-            guard let tv else { return }
-            MarkdownTextView.openCell(at: offset, in: tv)
+        insertions.onArm = { [weak tv, weak insertions] offset in
+            guard let tv = tv as? PasteAwareTextView else { return }
+            tv.armedGap = offset
+            tv.onDisarm = { [weak insertions] in insertions?.disarm() }
+            tv.setSelectedRange(NSRange(location: min(offset, (tv.string as NSString).length),
+                                        length: 0))
+            tv.window?.makeFirstResponder(tv)
         }
         tv.addSubview(insertions)
         context.coordinator.insertions = insertions
@@ -659,18 +663,23 @@ struct MarkdownTextView: NSViewRepresentable {
 
             // The cells themselves: one per block, drawn inside whichever
             // section holds them.
+            var cellsOnly: [NotebookGutter.Bracket] = []
             for block in MarkdownParser.positioned(from: tv.string) {
-                let owner = NotebookOutline.section(containing: block.range.location, in: sections)
-                let depth = (owner?.depth ?? -1) + 1
+                let depth = NotebookOutline.cellDepth(at: block.range.location, in: sections)
                 if let cell = bracket(key: "cell:\(block.range.location)", depth: depth,
                                       range: block.range, foldable: false) {
                     brackets.append(cell)
+                    cellsOnly.append(cell)
                 }
             }
             // And a bracket for every drawing: a band of the page with a
             // picture or ink in it is a cell of the notebook, as tall as
             // what is drawn there (Sean, 2026-09-19).
-            let beside = brackets.map { (top: $0.top, depth: $0.depth) }
+            // Beside the CELLS, not the sections: a drawing belongs at the
+            // depth of the cell above it, and a section bracket is drawn
+            // further out (Sean, 2026-09-20: "make sure the brackets follow
+            // group heirarchy correctly").
+            let beside = cellsOnly.map { (top: $0.top, depth: $0.depth) }
             for ink in InkBands.cells(for: bands, beside: beside) {
                 brackets.append(NotebookGutter.Bracket(key: ink.key, depth: ink.depth,
                                                        top: ink.top, bottom: ink.bottom,
@@ -808,6 +817,23 @@ class PasteAwareTextView: NSTextView {
     var onClick: (() -> Void)?
     /// The general pasteboard, except in a test, which brings its own.
     var pasteboard: NSPasteboard = .general
+    /// A gap between two cells the caret is sitting in: nothing has been
+    /// written there, and the first character typed opens a cell first
+    /// (Sean, 2026-09-20: "if i start typing it inserts a cell immediately
+    /// after the cursor/line which disappear").
+    var armedGap: Int? {
+        didSet { if armedGap == nil { onDisarm?() } }
+    }
+    var onDisarm: (() -> Void)?
+
+    override func insertText(_ string: Any, replacementRange: NSRange) {
+        if let offset = armedGap {
+            armedGap = nil
+            MarkdownTextView.openCell(at: offset, in: self)
+        }
+        super.insertText(string, replacementRange: replacementRange)
+    }
+
     /// Shown over the text instead of the I-beam while set (the pen's pencil).
     var cursorOverride: NSCursor? {
         didSet {
@@ -884,6 +910,8 @@ class PasteAwareTextView: NSTextView {
     }
 
     override func mouseDown(with event: NSEvent) {
+        // A click anywhere in the text puts the insertion bar out.
+        armedGap = nil
         onClick?()
         super.mouseDown(with: event)
     }

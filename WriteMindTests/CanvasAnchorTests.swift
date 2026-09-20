@@ -75,3 +75,63 @@ final class CanvasAnchorTests: XCTestCase {
         XCTAssertNil(back.items.first?.anchor)
     }
 }
+
+/// The page is a stack: every cell comes immediately after the one above it
+/// (Sean, 2026-09-20: "all cells should come immediately after the next
+/// one", "there shouldn't be space between these cells").
+final class StackedCellTests: XCTestCase {
+    private let pane = CGSize(width: 400, height: 1000)
+    private let gap: CGFloat = 8
+
+    private func ink(_ y: Double, height: Double = 0.08, anchor: Int?) -> CanvasItem {
+        .stroke(Stroke(colorHex: "#000000", width: 2,
+                       points: [CGPoint(x: 0.2, y: y), CGPoint(x: 0.5, y: y + height)],
+                       anchor: anchor))
+    }
+
+    func testADrawingSitsRightUnderItsCell() {
+        let stacked = CanvasAnchors.stacked([ink(0.7, anchor: 10)], in: pane, gap: gap) { _ in 200 }
+        XCTAssertEqual(stacked[0].bounds(in: pane).minY, 208, accuracy: 1,
+                       "the cell's bottom plus one gap, not where the pen was")
+    }
+
+    func testTheVoidAboveItIsClosed() {
+        // Drawn 500 points below the text, it comes back up to the text.
+        let far = ink(0.9, anchor: 10)
+        let stacked = CanvasAnchors.stacked([far], in: pane, gap: gap) { _ in 120 }
+        XCTAssertLessThan(stacked[0].bounds(in: pane).minY, far.bounds(in: pane).minY)
+        XCTAssertEqual(stacked[0].bounds(in: pane).minY, 128, accuracy: 1)
+    }
+
+    func testEverythingInOneCellMovesTogetherAndKeepsItsArrangement() {
+        let left = ink(0.7, anchor: 10)
+        let right = ink(0.74, anchor: 10)
+        let before = right.bounds(in: pane).minY - left.bounds(in: pane).minY
+        let stacked = CanvasAnchors.stacked([left, right], in: pane, gap: gap) { _ in 300 }
+        let after = stacked[1].bounds(in: pane).minY - stacked[0].bounds(in: pane).minY
+        XCTAssertEqual(after, before, accuracy: 0.5, "side by side stays side by side")
+        XCTAssertEqual(stacked[0].bounds(in: pane).minY, 308, accuracy: 1)
+    }
+
+    func testTwoCellsWorthOfDrawingsEachFollowTheirOwn() {
+        let stacked = CanvasAnchors.stacked([ink(0.8, anchor: 10), ink(0.2, anchor: 90)],
+                                            in: pane, gap: gap) { anchor in
+            anchor == 10 ? 100 : 600
+        }
+        XCTAssertEqual(stacked[0].bounds(in: pane).minY, 108, accuracy: 1)
+        XCTAssertEqual(stacked[1].bounds(in: pane).minY, 608, accuracy: 1)
+    }
+
+    func testSomethingWithNoCellIsLeftWhereItIs() {
+        let loose = ink(0.5, anchor: nil)
+        let stacked = CanvasAnchors.stacked([loose], in: pane, gap: gap) { _ in 10 }
+        XCTAssertEqual(stacked[0].bounds(in: pane).minY, loose.bounds(in: pane).minY, accuracy: 0.001)
+    }
+
+    func testAHiddenPictureIsNotStacked() {
+        let hidden = CanvasItem.image(ImageItem(file: "a.png", center: CGPoint(x: 0.5, y: 0.8),
+                                                width: 0.3, aspect: 1, hidden: true, anchor: 10))
+        let stacked = CanvasAnchors.stacked([hidden], in: pane, gap: gap) { _ in 100 }
+        XCTAssertEqual(stacked[0].bounds(in: pane).minY, hidden.bounds(in: pane).minY, accuracy: 0.001)
+    }
+}

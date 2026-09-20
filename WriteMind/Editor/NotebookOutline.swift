@@ -106,6 +106,16 @@ enum NotebookOutline {
         return result
     }
 
+    /// How far in a cell's bracket is drawn: one step inside the section
+    /// that holds it, and at the margin when no section does. The section
+    /// brackets themselves are drawn at their own depth, so a cell always
+    /// sits INSIDE the group it belongs to — a notebook's hierarchy (Sean,
+    /// 2026-09-20: "make sure the brackets follow group heirarchy
+    /// correctly").
+    static func cellDepth(at offset: Int, in sections: [Section]) -> Int {
+        (section(containing: offset, in: sections)?.depth ?? -1) + 1
+    }
+
     /// The innermost section the caret is in — on its heading or anywhere
     /// under it — or nil before the first heading.
     static func section(containing caret: Int, in sections: [Section]) -> Section? {

@@ -782,8 +782,16 @@ final class NoteStore: ObservableObject {
     /// the other side and the objects would otherwise stay where the old
     /// layout had put them.
     func reanchorObjects() {
-        guard let cellTop, paneSize.height > 1, !drawing.items.isEmpty else { return }
-        let moved = CanvasAnchors.reanchored(drawing.items, in: paneSize, y: { cellTop($0) })
+        guard paneSize.height > 1, !drawing.items.isEmpty else { return }
+        let boxes = cellBoxes?() ?? []
+        guard !boxes.isEmpty else { return }
+        // Under the cell it belongs to, one gap below it — the page is a
+        // stack of cells, and a drawing is one of them (Sean, 2026-09-20:
+        // "all cells should come immediately after the next one").
+        let moved = CanvasAnchors.stacked(drawing.items, in: paneSize,
+                                          gap: MarkdownPreview.gapHeight) { anchor in
+            boxes.first { $0.anchor == anchor }?.bottom
+        }
         guard CanvasAnchors.differ(drawing.items, moved) else { return }
         // Not an edit of the drawing: the objects have not changed, only
         // the layout under them, so this is not on the undo stack.

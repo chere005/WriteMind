@@ -303,3 +303,68 @@ final class BracketsInBothModesTests: XCTestCase {
         XCTAssertEqual(CellBrackets.x(for: 2, in: CellBrackets.width), NotebookGutter.width - 6 - 10)
     }
 }
+
+/// The brackets follow the group hierarchy: a cell is drawn inside the
+/// section that holds it, and a section inside the one that holds IT
+/// (Sean, 2026-09-20: "make sure the brackets follow group heirarchy
+/// correctly").
+final class BracketHierarchyTests: XCTestCase {
+    private let note = """
+    Loose words before anything
+
+    # Title
+
+    Under the title
+
+    ## A section
+
+    Under the section
+
+    ### Deeper
+
+    Under the deeper one
+    """
+
+    private var sections: [NotebookOutline.Section] { NotebookOutline.sections(in: note) }
+
+    private func depth(ofCellStarting text: String) -> Int {
+        let at = (note as NSString).range(of: text).location
+        return NotebookOutline.cellDepth(at: at, in: sections)
+    }
+
+    func testACellBeforeAnyHeadingIsAtTheMargin() {
+        XCTAssertEqual(depth(ofCellStarting: "Loose words"), 0)
+    }
+
+    func testEachSectionPutsItsCellsOneStepFurtherIn() {
+        XCTAssertEqual(depth(ofCellStarting: "Under the title"), 1)
+        XCTAssertEqual(depth(ofCellStarting: "Under the section"), 2)
+        XCTAssertEqual(depth(ofCellStarting: "Under the deeper one"), 3)
+    }
+
+    func testAHeadingsOwnCellSitsInsideItsGroup() {
+        // The heading is the first cell OF the group it opens, so its
+        // bracket is drawn inside the group's.
+        XCTAssertEqual(depth(ofCellStarting: "## A section"), 2)
+        XCTAssertEqual(sections.first { $0.title == "A section" }?.depth, 1)
+    }
+
+    func testTheNestingIsByGROUPNotByHeadingLevel() {
+        // A note that skips ## still nests one step, not two.
+        let skipped = "# Title\n\n### Straight to three\n\nWords"
+        let list = NotebookOutline.sections(in: skipped)
+        XCTAssertEqual(list.map(\.depth), [0, 1])
+        XCTAssertEqual(NotebookOutline.cellDepth(at: (skipped as NSString).range(of: "Words").location,
+                                                 in: list), 2)
+    }
+
+    func testADrawingTakesTheDepthOfTheCellAboveIt() {
+        // Beside the cells, never beside a section bracket: a drawing under
+        // "Under the section" is drawn at that cell's depth, not at the
+        // section's.
+        let cells: [(top: CGFloat, depth: Int)] = [(top: 0, depth: 0), (top: 100, depth: 1),
+                                                   (top: 200, depth: 2)]
+        let ink = InkBands.cells(for: [CGRect(x: 0, y: 240, width: 50, height: 60)], beside: cells)
+        XCTAssertEqual(ink.first?.depth, 2)
+    }
+}

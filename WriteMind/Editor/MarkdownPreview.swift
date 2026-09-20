@@ -274,8 +274,8 @@ struct MarkdownPreview: View {
 
         for item in shown {
             guard let place = places[item.id], place.bottom - place.top > 1 else { continue }
-            let owner = NotebookOutline.section(containing: item.range.location, in: sections)
-            out.append(CellBrackets.Bracket(key: "cell:\(item.id)", depth: (owner?.depth ?? -1) + 1,
+            let depth = NotebookOutline.cellDepth(at: item.range.location, in: sections)
+            out.append(CellBrackets.Bracket(key: "cell:\(item.id)", depth: depth,
                                             top: place.top, bottom: place.bottom,
                                             selected: editingRange == item.range, range: item.range))
         }

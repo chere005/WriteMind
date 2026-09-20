@@ -136,6 +136,11 @@ struct EditorPane: View {
                     // dragged, and a stale band would be in the wrong place.
                     keepClear = wantedBands
                 }
+                .onChange(of: store.text) { _, _ in
+                    // The text grew or shrank: the cells under it moved,
+                    // and the drawings that belong to them go with them.
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) { store.reanchorObjects() }
+                }
                 .onChange(of: appState.mode) { _, _ in
                     // The other side lays the note out at a different
                     // height, so every anchored object is put back beside

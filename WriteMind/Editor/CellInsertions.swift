@@ -28,15 +28,22 @@ final class CellInsertions: NSView {
     static let minimumReach: CGFloat = 3
 
     var gaps: [Gap] = [] { didSet { if gaps != oldValue { needsDisplay = true } } }
-    /// A click in a gap: open a cell at that offset.
+    /// A click in a gap: the bar stays there, armed, and the first thing
+    /// typed opens a cell at that offset (Sean, 2026-09-20: "if i start
+    /// typing it inserts a cell immediately after the cursor/line which
+    /// disappear"). Nothing is written to the note until then, so clicking
+    /// about the page leaves no empty cells behind.
     var onInsert: ((Int) -> Void)?
+    /// The gap the bar is sitting in, waiting to be typed into.
+    private(set) var armed: Gap? { didSet { if armed != oldValue { needsDisplay = true } } }
     private var hovered: Gap?
     private var tracking: NSTrackingArea?
 
     override var isFlipped: Bool { true }
 
     override func draw(_ dirtyRect: NSRect) {
-        guard let gap = hovered else { return }
+        // The armed bar stays drawn; the hovered one is only a hint.
+        guard let gap = armed ?? hovered else { return }
         let accent = NSColor.controlAccentColor
         accent.withAlphaComponent(0.85).setFill()
         // The line runs the width of the page, the way a cell insertion
@@ -91,8 +98,16 @@ final class CellInsertions: NSView {
     override func mouseDown(with event: NSEvent) {
         let point = convert(event.locationInWindow, from: nil)
         guard let gap = Self.gap(at: point, in: gaps) else { return }
-        onInsert?(gap.offset)
+        armed = gap
+        onArm?(gap.offset)
     }
+
+    /// The caret was put in the gap: the note itself is untouched until
+    /// something is typed, and whoever owns the keyboard tells us when.
+    var onArm: ((Int) -> Void)?
+
+    /// The bar goes out when the caret goes anywhere else.
+    func disarm() { armed = nil }
 
     /// Only a point inside a gap belongs to this layer; every other click
     /// goes to the text underneath, which is most of them.
