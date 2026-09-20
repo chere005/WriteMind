@@ -340,8 +340,13 @@ struct SectionBox: View {
                 // (Sean, 2026-09-19).
                 HStack(spacing: 6) {
                     choice("Image", icon: "photo",
-                           help: "Put the picture inside the box on the page, as it is") {
-                        onInsert?(.raw)
+                           help: "Put the picture inside the box on the page, squared up") {
+                        // .page, not .raw: a page found in the frame is
+                        // straightened and brought in at the notebook's
+                        // remembered size, which is the whole point of
+                        // photographing a page. Without a page it falls
+                        // back to the frame itself.
+                        onInsert?(.page)
                     }
                     choice("Writing", icon: "scribble.variable",
                            help: "Lift the writing inside the box onto the page as ink") {
