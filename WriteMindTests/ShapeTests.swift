@@ -114,20 +114,6 @@ final class ShapeTests: XCTestCase {
         XCTAssertEqual(ShapeItem.textAspect(for: "anything", boxWidth: 5), 0.3, "no room: the default")
     }
 
-    func testTheTextKeepsClearOfAPictureAsItScrolls() {
-        let band = CGRect(x: 100, y: 200, width: 300, height: 80)
-        let atTop = MarkdownTextView.exclusionRects(bands: [band], scrollOffset: 0, inset: 20)
-        XCTAssertEqual(atTop.count, 1)
-        XCTAssertEqual(atTop[0].minY, 200 - PreviewLayout.margin - 20)
-        XCTAssertEqual(atTop[0].height, 80 + PreviewLayout.margin * 2)
-        XCTAssertLessThan(atTop[0].minX, 0, "the band spans the whole width")
-        XCTAssertGreaterThan(atTop[0].maxX, 5_000)
-        // Scrolled down 150 points, the same picture sits 150 further into the document.
-        let scrolled = MarkdownTextView.exclusionRects(bands: [band], scrollOffset: 150, inset: 20)
-        XCTAssertEqual(scrolled[0].minY, atTop[0].minY + 150)
-        XCTAssertTrue(MarkdownTextView.exclusionRects(bands: [], scrollOffset: 9, inset: 20).isEmpty)
-    }
-
     func testTheHeadHasItsTipAtTheEnd() {
         let head = ConnectorItem.head(tip: CGPoint(x: 100, y: 50), from: CGPoint(x: 0, y: 50), lineWidth: 2)
         XCTAssertEqual(head.boundingRect.maxX, 100, accuracy: 0.001)

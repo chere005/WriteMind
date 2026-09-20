@@ -43,11 +43,6 @@ struct DrawingCanvas: View {
     /// Something on the layer is picked, or nothing is — the menu bar needs
     /// to know, so ⌘Z can be the drawing's.
     var onSelectionChanged: ((Bool) -> Void)?
-    /// Objects that were just dropped somewhere new: they record the cell
-    /// they now sit beside, so they are still beside it in the other mode
-    /// (Sean, 2026-09-19: "positions stay the same in markdown and wysiwyg
-    /// mode").
-    var onMoved: ((Set<UUID>) -> Void)?
     /// ⌘Z and ⇧⌘Z while the layer owns them. Each returns true when it had
     /// something to do; false hands the key on to the text underneath.
     var onUndo: (() -> Bool)?
@@ -730,10 +725,7 @@ struct DrawingCanvas: View {
             .onEnded { value in
                 switch interaction {
                 case .drawing:
-                    if let finished = current {
-                        drawing.items.append(.stroke(finished))
-                        onMoved?([finished.id])
-                    }
+                    if let finished = current { drawing.items.append(.stroke(finished)) }
                     current = nil
                 case .connecting(let start, let fromNode):
                     connectPreview = nil
@@ -762,10 +754,6 @@ struct DrawingCanvas: View {
                        selection.count == 1, let id = selection.first, let item = drawing[id: id],
                        case .shape(let shape) = item, shape.kind.isNode {
                         beginLabel(id)
-                    } else if abs(value.translation.height) > 2 {
-                        // It went somewhere else down the page: that is a
-                        // different cell to belong to.
-                        onMoved?(Set(snapshot.keys))
                     }
                 case .placing(let start):
                     place(from: start, to: doc(value.location), in: size)
@@ -987,7 +975,6 @@ struct DrawingCanvas: View {
         else { return }
         onBeginChange?()
         drawing.items.append(item)
-        onMoved?([item.id])
         selection = [item.id]
         // A text box is put down to be typed in.
         if case .shape(let shape) = item, shape.kind == .text { beginLabel(item.id) }

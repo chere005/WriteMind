@@ -54,10 +54,7 @@ is how the code is put together.
   of the app have it — the markdown pane and the rendered page — the way a
   Mathematica notebook does.
 - **The same place, whichever mode.** Switching between the markdown and
-  the rendered page reopens on the cell you were looking at, and every
-  picture, capture, drawing and text box remembers the cell it sits beside
-  and is put back beside it. Drag one somewhere else and it belongs to the
-  cell it was dropped at.
+  the rendered page reopens on the cell you were looking at.
 - **Sections of a note are cells.** A heading owns everything under it
   until the next heading of its rank, and the brackets down the right-hand
   side show the nesting the way a Wolfram notebook does. Click one to fold
@@ -164,15 +161,15 @@ is how the code is put together.
   padding, so nothing shifts when the caret leaves. Give the card a fill and
   the words are checked against it: ink that would be unreadable on that
   colour is swapped for black or white.
-- **The note keeps clear of what is on the layer.** A picture, a captured
-  page, a text box — and ink, and a flow chart — takes its band of the
-  page: a drawing gets a cell of its own, as tall as the drawing, and the
-  note's text runs above it and carries on below, never through it, and the
-  cursor cannot land beside it. Strokes that touch, or nearly touch, share
-  one band, so a sketch of forty of them opens one gap and not forty.
-  A pasted or captured picture lands just under the line the cursor is on,
-  flush with the text, and the cursor moves to the line after it — until
-  you drag it somewhere else.
+- **The layer floats over the note and never moves it.** A picture, a
+  captured page, a text box, ink, a flow chart — none of them is a cell,
+  none of them belongs to one, and none of them opens a hole in the words
+  (Sean, 2026-09-20: "floating objects like images, drawing, text fields,
+  etc completely separate from the cells"). They sit in the note's own
+  coordinates and scroll with it; drag one about, move a cell, switch
+  modes, and the text stays exactly where it was. A pasted or captured
+  picture is dropped one gap under the line the cursor is on, flush with
+  the text, and is yours to move from there.
 - **Marks.** The next button puts down the things drawn all the time —
   check marks, crosses, stars, boxes, circles, triangles, arrows and lines —
   as objects in the pen's colour.

@@ -108,11 +108,11 @@ struct CellBrackets: View {
                     guard let bracket = Self.bracket(at: value.startLocation, in: brackets,
                                                      width: Self.width) else { return }
                     let travelled = value.location.y - value.startLocation.y
-                    if abs(travelled) >= Self.dragThreshold, bracket.range.location != NSNotFound {
+                    if abs(travelled) >= Self.dragThreshold {
                         onMoveCell?(bracket.range, travelled < 0)
                     } else if (NSApp.currentEvent?.clickCount ?? 1) >= 2, bracket.foldable {
                         onToggle?(bracket.key)
-                    } else if bracket.range.location != NSNotFound {
+                    } else {
                         onSelect?(bracket.range)
                     }
                 }

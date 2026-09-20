@@ -175,7 +175,7 @@ final class NotePDFTests: XCTestCase {
 
         // And it is the right way up, inside the margin. The first cell
         // starts AT the top margin — a sheet begins at the top of the
-        // first thing on it — so the title's ink is in the band just
+        // first thing on it — so the title is printed in its own box just
         // below it, and the margin itself is bare paper.
         let ink = Self.raster(data, scale: 1)
         let margin = Int(PagePlan.margin)

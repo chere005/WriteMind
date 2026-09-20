@@ -54,14 +54,12 @@ enum NoteExport {
                 heights.append(height)
             }
 
-            // The same column the preview builds: the cells in order, each
-            // pushed clear of the drawings beside it.
-            let bands = InkBands.bands(for: drawing.visibleItems, in: size)
+            // The same column the preview builds: the cells in order, one
+            // gap apart, and nothing on the drawing layer in it.
             let places = PreviewLayout.positions(
                 rows: zip(blocks, heights).map { (id: $0.range.location, height: $1) },
                 spacing: MarkdownPreview.gapHeight,
-                top: MarkdownPreview.topInset + MarkdownPreview.gapHeight,
-                bands: bands)
+                top: MarkdownPreview.topInset + MarkdownPreview.gapHeight)
 
             for (index, block) in blocks.enumerated() {
                 guard heights[index] > 0, let place = places[block.range.location] else { continue }
@@ -76,15 +74,22 @@ enum NoteExport {
                 })
             }
 
-            // Then the drawing, one BAND at a time: a sketch of forty
-            // strokes is one drawing (`InkBands` already decided that for
-            // the text to flow round), so it is one piece and can never be
-            // torn in half by a page break.
-            for (band, items) in groups(of: drawing, in: size, bands: bands) {
-                pieces.append(NotePDF.Piece(frame: band) { context in
-                    for item in items {
-                        DrawingInk.draw(item, in: context, size: size, media: media)
-                    }
+            // Then the drawing, one object at a time, each in its own box.
+            // `PagePlan` keeps a piece whole and welds pieces that overlap
+            // onto one sheet, which is all the bands were ever buying.
+            //
+            // What floating costs the paper, so it is not read as a bug:
+            // ink now goes OVER the text rather than beside it, so a stroke
+            // drawn across three paragraphs welds itself and all three into
+            // one unbreakable unit, and a stroke dragged from the top of a
+            // long note to the bottom puts the whole note on one shrunken
+            // sheet. That is the rule Sean asked for (2026-09-20: "free
+            // floating… don't push other cells around") followed through.
+            for item in drawing.visibleItems {
+                let box = item.bounds(in: size)
+                guard box.width.isFinite, box.height.isFinite, box.height > 0 else { continue }
+                pieces.append(NotePDF.Piece(frame: box) { context in
+                    DrawingInk.draw(item, in: context, size: size, media: media)
                 })
             }
 
@@ -97,22 +102,6 @@ enum NoteExport {
             onPaper()
         }
         return data
-    }
-
-    /// Which objects belong to which band. Every visible object is inside
-    /// exactly one — the bands are the unions of their boxes — so this only
-    /// has to find it.
-    static func groups(of drawing: Drawing, in size: CGSize,
-                       bands: [CGRect]) -> [(band: CGRect, items: [CanvasItem])] {
-        var found: [Int: [CanvasItem]] = [:]
-        for item in drawing.visibleItems {
-            let box = item.bounds(in: size)
-            guard box.width.isFinite, box.height.isFinite, box.height > 0,
-                  let index = bands.firstIndex(where: { $0.minY <= box.minY && box.maxY <= $0.maxY })
-            else { continue }
-            found[index, default: []].append(item)
-        }
-        return found.keys.sorted().map { (bands[$0], found[$0] ?? []) }
     }
 
     /// One cell, as the preview draws it, on white paper.

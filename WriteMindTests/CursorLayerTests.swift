@@ -61,3 +61,23 @@ final class CursorOutsideTheNoteTests: XCTestCase {
                       === DrawingCursors.pencil)
     }
 }
+
+/// The pen is not the source editor's (Sean, 2026-09-19: "drawing should be
+/// allowed in either wysiwyg and markdown mode"). It lived beside the ink
+/// bands until they went; it never had anything to do with them.
+@MainActor
+final class PenAcrossModesTests: XCTestCase {
+    private func state() -> AppState {
+        AppState(defaults: UserDefaults(suiteName: "WriteMindTests-\(UUID().uuidString)")!)
+    }
+
+    func testThePenStaysUpWhenTheRenderedPageComesUp() {
+        let app = state()
+        app.penActive = true
+        app.toggleMode()
+        XCTAssertEqual(app.mode, .preview)
+        XCTAssertTrue(app.penActive, "the pen used to be put down by the switch")
+        app.toggleMode()
+        XCTAssertTrue(app.penActive)
+    }
+}

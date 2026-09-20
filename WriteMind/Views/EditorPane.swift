@@ -12,18 +12,6 @@ struct EditorPane: View {
     /// How far the source editor has scrolled: the drawing layer follows.
     @State private var scrollOffset: CGFloat = 0
 
-    /// The boxes the text has to keep clear of — everything on the layer,
-    /// where it is on the pane right now. Ink counts: a drawing gets a cell
-    /// of its own, as tall as the drawing (Sean, 2026-09-19).
-    private var wantedBands: [CGRect] {
-        InkBands.bands(for: store.drawing.visibleItems, in: store.canvasSize)
-    }
-
-    /// The bands the text is actually laid out around: the wanted ones,
-    /// held still while an object is only being nudged, so the paragraph
-    /// under it does not flip above and below as it crosses a boundary.
-    @State private var keepClear: [CGRect] = []
-
     var body: some View {
         VStack(spacing: 0) {
             // Always there, even with nothing open (Sean, 2026-09-18): the +
@@ -49,7 +37,6 @@ struct EditorPane: View {
                                          onClick: { textClicks += 1 },
                                          cursor: appState.penActive ? DrawingCursors.pencil
                                              : (appState.connectActive ? .crosshair : nil),
-                                         keepClear: keepClear,
                                          onScroll: { offset in
                                              scrollOffset = offset
                                              store.canvasScroll = offset
@@ -64,7 +51,6 @@ struct EditorPane: View {
                                         onFollow: { store.follow(destination: $0) },
                                         bridge: appState.editor,
                                         onEditingChanged: { appState.blockEditing = $0 },
-                                        keepClear: keepClear,
                                         onScroll: { offset in
                                             scrollOffset = offset
                                             store.canvasScroll = offset
@@ -95,7 +81,6 @@ struct EditorPane: View {
                                   pendingLabelEdit: store.pendingLabelEdit,
                                   onLabelEditStarted: { store.pendingLabelEdit = nil },
                                   onSelectionChanged: { appState.canvasSelection = $0 },
-                                  onMoved: { store.reanchor($0) },
                                   onUndo: { store.undoDrawing() },
                                   onRedo: { store.redoDrawing() },
                                   placing: appState.placing,
@@ -110,42 +95,11 @@ struct EditorPane: View {
                     // Pictures land under the caret while the source editor
                     // is up; the preview's blocks have their own text views.
                     store.caretAnchor = { appState.mode == .editor ? appState.editor.caretLineFrame() : nil }
-                    store.cellBoundary = { y in
-                        guard appState.mode == .editor else { return nil }
-                        return appState.editor.cellBoundary(near: y)
-                    }
-                    store.afterPlacing = { if appState.mode == .editor { appState.editor.breakLineAtCaret() } }
-                    // Which cell a point on the page belongs to, and where
-                    // that cell is — the two questions an anchored object
-                    // asks when the mode changes under it.
-                    store.cellAnchor = { y in appState.editor.cellAnchor(near: y) }
-                    store.cellTop = { anchor in appState.editor.cellTop(of: anchor) }
-                    store.cellBoxes = { appState.editor.cellBoxes() }
                     store.insertBelow = { text, y in
                         guard appState.mode == .editor else { return false }
                         appState.editor.insert(text, belowDocumentY: y)
                         return true
                     }
-                }
-                .onAppear { keepClear = wantedBands }
-                .onChange(of: store.drawing) { _, _ in
-                    keepClear = BandSettling.settled(wantedBands, previous: keepClear)
-                }
-                .onChange(of: store.canvasSize) { _, _ in
-                    // A resized window re-measures exactly: nothing is being
-                    // dragged, and a stale band would be in the wrong place.
-                    keepClear = wantedBands
-                }
-                .onChange(of: store.text) { _, _ in
-                    // The text grew or shrank: the cells under it moved,
-                    // and the drawings that belong to them go with them.
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) { store.reanchorObjects() }
-                }
-                .onChange(of: appState.mode) { _, _ in
-                    // The other side lays the note out at a different
-                    // height, so every anchored object is put back beside
-                    // its own cell once that side has laid itself out.
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) { store.reanchorObjects() }
                 }
                 .onChange(of: store.pendingLinkInsertion) { _, range in
                     guard let range else { return }

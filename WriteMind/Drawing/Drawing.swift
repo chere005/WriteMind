@@ -27,27 +27,19 @@ struct Stroke: Codable, Equatable, Identifiable {
     var width: Double
     var points: [CGPoint]
     var transform = ItemTransform()
-    /// The cell this drawing belongs beside, as a character offset into
-    /// the note. A pane fraction is not enough on its own: the two modes
-    /// lay the same note out at different heights, so an object pinned to
-    /// a fraction ends up beside a different paragraph on the other side
-    /// (Sean, 2026-09-19: "positions stay the same in markdown and wysiwyg
-    /// mode"). Nil for anything placed before this existed.
-    var anchor: Int?
 
     // Sidecars written before objects existed have no `transform`, and the
     // synthesized decoder would reject them — a default only applies to the
     // memberwise init, never to decoding.
-    private enum CodingKeys: String, CodingKey { case id, colorHex, width, points, transform, anchor }
+    private enum CodingKeys: String, CodingKey { case id, colorHex, width, points, transform }
 
     init(id: UUID = UUID(), colorHex: String, width: Double, points: [CGPoint],
-         transform: ItemTransform = ItemTransform(), anchor: Int? = nil) {
+         transform: ItemTransform = ItemTransform()) {
         self.id = id
         self.colorHex = colorHex
         self.width = width
         self.points = points
         self.transform = transform
-        self.anchor = anchor
     }
 
     init(from decoder: Decoder) throws {
@@ -57,7 +49,6 @@ struct Stroke: Codable, Equatable, Identifiable {
         width = try container.decode(Double.self, forKey: .width)
         points = try container.decode([CGPoint].self, forKey: .points)
         transform = try container.decodeIfPresent(ItemTransform.self, forKey: .transform) ?? ItemTransform()
-        anchor = try container.decodeIfPresent(Int.self, forKey: .anchor)
     }
 }
 
@@ -75,8 +66,6 @@ struct ImageItem: Codable, Equatable, Identifiable {
     /// Pixel height ÷ pixel width.
     var aspect: Double = 1
     var transform = ItemTransform()
-    /// The cell it belongs beside — see `Stroke.anchor`.
-    var anchor: Int?
     /// Put away, but not thrown away: the picture whose writing has been
     /// read into the note is hidden rather than deleted, so the button that
     /// brings the drawing back has something to bring back (Sean,
@@ -85,12 +74,12 @@ struct ImageItem: Codable, Equatable, Identifiable {
     var hidden: Bool = false
 
     private enum CodingKeys: String, CodingKey {
-        case id, file, center, width, aspect, transform, hidden, anchor
+        case id, file, center, width, aspect, transform, hidden
     }
 
     init(id: UUID = UUID(), file: String, center: CGPoint = CGPoint(x: 0.5, y: 0.5),
          width: Double = 0.35, aspect: Double = 1, transform: ItemTransform = ItemTransform(),
-         hidden: Bool = false, anchor: Int? = nil) {
+         hidden: Bool = false) {
         self.id = id
         self.file = file
         self.center = center
@@ -98,7 +87,6 @@ struct ImageItem: Codable, Equatable, Identifiable {
         self.aspect = aspect
         self.transform = transform
         self.hidden = hidden
-        self.anchor = anchor
     }
 
     init(from decoder: Decoder) throws {
@@ -111,7 +99,6 @@ struct ImageItem: Codable, Equatable, Identifiable {
         transform = try container.decodeIfPresent(ItemTransform.self, forKey: .transform) ?? ItemTransform()
         // A sidecar written before pictures could be hidden shows them all.
         hidden = try container.decodeIfPresent(Bool.self, forKey: .hidden) ?? false
-        anchor = try container.decodeIfPresent(Int.self, forKey: .anchor)
     }
 }
 
@@ -135,28 +122,6 @@ enum CanvasItem: Identifiable, Equatable {
     var image: ImageItem? { if case .image(let image) = self { return image } else { return nil } }
     var shape: ShapeItem? { if case .shape(let shape) = self { return shape } else { return nil } }
     var connector: ConnectorItem? { if case .connector(let connector) = self { return connector } else { return nil } }
-
-    /// The cell this object belongs beside, as a character offset into the
-    /// note — see `Stroke.anchor`. A connector has none: it is held by the
-    /// nodes at its ends, which have their own.
-    var anchor: Int? {
-        get {
-            switch self {
-            case .stroke(let stroke): return stroke.anchor
-            case .image(let image): return image.anchor
-            case .shape(let shape): return shape.anchor
-            case .connector: return nil
-            }
-        }
-        set {
-            switch self {
-            case .stroke(var stroke): stroke.anchor = newValue; self = .stroke(stroke)
-            case .image(var image): image.anchor = newValue; self = .image(image)
-            case .shape(var shape): shape.anchor = newValue; self = .shape(shape)
-            case .connector: break
-            }
-        }
-    }
 
     /// A hidden picture: drawn nowhere, clicked nowhere, and no obstacle to
     /// the text. Only a picture can be hidden.

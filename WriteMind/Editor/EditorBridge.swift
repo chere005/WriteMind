@@ -20,11 +20,6 @@ final class EditorBridge {
     /// The same for merging two cells: on the rendered page a cell IS a
     /// block, so the seam between two of them is in no one text view.
     var mergeCellsInDocument: (() -> Void)?
-    /// On the rendered page the cells are views, not glyphs, so the page
-    /// itself answers where a cell is and which cell a point is in.
-    var cellAnchorInDocument: ((CGFloat) -> Int?)?
-    var cellTopInDocument: ((Int) -> CGFloat?)?
-    var cellBoxesInDocument: (() -> [FloatingHoming.CellBox])?
     /// On the rendered page a cell is a block of the note, not a range in
     /// one text view, so the page itself applies a whole-cell edit.
     var cellRangeInDocument: (() -> NSRange?)?
@@ -65,39 +60,6 @@ final class EditorBridge {
         }
         return CGRect(x: line.minX + origin.x + padding, y: line.minY + origin.y,
                       width: max(0, line.width - 2 * padding), height: line.height)
-    }
-
-    /// The nearest gap BETWEEN two cells to the document y given — the
-    /// bottom of one block and the top of the next. A picture goes there
-    /// rather than beside a line, because an object may not break a cell
-    /// (Sean, 2026-09-19: "inserted grabbed drawings and images are their
-    /// own object that can only go between cells"). Nil without a text
-    /// view, and nil for an empty note, where anywhere will do.
-    func cellBoundary(near y: CGFloat) -> CGFloat? {
-        guard let tv = textView, let layout = tv.layoutManager, let container = tv.textContainer else {
-            return nil
-        }
-        layout.ensureLayout(for: container)
-        let text = tv.string as NSString
-        guard text.length > 0 else { return nil }
-        let origin = tv.textContainerOrigin
-
-        /// The document y of a character's own line, top and bottom.
-        func band(_ character: Int) -> (top: CGFloat, bottom: CGFloat) {
-            let glyph = layout.glyphIndexForCharacter(at: min(character, text.length - 1))
-            let line = layout.lineFragmentRect(forGlyphAt: glyph, effectiveRange: nil)
-            return (line.minY + origin.y, line.maxY + origin.y)
-        }
-
-        var boundaries: [CGFloat] = []
-        for block in MarkdownParser.positioned(from: tv.string) {
-            let start = min(block.range.location, text.length - 1)
-            let end = min(max(NSMaxRange(block.range) - 1, start), text.length - 1)
-            boundaries.append(band(start).top)
-            boundaries.append(band(end).bottom)
-        }
-        guard let nearest = boundaries.min(by: { abs($0 - y) < abs($1 - y) }) else { return nil }
-        return nearest
     }
 
     /// Put `text` into the note as lines of its own at the first line that
@@ -157,16 +119,6 @@ final class EditorBridge {
                                                              length: 0)))
         }
         return true
-    }
-
-    /// A line break at the caret, and the caret after it — so typing carries
-    /// on under the picture that was just put there.
-    func breakLineAtCaret() {
-        guard let tv = textView else { return }
-        let range = tv.selectedRange()
-        guard tv.shouldChangeText(in: range, replacementString: "\n") else { return }
-        tv.insertText("\n", replacementRange: range)
-        tv.didChangeText()
     }
 
     /// ⌘D's run: what it last selected, and whether it is matching whole words.
@@ -230,21 +182,6 @@ final class EditorBridge {
         maybe(NotebookCells.merge)
     }
 
-    /// Which cell a point down the page belongs to, as a character offset
-    /// — what an object records when it is dropped there.
-    func cellAnchor(near y: CGFloat) -> Int? {
-        if let cellAnchorInDocument { return cellAnchorInDocument(y) }
-        guard let tv = textView else { return nil }
-        return MarkdownTextView.cell(atTop: y, in: tv)
-    }
-
-    /// Where that cell starts on the page showing now.
-    func cellTop(of anchor: Int) -> CGFloat? {
-        if let cellTopInDocument { return cellTopInDocument(anchor) }
-        guard let tv = textView else { return nil }
-        return MarkdownTextView.offset(ofCell: anchor, in: tv)
-    }
-
     /// The caret's own cell, as a range in the note.
     func caretCell() -> NSRange? {
         if let cellRangeInDocument { return cellRangeInDocument() }
@@ -289,13 +226,6 @@ final class EditorBridge {
             else { return }
             apply(edit)
         }
-    }
-
-    /// Every cell's box on the page showing now.
-    func cellBoxes() -> [FloatingHoming.CellBox] {
-        if let cellBoxesInDocument { return cellBoxesInDocument() }
-        guard let tv = textView else { return [] }
-        return MarkdownTextView.cellBoxes(in: tv)
     }
 
     func list(_ style: MarkdownFormatting.ListStyle) {

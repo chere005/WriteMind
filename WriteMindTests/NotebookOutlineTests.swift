@@ -357,14 +357,4 @@ final class BracketHierarchyTests: XCTestCase {
         XCTAssertEqual(NotebookOutline.cellDepth(at: (skipped as NSString).range(of: "Words").location,
                                                  in: list), 2)
     }
-
-    func testADrawingTakesTheDepthOfTheCellAboveIt() {
-        // Beside the cells, never beside a section bracket: a drawing under
-        // "Under the section" is drawn at that cell's depth, not at the
-        // section's.
-        let cells: [(top: CGFloat, depth: Int)] = [(top: 0, depth: 0), (top: 100, depth: 1),
-                                                   (top: 200, depth: 2)]
-        let ink = InkBands.cells(for: [CGRect(x: 0, y: 240, width: 50, height: 60)], beside: cells)
-        XCTAssertEqual(ink.first?.depth, 2)
-    }
 }

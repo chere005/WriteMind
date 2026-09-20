@@ -23,9 +23,6 @@ struct MarkdownPreview: View {
     /// True while a block is open for editing — the bar uses it to decide
     /// whether its buttons do anything.
     var onEditingChanged: ((Bool) -> Void)?
-    /// The bands the pictures and text boxes take, in document points. The
-    /// blocks step over them, the way the source editor's text does.
-    var keepClear: [CGRect] = []
     /// How far the preview has scrolled, so the drawing layer can scroll
     /// with it and a picture stays beside the block it was put next to.
     var onScroll: ((CGFloat) -> Void)?
@@ -82,13 +79,6 @@ struct MarkdownPreview: View {
     /// 2026-09-19: "notebook bar placement bugs").
     static let gapHeight: CGFloat = 8
 
-    /// What each block has to move down by to clear the pictures.
-    private var pushes: [Int: CGFloat] {
-        PreviewLayout.padding(rows: items.map { ($0.id, rowHeights[$0.id] ?? 0) },
-                              spacing: Self.gapHeight, top: Self.topInset + Self.gapHeight,
-                              bands: keepClear)
-    }
-
     var body: some View {
         ScrollViewReader { page in
         ScrollView {
@@ -105,7 +95,6 @@ struct MarkdownPreview: View {
                     gap(at: item.range.location)
                     row(item)
                         .id(item.id)
-                        .padding(.top, pushes[item.id] ?? 0)
                         .background {
                             GeometryReader { proxy in
                                 Color.clear.preference(key: PreviewRowHeights.self,
@@ -148,12 +137,8 @@ struct MarkdownPreview: View {
         }
         .coordinateSpace(name: Self.space)
         .onPreferenceChange(PreviewRowHeights.self) { heights in
-            // The height a block WANTS, measured without its push — so the
-            // padding never feeds back into the measurement.
             for (id, height) in heights {
-                let push = pushes[id] ?? 0
-                let bare = max(0, height - push)
-                if abs((rowHeights[id] ?? -1) - bare) > 0.5 { rowHeights[id] = bare }
+                if abs((rowHeights[id] ?? -1) - height) > 0.5 { rowHeights[id] = height }
             }
         }
         .onPreferenceChange(PreviewScrollKey.self) { offset in
@@ -161,8 +146,7 @@ struct MarkdownPreview: View {
             // Which cell the fold is on, for the other mode to open at.
             let places = PreviewLayout.positions(rows: items.map { ($0.id, rowHeights[$0.id] ?? 0) },
                                                  spacing: Self.gapHeight,
-                                                 top: Self.topInset + Self.gapHeight,
-                                                 bands: keepClear)
+                                                 top: Self.topInset + Self.gapHeight)
             if let top = PreviewLayout.topRow(positions: places, scroll: offset) { onTopCell?(top) }
         }
         .background(Color(nsColor: .textBackgroundColor))
@@ -181,23 +165,14 @@ struct MarkdownPreview: View {
             bridge.ensureEditing = { openSomething() }
             bridge.moveSectionInDocument = { up in moveWholeSection(up: up) }
             bridge.mergeCellsInDocument = { mergeCells() }
-            bridge.cellAnchorInDocument = { y in cellAnchor(near: y) }
-            bridge.cellTopInDocument = { anchor in cellTop(of: anchor) }
             bridge.cellRangeInDocument = { editingRange ?? items.first?.range }
             bridge.cellEditInDocument = { make in cellEdit(make) }
-            bridge.cellBoxesInDocument = {
-                places.map { FloatingHoming.CellBox(anchor: $0.key, top: $0.value.top,
-                                                    bottom: $0.value.bottom) }
-            }
         }
         .onDisappear {
             onEditingChanged?(false)
             bridge.ensureEditing = nil
             bridge.moveSectionInDocument = nil
             bridge.mergeCellsInDocument = nil
-            bridge.cellAnchorInDocument = nil
-            bridge.cellTopInDocument = nil
-            bridge.cellBoxesInDocument = nil
             bridge.cellRangeInDocument = nil
             bridge.cellEditInDocument = nil
         }
@@ -267,8 +242,7 @@ struct MarkdownPreview: View {
         let shown = items
         guard !shown.isEmpty else { return [] }
         let places = PreviewLayout.positions(rows: shown.map { ($0.id, rowHeights[$0.id] ?? 0) },
-                                             spacing: Self.gapHeight, top: Self.topInset + Self.gapHeight,
-                                             bands: keepClear)
+                                             spacing: Self.gapHeight, top: Self.topInset + Self.gapHeight)
         let sections = NotebookOutline.sections(in: markdown)
         var out: [CellBrackets.Bracket] = []
 
@@ -278,18 +252,6 @@ struct MarkdownPreview: View {
             out.append(CellBrackets.Bracket(key: "cell:\(item.id)", depth: depth,
                                             top: place.top, bottom: place.bottom,
                                             selected: editingRange == item.range, range: item.range))
-        }
-
-        // A drawing is a cell too, as tall as the drawing (Sean,
-        // 2026-09-19: "drawings from the pen tool or that are grabbed from
-        // the camera should go in a cell.. the cell is the height of the
-        // drawn stuff"). It has no markdown behind it, so its bracket
-        // selects nothing — it is there to show the cell.
-        let beside = out.map { (top: $0.top, depth: $0.depth) }
-        for ink in InkBands.cells(for: keepClear, beside: beside) {
-            out.append(CellBrackets.Bracket(key: ink.key, depth: ink.depth,
-                                            top: ink.top, bottom: ink.bottom,
-                                            range: NSRange(location: NSNotFound, length: 0)))
         }
 
         for section in sections {
@@ -454,21 +416,7 @@ struct MarkdownPreview: View {
     /// Where each cell sits on the rendered page, measured.
     private var places: [Int: (top: CGFloat, bottom: CGFloat)] {
         PreviewLayout.positions(rows: items.map { ($0.id, rowHeights[$0.id] ?? 0) },
-                                spacing: Self.gapHeight, top: Self.topInset + Self.gapHeight,
-                                bands: keepClear)
-    }
-
-    /// The cell a point down the page belongs to — an object dropped there
-    /// remembers it, so it is beside the same cell in the markdown pane.
-    private func cellAnchor(near y: CGFloat) -> Int? {
-        PreviewLayout.topRow(positions: places, scroll: y)
-    }
-
-    /// Where that cell starts here.
-    private func cellTop(of anchor: Int) -> CGFloat? {
-        guard let block = MarkdownParser.positioned(from: markdown)
-            .last(where: { $0.range.location <= anchor }) else { return nil }
-        return places[block.range.location]?.top
+                                spacing: Self.gapHeight, top: Self.topInset + Self.gapHeight)
     }
 
     /// A whole-cell edit — delete, duplicate, move — over the note, with
@@ -792,8 +740,7 @@ struct TableBlock: View {
 }
 
 
-/// The measured height of every block, so the pictures' bands can be
-/// stepped over without the padding changing what was measured.
+/// The measured height of every block — what the stack is laid out from.
 private struct PreviewRowHeights: PreferenceKey {
     static let defaultValue: [Int: CGFloat] = [:]
     static func reduce(value: inout [Int: CGFloat], nextValue: () -> [Int: CGFloat]) {

@@ -48,9 +48,6 @@ final class NoteStore: ObservableObject {
     /// Where the caret's line is, in the pane's document coordinates — set
     /// by the editor pane, nil while the source editor is not up.
     var caretAnchor: (() -> CGRect?)?
-    /// Called once a picture has gone under the caret: the editor puts the
-    /// caret on the line after it.
-    var afterPlacing: (() -> Void)?
     /// Puts text into the note under a picture (its bottom edge, in document
     /// points). Returns false when there is no editor to do it, and the
     /// text is appended instead.
@@ -638,15 +635,14 @@ final class NoteStore: ObservableObject {
         let placement = NotebookCapture.placement(frame: result.frame, pageSize: result.pageSize,
                                                   pane: paneSize, nudge: nudge)
         let widthPoints = placement.width * paneSize.width
-        let (anchored, isAnchored) = anchoredCenter(width: widthPoints, height: widthPoints * imported.aspect)
-        let center = isAnchored
-            ? anchored
+        let (underCaret, atCaret) = placedCenter(width: widthPoints,
+                                                  height: widthPoints * imported.aspect)
+        let center = atCaret
+            ? underCaret
             : CGPoint(x: placement.center.x, y: placement.center.y + canvasScroll / paneSize.height)
         beginDrawingChange()
         drawing.items.append(.image(ImageItem(file: imported.file, center: center,
                                               width: placement.width, aspect: imported.aspect)))
-        reanchor(Set([drawing.items.last?.id].compactMap { $0 }))
-        if isAnchored { afterPlacing?() }
         return true
     }
 
@@ -690,14 +686,12 @@ final class NoteStore: ObservableObject {
             height = pane.height * 0.6
             width = imported.aspect > 0 ? height / imported.aspect : width
         }
-        let (center, anchored) = anchoredCenter(width: width, height: height)
+        let (center, _) = placedCenter(width: width, height: height)
         beginDrawingChange()
         drawing.items.append(.image(ImageItem(file: imported.file,
                                               center: center,
                                               width: width / pane.width,
                                               aspect: imported.aspect)))
-        reanchor(Set([drawing.items.last?.id].compactMap { $0 }))
-        if anchored { afterPlacing?() }
     }
 
     // MARK: - Shapes
@@ -724,7 +718,6 @@ final class NoteStore: ObservableObject {
                             aspect: TextBoxStyle.aspect(for: "", boxWidth: width * paneSize.width),
                             colorHex: colorHex, lineWidth: 1)
         drawing.items.append(.shape(box))
-        reanchor([box.id])
         pendingLabelEdit = box.id
     }
 
@@ -756,88 +749,25 @@ final class NoteStore: ObservableObject {
         return CGPoint(x: 0.5 + nudge, y: (pane.height * 0.5 + canvasScroll) / pane.height + nudge)
     }
 
-    /// Where a new picture goes: just under the caret's line, flush with the
-    /// text (Sean, 2026-09-18: "placed where the cursor is and aligned with
-    /// the text") — or the middle of what is on screen when there is no
-    /// caret to go by. `width` and `height` in points; the flag says which.
-    /// Where the editor would like an object of this size to go: in the
-    /// gap AFTER the caret's cell, never beside a line of it (Sean,
-    /// 2026-09-19: "inserted grabbed drawings and images are their own
-    /// object that can only go between cells"). The words a picture is
-    /// read into still land at the cursor; it is the OBJECT that has to
-    /// sit between two cells.
-    var cellBoundary: ((CGFloat) -> CGFloat?)?
-    /// The cell at a point down the page, as a character offset — what an
-    /// object records when it is put down, so it can be found again on the
-    /// other side (Sean, 2026-09-19: "positions stay the same in markdown
-    /// and wysiwyg mode").
-    var cellAnchor: ((CGFloat) -> Int?)?
-    /// The other way: where that cell starts in the pane showing now.
-    var cellTop: ((Int) -> CGFloat?)?
-    /// Every cell's box, for working out where a dropped object belongs.
-    var cellBoxes: (() -> [FloatingHoming.CellBox])?
 
-    /// Put every anchored object back beside its cell. Called when the
-    /// mode changes, because the note is laid out at a different height on
-    /// the other side and the objects would otherwise stay where the old
-    /// layout had put them.
-    func reanchorObjects() {
-        guard paneSize.height > 1, !drawing.items.isEmpty else { return }
-        let boxes = cellBoxes?() ?? []
-        guard !boxes.isEmpty else { return }
-        // Under the cell it belongs to, one gap below it — the page is a
-        // stack of cells, and a drawing is one of them (Sean, 2026-09-20:
-        // "all cells should come immediately after the next one").
-        let moved = CanvasAnchors.stacked(drawing.items, in: paneSize,
-                                          gap: MarkdownPreview.gapHeight) { anchor in
-            boxes.first { $0.anchor == anchor }?.bottom
-        }
-        guard CanvasAnchors.differ(drawing.items, moved) else { return }
-        // Not an edit of the drawing: the objects have not changed, only
-        // the layout under them, so this is not on the undo stack.
-        drawing.items = moved
-    }
-
-    /// The cell an object now sits beside, remembered — after it is
-    /// dropped somewhere new.
-    func reanchor(_ ids: Set<UUID>) {
-        guard paneSize.height > 1 else { return }
-        // Every cell with what floats in it folded in: one box per cell,
-        // as tall as the cell and its floating things together (Sean,
-        // 2026-09-19). An object dropped inside a box belongs to that
-        // cell; dropped outside every box, it goes above the next one.
-        let boxes = FloatingHoming.boxes(
-            cells: cellBoxes?() ?? [],
-            floating: drawing.visibleItems.map { ($0.anchor, $0.bounds(in: paneSize)) })
-        for index in drawing.items.indices where ids.contains(drawing.items[index].id) {
-            let box = drawing.items[index].bounds(in: paneSize)
-            guard let home = FloatingHoming.home(for: box, in: boxes) else {
-                // No cells at all: fall back to the nearest boundary.
-                if let anchor = cellAnchor?(box.minY) { drawing.items[index].anchor = anchor }
-                continue
-            }
-            drawing.items[index].anchor = home
-            // Drawn on the empty page below its cell: the cell follows the
-            // one above it, it does not float wherever the pen happened to
-            // be (Sean, 2026-09-20: "all cells are next to eachother,
-            // there's random space between cells here"). Anything drawn
-            // beside or over the text is left exactly where it was drawn.
-            guard let cell = boxes.first(where: { $0.anchor == home }) else { continue }
-            let follows = cell.bottom + MarkdownPreview.gapHeight
-            guard box.minY > follows + 1 else { continue }
-            drawing.items[index] = CanvasAnchors.placed(drawing.items[index], atTop: follows,
-                                                        in: paneSize)
-        }
-    }
-
-    private func anchoredCenter(width: CGFloat, height: CGFloat) -> (center: CGPoint, anchored: Bool) {
+    /// Where a new picture or capture goes: just under the caret's line,
+    /// flush with the text (Sean, 2026-09-18: "placed where the cursor is
+    /// and aligned with the text") — or the middle of what is on screen
+    /// when there is no caret to go by. `width` and `height` in points;
+    /// the flag says which of the two it was.
+    ///
+    /// One `gapHeight` under the line, the same seam that sits between two
+    /// cells, so the landing and the seam can never drift apart. Nothing
+    /// moves to make room: the object floats over the note and the note
+    /// does not know it is there (Sean, 2026-09-20: "floating objects like
+    /// images, drawing, text fields, etc completely separate from the
+    /// cells").
+    private func placedCenter(width: CGFloat, height: CGFloat) -> (center: CGPoint, atCaret: Bool) {
         let pane = paneSize
         guard let line = caretAnchor?() else { return (visibleCenter, false) }
         let x = min(line.minX + width / 2, max(width / 2, pane.width - width / 2))
-        let gap = cellBoundary?(line.maxY) ?? line.maxY
-        let y = gap + 8 + height / 2
+        let y = line.maxY + MarkdownPreview.gapHeight + height / 2
         return (CGPoint(x: x / pane.width, y: y / pane.height), true)
-        // The caller records the cell as well — see `reanchor(_:)`.
     }
 
     private func scheduleDrawingSave() {

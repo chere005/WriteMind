@@ -193,15 +193,14 @@ final class NotebookGutter: NSView {
         dragging = (bracket, point.y)
         if event.clickCount >= 2, bracket.foldable {
             onToggle?(bracket.key)
-        } else if bracket.range.location != NSNotFound {
-            // A drawing's bracket has no markdown behind it to select.
+        } else {
             onSelect?(bracket.range)
         }
     }
 
     override func mouseUp(with event: NSEvent) {
         defer { dragging = nil }
-        guard let dragging, dragging.bracket.range.location != NSNotFound else { return }
+        guard let dragging else { return }
         let travelled = convert(event.locationInWindow, from: nil).y - dragging.from
         guard abs(travelled) >= Self.dragThreshold else { return }
         onMoveCell?(dragging.bracket.range, travelled < 0)

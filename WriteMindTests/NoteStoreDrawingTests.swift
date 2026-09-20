@@ -66,37 +66,37 @@ final class NoteStoreDrawingTests: XCTestCase {
         XCTAssertNotNil(DrawingStore.loadImage(placed.file, in: dir))
     }
 
-    /// A picture goes just under the caret's line, flush with the text, and
-    /// the editor is told to move the caret past it.
+    /// A picture goes just under the caret's line, flush with the text —
+    /// and nothing in the note moves for it.
     func testAPictureLandsUnderTheCaretsLine() throws {
         store.canvasSize = CGSize(width: 1000, height: 800)
         store.caretAnchor = { CGRect(x: 30, y: 100, width: 500, height: 20) }
-        var movedOn = false
-        store.afterPlacing = { movedOn = true }
         let rep = try XCTUnwrap(NSBitmapImageRep(bitmapDataPlanes: nil, pixelsWide: 300, pixelsHigh: 150,
                                                  bitsPerSample: 8, samplesPerPixel: 4, hasAlpha: true,
                                                  isPlanar: false, colorSpaceName: .deviceRGB,
                                                  bytesPerRow: 0, bitsPerPixel: 0))
         let image = NSImage(size: NSSize(width: 300, height: 150))
         image.addRepresentation(rep)
+        let before = store.text
 
         XCTAssertTrue(store.addImage(image))
         let placed = try XCTUnwrap(store.drawing.images.first)
         XCTAssertEqual(placed.width * 1000, 300, accuracy: 0.001, "a small picture keeps its size")
         XCTAssertEqual(placed.center.x * 1000, 30 + 150, accuracy: 0.001, "flush with the text")
-        XCTAssertEqual(placed.center.y * 800, 120 + 8 + 75, accuracy: 0.001, "just under the line")
-        XCTAssertTrue(movedOn)
+        // One seam under the line — the same gap that sits between two
+        // cells, so the landing and the seam cannot drift apart.
+        XCTAssertEqual(placed.center.y * 800, 120 + MarkdownPreview.gapHeight + 75, accuracy: 0.001,
+                       "just under the line")
+        XCTAssertEqual(store.text, before, "the note is not touched to make room")
 
         // With no caret to go by, the middle of the pane, as before.
         store.caretAnchor = { nil }
-        movedOn = false
         XCTAssertTrue(store.addImage(image))
         let second = try XCTUnwrap(store.drawing.images.last)
         XCTAssertEqual(second.center.x, 0.5 + 0.03, accuracy: 0.001)
-        XCTAssertFalse(movedOn)
     }
 
-    func testTheCaretLineAndTheLineBreakAfterIt() {
+    func testTheCaretsLineIsWhereTheTextViewSaysItIs() {
         let textView = NSTextView(usingTextLayoutManager: false)
         textView.frame = NSRect(x: 0, y: 0, width: 400, height: 300)
         textView.textContainerInset = NSSize(width: 24, height: 20)
@@ -112,11 +112,6 @@ final class NoteStoreDrawingTests: XCTestCase {
         textView.setSelectedRange(NSRange(location: 8, length: 0))
         let second = bridge.caretLineFrame()!
         XCTAssertGreaterThan(second.minY, first.maxY - 0.5, "the second line is below the first")
-
-        textView.setSelectedRange(NSRange(location: 2, length: 0))
-        bridge.breakLineAtCaret()
-        XCTAssertEqual(textView.string, "He\nllo\nWorld")
-        XCTAssertEqual(textView.selectedRange().location, 3, "the caret is on the new line")
     }
 
     func testTextReadFromAPictureGoesInUnderIt() {

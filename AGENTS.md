@@ -201,25 +201,29 @@ CoreMind's `bin/report-status.sh`.
   offset is 0 there). The first cut kept objects on the pane and the text's
   exclusion bands moved with the scroll — a picture taller than the pane
   then pushed the text out of reach for good.
-- **A new picture goes under the caret.** `NoteStore.caretAnchor` (set by
-  `EditorPane`, nil outside the source editor) gives the caret's line from
-  `EditorBridge.caretLineFrame` — the text view's coordinates ARE the
-  layer's document coordinates — and `anchoredCenter` puts the picture 8pt
-  under that line, flush with the text's left edge; `afterPlacing` then has
-  the editor break the line at the caret, and the exclusion band carries
-  the new line below the picture. Shapes and text boxes still land in the
+- **A new picture goes under the caret, and the note does not move for
+  it.** `NoteStore.caretAnchor` (set by `EditorPane`, nil outside the
+  source editor) gives the caret's line from `EditorBridge.caretLineFrame`
+  — the text view's coordinates ARE the layer's document coordinates — and
+  `placedCenter` puts the picture one `MarkdownPreview.gapHeight` under
+  that line, flush with the text's left edge. Not 8: the same constant the
+  seam between two cells is, so the landing and the seam cannot drift
+  apart. Nothing is typed into the note and nothing is pushed aside; the
+  picture floats over the words. Shapes and text boxes still land in the
   middle of what is on screen.
-- **The text runs round pictures through exclusion paths.** A picture's or
-  text box's band (`EditorPane.keepClear`, document points) becomes a
-  full-width text container exclusion rect (`MarkdownTextView.exclusionRects`,
-  up by the container inset). After setting them, `applyExclusions` calls
-  `ensureLayout` and `sizeToFit`: left to itself the text view kept its old
-  height and the pushed-down text sat below its bottom edge where nothing
-  could scroll to it. Text boxes (`ShapeItem.Kind.text`) are excluded like
-  pictures; ink and shapes are not. **The source editor is TextKit 1
-  because of this**: with `usingTextLayoutManager: true` a full-width
-  exclusion rect made the whole note disappear (TextKit 2 never stepped
-  past the band); TextKit 1 lays out below it as documented.
+- **Nothing on the drawing layer moves the text.** Objects float: no
+  exclusion band, no per-block push, no anchor, no re-homing, no bracket
+  (Sean, 2026-09-20: "all drawing, captured or drawn with the pen tool,
+  are now free floating and don't belong to cells whatsoever and so don't
+  push other cells around"). `PreviewLayout.positions` is a pure stack —
+  cell, `gapHeight`, cell — and the text container's `exclusionPaths` is
+  never set. Anything that "needs" a band back is reading the model wrong;
+  `docs/PLAN-cells-and-floating.md` is the model. **The source editor is
+  still TextKit 1**, but not for that reason any more: `MarkerHiding` and
+  `BulletGlyphs` are `NSLayoutManagerDelegate` glyph substitution — the
+  faded `#` and the `- ` drawn as a bullet — which TextKit 2 has no
+  equivalent of. (The old reason: a full-width exclusion rect made TextKit
+  2 lay out nothing at all past it, and the whole note vanished.)
 - **A picture on the pasteboard does not enable Paste by itself.** A
   plain-text NSTextView validates the Edit menu's Paste item against what it
   can read — text — so with only a screenshot on the pasteboard the item is

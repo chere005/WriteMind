@@ -120,6 +120,41 @@ final class DrawingCodingTests: XCTestCase {
         XCTAssertEqual(drawing.strokes.first?.transform, .identity)
     }
 
+    /// Until 2026-09-20 every object carried an `anchor` — the cell it
+    /// belonged beside — and the sidecars in `~/Documents/WriteMind/.drawings`
+    /// still hold one. Objects float now (Sean: "floating objects like
+    /// images, drawing, text fields, etc completely separate from the
+    /// cells"), so a key nothing asks for has to be a key nothing trips
+    /// over: these are his notes, and `DrawingStore.load` turns a decode
+    /// failure into an EMPTY drawing rather than into an error.
+    func testASidecarThatStillCarriesAnchorsOpens() throws {
+        let json = """
+        {"items": [
+          {"kind": "stroke", "stroke": {"colorHex": "#F2542D", "width": 3,
+                                        "points": [[0.2, 0.3], [0.4, 0.5]], "anchor": 12}},
+          {"kind": "image", "image": {"file": "page.jpg", "width": 0.5, "aspect": 1.5,
+                                      "anchor": 12}},
+          {"kind": "shape", "shape": {"kind": "rectangle", "colorHex": "#1C1C1E",
+                                      "width": 0.18, "aspect": 0.6, "lineWidth": 2,
+                                      "label": "Start", "anchor": 40}}
+        ]}
+        """
+        let drawing = try JSONDecoder().decode(Drawing.self, from: Data(json.utf8))
+
+        XCTAssertEqual(drawing.items.count, 3)
+        XCTAssertEqual(drawing.strokes.first?.colorHex, "#F2542D")
+        XCTAssertEqual(drawing.strokes.first?.points, [CGPoint(x: 0.2, y: 0.3), CGPoint(x: 0.4, y: 0.5)])
+        XCTAssertEqual(drawing.images.first?.file, "page.jpg")
+        XCTAssertEqual(drawing.images.first?.aspect, 1.5)
+        XCTAssertEqual(drawing.shapes.first?.kind, .rectangle)
+        XCTAssertEqual(drawing.shapes.first?.label, "Start")
+
+        // And it is not written back: the key goes the next time the note
+        // is saved.
+        let written = try JSONEncoder().encode(drawing)
+        XCTAssertNil(written.range(of: Data("anchor".utf8)), "anchor is being written out again")
+    }
+
     func testStrokesAndPicturesSurviveARoundTrip() throws {
         var drawing = Drawing(items: [
             .stroke(Stroke(colorHex: "#2FBF71", width: 6, points: [CGPoint(x: 0.1, y: 0.1)])),

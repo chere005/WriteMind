@@ -20,13 +20,6 @@ struct MarkdownTextView: NSViewRepresentable {
     /// is up. The text view owns the cursor over the text, so it has to be
     /// the one to change it.
     var cursor: NSCursor?
-    /// The boxes pictures and text boxes take up, in the pane's coordinates:
-    /// the text runs above and below them and never through (Sean,
-    /// 2026-09-18: "don't allow the cursor to be on the same horizontal line
-    /// as the image"). Each becomes a full-width band the text container
-    /// excludes. In the document's coordinates — the objects scroll with
-    /// the text.
-    var keepClear: [CGRect] = []
     /// How far the text has scrolled, so the drawing layer can scroll with it.
     var onScroll: ((CGFloat) -> Void)?
     /// The cell at the top of the window, reported as it scrolls, and
@@ -56,10 +49,12 @@ struct MarkdownTextView: NSViewRepresentable {
         scroll.drawsBackground = true
         scroll.backgroundColor = .textBackgroundColor
 
-        // TextKit 1, on purpose: TextKit 2 lays out NOTHING past a
-        // full-width exclusion path — the note's text vanished the moment a
-        // picture was on the pane (2026-09-18). TextKit 1 steps down past
-        // the band as documented, and plain text needs nothing TextKit 2 adds.
+        // TextKit 1, on purpose: `MarkerHiding` and `BulletGlyphs` are
+        // NSLayoutManagerDelegate glyph substitution, which TextKit 2 has
+        // no equivalent of — a faded `#` and a `- ` drawn as a bullet both
+        // go through it. (The first reason was exclusion paths, which
+        // TextKit 2 laid out nothing past; those went with the bands on
+        // 2026-09-20, this one did not.)
         let tv = PasteAwareTextView(usingTextLayoutManager: false)
         // A layout manager that can fold: closed sections get line
         // fragments of no height, and are not drawn.
@@ -170,8 +165,6 @@ struct MarkdownTextView: NSViewRepresentable {
             }
         }
 
-        context.coordinator.bands = keepClear
-        context.coordinator.applyExclusions()
         context.coordinator.collapsed = collapsed
         context.coordinator.applyFolding()
         if context.coordinator.hiding.isEnabled == showMarkers {
@@ -244,27 +237,6 @@ struct MarkdownTextView: NSViewRepresentable {
         return gaps
     }
 
-    /// Every cell's box: where each block sits on the page, keyed by the
-    /// offset an object anchors to. What a dragged object is homed into
-    /// (Sean, 2026-09-19: "all the floating elements exist in one
-    /// outermost invisible box the same height as the cell").
-    static func cellBoxes(in tv: NSTextView) -> [FloatingHoming.CellBox] {
-        guard let layout = tv.layoutManager, let container = tv.textContainer else { return [] }
-        let text = tv.string as NSString
-        guard text.length > 0 else { return [] }
-        layout.ensureLayout(for: container)
-        let origin = tv.textContainerOrigin
-        return MarkdownParser.positioned(from: tv.string).compactMap { block in
-            let clipped = NSIntersectionRange(block.range, NSRange(location: 0, length: text.length))
-            guard clipped.length > 0 else { return nil }
-            let glyphs = layout.glyphRange(forCharacterRange: clipped, actualCharacterRange: nil)
-            let box = layout.boundingRect(forGlyphRange: glyphs, in: container)
-            guard box.height > 1 else { return nil }
-            return FloatingHoming.CellBox(anchor: block.range.location,
-                                          top: box.minY + origin.y, bottom: box.maxY + origin.y)
-        }
-    }
-
     /// A new, empty cell at `offset`: a blank line either side of the caret,
     /// so what is typed next is its own block.
     static func openCell(at offset: Int, in tv: NSTextView) {
@@ -312,54 +284,6 @@ struct MarkdownTextView: NSViewRepresentable {
         return max(0, line.minY + tv.textContainerOrigin.y)
     }
 
-    /// The bands, in the text container's coordinates: down by any scroll
-    /// offset (none, now that the objects scroll with the text), up by the
-    /// inset, wider than any pane, with a little room above and below so a
-    /// line does not touch the picture.
-    static func exclusionRects(bands: [CGRect], scrollOffset: CGFloat, inset: CGFloat) -> [CGRect] {
-        // The same gap a cell leaves, above and below, so a drawing's cell
-        // is spaced like a cell of words (Sean, 2026-09-20).
-        let margin = PreviewLayout.margin
-        return bands.map { band in
-            CGRect(x: -10_000, y: band.minY - margin + scrollOffset - inset,
-                   width: 20_000, height: band.height + margin * 2)
-        }
-    }
-
-    /// A picture may not land in the MIDDLE of a cell (Sean, 2026-09-19:
-    /// "images and captures can't break the text in a group"). A band that
-    /// would cut a block in half is stretched UP to that block's first
-    /// line, so the whole block goes below the picture and the cell stays
-    /// in one piece. A band that already falls between two blocks is left
-    /// exactly where it is.
-    static func snappedToCells(_ rects: [CGRect], in tv: NSTextView) -> [CGRect] {
-        guard !rects.isEmpty, let layout = tv.layoutManager, let container = tv.textContainer else {
-            return rects
-        }
-        let text = tv.string as NSString
-        guard text.length > 0 else { return rects }
-        layout.ensureLayout(for: container)
-        let used = layout.usedRect(for: container)
-        let blocks = MarkdownParser.positioned(from: tv.string)
-        let padding = container.lineFragmentPadding
-
-        return rects.map { rect in
-            guard rect.minY > used.minY, rect.minY < used.maxY else { return rect }
-            let glyph = layout.glyphIndex(for: CGPoint(x: padding + 1, y: rect.minY), in: container)
-            let character = min(layout.characterIndexForGlyph(at: glyph), text.length - 1)
-            // Whichever cell that line belongs to — a paragraph, a list, a
-            // quote, a fenced block — or the paragraph, when nothing claims it.
-            let cell = blocks.first { NSLocationInRange(character, $0.range) }?.range
-                ?? text.paragraphRange(for: NSRange(location: character, length: 0))
-            guard cell.length > 0, cell.location < text.length else { return rect }
-            let first = layout.glyphIndexForCharacter(at: cell.location)
-            let line = layout.lineFragmentRect(forGlyphAt: first, effectiveRange: nil)
-            guard line.minY < rect.minY - 0.5 else { return rect }
-            return CGRect(x: rect.minX, y: line.minY,
-                          width: rect.width, height: rect.maxY - line.minY)
-        }
-    }
-
     static let font = NSFont.systemFont(ofSize: 15)
     static let paragraphStyle: NSParagraphStyle = {
         let style = NSMutableParagraphStyle()
@@ -399,10 +323,6 @@ struct MarkdownTextView: NSViewRepresentable {
         private var lastStyled: String?
         private var lastStyledRendered = true
 
-        /// The bands to keep clear, in the pane's coordinates, and what they
-        /// last became in the container's.
-        var bands: [CGRect] = []
-        private var lastExclusions: [CGRect] = []
         /// True while a tidy is already on its way — the edit it makes
         /// comes back through the same notifications that asked for it.
         private var tidying = false
@@ -576,28 +496,6 @@ struct MarkdownTextView: NSViewRepresentable {
             }
         }
 
-        /// The bands are in the document already (the objects scroll with
-        /// the text), so nothing here depends on the scroll. The text view
-        /// is sized afterwards by hand: a band pushes the text down, and
-        /// left to itself the view kept its old height, so the text sat
-        /// below its bottom edge where nothing could scroll to it.
-        func applyExclusions() {
-            guard let scroll = scrollView, let tv = scroll.documentView as? NSTextView,
-                  let container = tv.textContainer else { return }
-            let plain = MarkdownTextView.exclusionRects(bands: bands, scrollOffset: 0,
-                                                        inset: tv.textContainerInset.height)
-            let rects = MarkdownTextView.snappedToCells(plain, in: tv)
-            guard rects != lastExclusions else { return }
-            lastExclusions = rects
-            container.exclusionPaths = rects.map { NSBezierPath(rect: $0) }
-            tv.layoutManager?.ensureLayout(for: container)
-            // A band pushes the text down, so every bracket below it has
-            // moved: they are measured off the layout, and nothing else
-            // re-measures them until the next keystroke.
-            refreshBrackets(in: tv)
-            tv.sizeToFit()
-        }
-
         /// Fold what is closed, and redraw the brackets. Cheap when nothing
         /// has changed, because it is called on every update.
         func applyFolding(force: Bool = false) {
@@ -667,28 +565,12 @@ struct MarkdownTextView: NSViewRepresentable {
 
             // The cells themselves: one per block, drawn inside whichever
             // section holds them.
-            var cellsOnly: [NotebookGutter.Bracket] = []
             for block in MarkdownParser.positioned(from: tv.string) {
                 let depth = NotebookOutline.cellDepth(at: block.range.location, in: sections)
                 if let cell = bracket(key: "cell:\(block.range.location)", depth: depth,
                                       range: block.range, foldable: false) {
                     brackets.append(cell)
-                    cellsOnly.append(cell)
                 }
-            }
-            // And a bracket for every drawing: a band of the page with a
-            // picture or ink in it is a cell of the notebook, as tall as
-            // what is drawn there (Sean, 2026-09-19).
-            // Beside the CELLS, not the sections: a drawing belongs at the
-            // depth of the cell above it, and a section bracket is drawn
-            // further out (Sean, 2026-09-20: "make sure the brackets follow
-            // group heirarchy correctly").
-            let beside = cellsOnly.map { (top: $0.top, depth: $0.depth) }
-            for ink in InkBands.cells(for: bands, beside: beside) {
-                brackets.append(NotebookGutter.Bracket(key: ink.key, depth: ink.depth,
-                                                       top: ink.top, bottom: ink.bottom,
-                                                       collapsed: false,
-                                                       range: NSRange(location: NSNotFound, length: 0)))
             }
             gutter.brackets = brackets
 
