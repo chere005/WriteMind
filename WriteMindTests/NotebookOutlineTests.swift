@@ -254,27 +254,38 @@ final class BracketsInBothModesTests: XCTestCase {
     private let cell = NSRange(location: 10, length: 20)
 
     func testASelectionOverTheWholeCellPicksIt() {
-        XCTAssertTrue(NotebookGutter.isPicked(cell, selection: NSRange(location: 10, length: 20)))
-        XCTAssertTrue(NotebookGutter.isPicked(cell, selection: NSRange(location: 0, length: 40)))
+        XCTAssertTrue(NotebookGutter.isPicked(cell, selection: [NSRange(location: 10, length: 20)]))
+        XCTAssertTrue(NotebookGutter.isPicked(cell, selection: [NSRange(location: 0, length: 40)]))
     }
 
     func testHalfASelectionDoesNot() {
-        XCTAssertFalse(NotebookGutter.isPicked(cell, selection: NSRange(location: 10, length: 5)))
+        XCTAssertFalse(NotebookGutter.isPicked(cell, selection: [NSRange(location: 10, length: 5)]))
     }
 
     func testTheCaretsOwnCellIsPickedTheWayTheRenderedPagePicksIt() {
         // The rendered page draws the cell it is editing heavy; with only a
         // caret, the markdown side now says the same thing.
-        XCTAssertTrue(NotebookGutter.isPicked(cell, selection: NSRange(location: 14, length: 0),
+        XCTAssertTrue(NotebookGutter.isPicked(cell, selection: [NSRange(location: 14, length: 0)],
                                               caretCell: cell))
-        XCTAssertFalse(NotebookGutter.isPicked(cell, selection: NSRange(location: 14, length: 0),
+        XCTAssertFalse(NotebookGutter.isPicked(cell, selection: [NSRange(location: 14, length: 0)],
                                                caretCell: NSRange(location: 30, length: 10)))
+    }
+
+    func testEachOfSeveralSelectedRangesLightsItsOwnBracket() {
+        // Holding three cells is three ranges, not one: any ONE of them
+        // has to cover the bracket, or the section round two adjacent
+        // cells would light up as well.
+        let second = NSRange(location: 40, length: 10)
+        let both = [cell, second]
+        XCTAssertTrue(NotebookGutter.isPicked(cell, selection: both))
+        XCTAssertTrue(NotebookGutter.isPicked(second, selection: both))
+        XCTAssertFalse(NotebookGutter.isPicked(NSRange(location: 10, length: 40), selection: both))
     }
 
     func testASectionIsNotLitByACaretAlone() {
         // Sections are given no caret cell: otherwise every bracket out to
         // the margin would light up at once.
-        XCTAssertFalse(NotebookGutter.isPicked(cell, selection: NSRange(location: 14, length: 0)))
+        XCTAssertFalse(NotebookGutter.isPicked(cell, selection: [NSRange(location: 14, length: 0)]))
     }
 
     func testTheCaretsCellIsTheBlockItIsIn() {

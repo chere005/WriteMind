@@ -44,12 +44,15 @@ two new cells is ARMED — the horizontal bar, no text caret — exactly as if
 he had clicked there. Typing then opens a third cell between them, which is
 what "the cursor is between the cells" has to mean.
 
-`MarkdownFormatting.Edit` carries a plain `selection: NSRange`, so this is
-done at the call site, not in the pure function: `EditorBridge.splitCell()`
-applies the edit and then arms the seam whose `offset` is the second cell's
-start. Give the bridge one closure for it, the shape the others already
-have — `armSeamInDocument: ((Int) -> Void)?`, set by whichever pane is up,
-nil when neither is. Merge (⌃M) keeps its caret where it is.
+DONE in 79d2fa2, and NOT this way — the plan was wrong here and the note
+is left standing so the next reader does not follow it. The markdown pane
+needs no second mechanism at all: b1cf76b made arming follow the caret, so
+`split` leaving the caret one character earlier (`start + 1`, on the
+separator blank line the break writes) IS the bar between the halves, and
+`textViewDidChangeSelection` arms it. `armSeamInDocument` was never added —
+it would have been a second writer of the armed state. The RENDERED PAGE,
+which has no caret to follow, got `splitCellInDocument`, the shape
+`mergeCellsInDocument` already had. Merge (⌃M) keeps its caret where it is.
 
 Test: after `splitCell()` on a two-cell note the note is the split text, the
 text view's selection is empty at the seam offset, the seam is armed, and
@@ -104,6 +107,13 @@ Tests: the pure range arithmetic is what to pin — a helper that answers
 "the cells between these two brackets", one that toggles a cell in and out
 of a list, one that extends from an anchor, and the back-to-front multi-cell
 edit. The gestures themselves are checked on screen.
+
+One thing this plan did not know, found on the screen and now in
+`AGENTS.md`: `tv.selectedRanges` is not enough by itself. A delegate that
+answers only the SINGULAR `willChangeSelectionFromCharacterRange` makes
+AppKit collapse every multiple selection to one range, so the drag handed
+five cells over and one bracket lit. The coordinator answers the plural
+`…FromCharacterRanges:toCharacterRanges:` too.
 
 ## Proving it
 

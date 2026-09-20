@@ -55,6 +55,16 @@ struct MarkdownPreview: View {
     }
 
     @State private var editingRange: NSRange?
+    /// The cells held by their brackets — several of them, discontiguous,
+    /// and none of them open for typing (Sean, 2026-09-20: "fix selecting
+    /// multiple cells by clicking and dragging, shift clicking, or cmd
+    /// clicking").
+    ///
+    /// Separate from `editingRange`, which is the ONE cell open for typing:
+    /// a cell you are in and a cell you are holding are different things,
+    /// and the rendered page has no text view to keep the second in the way
+    /// the markdown pane keeps it in `tv.selectedRanges`.
+    @State private var selectedCells: [NSRange] = []
     @State private var draft = ""
     @State private var focusToken = 0
     @State private var caretAtStart = false
@@ -68,6 +78,9 @@ struct MarkdownPreview: View {
     /// The armed seam holds the keyboard, because the bar IS the cursor
     /// and there is no text view to hold it on this side.
     @FocusState private var focusedSeam: SeamID?
+    /// And the bracket column holds it while cells are held, for the same
+    /// reason: typing over a selection has to reach somewhere.
+    @FocusState private var focusedBrackets: Bool
     /// How tall the window on the page is: the tail seam runs to the
     /// bottom of it, so everything under the last cell can be typed in.
     @State private var pageHeight: CGFloat = 0
@@ -166,6 +179,7 @@ struct MarkdownPreview: View {
             .overlay(alignment: .topTrailing) {
                 CellBrackets(brackets: cellBrackets,
                              onSelect: { beginEditing($0) },
+                             onSelectCells: { selectCells($0) },
                              onToggle: { onToggleSection?($0) },
                              onMoveCell: { range, up in
                                  cellEdit { _, text in CellCommands.move(range, up: up, in: text) }
@@ -180,6 +194,13 @@ struct MarkdownPreview: View {
                     // right margin.
                     .padding(.trailing, 4)
                     .allowsHitTesting(editable)
+                    // The keyboard, while cells are held. There is no text
+                    // view on this side to hear it — the same hole the
+                    // armed seam had, and the same answer.
+                    .focusable(editable && !selectedCells.isEmpty)
+                    .focusEffectDisabled()
+                    .focused($focusedBrackets)
+                    .onKeyPress(phases: .down) { press in cellsKey(press) }
             }
         }
         .coordinateSpace(name: Self.space)
@@ -307,9 +328,10 @@ struct MarkdownPreview: View {
         for item in shown {
             guard let place = places[item.id], place.bottom - place.top > 1 else { continue }
             let depth = NotebookOutline.cellDepth(at: item.range.location, in: sections)
+            let picked = editingRange == item.range || CellSelection.covers(item.range, selectedCells)
             out.append(CellBrackets.Bracket(key: "cell:\(item.id)", depth: depth,
                                             top: place.top, bottom: place.bottom,
-                                            selected: editingRange == item.range, range: item.range))
+                                            selected: picked, range: item.range))
         }
 
         for section in sections {
@@ -323,6 +345,7 @@ struct MarkdownPreview: View {
             out.append(CellBrackets.Bracket(key: section.key, depth: section.depth,
                                             top: first, bottom: last,
                                             collapsed: collapsed.contains(section.key),
+                                            selected: CellSelection.covers(section.range, selectedCells),
                                             foldable: true, range: section.range))
         }
         return out
@@ -547,7 +570,110 @@ struct MarkdownPreview: View {
         return (updated, NSRange(location: place, length: (written as NSString).length), written)
     }
 
+    // MARK: - Cells held by their brackets
+
+    /// What a key means while cells are HELD, which is not what the same
+    /// key means in a seam: Return opens an empty cell in a seam and has
+    /// nothing to say over a selection, and a delete only puts the bar out
+    /// there while here it takes the cells.
+    enum CellKey: Equatable {
+        /// A printable character: the cells go, and one cell with this
+        /// already in it takes their place. Typing over a selection.
+        case replace(String)
+        /// ⌫ or ⌦: they go, and nothing takes their place.
+        case remove
+        /// Escape: the brackets go out and the note is untouched.
+        case clear
+        /// Nobody's business here.
+        case pass
+    }
+
+    static func cellKey(characters: String, modifiers: EventModifiers) -> CellKey {
+        // ⌃⌫ is the Delete Cell menu item and never reaches this, and ⌘S
+        // is not an S. Shift is, though — it is how a capital arrives.
+        guard modifiers.isDisjoint(with: [.command, .control]) else { return .pass }
+        if characters == "\u{1B}" { return .clear }
+        if characters == "\u{8}" || characters == "\u{7F}" { return .remove }
+        guard !characters.isEmpty else { return .pass }
+        let printable = characters.unicodeScalars.allSatisfy { scalar in
+            !CharacterSet.controlCharacters.contains(scalar) && !(0xF700...0xF8FF).contains(scalar.value)
+        }
+        return printable ? .replace(characters) : .pass
+    }
+
     // MARK: - Editing
+
+    /// Cells picked up by their brackets: shown, not opened. Whatever else
+    /// was holding a cursor lets go — a block open for typing and an armed
+    /// seam are both a cursor, and three lit brackets are a third.
+    private func selectCells(_ ranges: [NSRange]) {
+        guard editable else { return }
+        disarm()
+        hoveredSeam = nil
+        editingRange = nil
+        selectedCells = ranges
+        guard !ranges.isEmpty else { return }
+        // A turn late: the column is only focusable once there is
+        // something in it, and it is this write that puts it there.
+        DispatchQueue.main.async { focusedBrackets = true }
+    }
+
+    /// A key while cells are held.
+    private func cellsKey(_ press: KeyPress) -> KeyPress.Result {
+        guard !selectedCells.isEmpty else { return .ignored }
+        // Escape and the deletes by name: what `characters` carries for
+        // them is AppKit's business, and the meaning is not.
+        let characters: String
+        switch press.key {
+        case .escape: characters = "\u{1B}"
+        case .delete: characters = "\u{8}"
+        case .deleteForward: characters = "\u{7F}"
+        default: characters = press.characters
+        }
+        switch Self.cellKey(characters: characters, modifiers: press.modifiers) {
+        case .clear:
+            selectedCells = []
+            return .handled
+        case .remove:
+            replaceCells(with: "")
+            return .handled
+        case .replace(let typed):
+            replaceCells(with: typed)
+            return .handled
+        case .pass:
+            return .ignored
+        }
+    }
+
+    /// The held cells taken away, and — for a character typed — one cell
+    /// put where they were with that character already in it.
+    ///
+    /// Delete then open one, because "typing replaces the selection" has
+    /// no other meaning on a page of rendered blocks: the markdown pane
+    /// gets it from NSTextView, which types over a discontiguous selection
+    /// by itself.
+    private func replaceCells(with typed: String) {
+        let cells = selectedCells
+        guard !cells.isEmpty else { return }
+        let edits = CellCommands.edits(over: cells, in: markdown) { CellCommands.delete($0, in: $1) }
+        guard let landing = edits.last?.selection.location else { return }
+        var text = markdown as NSString
+        for edit in edits { text = text.replacingCharacters(in: edit.range, with: edit.replacement) as NSString }
+        selectedCells = []
+        editingRange = nil
+        markdown = text as String
+        guard !typed.isEmpty,
+              let opened = Self.opened(.write(typed), at: min(landing, text.length), in: text as String)
+        else { return }
+        markdown = opened.markdown
+        // Always a plain text cell, whatever the cells it replaced were
+        // (Sean, 2026-09-19: "default is always just text").
+        fence = nil
+        draft = opened.draft
+        editingRange = opened.editing
+        caretAtStart = false
+        focusToken += 1
+    }
 
     /// A click in a seam: the bar goes there and takes the keyboard.
     /// Nothing is written — the note is not touched until a key arrives.
@@ -556,8 +682,9 @@ struct MarkdownPreview: View {
         // The bar IS the cursor, so nothing else may be holding one: the
         // block that was open closes, caret and all (Sean, 2026-09-20:
         // "the mouse cursor and text cursor should both become horizontal
-        // between cells").
+        // between cells"), and the brackets let go of what they held.
         editingRange = nil
+        selectedCells = []
         armedSeam = id
         focusedSeam = id
     }
@@ -676,8 +803,10 @@ struct MarkdownPreview: View {
     private func beginEditing(_ range: NSRange, caretAtStart: Bool = false) {
         guard editable else { return }
         // Two cursors is what he was looking at before: a block with a
-        // caret in it is not a seam with a bar in it.
+        // caret in it is not a seam with a bar in it, and neither of them
+        // is a handful of cells held by their brackets.
         disarm()
+        selectedCells = []
         let ns = markdown as NSString
         guard NSMaxRange(range) <= ns.length else { return }
         let source = ns.substring(with: range)
@@ -718,21 +847,31 @@ struct MarkdownPreview: View {
                                 spacing: Self.gapHeight, top: Self.topInset + Self.gapHeight)
     }
 
-    /// A whole-cell edit — delete, duplicate, move — over the note, with
-    /// the cell that is open (or the first one) as the subject. A cell on
-    /// this side is a block, so the edit cannot go through one block's own
-    /// text view (Sean, 2026-09-20: "make cells behave like mathematica
-    /// cells").
+    /// A whole-cell edit — delete, duplicate, move — over the note: every
+    /// cell whose bracket is lit, and the one that is open (or the first)
+    /// when none is. A cell on this side is a block, so the edit cannot go
+    /// through one block's own text view (Sean, 2026-09-20: "make cells
+    /// behave like mathematica cells").
+    ///
+    /// Back to front, through `CellCommands.edits`, which is what lets ⌃⌫
+    /// take three cells at once: an edit made in front of another would
+    /// have moved the characters the second one names.
     private func cellEdit(_ make: (NSRange, String) -> MarkdownFormatting.Edit?) {
-        let cell = editingRange ?? items.first?.range
-        guard let cell, let edit = make(cell, markdown) else { return }
-        let updated = (markdown as NSString).replacingCharacters(in: edit.range, with: edit.replacement)
+        let subjects = selectedCells.isEmpty
+            ? [editingRange ?? items.first?.range].compactMap { $0 }
+            : selectedCells
+        let edits = CellCommands.edits(over: subjects, in: markdown, make: make)
+        guard let landing = edits.last?.selection else { return }
+        var text = markdown as NSString
+        for edit in edits { text = text.replacingCharacters(in: edit.range, with: edit.replacement) as NSString }
+        let updated = text as String
         markdown = updated
+        selectedCells = []
         // Follow the cell: to where it went, or to whatever moved up into
         // the place of the one that was taken away.
         if let block = MarkdownParser.positioned(from: updated)
-            .first(where: { NSLocationInRange(edit.selection.location, $0.range)
-                || $0.range.location == edit.selection.location }) {
+            .first(where: { NSLocationInRange(landing.location, $0.range)
+                || $0.range.location == landing.location }) {
             beginEditing(block.range)
         } else {
             editingRange = nil

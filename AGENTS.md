@@ -687,11 +687,27 @@ tools/                    build.sh run.sh test.sh (both source signing.sh)
   `swiftc -parse` will not tell you — it type-checks fine and fails in the
   build. Three of the maths views had `let body: WLExpr` before they were
   renamed to `term`.
-- **The background app tools cannot drive a SwiftUI drag.** `app_drag`
-  reports "delivered via raw input" and nothing happens — worse, one landed
-  in the note as a stray character. Buttons and menus are fine through the
-  accessibility tree; anything that needs a real mouse drag (drawing, moving
-  an object, a marquee) has to be tried by hand.
+- **A MULTIPLE selection needs the PLURAL delegate method.** A delegate
+  that implements `textView(_:willChangeSelectionFromCharacterRange:
+  toCharacterRange:)` and not the `…FromCharacterRanges:toCharacterRanges:`
+  one gets asked only the singular question, and AppKit then collapses
+  every multiple selection down to ONE range on its way in. Setting
+  `tv.selectedRanges` looked as if it had been rejected: the gutter drag
+  handed five cells over, one bracket lit, and the offsets logged either
+  side of the assignment were right (2026-09-20). It is not the ranges
+  being unsorted — that is a different failure with the same face, and it
+  is what the same symptom was blamed on when ⌘D's run first hit it. The
+  coordinator answers both now, snapping each range out of what is folded.
+- **The background app tools CAN drive a drag, and cannot hold a
+  modifier.** `app_drag` says "delivered via raw input… unverified" and
+  then works: a path of points arrives as a real `mouseDown` and a dozen
+  `mouseDragged`s, in both the AppKit gutter and a SwiftUI `DragGesture`
+  (2026-09-20, the events logged through `DebugLog`). What it cannot do is
+  ⇧-click or ⌘-click — `app_click` has no modifiers and goes through
+  AXSelectedTextRange over a text view anyway, never reaching a view's
+  `mouseDown` — and the screen-takeover card the display-scope tools raise
+  needs somebody at the machine to answer it. An earlier note here said a
+  drag could not be driven at all; it can.
 - **The shell's working directory persists between tool calls** (baseline).
   Every script here starts with `cd "$(dirname "$0")/.."` so it does not
   matter where it was invoked from.

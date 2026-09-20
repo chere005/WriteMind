@@ -48,6 +48,16 @@ is how the code is put together.
   it, ⌃⇧↑ and ⌃⇧↓ move it, and dragging its bracket up or down moves it
   too. The same on both sides of the app, the way a Mathematica notebook
   behaves (Sean, 2026-09-20).
+- **And several cells at once.** Drag DOWN the brackets and every cell the
+  pointer passes is picked up, live; shift-click reaches from the last one
+  clicked to the one under the pointer; cmd-click puts a cell in or takes
+  it out, so a selection can have a hole in it. Everything a single cell
+  answers to, a handful answers to together: type and all of them are
+  replaced by what you typed, ⌃⌫ takes exactly them and closes the stack,
+  ⌃⇧D copies the run. A drag that starts on a bracket that is ALREADY
+  picked moves the cell instead — that is how both gestures live on one
+  column — and a click on the empty part of the column does nothing at
+  all.
 - **The insertion line between cells.** The WHOLE space between two cells
   answers, edge to edge — and so does the space above the first and
   everything under the last. Move the pointer into one and it turns on

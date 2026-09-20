@@ -117,7 +117,15 @@ struct MarkdownTextView: NSViewRepresentable {
         // want to select, hide, etc").
         gutter.onSelect = { [weak coordinator = context.coordinator, weak tv] range in
             guard let coordinator, let tv else { return }
-            coordinator.select(range, in: tv)
+            coordinator.select([range], in: tv)
+        }
+        // And several of them — a drag down the column, a shift-click or a
+        // cmd-click. NSTextView carries a discontiguous selection natively,
+        // so holding three cells here IS three selected ranges: typing
+        // replaces all three, and the brackets light from the same list.
+        gutter.onSelectCells = { [weak coordinator = context.coordinator, weak tv] ranges in
+            guard let coordinator, let tv else { return }
+            coordinator.select(ranges, in: tv)
         }
         gutter.onMoveCell = { [weak coordinator = context.coordinator, weak tv] range, up in
             guard let coordinator, let tv,
@@ -491,14 +499,32 @@ struct MarkdownTextView: NSViewRepresentable {
             restyle(tv, force: true)
         }
 
-        /// What a bracket holds, selected.
-        func select(_ wanted: NSRange, in tv: NSTextView) {
-            let length = (tv.string as NSString).length
-            let range = NSIntersectionRange(wanted, NSRange(location: 0, length: length))
-            guard range.length > 0 else { return }
+        /// What the brackets hold, selected — one cell, or as many as the
+        /// gesture reached.
+        ///
+        /// Through `normalise` because AppKit DROPS THE WHOLE SELECTION if
+        /// the ranges are out of order, overlapping or duplicated, and the
+        /// only sign of it is a single caret where three cells should be.
+        ///
+        /// Only ONE cell is scrolled to. A drag down the gutter arrives
+        /// here on every move, and scrolling under a drag moves the
+        /// brackets out from under the pointer — which reads as the next
+        /// cell, which scrolls again. A click has nothing to fight with.
+        func select(_ wanted: [NSRange], in tv: NSTextView) {
+            let ranges = MarkdownFormatting.normalise(wanted, in: tv.string as NSString)
+                .filter { $0.length > 0 }
             tv.window?.makeFirstResponder(tv)
-            tv.setSelectedRange(range)
-            tv.scrollRangeToVisible(range)
+            guard !ranges.isEmpty else {
+                // Cmd-clicking the last held cell out of the selection:
+                // what is left is a caret where it began, not the cells
+                // still lit because nothing was handed over to replace
+                // them.
+                tv.setSelectedRange(NSRange(location: tv.selectedRange().location, length: 0))
+                refreshBrackets(in: tv)
+                return
+            }
+            tv.selectedRanges = ranges.map { NSValue(range: $0) }
+            if ranges.count == 1 { tv.scrollRangeToVisible(ranges[0]) }
             refreshBrackets(in: tv)
         }
 
@@ -613,12 +639,16 @@ struct MarkdownTextView: NSViewRepresentable {
             // get one further out — Wolfram's own furniture (Sean,
             // 2026-09-19: "i want wolfram/jupyter style notebook brackets").
             let sections = NotebookOutline.sections(in: tv.string)
-            let selection = tv.selectedRange()
+            // Every range, not the first one: several cells held at once
+            // are several selected ranges, and reading only `selectedRange`
+            // lit the last of them alone.
+            let selection = tv.selectedRanges.map(\.rangeValue)
 
             // The cell the caret is in — the one the rendered page would be
             // editing — so its bracket is the one drawn heavy.
-            let caretCell = selection.length == 0
-                ? NotebookCells.block(containing: selection.location, in: tv.string)?.range
+            let caret = selection.count == 1 ? selection[0] : nil
+            let caretCell = caret?.length == 0
+                ? NotebookCells.block(containing: caret?.location ?? 0, in: tv.string)?.range
                 : nil
 
             func bracket(key: String, depth: Int, range: NSRange, foldable: Bool) -> NotebookGutter.Bracket? {
@@ -685,6 +715,25 @@ struct MarkdownTextView: NSViewRepresentable {
         func textView(_ textView: NSTextView, willChangeSelectionFromCharacterRange oldRange: NSRange,
                       toCharacterRange newRange: NSRange) -> NSRange {
             Self.snap(newRange, out: lastHidden, backwards: newRange.location < oldRange.location)
+        }
+
+        /// The same for a selection of SEVERAL ranges — and THIS is what
+        /// lets there be one.
+        ///
+        /// A delegate that answers only the singular method above gets
+        /// asked only that one, and AppKit then collapses every multiple
+        /// selection down to a single range on its way in. The gutter's
+        /// drag handed five cells over, `selectedRanges` took one, and one
+        /// bracket lit (2026-09-20, with the offsets logged either side of
+        /// the assignment to prove where they went). Nothing to do with
+        /// the ranges being out of order, which is what the same symptom
+        /// looked like when ⌘D's run first hit it.
+        func textView(_ textView: NSTextView, willChangeSelectionFromCharacterRanges oldRanges: [NSValue],
+                      toCharacterRanges newRanges: [NSValue]) -> [NSValue] {
+            guard !lastHidden.isEmpty else { return newRanges }
+            let backwards = (newRanges.first?.rangeValue.location ?? 0)
+                < (oldRanges.first?.rangeValue.location ?? 0)
+            return newRanges.map { NSValue(range: Self.snap($0.rangeValue, out: lastHidden, backwards: backwards)) }
         }
 
         /// And an edit that would reach into one opens it first, rather than

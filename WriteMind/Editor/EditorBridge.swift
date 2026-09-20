@@ -223,16 +223,28 @@ final class EditorBridge {
         cellEdit { CellCommands.move($0, up: up, in: $1) }
     }
 
-    /// One edit over the caret's cell, in whichever pane is up.
+    /// The cells a whole-cell command acts on: every one whose bracket is
+    /// lit, and the caret's own when none is.
+    ///
+    /// The same rule the gutter draws by (`CellSelection.covers`), so ⌃⌫
+    /// takes exactly the cells the eye says it will — and a selection that
+    /// is a run of words inside one cell still means that cell, the way it
+    /// always has.
+    func selectedCells() -> [NSRange] {
+        guard let tv = textView else { return [] }
+        let cells = MarkdownParser.positioned(from: tv.string).map(\.range)
+        let picked = CellSelection.picked(cells: cells, selection: tv.selectedRanges.map(\.rangeValue))
+        if !picked.isEmpty { return picked }
+        return NotebookCells.block(containing: tv.selectedRange().location, in: tv.string)
+            .map { [$0.range] } ?? []
+    }
+
+    /// One edit per selected cell, in whichever pane is up.
     private func cellEdit(_ make: @escaping (NSRange, String) -> MarkdownFormatting.Edit?) {
         if let cellEditInDocument { cellEditInDocument(make); return }
         perform { [weak self] in
-            guard let self, let tv = textView,
-                  let cell = NotebookCells.block(containing: tv.selectedRange().location,
-                                                 in: tv.string)?.range,
-                  let edit = make(cell, tv.string)
-            else { return }
-            apply(edit)
+            guard let self, let tv = textView else { return }
+            apply(CellCommands.edits(over: selectedCells(), in: tv.string, make: make))
         }
     }
 
@@ -368,6 +380,27 @@ final class EditorBridge {
         perform { [weak self] in
             guard let self, let tv = textView else { return }
             apply(transform(tv.string, tv.selectedRange()))
+        }
+    }
+
+    /// Several edits, in the order they were handed over — which
+    /// `CellCommands.edits` makes back to front, so an earlier one cannot
+    /// move the characters a later one names. One undo step for the lot,
+    /// because taking three cells away was one gesture.
+    private func apply(_ edits: [MarkdownFormatting.Edit]) {
+        guard let tv = textView, let storage = tv.textStorage, !edits.isEmpty else { return }
+        tv.window?.makeFirstResponder(tv)
+        guard tv.shouldChangeText(inRanges: edits.map { NSValue(range: $0.range) },
+                                  replacementStrings: edits.map(\.replacement)) else { return }
+        storage.beginEditing()
+        for edit in edits { storage.replaceCharacters(in: edit.range, with: edit.replacement) }
+        storage.endEditing()
+        tv.didChangeText()
+        // The LAST applied edit is the front-most one: the caret lands
+        // where the first of the cells was, not where the last of them was.
+        if let landing = edits.last?.selection {
+            tv.setSelectedRange(MarkdownFormatting.clamp(landing, to: (tv.string as NSString).length))
+            tv.scrollRangeToVisible(tv.selectedRange())
         }
     }
 

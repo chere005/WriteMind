@@ -71,16 +71,24 @@ enum CellCommands {
 
     /// Dragging a bracket up or down: the cell changes places with its
     /// neighbour. Nil at the ends of the note, where there is nowhere to go.
+    ///
+    /// A range that holds SEVERAL cells — a run of them picked out of the
+    /// gutter, or a section's own bracket — moves as one: the whole run
+    /// changes places with the cell beyond it, rather than the first of
+    /// them stepping out of the run and leaving the rest behind.
     static func move(_ cell: NSRange, up: Bool, in text: String) -> MarkdownFormatting.Edit? {
         let ns = text as NSString
         let cells = MarkdownParser.positioned(from: text).map(\.range)
         guard let index = cells.firstIndex(where: { NSEqualRanges($0, cell) })
                 ?? cells.firstIndex(where: { NSIntersectionRange($0, cell).length > 0 })
         else { return nil }
-        let otherIndex = up ? index - 1 : index + 1
+        let last = max(index, cells.lastIndex(where: { NSIntersectionRange($0, cell).length > 0 }) ?? index)
+        let otherIndex = up ? index - 1 : last + 1
         guard otherIndex >= 0, otherIndex < cells.count else { return nil }
 
-        let mine = cells[index], theirs = cells[otherIndex]
+        let mine = NSRange(location: cells[index].location,
+                           length: NSMaxRange(cells[last]) - cells[index].location)
+        let theirs = cells[otherIndex]
         let first = up ? theirs : mine, second = up ? mine : theirs
         let span = NSRange(location: first.location,
                            length: min(NSMaxRange(second), ns.length) - first.location)
@@ -95,5 +103,66 @@ enum CellCommands {
                         + (separator as NSString).length,
                       length: mine.length)
         return MarkdownFormatting.Edit(range: span, replacement: swapped, selection: landing)
+    }
+
+    /// Several cells at once — what ⌃⌫ and ⌃⇧D do when more than one
+    /// bracket is lit (the plan's step 3).
+    ///
+    /// BACK TO FRONT, which is the whole reason this is not a loop at the
+    /// call site: every edit is worked out against the note AS IT IS, so
+    /// one made in front of another would leave the second pointing at
+    /// characters that have moved. Doing the last one first leaves every
+    /// range still meaning what it meant.
+    ///
+    /// And cells that sit next to each other go in as ONE span: `extent`
+    /// then reads the blank line after the LAST of them rather than one
+    /// inside the run, so the stack closes up behind three deleted cells
+    /// exactly the way it closes behind one.
+    static func edits(over cells: [NSRange], in text: String,
+                      make: (NSRange, String) -> MarkdownFormatting.Edit?) -> [MarkdownFormatting.Edit] {
+        let all = MarkdownParser.positioned(from: text).map(\.range)
+        guard !all.isEmpty else { return [] }
+
+        // Which of the note's cells were handed in. A range that covers
+        // whole cells means all of them — a section's bracket holds
+        // several — and one that only reaches into a cell means that cell.
+        var indexes: [Int] = []
+        for cell in cells {
+            var inside = all.indices.filter {
+                all[$0].length > 0 && NSIntersectionRange(all[$0], cell).length == all[$0].length
+            }
+            if inside.isEmpty, let touched = all.firstIndex(where: { NSIntersectionRange($0, cell).length > 0 }) {
+                inside = [touched]
+            }
+            for index in inside where !indexes.contains(index) { indexes.append(index) }
+        }
+        indexes.sort()
+
+        var spans: [NSRange] = []
+        var previous: Int?
+        for index in indexes {
+            if let previous, index == previous + 1, var span = spans.popLast() {
+                span.length = NSMaxRange(all[index]) - span.location
+                spans.append(span)
+            } else {
+                spans.append(all[index])
+            }
+            previous = index
+        }
+
+        var out: [MarkdownFormatting.Edit] = []
+        // Nothing may reach past the edit already made: at the end of the
+        // note `extent` walks BACKWARDS over the blank line above, and two
+        // runs a blank cell apart can both want the same newline.
+        var limit = (text as NSString).length
+        for span in spans.reversed() {
+            guard let edit = make(span, text) else { continue }
+            let start = min(edit.range.location, limit)
+            let range = NSRange(location: start, length: max(0, min(NSMaxRange(edit.range), limit) - start))
+            out.append(MarkdownFormatting.Edit(range: range, replacement: edit.replacement,
+                                               selection: edit.selection))
+            limit = start
+        }
+        return out
     }
 }

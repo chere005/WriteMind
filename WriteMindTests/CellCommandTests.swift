@@ -91,4 +91,74 @@ final class CellCommandTests: XCTestCase {
         XCTAssertEqual(applying(CellCommands.move(cell(1, in: text), up: true, in: text), to: text),
                        "Words\n\n## Title")
     }
+
+    // MARK: - Several cells at once
+
+    private let four = "One\n\nTwo\n\nThree\n\nFour"
+
+    private func applying(_ edits: [MarkdownFormatting.Edit], to text: String) -> String {
+        var out = text as NSString
+        for edit in edits { out = out.replacingCharacters(in: edit.range, with: edit.replacement) as NSString }
+        return out as String
+    }
+
+    private func deleting(_ picked: [NSRange], in text: String) -> String {
+        applying(CellCommands.edits(over: picked, in: text) { CellCommands.delete($0, in: $1) }, to: text)
+    }
+
+    func testTheEditsComeBackBackToFront() {
+        let cells = MarkdownParser.positioned(from: four).map(\.range)
+        let edits = CellCommands.edits(over: [cells[0], cells[2]], in: four) {
+            CellCommands.delete($0, in: $1)
+        }
+        XCTAssertEqual(edits.count, 2)
+        XCTAssertGreaterThan(edits[0].range.location, edits[1].range.location,
+                             "the one further down the note is made first")
+    }
+
+    func testTakingTwoCellsThatAreNotNeighboursLeavesTheOnesBetween() {
+        // The back-to-front ordering IS this test: made front to back, the
+        // first edit moves every character the second one names, and the
+        // note comes out cut in the wrong places.
+        let cells = MarkdownParser.positioned(from: four).map(\.range)
+        XCTAssertEqual(deleting([cells[0], cells[2]], in: four), "Two\n\nFour")
+    }
+
+    func testTakingThreeCellsAtOnceClosesTheStackBehindThem() {
+        let cells = MarkdownParser.positioned(from: four).map(\.range)
+        XCTAssertEqual(deleting([cells[0], cells[1], cells[2]], in: four), "Four")
+    }
+
+    func testTakingTheCellsAtTheEndOfTheNoteTakesTheBlankLineAboveThem() {
+        // A run at the end has nothing below to close up, so the blank
+        // line ABOVE the run goes — the whole run, not each cell of it.
+        XCTAssertEqual(deleting([cell(1), cell(2)], in: note), "First cell")
+    }
+
+    func testACellHandedInTwiceIsStillTakenOnce() {
+        XCTAssertEqual(deleting([cell(1), cell(1)], in: note), "First cell\n\nThird cell")
+    }
+
+    func testARangeOverSeveralCellsMeansAllOfThem() {
+        // A section's own bracket holds its cells; ⌃⌫ on it takes them.
+        let whole = NSRange(location: cell(0).location, length: NSMaxRange(cell(1)) - cell(0).location)
+        XCTAssertEqual(deleting([whole], in: note), "Third cell")
+    }
+
+    func testDuplicatingSeveralCellsPutsTheWholeRunUnderItself() {
+        XCTAssertEqual(applying(CellCommands.edits(over: [cell(0), cell(1)], in: note) {
+            CellCommands.duplicate($0, in: $1)
+        }, to: note),
+                       "First cell\n\nSecond cell\n\nFirst cell\n\nSecond cell\n\nThird cell")
+    }
+
+    func testMovingSeveralCellsMovesTheWholeRun() {
+        let run = NSRange(location: cell(1).location, length: NSMaxRange(cell(2)) - cell(1).location)
+        XCTAssertEqual(applying(CellCommands.move(run, up: true, in: note), to: note),
+                       "Second cell\n\nThird cell\n\nFirst cell")
+    }
+
+    func testNothingSelectedIsNothingDone() {
+        XCTAssertTrue(CellCommands.edits(over: [], in: note) { CellCommands.delete($0, in: $1) }.isEmpty)
+    }
 }

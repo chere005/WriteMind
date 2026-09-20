@@ -90,18 +90,22 @@ final class NotebookGutter: NSView {
     private static let step: CGFloat = 5
     private static let tick: CGFloat = 5
 
-    /// Whether a bracket is drawn heavy: the selection covers the whole of
-    /// what it holds, or — for a cell, and only the caret's own one — the
-    /// caret is in it. The caret counts because the rendered page lights
-    /// the cell being typed in, and the two sides show the same notebook
-    /// (Sean, 2026-09-19: "make sure the notebook bars on the side work
-    /// properly in markdown and wysiwyg mode"). A section is lit only by a
-    /// real selection, or every bracket out to the margin would light up
-    /// at once.
-    static func isPicked(_ range: NSRange, selection: NSRange, caretCell: NSRange? = nil) -> Bool {
-        if selection.length > 0 {
-            return NSIntersectionRange(selection, range).length == range.length
-        }
+    /// Whether a bracket is drawn heavy: one of the selected ranges covers
+    /// the whole of what it holds, or — for a cell, and only the caret's
+    /// own one — the caret is in it. The caret counts because the rendered
+    /// page lights the cell being typed in, and the two sides show the same
+    /// notebook (Sean, 2026-09-19: "make sure the notebook bars on the side
+    /// work properly in markdown and wysiwyg mode"). A section is lit only
+    /// by a real selection, or every bracket out to the margin would light
+    /// up at once.
+    ///
+    /// SEVERAL ranges, because NSTextView carries a discontiguous selection
+    /// natively and that is what holding several cells IS on this side. Any
+    /// ONE of them has to cover the bracket — `CellSelection.covers` says
+    /// why it may not be their union.
+    static func isPicked(_ range: NSRange, selection: [NSRange], caretCell: NSRange? = nil) -> Bool {
+        if CellSelection.covers(range, selection) { return true }
+        guard !selection.contains(where: { $0.length > 0 }) else { return false }
         return caretCell == range
     }
 
@@ -110,6 +114,10 @@ final class NotebookGutter: NSView {
     var onToggle: ((String) -> Void)?
     /// A single click: select what that bracket holds.
     var onSelect: ((NSRange) -> Void)?
+    /// A drag down the column, a shift-click or a cmd-click: several cells
+    /// at once (Sean, 2026-09-20: "fix selecting multiple cells by clicking
+    /// and dragging, shift clicking, or cmd clicking").
+    var onSelectCells: (([NSRange]) -> Void)?
     /// A bracket dragged up or down: the cell changes places with its
     /// neighbour, the way a cell is moved in a notebook (Sean,
     /// 2026-09-20: "make cells behave like mathematica cells").
@@ -117,7 +125,20 @@ final class NotebookGutter: NSView {
     /// How far a bracket has to be dragged before it is a move rather
     /// than a click that wandered.
     static let dragThreshold: CGFloat = 10
-    private var dragging: (bracket: Bracket, from: CGFloat)?
+    /// What the mouse is in the middle of. WHICH of the two a drag is was
+    /// settled at the mouse down, by whether the bracket under it was
+    /// already picked: that is the only way both gestures fit on one
+    /// column, and it is Mathematica's own rule.
+    private enum Gesture {
+        /// Taking cells: every bracket the pointer passes, anchored where
+        /// it started, live as it moves.
+        case picking(anchor: NSRange, cells: [NSRange])
+        /// Moving the one that was held.
+        case moving(cell: NSRange, from: CGFloat)
+    }
+    private var gesture: Gesture?
+    /// Where a shift-click reaches FROM: the last bracket clicked plainly.
+    private var anchor: NSRange?
     private var hovered: String?
     private var tracking: NSTrackingArea?
 
@@ -187,30 +208,95 @@ final class NotebookGutter: NSView {
     /// gesture, and the one Sean asked for (2026-09-19: "i want to select,
     /// hide, etc"). The click count comes from the event, so neither waits
     /// on the other.
+    ///
+    /// And the three that take several (Sean, 2026-09-20): shift reaches
+    /// from the anchor to here, cmd puts this one in or takes it out, and
+    /// a plain drag off a bracket that is NOT already picked selects
+    /// everything it passes. Off one that IS picked it moves the cell, as
+    /// it always has.
     override func mouseDown(with event: NSEvent) {
         let point = convert(event.locationInWindow, from: nil)
+        gesture = nil
         guard let bracket = bracket(at: point) else { return }
-        dragging = (bracket, point.y)
         if event.clickCount >= 2, bracket.foldable {
             onToggle?(bracket.key)
-        } else {
-            onSelect?(bracket.range)
+            return
         }
+        let modifiers = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
+        if modifiers.contains(.shift) {
+            onSelectCells?(CellSelection.between(anchor ?? picked.first ?? bracket.range,
+                                                 bracket.range, in: cellRanges))
+            return
+        }
+        if modifiers.contains(.command) {
+            anchor = bracket.range
+            onSelectCells?(CellSelection.toggling(bracket.range, in: picked))
+            return
+        }
+        anchor = bracket.range
+        if bracket.selected {
+            gesture = .moving(cell: bracket.range, from: point.y)
+            return
+        }
+        gesture = .picking(anchor: bracket.range, cells: [bracket.range])
+        onSelect?(bracket.range)
+    }
+
+    /// The drag that selects, reported as it goes rather than at the end:
+    /// the brackets light one after another under the pointer, which is
+    /// the whole of what a drag down a notebook's gutter looks like.
+    override func mouseDragged(with event: NSEvent) {
+        guard case .picking(let anchor, let reported) = gesture else { return }
+        let point = convert(event.locationInWindow, from: nil)
+        guard let over = CellSelection.cell(at: point.y, in: cellSpans) else { return }
+        let wanted = CellSelection.between(anchor, over, in: cellRanges)
+        guard wanted != reported else { return }
+        gesture = .picking(anchor: anchor, cells: wanted)
+        onSelectCells?(wanted)
     }
 
     override func mouseUp(with event: NSEvent) {
-        defer { dragging = nil }
-        guard let dragging else { return }
-        let travelled = convert(event.locationInWindow, from: nil).y - dragging.from
+        defer { gesture = nil }
+        guard case .moving(let cell, let from) = gesture else { return }
+        let travelled = convert(event.locationInWindow, from: nil).y - from
         guard abs(travelled) >= Self.dragThreshold else { return }
-        onMoveCell?(dragging.bracket.range, travelled < 0)
+        onMoveCell?(cell, travelled < 0)
     }
 
-    /// Only a click ON a bracket counts; everywhere else the gutter is not
-    /// there at all, so a drag through it does not select anything.
+    /// The gutter takes every click inside it, bracket or no bracket.
+    ///
+    /// It used to refuse any point not within four of a bracket's own line,
+    /// and that is what made a drag DOWN the column select nothing at all:
+    /// the mouse down never reached this view, so there was no drag to
+    /// follow. A click on the empty part of the column now does nothing and
+    /// goes nowhere — it must not reach the text behind, which would put a
+    /// caret in the note for a click on its furniture. The seam layer stops
+    /// short of this column on purpose, so the two never fight over one.
     override func hitTest(_ point: NSPoint) -> NSView? {
-        let local = convert(point, from: superview)
-        return bracket(at: local) == nil ? nil : self
+        guard !isHidden else { return nil }
+        return bounds.contains(convert(point, from: superview)) ? self : nil
+    }
+
+    /// The cells' brackets, down the page. A section's is not one of them:
+    /// a drag reaches cells, and the section round them lights up by
+    /// itself once they are all in.
+    private var cellSpans: [CellSelection.Span] {
+        brackets.filter { !$0.foldable }
+            .sorted { $0.top < $1.top }
+            .map { CellSelection.Span(top: $0.top, bottom: $0.bottom, range: $0.range) }
+    }
+
+    private var cellRanges: [NSRange] {
+        brackets.filter { !$0.foldable }.map(\.range).sorted { $0.location < $1.location }
+    }
+
+    /// What is picked right now, as the brackets themselves say. This view
+    /// is drawn FROM the pane's selection, so it keeps no second copy of it
+    /// to go stale between a click and the next one.
+    private var picked: [NSRange] {
+        brackets.filter { !$0.foldable && $0.selected }
+            .map(\.range)
+            .sorted { $0.location < $1.location }
     }
 
     /// The NEAREST bracket, not the first: the levels are five points
