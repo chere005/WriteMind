@@ -23,6 +23,9 @@ final class CellInsertions: NSView {
             guard seams != oldValue else { return }
             needsDisplay = true
             window?.invalidateCursorRects(for: self)
+            // And the text view under this layer, which cuts its own
+            // cursor rects from these same seams.
+            if let superview { window?.invalidateCursorRects(for: superview) }
         }
     }
     /// The seam the bar is sitting in, BY OFFSET, waiting to be typed into.
@@ -60,9 +63,9 @@ final class CellInsertions: NSView {
         accent.withAlphaComponent(0.85).setFill()
         // The line runs the width of the page, the way a cell insertion
         // bar does in a notebook.
-        NSBezierPath(rect: NSRect(x: 18, y: seam.middle - 1, width: max(0, bounds.width - 40), height: 2)).fill()
+        NSBezierPath(rect: NSRect(x: 18, y: seam.line - 1, width: max(0, bounds.width - 40), height: 2)).fill()
         // And the plus that says what clicking it does.
-        let dot = NSRect(x: 4, y: seam.middle - 5, width: 10, height: 10)
+        let dot = NSRect(x: 4, y: seam.line - 5, width: 10, height: 10)
         NSBezierPath(ovalIn: dot).fill()
         NSColor.white.setStroke()
         let plus = NSBezierPath()
@@ -73,6 +76,16 @@ final class CellInsertions: NSView {
         plus.line(to: CGPoint(x: dot.midX, y: dot.midY + 2.6))
         plus.stroke()
     }
+
+    /// The seams as the POINTER reads them — none at all while the layer
+    /// is hidden, because the pen owns the pane then.
+    ///
+    /// The text view underneath asks for these rather than keeping a
+    /// copy: it has to know where the seams are (its own tracking areas
+    /// hand it every mouseMoved and cursorUpdate whoever is on top, and
+    /// it was putting the I-beam back over the bar), and a second copy
+    /// of the geometry is two answers to one question.
+    var pointerSeams: [CellSeams.Seam] { isHidden ? [] : seams }
 
     /// The seam a point is in, if any. Full width of the page EXCEPT the
     /// bracket gutter: a section's bracket runs down the seams between its

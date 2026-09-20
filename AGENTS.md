@@ -179,6 +179,14 @@ CoreMind's `bin/report-status.sh`.
   clear and puts `caretColour` back the moment it goes, so every path that
   disarms — a key, a click, the pen going up — must go through that
   property and not round it, or the note is left with no caret at all.
+  And a bar that is the cursor LIGHTS NOTHING: arming parks the caret at
+  the separator, `NotebookCells.block(containing:)` reads that as the
+  start of the cell below, and the next cell was drawn heavy under a bar
+  that was not in it (Sean, 2026-09-20: "the next section shouldn't be
+  highlighted when the input cursor is currently that horizontal bar").
+  `Coordinator.refreshBrackets` takes no `caretCell` while `armedSeam` is
+  set, and the rendered page drops `editingRange` when it arms; a real
+  selection is untouched, because that is not the caret.
   Which seam a point is in is `CellSeams`, once, for both panes — the
   markdown pane measures the cells' boxes off the layout manager
   (`MarkdownTextView.cellBoxes`) and the rendered page off the stack
@@ -186,6 +194,12 @@ CoreMind's `bin/report-status.sh`.
   `CellInsertions` only draws it and takes the click; on the rendered
   page the seam is a view of its own, armed by `MarkdownPreview.arm`,
   and `MarkdownPreview.seamKey` says what a key pressed in one means.
+  WHERE the bar is drawn is `Seam.line`, not the middle of the seam: the
+  seam under the last cell is the whole of the empty page below it, and
+  the bar at its middle sat hundreds of points adrift of the note (Sean,
+  2026-09-20: "the bar should go immediately after the last cell, not
+  the random spot below it's currently at"). The line is against the
+  cell it follows; the hit area is still the whole seam.
 - **Arming is a reading of where the caret is, not a mode a click turns
   on.** `CellSeams.arm` answers it from the selection alone, and
   `textViewDidChangeSelection` is the only place the markdown pane sets
@@ -683,6 +697,20 @@ tools/                    build.sh run.sh test.sh (both source signing.sh)
   the pen had no pencil. `CursorLayer` is an AppKit view above it with a real
   cursor rect (and a tracking area as the belt to those braces), and
   `hitTest` returning nil so it never takes a click.
+- **Being ABOVE the text view does not win the cursor either.** The seam
+  layer had a cursor rect, a `cursorUpdate` and a `mouseMoved` of its own
+  and the pointer over an armed bar was still the upright I-beam (Sean,
+  2026-09-20: "the mouse cursor should reliably be horizontal between the
+  cells"): the text view's OWN tracking areas hand it those same events
+  whoever is on top, and two cursor rects over one point is AppKit's
+  choice to make — it chose the text view's. The pencil settled this by
+  taking the text view's tracking areas away; a seam cannot, because the
+  text either side of it still wants its I-beam. So the text view is
+  told: `PasteAwareTextView` asks `CellInsertions.pointerSeams` — the
+  layer's own seams, never a second copy of the geometry — answers
+  `cursorUpdate` and `mouseMoved` over a seam with the horizontal I-beam,
+  and cuts its cursor rects into `CellSeams.bands` so that no rect of its
+  own ever covers a seam in the first place.
 - **A stored property called `body` in a `View` is a redeclaration**, and
   `swiftc -parse` will not tell you — it type-checks fine and fails in the
   build. Three of the maths views had `let body: WLExpr` before they were

@@ -127,6 +127,10 @@ struct MarkdownPreview: View {
     /// that was under them — because everything below the last cell is
     /// one seam and there has to be somewhere to put a cell down there.
     static let tailHeight: CGFloat = 80 + topInset + gapHeight
+    /// How tall the insertion mark itself is — the plus is bigger than
+    /// the two points of the bar, and the mark is centred on the seam's
+    /// own line.
+    static let markHeight: CGFloat = 12
 
     var body: some View {
         // The window on the page, measured from OUTSIDE the scroll view:
@@ -431,7 +435,15 @@ struct MarkdownPreview: View {
             let id = SeamID(index: index, offset: seam.offset)
             Color.clear
                 .frame(height: height)
-                .overlay {
+                // From the TOP of the seam, offset to the line the seam
+                // itself names, and not centred in it: the tail seam is
+                // everything under the last cell, so centring put the bar
+                // hundreds of points down an empty page (Sean,
+                // 2026-09-20: "when i select somewhere below the cell,
+                // the bar should go immediately after the last cell, not
+                // the random spot below it's currently at"). The whole
+                // seam is still the hit area.
+                .overlay(alignment: .top) {
                     if armedSeam == id || hoveredSeam == id {
                         HStack(spacing: 6) {
                             Image(systemName: "plus.circle.fill").font(.system(size: 11))
@@ -447,7 +459,11 @@ struct MarkdownPreview: View {
                         // the strip between two cells is eight points and
                         // the mark is twelve, and the page must not move
                         // when the pointer arrives.
-                        .frame(height: 12)
+                        .frame(height: Self.markHeight)
+                        // An offset rather than padding, for the same
+                        // reason: it moves the mark without asking the
+                        // page for room.
+                        .offset(y: seam.line - seam.top - Self.markHeight / 2)
                         .transition(.opacity)
                     }
                 }

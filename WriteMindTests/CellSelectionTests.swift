@@ -116,7 +116,8 @@ final class GutterBracketTests: XCTestCase {
     private let note = "First cell\n\nSecond cell\n\nThird cell"
     private var cells: [NSRange] { MarkdownParser.positioned(from: note).map(\.range) }
 
-    private func brackets(selecting selection: [NSRange]) -> [NotebookGutter.Bracket] {
+    private func brackets(selecting selection: [NSRange],
+                          armed: Int? = nil) -> [NotebookGutter.Bracket] {
         let tv = PasteAwareTextView(frame: NSRect(x: 0, y: 0, width: 400, height: 800))
         tv.font = MarkdownTextView.font
         tv.string = note
@@ -124,6 +125,9 @@ final class GutterBracketTests: XCTestCase {
         tv.textContainer?.widthTracksTextView = false
         tv.layoutManager?.ensureLayout(for: tv.textContainer!)
         tv.selectedRanges = selection.map { NSValue(range: $0) }
+        // What a click in a seam leaves behind: the bar armed, and the
+        // caret parked at the separator between the two cells.
+        tv.armedSeam = armed
         // Held weakly by the coordinator, so the test keeps it alive.
         let gutter = NotebookGutter(frame: NSRect(x: 0, y: 0, width: NotebookGutter.width, height: 800))
         let coordinator = MarkdownTextView(text: .constant(note), documentID: nil,
@@ -142,6 +146,27 @@ final class GutterBracketTests: XCTestCase {
         XCTAssertEqual(first?.selected, true)
         XCTAssertEqual(first?.held, false)
         XCTAssertEqual(out.filter(\.held).count, 0, "nothing is held by a caret")
+    }
+
+    func testTheBarBetweenTwoCellsLightsNeitherOfThem() {
+        // Arming puts the caret at the separator's own offset, which
+        // `NotebookCells.block(containing:)` reads as the start of the
+        // cell BELOW — so the next cell was drawn heavy while the bar
+        // above it was the cursor (Sean, 2026-09-20: "the next section
+        // shouldn't be highlighted when the input cursor is currently
+        // that horizontal bar"). While a seam is armed the caret is in
+        // no cell at all.
+        let out = brackets(selecting: [NSRange(location: 12, length: 0)], armed: 12)
+        XCTAssertEqual(out.filter(\.selected).count, 0, "the bar is the cursor, and it lights nothing")
+        XCTAssertEqual(out.filter(\.held).count, 0)
+    }
+
+    func testCellsReallyHeldStayLitWhateverTheBarIsDoing() {
+        // A real selection is a different thing from a caret: the bar
+        // puts out what the CARET lights, and nothing else.
+        let out = brackets(selecting: [cells[0], cells[2]], armed: 12)
+        XCTAssertEqual(out.filter(\.held).map(\.range), [cells[0], cells[2]])
+        XCTAssertEqual(out.filter(\.selected).map(\.range), [cells[0], cells[2]])
     }
 
     func testACellTheSelectionCoversIsHeld() {

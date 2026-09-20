@@ -28,8 +28,15 @@ enum CellSeams {
         /// The character offset a new cell is opened at: the next cell's
         /// range.location, or the note's length under the last cell.
         var offset: Int
-        /// Where the line that IS the cursor is drawn.
-        var middle: CGFloat { (top + bottom) / 2 }
+        /// Where the bar that IS the cursor is drawn — which is NOT the
+        /// middle of the seam, because two of the seams on every page are
+        /// as tall as the empty page round the note (Sean, 2026-09-20:
+        /// "when i select somewhere below the cell, the bar should go
+        /// immediately after the last cell, not the random spot below
+        /// it's currently at"). The hit area is the whole seam and the
+        /// bar is against the cell it belongs to; worked out once, here,
+        /// so the two panes draw it in the same place.
+        var line: CGFloat
         func contains(_ y: CGFloat) -> Bool { y >= top && y <= bottom }
     }
 
@@ -73,7 +80,9 @@ enum CellSeams {
             // Nothing written yet: the whole page is one seam, and what is
             // typed in it goes at the end of the note — offset 0 when the
             // note is empty, which is the usual way to meet this.
-            return [Seam(top: head, bottom: foot, offset: noteLength)]
+            // The bar goes at the top, where the first thing typed will
+            // appear: there is no cell for it to sit against.
+            return [Seam(top: head, bottom: foot, offset: noteLength, line: head + minimum / 2)]
         }
 
         var seams: [Seam] = []
@@ -146,18 +155,73 @@ enum CellSeams {
             .first { $0.range.location >= offset }?.range.location ?? ns.length
     }
 
+    /// A stretch of the page as the POINTER reads it: a seam, where the
+    /// I-beam lies on its side, or everything else, where it stands up.
+    struct Band: Equatable {
+        var top: CGFloat
+        var bottom: CGFloat
+        var horizontal: Bool
+    }
+
+    /// The page cut into those stretches, top to bottom, touching and
+    /// never overlapping.
+    ///
+    /// For the markdown pane's text view, which hands them to AppKit as
+    /// its cursor rects. It cannot hand over "the I-beam everywhere
+    /// except the seams" in one rect, and its own I-beam over the whole
+    /// of itself with the seam layer's rects laid on top is two rects
+    /// over one point — AppKit picks between them, and it picked the
+    /// I-beam (Sean, 2026-09-20: "the mouse cursor should reliably be
+    /// horizontal between the cells"). Cut this way, nothing the text
+    /// view says claims a seam in the first place.
+    static func bands(seams: [Seam], pageTop: CGFloat, pageBottom: CGFloat) -> [Band] {
+        guard pageBottom > pageTop else { return [] }
+        var out: [Band] = []
+        // How far down the page the bands have reached. Widening can
+        // leave two seams overlapping, and a band that ran backwards is
+        // a cursor rect AppKit throws away — with it the I-beam is back.
+        var reached = pageTop
+        for seam in seams.sorted(by: { $0.top < $1.top }) {
+            let top = min(max(seam.top, reached), pageBottom)
+            let bottom = min(max(seam.bottom, top), pageBottom)
+            if top > reached { out.append(Band(top: reached, bottom: top, horizontal: false)) }
+            if bottom > top { out.append(Band(top: top, bottom: bottom, horizontal: true)) }
+            reached = max(reached, bottom)
+        }
+        if reached < pageBottom { out.append(Band(top: reached, bottom: pageBottom, horizontal: false)) }
+        return out
+    }
+
     /// Which edge of a seam stays put when it is too thin to be hit.
     private enum Edge { case top, middle, bottom }
 
     private static func fitted(top: CGFloat, bottom: CGFloat, offset: Int,
                                minimum: CGFloat, holding edge: Edge) -> Seam {
-        guard bottom - top < minimum else { return Seam(top: top, bottom: bottom, offset: offset) }
+        // Where the bar goes, before any widening: half a gap under the
+        // cell above it, or — for the seam at the top of the page, which
+        // has no cell above it — half a gap above the cell below. On the
+        // eight points between two ordinary cells the two readings meet
+        // in the middle, which is where the bar has always been drawn;
+        // on the tall seams at the two ends of the page they are the
+        // difference between a bar against the note and a bar adrift in
+        // the empty page.
+        let line: CGFloat
         switch edge {
-        case .top: return Seam(top: top, bottom: top + minimum, offset: offset)
-        case .bottom: return Seam(top: bottom - minimum, bottom: bottom, offset: offset)
+        case .top: line = bottom - minimum / 2
+        case .middle, .bottom: line = top + minimum / 2
+        }
+        guard bottom - top < minimum else {
+            return Seam(top: top, bottom: bottom, offset: offset, line: line)
+        }
+        // Too thin to hit: the seam is widened and the bar goes back to
+        // the middle of it, because that is where the eye already put it
+        // — between the two cells that are nearly touching.
+        switch edge {
+        case .top: return Seam(top: top, bottom: top + minimum, offset: offset, line: top + minimum / 2)
+        case .bottom: return Seam(top: bottom - minimum, bottom: bottom, offset: offset, line: bottom - minimum / 2)
         case .middle:
             let middle = (top + bottom) / 2
-            return Seam(top: middle - minimum / 2, bottom: middle + minimum / 2, offset: offset)
+            return Seam(top: middle - minimum / 2, bottom: middle + minimum / 2, offset: offset, line: middle)
         }
     }
 }

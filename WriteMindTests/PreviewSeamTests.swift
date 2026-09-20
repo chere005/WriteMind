@@ -59,7 +59,8 @@ final class PreviewSeamTests: XCTestCase {
 
     func testAnEmptyNoteIsOneSeamOverTheWholePage() {
         let seams = MarkdownPreview.seams(rows: [], noteLength: 0, pageHeight: 600)
-        XCTAssertEqual(seams, [CellSeams.Seam(top: 0, bottom: 600, offset: 0)])
+        XCTAssertEqual(seams, [CellSeams.Seam(top: 0, bottom: 600, offset: 0,
+                                              line: MarkdownPreview.gapHeight / 2)])
     }
 
     func testNoPointInsideACellIsInsideASeam() {

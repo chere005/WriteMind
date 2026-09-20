@@ -115,7 +115,7 @@ final class SeamMeasurementTests: XCTestCase {
     }
 
     func testThePointerIsInTheSeamEverywhereAcrossItExceptTheBracketGutter() {
-        let view = layer([CellSeams.Seam(top: 100, bottom: 140, offset: 5)])
+        let view = layer([CellSeams.Seam(top: 100, bottom: 140, offset: 5, line: 104)])
         XCTAssertEqual(view.seam(at: CGPoint(x: 20, y: 101))?.offset, 5)
         XCTAssertEqual(view.seam(at: CGPoint(x: 340, y: 139))?.offset, 5)
         XCTAssertNil(view.seam(at: CGPoint(x: 390, y: 120)),
@@ -129,7 +129,7 @@ final class SeamMeasurementTests: XCTestCase {
         // mode!!!!!"). Hiding the layer is how that is said, and this
         // view's own hit testing has to ask, because overriding hitTest
         // steps over the check AppKit would have made.
-        let view = layer([CellSeams.Seam(top: 100, bottom: 140, offset: 5)])
+        let view = layer([CellSeams.Seam(top: 100, bottom: 140, offset: 5, line: 104)])
         view.isHidden = true
         XCTAssertNil(view.seam(at: CGPoint(x: 20, y: 120)))
         XCTAssertNil(view.hitTest(CGPoint(x: 20, y: 120)))

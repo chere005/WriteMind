@@ -65,10 +65,13 @@ is how the code is put together.
   answers, edge to edge — and so does the space above the first and
   everything under the last. Move the pointer into one and it turns on
   its side; click and a line runs across the page with a `+` at the
-  margin. That line is the cursor: the caret stops being drawn, and the
-  first thing typed becomes a cell of its own there, Return opens an
-  empty one, and Escape or a click anywhere else takes the line back
-  without leaving an empty cell behind. With the pen up there are no
+  margin. The line is drawn against the cell it follows, however tall
+  the space is — clicking a long way under the last cell puts it just
+  below that cell, not where the pointer happened to be. That line is
+  the cursor: the caret stops being drawn, no bracket is lit while it is
+  up, and the first thing typed becomes a cell of its own there, Return
+  opens an empty one, and Escape or a click anywhere else takes the line
+  back without leaving an empty cell behind. With the pen up there are no
   seams at all — the pencil owns the note pane. The markdown pane and the
   rendered page do exactly the same thing, the way a Mathematica notebook
   does on both.
