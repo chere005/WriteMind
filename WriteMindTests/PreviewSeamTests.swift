@@ -58,9 +58,14 @@ final class PreviewSeamTests: XCTestCase {
     }
 
     func testAnEmptyNoteIsOneSeamOverTheWholePage() {
+        // And its bar is against where the first cell will land, not
+        // against the top of the page — the stack starts an inset and a
+        // gap down, and the bar drawn at the very top was twenty-six
+        // points above the character it opens (2026-09-20).
         let seams = MarkdownPreview.seams(rows: [], noteLength: 0, pageHeight: 600)
         XCTAssertEqual(seams, [CellSeams.Seam(top: 0, bottom: 600, offset: 0,
-                                              line: MarkdownPreview.gapHeight / 2)])
+                                              line: MarkdownPreview.topInset
+                                                  + MarkdownPreview.gapHeight / 2)])
     }
 
     func testNoPointInsideACellIsInsideASeam() {

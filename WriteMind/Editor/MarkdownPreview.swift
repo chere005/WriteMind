@@ -260,6 +260,16 @@ struct MarkdownPreview: View {
             bridge.splitCellInDocument = { splitCell() }
             bridge.cellRangeInDocument = { editingRange ?? items.first?.range }
             bridge.cellEditInDocument = { make in cellEdit(make) }
+            // And what a Format command means while the BAR is the cursor.
+            // There is no text view on this side for the bridge to read the
+            // armed state off, so it asks: ⌘1 at a bar used to fall through
+            // to `ensureEditing`, which opened the note's FIRST cell and
+            // titled that (2026-09-20).
+            bridge.armedBar = { kind in
+                guard armedSeam != nil else { return false }
+                if let kind { armedType = kind }
+                return true
+            }
         }
         .onDisappear {
             onEditingChanged?(false)
@@ -269,6 +279,7 @@ struct MarkdownPreview: View {
             bridge.splitCellInDocument = nil
             bridge.cellRangeInDocument = nil
             bridge.cellEditInDocument = nil
+            bridge.armedBar = nil
         }
         .environment(\.openURL, OpenURLAction { url in
             let destination = url.absoluteString
@@ -554,7 +565,11 @@ struct MarkdownPreview: View {
         }
         let bottom = (cells.last?.bottom ?? 0) + tailHeight
         return CellSeams.seams(cells: cells, pageTop: 0, pageBottom: max(pageHeight, bottom),
-                               noteLength: noteLength)
+                               noteLength: noteLength,
+                               // An empty note has no cell for the bar to
+                               // sit against; the stack says where the
+                               // first one would land.
+                               firstCellTop: topInset + gapHeight)
     }
 
     /// What a key pressed in an armed seam means.
@@ -733,9 +748,23 @@ struct MarkdownPreview: View {
         // between cells"), and the brackets let go of what they held.
         editingRange = nil
         selectedCells = []
+        armedType = Self.arming(id, over: armedSeam, keeping: armedType)
         armedSeam = id
-        armedType = .text
         focusedSeam = id
+    }
+
+    /// What the kind on a bar becomes when the bar is armed at `id`.
+    ///
+    /// Re-arming the seam that is ALREADY armed keeps whatever the +
+    /// chose for it, and arming anywhere else is plain text (Sean,
+    /// 2026-09-19: "default is always just text"). The markdown pane has
+    /// always done this — `PasteAwareTextView.armedSeam` only lets go
+    /// when the bar MOVES — and this side threw the choice away
+    /// unconditionally, so pressing the + a second time to check the
+    /// choice reset it to Body Text while popping the menu with the old
+    /// one still ticked (2026-09-20).
+    static func arming(_ id: SeamID, over armed: SeamID?, keeping type: CellTypes.Kind) -> CellTypes.Kind {
+        armed == id ? type : .text
     }
 
     /// The + on the bar: the kinds of cell, and the one picked stays with

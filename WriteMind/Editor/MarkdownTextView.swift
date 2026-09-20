@@ -293,7 +293,12 @@ struct MarkdownTextView: NSViewRepresentable {
         let bottom = layout.usedRect(for: container).maxY + tv.textContainerOrigin.y
         return CellSeams.seams(cells: cellBoxes(in: tv), pageTop: 0,
                                pageBottom: max(tv.bounds.height, bottom),
-                               noteLength: (tv.string as NSString).length)
+                               noteLength: (tv.string as NSString).length,
+                               // On a note with no cells at all there is
+                               // nothing to put the bar against, and the
+                               // text container's inset is where the first
+                               // line will come out.
+                               firstCellTop: tv.textContainerOrigin.y)
     }
 
     /// Open a cell at an armed seam: the blank lines that make what is
@@ -587,7 +592,6 @@ struct MarkdownTextView: NSViewRepresentable {
         /// left, if it never became one, goes.
         func textViewDidChangeSelection(_ notification: Notification) {
             guard let tv = notification.object as? NSTextView else { return }
-            tv.updateHiddenMarkers(hiding)
             // Where the caret IS says whether a seam is armed (the plan's
             // step 3, from Sean, 2026-09-20: "the mouse cursor and text
             // cursor should both become horizontal between cells"). Only
@@ -609,6 +613,12 @@ struct MarkdownTextView: NSViewRepresentable {
                     insertions?.seams.contains { $0.offset == offset } == true ? offset : nil
                 }
             }
+            // AFTER the arming, never before it: whether a paragraph
+            // shows its markers is read off `armedSeam` too, and asking
+            // first got the answer for the move before this one — the
+            // cell left behind stayed revealed and the one arrived in
+            // stayed hidden, each for one keystroke.
+            tv.updateHiddenMarkers(hiding)
             refreshBrackets(in: tv)
         }
 

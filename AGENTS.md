@@ -187,6 +187,19 @@ CoreMind's `bin/report-status.sh`.
   `Coordinator.refreshBrackets` takes no `caretCell` while `armedSeam` is
   set, and the rendered page drops `editingRange` when it arms; a real
   selection is untouched, because that is not the caret.
+  EVERY reader of "the caret is in that cell" needs telling, and they
+  were found one at a time: the brackets, then `updateHiddenMarkers`
+  (which revealed the neighbour's `## ` the moment the bar was armed by
+  a click, and not when it was armed by ↓ — `textViewDidChangeSelection`
+  sets `armedSeam` BEFORE it asks, or the answer is for the move before
+  this one), then `EditorBridge`. A FORMAT COMMAND AT A BAR NAMES A
+  KIND: the bar is in no cell, so ⌘1 there means what Title on the +
+  means (`EditorBridge.atArmedBar`, the same `CellTypes.Kind` list),
+  and a command the list has no kind for — bold, indent, a table — does
+  nothing at all. Left alone it restyled whatever cell the caret was
+  parked against: the one BELOW the bar in the source pane, and on the
+  rendered page the note's FIRST cell, because with no text view
+  `perform` fell through to `ensureEditing`.
   Which seam a point is in is `CellSeams`, once, for both panes — the
   markdown pane measures the cells' boxes off the layout manager
   (`MarkdownTextView.cellBoxes`) and the rendered page off the stack
@@ -199,7 +212,13 @@ CoreMind's `bin/report-status.sh`.
   the bar at its middle sat hundreds of points adrift of the note (Sean,
   2026-09-20: "the bar should go immediately after the last cell, not
   the random spot below it's currently at"). The line is against the
-  cell it follows; the hit area is still the whole seam.
+  cell it follows; the hit area is still the whole seam. On a note with
+  NO cells there is nothing to sit against, so the pane hands in
+  `firstCellTop` — its own inset, which `CellSeams` cannot know and the
+  two panes do not agree on (`topInset + gapHeight` on the rendered
+  page, `textContainerOrigin.y` in the source). Without it the bar was
+  against the very top edge and the first character came out an inset
+  below it.
 - **The + on the bar chooses a KIND, and there is only one block
   builder.** Sean, 2026-09-20: "pressing the + button on that bar should
   bring up the list of style types that the next input will create a cell
@@ -222,7 +241,17 @@ CoreMind's `bin/report-status.sh`.
   `armedSeam` resets it, so no path can leave a stale kind behind. The
   menu itself is `CellTypeMenu`, an NSMenu in BOTH panes: the mark the +
   sits on is only drawn while its seam is hovered or armed, and a SwiftUI
-  `Menu` whose label goes off the page closes with it.
+  `Menu` whose label goes off the page closes with it. Which means the
+  markdown pane must ask whether the + is DRAWN before it takes a click
+  as a press of one (`CellInsertions.marked`, read by `draw` and by
+  `mouseDown`): `plusTarget` is nine points either side of the bar, so
+  on an ordinary eight-point seam it is the whole of it, and the plain
+  click that moves the bar to another seam popped the menu as well.
+  And RE-ARMING THE SEAM THAT IS ALREADY ARMED KEEPS THE CHOICE, both
+  sides — `PasteAwareTextView.armedSeam.didSet` short-circuits and
+  `MarkdownPreview.arming` says the same thing — or pressing the + a
+  second time to look at the choice throws it away behind the menu that
+  is still ticking it.
 - **Arming is a reading of where the caret is, not a mode a click turns
   on.** `CellSeams.arm` answers it from the selection alone, and
   `textViewDidChangeSelection` is the only place the markdown pane sets

@@ -72,12 +72,31 @@ final class CellInsertions: NSView {
         plus(onTheLineAt: line).insetBy(dx: -4, dy: -4)
     }
 
+    /// The seam the bar and its + are DRAWN on: the armed one, or the
+    /// hovered one when nothing is armed. One reading, for the drawing
+    /// and for the click — the two used to disagree. `draw` painted the
+    /// armed seam and `mouseDown` measured the + against whichever seam
+    /// was clicked, so with a bar already up the left eighteen points of
+    /// every OTHER seam popped the cell-type menu with no + drawn there
+    /// at all (2026-09-20). The rendered page never had the hole: its +
+    /// is a real Button that is not in the view tree unless the seam is
+    /// hovered or armed.
+    private var marked: CellSeams.Seam? { armed ?? hovered }
+
+    /// Whether a click is a press of the +. Only where the + is drawn:
+    /// `plusTarget` is nine points either side of the bar, which on an
+    /// ordinary eight-point seam is the whole of it.
+    static func pressesPlus(at point: CGPoint, in seam: CellSeams.Seam,
+                            drawnOn marked: CellSeams.Seam?) -> Bool {
+        marked == seam && plusTarget(onTheLineAt: seam.line).contains(point)
+    }
+
     override var isFlipped: Bool { true }
 
     override func draw(_ dirtyRect: NSRect) {
         // The armed bar stays drawn — it IS the cursor; the hovered one is
         // only a hint and goes with the pointer.
-        guard let seam = armed ?? hovered else { return }
+        guard let seam = marked else { return }
         let accent = NSColor.controlAccentColor
         accent.withAlphaComponent(0.85).setFill()
         // The line runs the width of the page, the way a cell insertion
@@ -172,8 +191,12 @@ final class CellInsertions: NSView {
         // armed bar, and re-arming the seam that is already armed keeps
         // whatever was chosen for it (the text view's own `armedSeam`
         // only lets go when the bar MOVES).
+        // Read before the arming, which moves the mark to this seam: what
+        // matters is whether there was a + under the pointer when it went
+        // down.
+        let drawn = marked
         onArm?(seam.offset)
-        guard Self.plusTarget(onTheLineAt: seam.line).contains(point) else { return }
+        guard Self.pressesPlus(at: point, in: seam, drawnOn: drawn) else { return }
         CellTypeMenu.popUp(current: chosenType,
                            at: NSPoint(x: 2, y: Self.plusTarget(onTheLineAt: seam.line).maxY),
                            in: self) { [weak self] kind in self?.onChoose?(kind) }

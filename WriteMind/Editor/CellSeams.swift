@@ -59,7 +59,16 @@ enum CellSeams {
     /// the page's edge that holds, because the first seam starts at the top
     /// of the page and the last runs to the bottom of it whatever the note
     /// does in between.
+    ///
+    /// `firstCellTop` is where a cell WOULD land on a page that has none —
+    /// the pane's own top inset, which this file cannot know and the two
+    /// panes do not agree on (the rendered page stacks from
+    /// `topInset + gapHeight`, the source pane from its text container's
+    /// inset). It is the only thing an empty page can put its bar against,
+    /// and without it the bar was drawn hard under the divider while the
+    /// first character appeared an inset below it.
     static func seams(cells: [Box], pageTop: CGFloat, pageBottom: CGFloat, noteLength: Int,
+                      firstCellTop: CGFloat? = nil,
                       minimum: CGFloat = MarkdownPreview.gapHeight) -> [Seam] {
         // Spelled out rather than chained: one map-and-sort over labelled
         // tuples put the type checker past its budget and the file would
@@ -80,9 +89,12 @@ enum CellSeams {
             // Nothing written yet: the whole page is one seam, and what is
             // typed in it goes at the end of the note — offset 0 when the
             // note is empty, which is the usual way to meet this.
-            // The bar goes at the top, where the first thing typed will
-            // appear: there is no cell for it to sit against.
-            return [Seam(top: head, bottom: foot, offset: noteLength, line: head + minimum / 2)]
+            // The bar goes where the cell it opens will land, half a gap
+            // above it — the head seam's own rule, with the caller's inset
+            // standing in for the cell that is not there yet.
+            let landing = firstCellTop ?? (head + minimum)
+            return [Seam(top: head, bottom: foot, offset: noteLength,
+                         line: max(head, landing - minimum / 2))]
         }
 
         var seams: [Seam] = []

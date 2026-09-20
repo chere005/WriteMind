@@ -1,3 +1,4 @@
+import AppKit
 import XCTest
 @testable import WriteMind
 
@@ -107,11 +108,41 @@ final class CellSeamTests: XCTestCase {
         XCTAssertEqual(head?.line, 20 - MarkdownPreview.gapHeight / 2)
     }
 
-    func testTheBarOnAnEmptyPageIsAtTheTopOfIt() {
-        // No cell either side of it: what is typed appears at the top of
-        // the page, so that is where the bar that types it goes.
-        let empty = CellSeams.seams(cells: [], pageTop: 0, pageBottom: 420, noteLength: 0)
-        XCTAssertEqual(empty.first?.line, MarkdownPreview.gapHeight / 2)
+    func testTheBarOnAnEmptyPageIsWhereTheFirstCellWillLand() {
+        // No cell either side of it, so the PANE says where one would go
+        // and the bar sits half a gap above that — the head seam's own
+        // rule. Hard against the top of the page it was sixteen points
+        // (source) or twenty-six (rendered) above the character it opens:
+        // the same "the bar is not where the cell goes" complaint at the
+        // other end of the page (2026-09-20).
+        let empty = CellSeams.seams(cells: [], pageTop: 0, pageBottom: 420, noteLength: 0,
+                                    firstCellTop: 30)
+        XCTAssertEqual(empty.first?.line, 30 - MarkdownPreview.gapHeight / 2)
+        XCTAssertEqual(empty.first?.top, 0, "the whole page is still the hit area")
+        XCTAssertEqual(empty.first?.bottom, 420)
+    }
+
+    func testTheRenderedPagePutsAnEmptyNotesBarWhereAOneCellNotesBarIs() {
+        // Through the pane's own call, because that is where the inset
+        // is known: the first cell lands in the same place either way, so
+        // the bar that opens it must too.
+        let empty = MarkdownPreview.seams(rows: [], noteLength: 0, pageHeight: 600)
+        let one = MarkdownPreview.seams(rows: [(id: 0, height: 30)], noteLength: 4, pageHeight: 600)
+        XCTAssertEqual(empty.first?.line,
+                       MarkdownPreview.topInset + MarkdownPreview.gapHeight
+                           - MarkdownPreview.gapHeight / 2)
+        XCTAssertEqual(empty.first?.line, one.first?.line)
+    }
+
+    func testTheSourcePaneDoesTheSameFromItsTextContainersInset() {
+        let tv = PasteAwareTextView(usingTextLayoutManager: false)
+        tv.frame = NSRect(x: 0, y: 0, width: 400, height: 600)
+        tv.textContainerInset = NSSize(width: 24, height: 20)
+        tv.string = ""
+        let seams = MarkdownTextView.seams(in: tv)
+        XCTAssertEqual(seams.count, 1)
+        XCTAssertEqual(seams.first?.line, tv.textContainerOrigin.y - MarkdownPreview.gapHeight / 2)
+        XCTAssertEqual(seams.first?.line, 16, "twenty points down, half a gap above the first line")
     }
 
     // MARK: - Seams too thin to hit

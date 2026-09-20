@@ -41,6 +41,14 @@ enum CellTypes {
         case quote
         case code
 
+        /// A rung of the ladder as a kind — Body Text being the plain
+        /// paragraph every bar starts out as rather than a seventh rung.
+        /// The Format menu hands the ladder over this way when a bar is
+        /// armed, so ⌘1 there means what Title on the + means.
+        init(_ level: MarkdownFormatting.Heading) {
+            self = level == .body ? .text : .heading(level)
+        }
+
         /// What the menu calls it: the Format menu's word for the heading
         /// ladder and the lists, the Insert menu's for the fenced block.
         var name: String {

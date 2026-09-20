@@ -31,10 +31,42 @@ final class EditorBridge {
     var cellRangeInDocument: (() -> NSRange?)?
     var cellEditInDocument: ((@escaping (NSRange, String) -> MarkdownFormatting.Edit?) -> Void)?
 
+    /// The insertion bar between two cells, on the RENDERED page, where
+    /// there is no text view to read it off. Returns true when a bar is
+    /// up — and takes the kind, if the command has one, the way the + on
+    /// that bar does. The markdown pane needs no closure: its bar lives
+    /// on the very text view this bridge is holding.
+    var armedBar: ((CellTypes.Kind?) -> Bool)?
+
+    /// A Format command while the bar IS the cursor.
+    ///
+    /// The bar is in no cell, so there is no cell for such a command to
+    /// change — it says what the cell the bar OPENS will be, which is
+    /// exactly what the + on that same bar offers (Sean, 2026-09-20:
+    /// "pressing the + button on that bar should bring up the list of
+    /// style types that the next input will create a cell the type of").
+    /// Left to itself ⌘1 at a bar retitled whatever cell the caret was
+    /// parked against: the one BELOW it in the source pane, and — with
+    /// no text view at all on the rendered page — the note's very FIRST
+    /// cell, which `ensureEditing` opened to have somewhere to put it
+    /// (2026-09-20, two reviewers). A command the list has no kind for
+    /// is nobody's business at a bar and does nothing.
+    @discardableResult
+    private func atArmedBar(_ kind: CellTypes.Kind?) -> Bool {
+        if let tv = textView as? PasteAwareTextView, tv.armedSeam != nil {
+            if let kind { tv.armedType = kind }
+            return true
+        }
+        return armedBar?(kind) ?? false
+    }
+
     /// Do it now if there is somewhere to do it, otherwise open a block and
     /// do it as soon as there is. SwiftUI builds the text view a turn or two
     /// after the block opens, so this waits — briefly, and never forever.
     func perform(_ action: @escaping () -> Void, attempts: Int = 8) {
+        // Nothing that edits a cell runs at a bar. The commands that name
+        // a KIND have already taken it by the time they reach here.
+        if atArmedBar(nil) { return }
         if textView != nil { action(); return }
         guard attempts > 0, ensureEditing?() == true else { return }
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.03) { [weak self] in
@@ -249,6 +281,7 @@ final class EditorBridge {
     }
 
     func list(_ style: MarkdownFormatting.ListStyle) {
+        if atArmedBar(.list(style)) { return }
         lines { MarkdownFormatting.toggleList(text: $0, selection: $1, style: style) }
     }
 
@@ -257,6 +290,7 @@ final class EditorBridge {
     }
 
     func heading(_ level: MarkdownFormatting.Heading) {
+        if atArmedBar(CellTypes.Kind(level)) { return }
         perform { [weak self] in self?.applyHeading(level) }
     }
 
@@ -265,11 +299,22 @@ final class EditorBridge {
         apply(MarkdownFormatting.setHeading(text: tv.string, selection: tv.selectedRange(), level: level))
     }
 
-    func bullets() { lines(MarkdownFormatting.toggleBullets) }
+    func bullets() {
+        if atArmedBar(.list(.dots)) { return }
+        lines(MarkdownFormatting.toggleBullets)
+    }
+
+    /// The language goes with the fence the Insert menu writes, and not
+    /// with a bar: the + offers one Code Block and so does ⌘8 at a bar.
     func codeBlock(language: String = "") {
+        if atArmedBar(.code) { return }
         lines { MarkdownFormatting.codeBlock(text: $0, selection: $1, language: language) }
     }
-    func quote() { lines(MarkdownFormatting.toggleQuote) }
+
+    func quote() {
+        if atArmedBar(.quote) { return }
+        lines(MarkdownFormatting.toggleQuote)
+    }
     func indent() { lines(MarkdownFormatting.indent) }
     func outdent() { lines(MarkdownFormatting.outdent) }
 

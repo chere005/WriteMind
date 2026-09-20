@@ -75,10 +75,15 @@ is how the code is put together.
   the line and it drops the kinds of cell down — Body Text, the heading
   ladder from Title to Subsubsection, the three lists, Quote, Code Block
   — and the next thing typed makes a cell of the kind you picked, with
-  its marker already written and the caret after it. The choice belongs
+  its marker already written and the caret after it. The Format menu is
+  the same list by keyboard: ⌘1 or Quote or a list style at a line picks
+  the kind that line will make, rather than restyling the cell beside it,
+  and pressing the `+` again shows what you picked. The choice belongs
   to that line and goes with it: click the bar somewhere else and you are
   back to plain text, which is what every bar starts out as. (A table is
-  not on the list — a grid is not a line; Insert ▸ Table, ⌃⌘T.) With the
+  not on the list — a grid is not a line; Insert ▸ Table, ⌃⌘T.) On a
+  note with nothing in it yet the line sits where the first cell will
+  land, not against the top of the pane. With the
   pen up there are no
   seams at all — the pencil owns the note pane. The markdown pane and the
   rendered page do exactly the same thing, the way a Mathematica notebook

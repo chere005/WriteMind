@@ -148,9 +148,20 @@ extension NSTextView {
         guard let layoutManager, let container = textContainer else { return }
         let text = string as NSString
         let caret = min(selectedRange().location, max(text.length - 1, 0))
-        let paragraph = text.length == 0
+        // A bar between two cells is in NO cell, so no cell shows its
+        // markers. Arming parks the caret at the next cell's first
+        // character and this is the second reader of that offset — the
+        // brackets were taught not to light in ee1cb44 and this one was
+        // not, so clicking the seam above `## Notes` popped the heading's
+        // hashes into view and shifted its words right, as if the caret
+        // had been put in it (Sean, 2026-09-20: "the next section
+        // shouldn't be highlighted when the input cursor is currently
+        // that horizontal bar"). Arming with ↓ never did it, because the
+        // caret sits on the blank line then — one bar, two behaviours.
+        let armed = (self as? PasteAwareTextView)?.armedSeam != nil
+        let paragraph: NSRange? = armed ? nil : (text.length == 0
             ? NSRange(location: 0, length: 0)
-            : text.lineRange(for: NSRange(location: caret, length: 0))
+            : text.lineRange(for: NSRange(location: caret, length: 0)))
         let dirty = hiding.setRevealed(paragraph)
         guard !dirty.isEmpty else { return }
         for range in dirty {
