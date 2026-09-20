@@ -219,7 +219,7 @@ CoreMind's `bin/report-status.sh`.
   this one), then `EditorBridge`. A FORMAT COMMAND AT A BAR NAMES A
   KIND: the bar is in no cell, so ⌘1 there means what Title on the +
   means (`EditorBridge.atArmedBar`, the same `CellTypes.Kind` list),
-  and a command the list has no kind for — bold, indent, a table — does
+  and a command the list has no kind for — bold, indent, maths — does
   nothing at all. Left alone it restyled whatever cell the caret was
   parked against: the one BELOW the bar in the source pane, and on the
   rendered page the note's FIRST cell, because with no text view
@@ -256,10 +256,8 @@ CoreMind's `bin/report-status.sh`.
   while the cell is still EMPTY and the character is typed afterwards, so
   `- `, `> `, `### ` and a pair of fences all leave the caret exactly
   where the words go; `setHeading` needs `evenIfEmpty: true` for that,
-  because a blank line inside a selection must otherwise keep its shape;
-  and a TABLE IS NOT ON THE LIST, because `insertTable` writes its grid
-  over the range it is handed and would eat the character that opened the
-  cell. The choice lives on the armed seam and nowhere else
+  because a blank line inside a selection must otherwise keep its shape.
+  The choice lives on the armed seam and nowhere else
   (`PasteAwareTextView.armedType`, `MarkdownPreview.armedType`) and goes
   back to plain text the moment the bar moves or goes out — setting
   `armedSeam` resets it, so no path can leave a stale kind behind. The
@@ -662,7 +660,7 @@ tools/                    build.sh run.sh test.sh (both source signing.sh)
   (dots, dashes or numbers, whichever the chevron picked) · ⌃⌘Q quote ·
   ⌘[ ⌘] outdent/indent (⇥ and ⇧⇥ too) · ⌘1–⌘7 the heading ladder (title,
   chapter, author, section, subsection, subsubsection, body) · ⌘8 code
-  block · ⌃⌘T table · ⌃⌘↑/↓ move section · ⌥⌘Z / ⇧⌥⌘Z undo and redo the
+  block · ⌃⌘↑/↓ move section · ⌥⌘Z / ⇧⌥⌘Z undo and redo the
   DRAWING (⌘Z does it too while the pen is up) · ⌘D select next occurrence,
   ⌃⌘G all of them · ⌥⌘R refresh cameras · ⇧⌘O open the notes folder.
 - **EVERY FORMATTING SHORTCUT LIVES IN THE FORMAT MENU**, not on the toolbar

@@ -290,25 +290,6 @@ struct TopBar: View {
     @ViewBuilder
     private var insertTools: some View {
         Group {
-            // A table, with or without its grid lines.
-            BarSplit(isOn: false) {
-                BarButton(systemImage: "tablecells", label: "Table",
-                          help: appState.tableGrid ? "A table with grid lines"
-                                                   : "A table with no grid lines, just a header rule",
-                          keys: ["⌃", "⌘", "T"], bare: true) {
-                    appState.editor.insertTable(grid: appState.tableGrid)
-                }
-            } menu: {
-                Picker("Table", selection: $appState.tableGrid) {
-                    Text("With Grid Lines").tag(true)
-                    Text("No Grid Lines").tag(false)
-                }
-                .pickerStyle(.inline)
-            } menuTip: {
-                BarTip(title: "Table Style", detail: "With or without grid lines")
-            }
-            .disabled(!canFormat)
-
             // Things dropped on the page: a picture, a floating box of
             // words. They work in the preview too.
             Group {

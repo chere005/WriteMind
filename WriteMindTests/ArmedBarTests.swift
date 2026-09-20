@@ -60,10 +60,10 @@ final class ArmedBarFormatTests: XCTestCase {
     }
 
     func testACommandWithNoKindOnTheListDoesNothingAtAllAtTheBar() {
-        // Bold, indent, a table, maths: there is no cell to apply them to,
-        // and the cell below the bar is not it.
+        // Bold, indent, maths: there is no cell to apply them to, and
+        // the cell below the bar is not it.
         for command in [{ (b: EditorBridge) in b.bold() }, { $0.italic() }, { $0.indent() },
-                        { $0.outdent() }, { $0.insertTable(grid: true) },
+                        { $0.outdent() },
                         { $0.insertMath("Pi", display: false) }, { $0.deleteCell() }] {
             let (view, bridge) = armed(at: 12)
             command(bridge)

@@ -285,10 +285,6 @@ final class EditorBridge {
         lines { MarkdownFormatting.toggleList(text: $0, selection: $1, style: style) }
     }
 
-    func insertTable(grid: Bool) {
-        lines { MarkdownFormatting.insertTable(text: $0, selection: $1, grid: grid) }
-    }
-
     func heading(_ level: MarkdownFormatting.Heading) {
         if atArmedBar(CellTypes.Kind(level)) { return }
         perform { [weak self] in self?.applyHeading(level) }

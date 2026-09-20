@@ -81,8 +81,6 @@ final class AppState: ObservableObject {
     @Published var bulletStyle: MarkdownFormatting.ListStyle {
         didSet { defaults.set(bulletStyle.rawValue, forKey: Keys.bulletStyle) }
     }
-    /// Whether a new table is written with grid lines.
-    @Published var tableGrid: Bool { didSet { defaults.set(tableGrid, forKey: Keys.tableGrid) } }
     /// The language a new code block is tagged with.
     @Published var codeLanguage: CodeLanguage {
         didSet { defaults.set(codeLanguage.rawValue, forKey: Keys.codeLanguage) }
@@ -195,7 +193,6 @@ final class AppState: ObservableObject {
         static let canvasMode = "canvasMode"
         static let cameraZoom = "cameraZoom"
         static let bulletStyle = "bulletStyle"
-        static let tableGrid = "tableGrid"
         static let codeLanguage = "codeLanguage"
         static let collapsedToolGroups = "collapsedToolGroups"
         static let showMarkers = "showMarkers"
@@ -231,7 +228,6 @@ final class AppState: ObservableObject {
             cameraZoom = nil
         }
         bulletStyle = MarkdownFormatting.ListStyle(rawValue: defaults.string(forKey: Keys.bulletStyle) ?? "") ?? .dots
-        tableGrid = defaults.object(forKey: Keys.tableGrid) as? Bool ?? true
         codeLanguage = CodeLanguage(rawValue: defaults.string(forKey: Keys.codeLanguage) ?? "") ?? .plain
         collapsedToolGroups = Set(defaults.stringArray(forKey: Keys.collapsedToolGroups) ?? [])
         // The markdown pane shows the markdown: that is what it is FOR,

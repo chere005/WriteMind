@@ -303,28 +303,6 @@ enum MarkdownFormatting {
         String(open.trimmingCharacters(in: .whitespaces).dropFirst(3)).trimmingCharacters(in: .whitespaces)
     }
 
-    // MARK: - Tables
-
-    /// A table on lines of its own, with the first header cell selected so
-    /// typing names it (Sean, 2026-09-19: "add tables with grids or no
-    /// grids"). Written with pipes at both ends it is shown with grid
-    /// lines; without them, without — see MarkdownTable.
-    static func insertTable(text: String, selection: NSRange, columns: Int = 3, rows: Int = 2,
-                            grid: Bool = true) -> Edit {
-        let ns = text as NSString
-        let range = clamp(selection, to: ns.length)
-        let before = range.location > 0 ? ns.substring(to: range.location) : ""
-        let after = ns.substring(from: NSMaxRange(range))
-        let lead = (before.isEmpty || before.hasSuffix("\n")) ? "" : "\n"
-        let tail = (after.isEmpty || after.hasPrefix("\n")) ? "" : "\n"
-        let table = MarkdownTable.blank(columns: max(1, columns), rows: max(0, rows), grid: grid)
-        let body = lead + table + tail
-        let firstCell = (lead as NSString).length + (grid ? 2 : 0)
-        return Edit(range: range, replacement: body,
-                    selection: NSRange(location: range.location + firstCell,
-                                       length: (MarkdownTable.headerName(1) as NSString).length))
-    }
-
     /// The same, for `> `.
     static func toggleQuote(text: String, selection: NSRange) -> Edit {
         toggleLinePrefix(text: text, selection: selection, prefix: quote,

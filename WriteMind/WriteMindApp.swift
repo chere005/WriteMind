@@ -288,10 +288,6 @@ struct InsertMenu: Commands {
 
             Divider()
 
-            Button("Table") { appState.editor.insertTable(grid: appState.tableGrid) }
-                .keyboardShortcut("t", modifiers: [.command, .control])
-                .disabled(store.selectedNote == nil)
-
             Button("\(appState.codeLanguage == .plain ? "Code Block" : appState.codeLanguage.title + " Block")") {
                 appState.editor.codeBlock(language: appState.codeLanguage.fence)
             }

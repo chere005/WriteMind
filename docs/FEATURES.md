@@ -21,17 +21,6 @@ is how the code is put together.
   italic and slightly bigger than the body text. From the `aA` menu, the
   Format menu, or ⌘1 title, ⌘2 chapter, ⌘3 author, ⌘4–⌘6 section to
   subsubsection, ⌘7 back to body.
-- **A table drawn on the page comes in as a table.** Rule a grid in the
-  notebook, write in the boxes, and the capture reads it as a markdown
-  table — the top row as the header — instead of as loose lines of words.
-  The grid is found from the ruled lines, so a paragraph is never mistaken
-  for one.
-- **Tables are a grid you type in.** On the rendered page a table is not
-  its markdown any more: click a cell and type, Tab along the row and down
-  to the next, Shift-Tab back, and Tab past the last cell adds a row. The
-  strip under the table adds and takes away rows and columns. The file
-  keeps its pipe-and-dash lines, grid or no grid, and the bracket beside
-  the table still opens the raw markdown.
 - **Code cells behave like a code editor.** In a fenced block, `(`, `[`,
   `{`, `"`, `'` and a backtick bring their partner; typing the closer
   steps over it; a bracket typed with something selected wraps it;
@@ -80,8 +69,7 @@ is how the code is put together.
   the kind that line will make, rather than restyling the cell beside it,
   and pressing the `+` again shows what you picked. The choice belongs
   to that line and goes with it: click the bar somewhere else and you are
-  back to plain text, which is what every bar starts out as. (A table is
-  not on the list — a grid is not a line; Insert ▸ Table, ⌃⌘T.) On a
+  back to plain text, which is what every bar starts out as. On a
   note with nothing in it yet the line sits where the first cell will
   land, not against the top of the pane. The seams belong to cursor
   mode: in pen or select mode the drawing layer has the pane and there
@@ -174,10 +162,6 @@ is how the code is put together.
   Wolfram, Python or TypeScript, and the block is coloured — in the editor
   and in the preview — by a palette that has a light and a dark half, so it
   reads either way round.
-- **Tables, with grid lines or without.** The table button writes a GFM
-  table with the first header cell selected (⌃⌘T). Its chevron picks the
-  look, and the choice lives in the markdown itself: pipes at both ends is
-  a grid, no outer pipes is a header rule and nothing else.
 - **Strikethrough.** ⇧⌘X, written `~~like this~~`, struck through in the
   editor and in the preview.
 - **Crop a picture.** Select one and the crop button sits at its bottom

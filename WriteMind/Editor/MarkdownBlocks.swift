@@ -22,9 +22,6 @@ enum MarkdownBlock: Equatable {
     /// with 8 empty lines"). The spacing BETWEEN cells is the editor's;
     /// these are the note's.
     case blank(lines: Int)
-    /// A GFM table. Whether it is drawn with grid lines is in the writing
-    /// itself — see MarkdownTable.
-    case table(MarkdownTable)
 }
 
 /// A block and the slice of source it was parsed from — the range is what
@@ -50,7 +47,6 @@ enum MarkdownParser {
         var quote: [String] = []
         var code: [String]?
         var codeLanguage: String?
-        var table: [String]?
 
         // Where the open block started, and where the last line of it ended.
         var blockStart = 0
@@ -72,14 +68,12 @@ enum MarkdownParser {
             if !dashes.isEmpty { emit(.dashes(dashes)); dashes = [] }
             if !numbered.isEmpty { emit(.numbered(numbered)); numbered = [] }
             if !quote.isEmpty { emit(.quote(quote.joined(separator: " "))); quote = [] }
-            if let open = table, let parsed = MarkdownTable.parse(open) { emit(.table(parsed)) }
-            table = nil
         }
 
         /// The first line of a block sets its start; every line extends its end.
         func openIfNeeded() {
             if paragraph.isEmpty && bullets.isEmpty && dashes.isEmpty && numbered.isEmpty
-                && quote.isEmpty && code == nil && table == nil {
+                && quote.isEmpty && code == nil {
                 blockStart = lineStart
             }
         }
@@ -145,24 +139,11 @@ enum MarkdownParser {
 
             let line = rawLine.trimmingCharacters(in: .whitespaces)
 
-            // A table runs while its lines keep pipes in them. It opens on a
-            // row whose NEXT line is the `---` rule that makes it a header,
-            // which is the one place this parser looks ahead.
-            if var open = table {
-                if !line.isEmpty, MarkdownTable.isRow(line) {
-                    open.append(line)
-                    table = open
-                    continue
-                }
-                flush()
-            }
-            if !line.isEmpty, MarkdownTable.isRow(line), lineIndex + 1 < allLines.count,
-               MarkdownTable.isSeparator(allLines[lineIndex + 1].trimmingCharacters(in: .whitespaces)) {
-                flush()
-                blockStart = lineStart
-                table = [line]
-                continue
-            }
+            // A line of pipes is an ordinary paragraph. Tables came out of
+            // the app whole on 2026-09-20 (Sean: "just completely remove
+            // tables as a feature and we'll rebuild that from scratch"),
+            // and with them the one place this parser looked ahead — at the
+            // `---|---` rule that turned the line above it into a header.
 
             if line.hasPrefix("```") {
                 flush()

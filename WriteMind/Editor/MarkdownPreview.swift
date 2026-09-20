@@ -420,11 +420,6 @@ struct MarkdownPreview: View {
                                          : AnyShapeStyle(CodeColours.background),
                             in: RoundedRectangle(cornerRadius: 6))
                 .overlay(RoundedRectangle(cornerRadius: 6).strokeBorder(Color.accentColor.opacity(0.35)))
-        } else if case .table(let table)? = item.block, editable {
-            // A table is typed into as a grid, not as its markdown (Sean's
-            // to-do list: "a grid you tab through"). The bracket beside it
-            // still opens the raw lines.
-            TableEditor(table: table) { edited in replace(item.range, with: edited) }
         } else if let block = item.block {
             // NO .textSelection here. A selectable Text takes the click
             // itself, so tapping the WORDS of a block did nothing and only
@@ -1124,18 +1119,6 @@ struct MarkdownPreview: View {
         armSeam(beside: cell.range, below: true)
     }
 
-    /// A table's block, rewritten as the lines of the table it now is.
-    private func replace(_ range: NSRange, with table: MarkdownTable) {
-        let text = markdown as NSString
-        guard range.location >= 0, NSMaxRange(range) <= text.length else { return }
-        // The block's range stops at the last line; whatever followed it —
-        // the blank line, the next cell — is left exactly as it was.
-        let kept = text.substring(with: range)
-        let trailing = kept.hasSuffix("\n") ? "\n" : ""
-        markdown = text.replacingCharacters(in: range,
-                                            with: table.lines.joined(separator: "\n") + trailing)
-    }
-
     private func moveWholeSection(up: Bool) {
         let caret = editingRange?.location ?? 0
         guard let edit = NotebookOutline.moveSection(text: markdown,
@@ -1206,7 +1189,7 @@ struct MarkdownPreview: View {
     /// it starts the next block.
     private static func keepsNewlines(_ block: MarkdownBlock?) -> Bool {
         switch block {
-        case .bullets, .dashes, .numbered, .quote, .code, .table: return true
+        case .bullets, .dashes, .numbered, .quote, .code: return true
         default: return false
         }
     }
@@ -1279,8 +1262,6 @@ struct MarkdownPreview: View {
                     .padding(12)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .background(CodeColours.background, in: RoundedRectangle(cornerRadius: 6))
-            case .table(let table):
-                TableBlock(table: table)
             case .blank(let lines):
                 // A cell of empty lines: as tall as those lines, and
                 // clickable, so it can be typed into (Sean, 2026-09-20).
@@ -1348,56 +1329,6 @@ extension EnvironmentValues {
     var notePaper: String? {
         get { self[NotePaperKey.self] }
         set { self[NotePaperKey.self] = newValue }
-    }
-}
-
-
-/// A table in the preview: the header in bold over a rule, and grid lines
-/// only when the markdown asked for them (Sean, 2026-09-19: "add tables with
-/// grids or no grids").
-struct TableBlock: View {
-    let table: MarkdownTable
-    @Environment(\.notePaper) private var paper
-
-    private var lineColour: Color { Color.primary.opacity(0.18) }
-
-    var body: some View {
-        Grid(alignment: .leading, horizontalSpacing: 0, verticalSpacing: 0) {
-            GridRow {
-                ForEach(Array(table.header.enumerated()), id: \.offset) { _, cell in
-                    cellView(cell, bold: true)
-                }
-            }
-            Divider().gridCellUnsizedAxes(.horizontal).overlay(lineColour)
-            ForEach(Array(table.rows.enumerated()), id: \.offset) { index, row in
-                GridRow {
-                    ForEach(Array(row.enumerated()), id: \.offset) { _, cell in
-                        cellView(cell, bold: false)
-                    }
-                }
-                if table.grid, index < table.rows.count - 1 {
-                    Divider().gridCellUnsizedAxes(.horizontal).overlay(lineColour)
-                }
-            }
-        }
-        .padding(table.grid ? 0 : 2)
-        .background {
-            if table.grid {
-                RoundedRectangle(cornerRadius: 4).strokeBorder(lineColour)
-            }
-        }
-        .fixedSize(horizontal: false, vertical: true)
-    }
-
-    private func cellView(_ cell: String, bold: Bool) -> some View {
-        Text(MarkdownInline.attributed(cell, paper: paper))
-            .font(.system(size: 14, weight: bold ? .semibold : .regular))
-            .padding(.horizontal, 10)
-            .padding(.vertical, 5)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .overlay(alignment: .trailing) {
-                if table.grid { Rectangle().fill(lineColour).frame(width: 1) }
-            }
     }
 }
 

@@ -25,10 +25,8 @@ final class CellTypeListTests: XCTestCase {
         XCTAssertFalse(ladder.contains(.heading(.body)))
     }
 
-    func testATableIsNotOnTheList() {
-        // `insertTable` writes its grid OVER the range it is handed, so the
-        // character that opened the cell would be eaten by the header row.
-        // Insert ▸ Table is where a grid stays.
+    func testATableIsNotOnTheListBecauseThereAreNoTables() {
+        // The feature came out whole on 2026-09-20 and will be rebuilt.
         XCTAssertFalse(CellTypes.all.map(\.name).contains { $0.localizedCaseInsensitiveContains("table") })
     }
 

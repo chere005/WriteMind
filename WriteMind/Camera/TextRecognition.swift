@@ -180,18 +180,12 @@ enum TextRecognition {
             .map { (y: $0.y, text: $0.text, box: Optional($0.box)) }
         for (y, arrow) in placed.ownLine { lines.append((y: y, text: arrow, box: nil)) }
 
-        // A table drawn on the page comes in as a markdown table, and the
-        // words inside it are not read as lines of prose as well.
-        if let grid = DrawnTable.grid(ink: page.ink, width: page.width, height: page.height),
-           let table = DrawnTable.markdown(grid, words: onThePage) {
-            lines.removeAll { line in
-                guard let box = line.box else { return false }
-                return DrawnTable.holds(grid, word: box)
-            }
-            // Its y is Vision's, upside down from the mask's: the top of
-            // the page is 1.
-            lines.append((y: 1 - grid.box.midY / CGFloat(page.height), text: table, box: nil))
-        }
+        // A table ruled on the page used to come in as a markdown table.
+        // Tables went out of the app whole on 2026-09-20 (Sean: "just
+        // completely remove tables as a feature and we'll rebuild that
+        // from scratch"), and reading one existed only to write one, so
+        // the rules are ink and the words in them are prose like any
+        // other. It comes back when tables do.
 
         return lines
             .sorted { $0.y > $1.y }

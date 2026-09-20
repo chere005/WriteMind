@@ -24,12 +24,12 @@ import Foundation
 /// the Format menu names it, the three list styles, the quote, and the
 /// fenced block the Insert menu calls Code Block.
 ///
-/// A TABLE IS NOT IN THE LIST. `MarkdownFormatting.insertTable` writes its
-/// grid OVER the range it is given and selects the first header cell, so a
-/// table opened this way either eats the character that opened it or
-/// leaves it stranded beside a grid — a table is not a line, and making it
-/// fit would mean the second builder this whole file exists to avoid.
-/// Insert ▸ Table (⌃⌘T) is where it stays.
+/// There is no table on the list because there are no tables: the feature
+/// came out whole on 2026-09-20 (Sean: "tables is weird right now... just
+/// completely remove tables as a feature and we'll rebuild that from
+/// scratch"). When it comes back, a table is not a line with a prefix, so
+/// it will not join this list without its own answer to "what does the
+/// character that opened the cell do".
 enum CellTypes {
     /// A kind of cell, as the + names it.
     enum Kind: Hashable {
