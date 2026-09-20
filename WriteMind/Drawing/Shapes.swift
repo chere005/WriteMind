@@ -139,21 +139,11 @@ struct ShapeItem: Codable, Equatable, Identifiable {
         }
     }
 
-    /// The text a text box is set in, before the transform scales it.
-    static let textFont = NSFont.systemFont(ofSize: 14)
-    static let textPadding: CGFloat = 6
-
     /// How tall a text box has to be, as height over width, to hold its
-    /// text at this width in points.
+    /// text at this width in points. The measuring itself lives in
+    /// `TextBoxStyle`, with the font and padding it measures against.
     static func textAspect(for label: String, boxWidth: CGFloat) -> Double {
-        let room = boxWidth - textPadding * 2
-        guard room > 10 else { return 0.3 }
-        let bounds = (label as NSString).boundingRect(
-            with: CGSize(width: room, height: .greatestFiniteMagnitude),
-            options: [.usesLineFragmentOrigin, .usesFontLeading],
-            attributes: [.font: textFont])
-        let height = ceil(bounds.height) + textPadding * 2
-        return max(0.08, Double(height / boxWidth))
+        TextBoxStyle.aspect(for: label, boxWidth: boxWidth)
     }
 
     var id = UUID()
@@ -170,14 +160,16 @@ struct ShapeItem: Codable, Equatable, Identifiable {
     /// What a node says. Marks have none.
     var label: String
     var transform = ItemTransform()
+    /// The cell it belongs beside — see `Stroke.anchor`.
+    var anchor: Int?
 
     private enum CodingKeys: String, CodingKey {
-        case id, kind, center, width, aspect, colorHex, lineWidth, fillHex, label, transform
+        case id, kind, center, width, aspect, colorHex, lineWidth, fillHex, label, transform, anchor
     }
 
     init(id: UUID = UUID(), kind: Kind, center: CGPoint = CGPoint(x: 0.5, y: 0.5), width: Double = 0.18,
          aspect: Double? = nil, colorHex: String, lineWidth: Double = 2, fillHex: String? = nil,
-         label: String = "", transform: ItemTransform = ItemTransform()) {
+         label: String = "", transform: ItemTransform = ItemTransform(), anchor: Int? = nil) {
         self.id = id
         self.kind = kind
         self.center = center
@@ -188,6 +180,7 @@ struct ShapeItem: Codable, Equatable, Identifiable {
         self.fillHex = fillHex
         self.label = label
         self.transform = transform
+        self.anchor = anchor
     }
 
     init(from decoder: Decoder) throws {
@@ -202,6 +195,7 @@ struct ShapeItem: Codable, Equatable, Identifiable {
         fillHex = try container.decodeIfPresent(String.self, forKey: .fillHex)
         label = try container.decodeIfPresent(String.self, forKey: .label) ?? ""
         transform = try container.decodeIfPresent(ItemTransform.self, forKey: .transform) ?? ItemTransform()
+        anchor = try container.decodeIfPresent(Int.self, forKey: .anchor)
     }
 }
 

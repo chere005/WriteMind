@@ -217,8 +217,9 @@ final class AppState: ObservableObject {
         withAnimation(.easeInOut(duration: 0.15)) {
             mode = (mode == .editor) ? .preview : .editor
         }
-        // Drawing only happens over the editor.
-        if mode == .preview { penActive = false }
+        // The pen stays up across the switch: a drawing belongs to the
+        // note, not to one way of looking at it (Sean, 2026-09-19:
+        // "drawing should be allowed in either wysiwyg and markdown mode").
         if mode == .editor { blockEditing = false }
     }
 }

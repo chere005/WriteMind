@@ -35,7 +35,7 @@ struct BlockEditor: NSViewRepresentable {
     func makeNSView(context: Context) -> BlockTextView {
         let view = BlockTextView(usingTextLayoutManager: false)
         view.delegate = context.coordinator
-        view.layoutManager?.delegate = context.coordinator.bullets
+        view.layoutManager?.delegate = context.coordinator.hiding
         // ⌘V with a picture goes on the drawing layer here too, not into the
         // block as nothing (Sean, 2026-09-18).
         view.onPasteImage = { [bridge] in bridge.pasteImage?($0) ?? false }
@@ -55,6 +55,7 @@ struct BlockEditor: NSViewRepresentable {
         view.textContainer?.lineFragmentPadding = 0
         view.placeholder = placeholder
         view.baseFont = font
+        view.isCode = language != nil
         view.string = text
         context.coordinator.language = language
         context.coordinator.restyle(view)
@@ -68,6 +69,7 @@ struct BlockEditor: NSViewRepresentable {
 
         if view.baseFont != font || context.coordinator.language != language {
             view.baseFont = font
+            view.isCode = language != nil
             context.coordinator.language = language
             context.coordinator.restyle(view)
         }
@@ -116,7 +118,15 @@ struct BlockEditor: NSViewRepresentable {
         /// it, and is emptied on the way out for good measure.
         let undoManager = UndoManager()
         /// Draws `- ` as a round bullet while the block is being edited.
-        let bullets = BulletGlyphs()
+        /// The markers of the open cell, hidden the way the source editor
+        /// hides them: the `**` and the `#` are still in the text, they
+        /// just take no room, and the line the caret is on shows its own
+        /// so it can be typed (the to-do list, 2026-09-19: "the rendered
+        /// page's cell editor does not do this yet, so clicking a heading
+        /// still shows its hashes"). `MarkerHiding` does `BulletGlyphs`'
+        /// substitution in the same pass — a layout manager has one
+        /// delegate slot — so it stands in for it here too.
+        let hiding = MarkerHiding()
         /// The language of the code being typed, when it is code.
         var language: CodeLanguage?
 
@@ -127,17 +137,39 @@ struct BlockEditor: NSViewRepresentable {
         func restyle(_ view: BlockTextView) {
             guard let storage = view.textStorage else { return }
             let selection = view.selectedRanges
+            let source = view.string
             if let language, language != .plain {
                 CodeColours.style(storage, language: language, font: view.baseFont,
                                   paragraph: BlockTextView.paragraphStyle)
+                // Code is code: there are no markdown markers in it to hide.
+                hiding.setMarkers([])
             } else {
                 MarkdownSourceStyle.apply(to: storage, base: view.baseFont,
                                           paragraph: BlockTextView.paragraphStyle)
+                hiding.setMarkers(MarkerHiding.hideable(MarkdownSourceStyle.runs(in: source),
+                                                        in: source as NSString))
             }
             view.typingAttributes = [.font: view.baseFont,
                                      .foregroundColor: NSColor.textColor,
                                      .paragraphStyle: BlockTextView.paragraphStyle]
             view.selectedRanges = selection
+            // The glyphs already exist, so the hiding has to invalidate them
+            // by hand — the same dance the source editor does.
+            if let layout = view.layoutManager {
+                let whole = NSRange(location: 0, length: (source as NSString).length)
+                layout.invalidateGlyphs(forCharacterRange: whole, changeInLength: 0,
+                                        actualCharacterRange: nil)
+                layout.invalidateLayout(forCharacterRange: whole, actualCharacterRange: nil)
+            }
+            view.updateHiddenMarkers(hiding)
+            view.invalidateIntrinsicContentSize()
+        }
+
+        /// The caret moved: the line it left hides its markers again, the
+        /// one it arrived on shows them.
+        func textViewDidChangeSelection(_ notification: Notification) {
+            guard let view = notification.object as? BlockTextView else { return }
+            view.updateHiddenMarkers(hiding)
             view.invalidateIntrinsicContentSize()
         }
 
@@ -163,16 +195,29 @@ struct BlockEditor: NSViewRepresentable {
                 return true
 
             case #selector(NSResponder.insertTab(_:)):
+                if view.isCode {
+                    view.apply(CodeTyping.tabbing(in: text, selection: caret, outdent: false))
+                    return true
+                }
                 parent.bridge.indent()
                 return true
 
             case #selector(NSResponder.insertBacktab(_:)):
+                if view.isCode {
+                    view.apply(CodeTyping.tabbing(in: text, selection: caret, outdent: true))
+                    return true
+                }
                 parent.bridge.outdent()
                 return true
 
             case #selector(NSResponder.deleteBackward(_:)):
                 if text.isEmpty {
                     parent.onDeleteEmpty?()
+                    return true
+                }
+                // Between the two halves of a pair, backspace takes both.
+                if view.isCode, let edit = CodeTyping.backspace(in: text, selection: caret) {
+                    view.apply(edit)
                     return true
                 }
                 return parent.bridge.outdentForBackspace()
@@ -226,10 +271,45 @@ struct BlockEditor: NSViewRepresentable {
 final class BlockTextView: PasteAwareTextView {
     var placeholder = ""
     var baseFont: NSFont = .systemFont(ofSize: 15)
+    /// Set while the cell is a fenced block: brackets close themselves and
+    /// Tab is indentation (Sean, 2026-09-19: "in a code cell in wysiwyg
+    /// add basic features like auto {} () [] and tab inserts a 4space
+    /// width tab"). Off in prose, where "(" is just a bracket.
+    var isCode = false
+
+    /// The pair goes in with the bracket, and typing the closer steps over
+    /// the one that is already there.
+    override func insertText(_ string: Any, replacementRange: NSRange) {
+        guard isCode, let typed = string as? String,
+              let edit = CodeTyping.typing(typed, in: self.string, selection: selectedRange())
+        else {
+            super.insertText(string, replacementRange: replacementRange)
+            return
+        }
+        guard shouldChangeText(in: edit.range, replacementString: edit.replacement) else { return }
+        textStorage?.replaceCharacters(in: edit.range, with: edit.replacement)
+        didChangeText()
+        setSelectedRange(edit.selection)
+    }
+
+    /// One edit, applied — what the coordinator hands over for Tab and for
+    /// a backspace between two halves of a pair.
+    @discardableResult
+    func apply(_ edit: CodeTyping.Edit) -> Bool {
+        guard shouldChangeText(in: edit.range, replacementString: edit.replacement) else { return false }
+        textStorage?.replaceCharacters(in: edit.range, with: edit.replacement)
+        didChangeText()
+        setSelectedRange(edit.selection)
+        return true
+    }
 
     static let paragraphStyle: NSParagraphStyle = {
         let style = NSMutableParagraphStyle()
         style.lineSpacing = 3
+        // The same four-space grid the markdown pane uses (Sean,
+        // 2026-09-19: "indentation and tab width is 4 spaces").
+        style.tabStops = []
+        style.defaultTabInterval = MarkdownTextView.tabWidth
         return style
     }()
 

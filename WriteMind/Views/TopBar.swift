@@ -60,20 +60,26 @@ struct TopBar: View {
     /// preview with nothing clicked yet, where pressing one opens a block
     /// and then does it.
     private var canFormat: Bool { store.selectedNote != nil }
-    /// The pen only draws over the source pane.
-    private var canDraw: Bool { store.selectedNote != nil && appState.mode == .editor }
+    /// The pen works over the rendered page too, not just the source.
+    private var canDraw: Bool { store.selectedNote != nil }
 
     var body: some View {
         HStack(spacing: 2) {
-            // The collapse button lives ON the sidebar; this is the way back
-            // when there is no sidebar to click.
-            if !appState.showSidebar {
-                BarButton(systemImage: "sidebar.left", label: "Show Notes Sidebar",
-                          help: "Bring the notes list back", keys: ["⌃", "⌘", "S"]) {
-                    appState.toggleSidebar()
-                }
-                BarDivider()
+            // ONE spot for the sidebar's switch, the one it had when the
+            // sidebar was away (Sean, 2026-09-19: "keep the hide side bar in
+            // the same spot (where it is when it's closed)"). It used to
+            // move: on the sidebar's own header while it was open, over here
+            // once it was gone, so hiding it and bringing it back was two
+            // buttons in two places.
+            BarButton(systemImage: "sidebar.left",
+                      label: appState.showSidebar ? "Hide Notes Sidebar" : "Show Notes Sidebar",
+                      help: appState.showSidebar ? "Put the notes list away"
+                                                 : "Bring the notes list back",
+                      keys: ["⌃", "⌘", "S"],
+                      isOn: appState.showSidebar) {
+                appState.toggleSidebar()
             }
+            BarDivider()
 
             BarGroup(.style) { styleTools }
             BarGroup(.structure) { structureTools }

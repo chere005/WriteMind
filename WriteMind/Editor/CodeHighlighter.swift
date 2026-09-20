@@ -11,6 +11,10 @@ enum CodeLanguage: String, CaseIterable, Identifiable {
     case wolfram
     case python
     case typescript
+    case rust
+    case java
+    case bash
+    case zsh
 
     var id: String { rawValue }
     /// What goes after the fence.
@@ -24,6 +28,10 @@ enum CodeLanguage: String, CaseIterable, Identifiable {
         case .wolfram: return "Wolfram Language"
         case .python: return "Python"
         case .typescript: return "TypeScript"
+        case .rust: return "Rust"
+        case .java: return "Java"
+        case .bash: return "Bash"
+        case .zsh: return "Zsh"
         }
     }
 
@@ -39,6 +47,12 @@ enum CodeLanguage: String, CaseIterable, Identifiable {
         case "wolfram", "mathematica", "wls", "m": return .wolfram
         case "python", "py", "python3": return .python
         case "typescript", "ts", "tsx", "javascript", "js": return .typescript
+        case "rust", "rs": return .rust
+        case "java": return .java
+        // `sh` and `shell` are Bash's: the colouring is the same and the
+        // fence is what most notes write.
+        case "bash", "sh", "shell": return .bash
+        case "zsh": return .zsh
         default: return nil
         }
     }
@@ -116,7 +130,7 @@ enum CodeHighlighter {
                 cursor = min(length, cursor + 2)
                 emit(start, cursor, .comment); index = cursor; continue
             }
-            if language == .python, unit == 0x23 {   // #
+            if language.hasHashComments, unit == 0x23 {   // #
                 var cursor = index + 1
                 while cursor < length, character(cursor) != 0x0A { cursor += 1 }
                 emit(start, cursor, .comment); index = cursor; continue
@@ -356,7 +370,15 @@ enum CodeHighlighter {
 }
 
 extension CodeLanguage {
-    var hasSlashComments: Bool { self == .c || self == .cpp || self == .typescript }
+    var hasSlashComments: Bool {
+        self == .c || self == .cpp || self == .typescript || self == .rust || self == .java
+    }
+
+    /// `#` to the end of the line — Python and the shells.
+    var hasHashComments: Bool { self == .python || self == .bash || self == .zsh }
+
+    /// A shell: `$VAR` and `${VAR}` are the thing to see at a glance.
+    var isShell: Bool { self == .bash || self == .zsh }
 
     /// The quote characters that open a string.
     var quotes: Set<unichar> {
@@ -366,6 +388,11 @@ extension CodeLanguage {
         case .wolfram: return [0x22]
         case .python: return [0x22, 0x27]
         case .typescript: return [0x22, 0x27, 0x60]
+        case .rust, .java: return [0x22, 0x27]
+        // A backtick in a shell is a command substitution; it is coloured
+        // as a string for the same reason `$( )` is not: what is inside it
+        // is another command, and the point is to see where it starts.
+        case .bash, .zsh: return [0x22, 0x27, 0x60]
         }
     }
 
@@ -377,6 +404,9 @@ extension CodeLanguage {
         case .wolfram: return []
         case .python: return Self.pythonKeywords
         case .typescript: return Self.typescriptKeywords
+        case .rust: return Self.rustKeywords
+        case .java: return Self.javaKeywords
+        case .bash, .zsh: return Self.shellKeywords
         }
     }
 
@@ -386,6 +416,10 @@ extension CodeLanguage {
         case .c, .cpp: return Self.cTypes
         case .python: return Self.pythonTypes
         case .typescript: return Self.typescriptTypes
+        case .rust: return Self.rustTypes
+        case .java: return Self.javaTypes
+        // A shell has no types; the builtins are the words worth marking.
+        case .bash, .zsh: return Self.shellBuiltins
         }
     }
 
@@ -430,6 +464,43 @@ extension CodeLanguage {
     static let typescriptTypes: Set<String> = [
         "string", "number", "boolean", "any", "never", "unknown", "object", "symbol", "bigint",
         "undefined", "Array", "Promise", "Record", "Partial", "Readonly", "Map", "Set", "Date"
+    ]
+
+    static let rustKeywords: Set<String> = [
+        "as", "async", "await", "break", "const", "continue", "crate", "dyn", "else", "enum",
+        "extern", "false", "fn", "for", "if", "impl", "in", "let", "loop", "match", "mod", "move",
+        "mut", "pub", "ref", "return", "self", "Self", "static", "struct", "super", "trait", "true",
+        "type", "unsafe", "use", "where", "while", "union", "macro_rules"
+    ]
+    static let rustTypes: Set<String> = [
+        "i8", "i16", "i32", "i64", "i128", "isize", "u8", "u16", "u32", "u64", "u128", "usize",
+        "f32", "f64", "bool", "char", "str", "String", "Vec", "Option", "Result", "Box", "Rc", "Arc",
+        "RefCell", "Cell", "HashMap", "HashSet", "BTreeMap", "BTreeSet", "Some", "None", "Ok", "Err"
+    ]
+    static let javaKeywords: Set<String> = [
+        "abstract", "assert", "break", "case", "catch", "class", "const", "continue", "default",
+        "do", "else", "enum", "extends", "final", "finally", "for", "goto", "if", "implements",
+        "import", "instanceof", "interface", "native", "new", "package", "private", "protected",
+        "public", "return", "static", "strictfp", "super", "switch", "synchronized", "this", "throw",
+        "throws", "transient", "try", "volatile", "while", "var", "record", "sealed", "permits",
+        "yield", "true", "false", "null"
+    ]
+    static let javaTypes: Set<String> = [
+        "int", "long", "short", "byte", "char", "float", "double", "boolean", "void", "String",
+        "Object", "Integer", "Long", "Double", "Boolean", "Character", "List", "ArrayList", "Map",
+        "HashMap", "Set", "HashSet", "Optional", "Stream", "Exception", "RuntimeException"
+    ]
+    /// The shell words that change what a line DOES — the control flow and
+    /// the builtins that are not programs on the disk.
+    static let shellKeywords: Set<String> = [
+        "if", "then", "elif", "else", "fi", "case", "esac", "for", "select", "while", "until",
+        "do", "done", "function", "in", "time", "coproc", "return", "break", "continue", "exit",
+        "local", "declare", "typeset", "readonly", "export", "unset", "shift", "trap", "set"
+    ]
+    static let shellBuiltins: Set<String> = [
+        "echo", "printf", "read", "cd", "pwd", "test", "eval", "exec", "source", "alias", "unalias",
+        "wait", "jobs", "kill", "let", "getopts", "shopt", "setopt", "emulate", "autoload", "zmodload",
+        "true", "false"
     ]
 
     /// The Wolfram built-ins worth marking: the ones a notebook page is

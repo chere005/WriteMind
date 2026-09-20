@@ -172,7 +172,7 @@ struct SidebarView: View {
         // The collapse button belongs to the sidebar (Sean, 2026-09-18), not
         // to the editor's bar; the way back is the button that appears there
         // when this is hidden, ⌃⌘S, or the View menu.
-        // FOUR BUTTONS IN 250 POINTS, AND NO TITLE.
+        // THREE BUTTONS IN 250 POINTS, AND NO TITLE.
         //
         // The video's own switch is not one of them (Sean, 2026-09-19:
         // "there should only be one show/hide button for the video feed"):
@@ -182,12 +182,13 @@ struct SidebarView: View {
         //
         // The word "Notes" that sat beside the collapse button is gone
         // (Sean, 2026-09-19: "the word "Notes" doesn't need to be there in
-        // the menu bar"): the collapse button keeps the left edge, the other
-        // three keep the right, and the bar keeps its 44 points. The buttons
+        // the menu bar"), and so is the collapse button itself: hiding the
+        // sidebar and bringing it back are one button in one place, on the
+        // text bar (Sean, 2026-09-19: "keep the hide side bar in the same
+        // spot (where it is when it's closed)"). The three that are left
+        // keep the right edge, and the bar keeps its 44 points. The buttons
         // are narrower here than in the text bar.
         HStack(spacing: 1) {
-            BarButton(systemImage: "sidebar.left", label: "Hide Notes Sidebar",
-                      help: "Hide the notes sidebar (⌃⌘S)", width: 22) { appState.toggleSidebar() }
             Spacer(minLength: 2)
             BarButton(systemImage: editing ? "checkmark" : "slider.horizontal.3",
                       label: editing ? "Done Editing" : "Edit Notes",

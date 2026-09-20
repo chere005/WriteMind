@@ -43,6 +43,11 @@ struct DrawingCanvas: View {
     /// Something on the layer is picked, or nothing is — the menu bar needs
     /// to know, so ⌘Z can be the drawing's.
     var onSelectionChanged: ((Bool) -> Void)?
+    /// Objects that were just dropped somewhere new: they record the cell
+    /// they now sit beside, so they are still beside it in the other mode
+    /// (Sean, 2026-09-19: "positions stay the same in markdown and wysiwyg
+    /// mode").
+    var onMoved: ((Set<UUID>) -> Void)?
     /// ⌘Z and ⇧⌘Z while the layer owns them. Each returns true when it had
     /// something to do; false hands the key on to the text underneath.
     var onUndo: (() -> Bool)?
@@ -102,6 +107,9 @@ struct DrawingCanvas: View {
     @State private var styledOnce = false
     /// The node whose label is being typed.
     @State private var editingLabel: UUID?
+    /// The pane's size, kept so the model can be measured from outside the
+    /// geometry reader (a text box grows as it is typed into).
+    @State private var paneSize: CGSize = .zero
     @State private var labelSnapshot = false
     @FocusState private var labelFocused: Bool
 
@@ -133,23 +141,27 @@ struct DrawingCanvas: View {
                 if let editingLabel, let item = drawing[id: editingLabel],
                    case .shape(let shape) = item, shape.kind.isNode {
                     let box = item.bounds(in: geo.size)
-                    let isText = shape.kind == .text
-                    TextField(isText ? "Text" : "Label", text: labelBinding(editingLabel), axis: .vertical)
-                        .textFieldStyle(.roundedBorder)
-                        .font(.system(size: isText ? 14 : 13))
-                        .multilineTextAlignment(isText ? .leading : .center)
-                        .lineLimit(1...(isText ? 24 : 4))
-                        .frame(width: max(90, box.width - (isText ? 0 : 8)))
-                        .position(x: box.midX, y: box.midY - scrollOffset)
-                        .focused($labelFocused)
-                        .onSubmit { self.editingLabel = nil }
-                        .onAppear { labelFocused = true }
+                    if shape.kind == .text {
+                        textBoxEditor(shape, id: editingLabel, item: item, in: geo.size)
+                    } else {
+                        TextField("Label", text: labelBinding(editingLabel), axis: .vertical)
+                            .textFieldStyle(.roundedBorder)
+                            .font(.system(size: 13))
+                            .multilineTextAlignment(.center)
+                            .lineLimit(1...4)
+                            .frame(width: max(90, box.width - 8))
+                            .position(x: box.midX, y: box.midY - scrollOffset)
+                            .focused($labelFocused)
+                            .onSubmit { self.editingLabel = nil }
+                            .onAppear { labelFocused = true }
+                    }
                 }
             }
             .coordinateSpace(name: Self.space)
             .onAppear { loadImages(); watchModifiers(); watchKeys() }
             .onDisappear { unwatchModifiers(); unwatchKeys() }
             .onChange(of: geo.size, initial: true) { _, size in
+                paneSize = size
                 onSize?(size)
                 // A note just opened has lines that have never been routed,
                 // and a resized pane moves the nodes they run between.
@@ -282,23 +294,36 @@ struct DrawingCanvas: View {
                                  with: .color(.secondary), style: StrokeStyle(lineWidth: 1, dash: [3, 3]))
                 }
             case .shape(let shape) where shape.kind == .text:
-                // Just the words: no outline, a dashed one only while empty.
+                // A card, not a dashed rectangle with words near it: the
+                // fill and the corner are one shape, the words sit inside
+                // the same padding the editor uses, and the ink is checked
+                // against the fill before it is drawn (Sean, 2026-09-19:
+                // "text boxes look like shit… just start over and do
+                // better"). While it is being typed into, the field over
+                // the top is the box — nothing is drawn underneath it.
                 let box = item.baseBounds(in: size)
-                let colour = Color(hex: shape.colorHex) ?? .primary
+                let card = Path(roundedRect: box, cornerRadius: TextBoxStyle.cornerRadius)
                 if let fill = shape.fillHex, let fillColour = Color(hex: fill) {
-                    layer.fill(Path(box), with: .color(fillColour))
+                    layer.fill(card, with: .color(fillColour))
                 }
-                let padding = ShapeItem.textPadding
-                if editingLabel == shape.id {
-                    break
-                } else if shape.label.isEmpty {
-                    layer.stroke(Path(roundedRect: box, cornerRadius: 3), with: .color(.secondary.opacity(0.6)),
-                                 style: StrokeStyle(lineWidth: 1, dash: [4, 3]))
-                    let hint = layer.resolve(Text("Text").font(.system(size: 14)).foregroundStyle(.secondary))
-                    layer.draw(hint, at: CGPoint(x: box.minX + padding, y: box.minY + padding), anchor: .topLeading)
+                if editingLabel == shape.id { break }
+                let inset = CGRect(x: box.minX + TextBoxStyle.padding.width,
+                                   y: box.minY + TextBoxStyle.padding.height,
+                                   width: max(1, box.width - TextBoxStyle.padding.width * 2),
+                                   height: max(1, box.height - TextBoxStyle.padding.height * 2))
+                if shape.label.isEmpty {
+                    // An empty box has to be findable and grabbable, so it
+                    // keeps a quiet card of its own until there are words.
+                    if shape.fillHex == nil { layer.fill(card, with: .color(.secondary.opacity(0.07))) }
+                    layer.stroke(card, with: .color(.secondary.opacity(0.35)), style: StrokeStyle(lineWidth: 1))
+                    let hint = layer.resolve(Text("Text").font(TextBoxStyle.textFont)
+                        .foregroundStyle(.secondary))
+                    layer.draw(hint, at: CGPoint(x: inset.minX, y: inset.minY), anchor: .topLeading)
                 } else {
-                    let resolved = layer.resolve(Text(shape.label).font(.system(size: 14)).foregroundStyle(colour))
-                    layer.draw(resolved, in: box.insetBy(dx: padding, dy: padding))
+                    let ink = Color(hex: TextBoxStyle.readableInk(shape.colorHex, on: shape.fillHex)) ?? .primary
+                    let resolved = layer.resolve(Text(shape.label).font(TextBoxStyle.textFont)
+                        .foregroundStyle(ink))
+                    layer.draw(resolved, in: inset)
                 }
             case .shape(let shape):
                 let box = item.baseBounds(in: size)
@@ -326,65 +351,29 @@ struct DrawingCanvas: View {
     /// The line, stopped short of a head so the tip is the point, and the
     /// heads.
     static func draw(_ connector: ConnectorItem, points: [CGPoint], in context: inout GraphicsContext) {
-        guard points.count >= 2 else { return }
+        // The line and its heads come from InkPaths, which is also what
+        // the PDF is drawn from: one description of the shape, two places
+        // it is painted.
+        let (line, heads) = InkPaths.paths(for: connector, points: points)
+        guard !points.isEmpty else { return }
         let colour = Color(hex: connector.colorHex) ?? .primary
-        let head = ConnectorItem.headLength(for: connector.lineWidth)
-        // The line is shortened at each END only, along its own last
-        // segment, so a head's tip lands exactly on the point whatever
-        // corners the line turned to get there.
-        var drawn = points
-        if connector.startHead != .none {
-            drawn[0] = ConnectorItem.shortened(points[0], from: points[1], by: head * 0.8)
-        }
-        let last = drawn.count - 1
-        if connector.endHead != .none {
-            drawn[last] = ConnectorItem.shortened(points[last], from: points[last - 1], by: head * 0.8)
-        }
-        var line = Path()
-        line.move(to: drawn[0])
-        for point in drawn.dropFirst() { line.addLine(to: point) }
         context.stroke(line, with: .color(colour),
                        style: StrokeStyle(lineWidth: connector.lineWidth,
                                           lineCap: connector.line == .dotted ? .round : .butt,
                                           lineJoin: .round,
                                           dash: connector.dash()))
-        if connector.startHead == .arrow {
-            context.fill(ConnectorItem.head(tip: points[0], from: points[1], lineWidth: connector.lineWidth),
-                         with: .color(colour))
-        }
-        if connector.endHead == .arrow {
-            context.fill(ConnectorItem.head(tip: points[last], from: points[last - 1],
-                                            lineWidth: connector.lineWidth),
-                         with: .color(colour))
-        }
+        for head in heads { context.fill(head, with: .color(colour)) }
     }
 
     static func draw(_ stroke: Stroke, points: [CGPoint], in context: inout GraphicsContext) {
-        guard let first = points.first else { return }
         let colour = Color(hex: stroke.colorHex) ?? .orange
-
-        if points.count == 1 {
-            let dot = CGRect(x: first.x - stroke.width / 2, y: first.y - stroke.width / 2,
-                             width: stroke.width, height: stroke.width)
-            context.fill(Path(ellipseIn: dot), with: .color(colour))
-            return
+        let (path, filled) = InkPaths.path(for: stroke, points: points)
+        if filled {
+            context.fill(path, with: .color(colour))
+        } else if !points.isEmpty {
+            context.stroke(path, with: .color(colour),
+                           style: StrokeStyle(lineWidth: stroke.width, lineCap: .round, lineJoin: .round))
         }
-
-        var path = Path()
-        path.move(to: first)
-        if points.count == 2 {
-            path.addLine(to: points[1])
-        } else {
-            // Quadratic curves through the midpoints smooth the raw mouse samples.
-            for index in 1..<(points.count - 1) {
-                let mid = CGPoint(x: (points[index].x + points[index + 1].x) / 2,
-                                  y: (points[index].y + points[index + 1].y) / 2)
-                path.addQuadCurve(to: mid, control: points[index])
-            }
-            path.addLine(to: points[points.count - 1])
-        }
-        context.stroke(path, with: .color(colour),
-                       style: StrokeStyle(lineWidth: stroke.width, lineCap: .round, lineJoin: .round))
     }
 
     // MARK: - The handles
@@ -648,14 +637,37 @@ struct DrawingCanvas: View {
         labelSnapshot = false
     }
 
-    /// A text box is as tall as its text, once the typing is over.
+    /// A text box is as tall as its text — measured on every keystroke, so
+    /// the card grows under the caret instead of catching up afterwards.
     private func fitTextBox(_ id: UUID, in size: CGSize) {
-        guard case .shape(var shape)? = drawing[id: id], shape.kind == .text, !shape.label.isEmpty,
-              size.width > 0 else { return }
-        let aspect = ShapeItem.textAspect(for: shape.label, boxWidth: shape.width * size.width)
+        guard case .shape(var shape)? = drawing[id: id], shape.kind == .text, size.width > 0 else { return }
+        let aspect = TextBoxStyle.aspect(for: shape.label, boxWidth: shape.width * size.width)
         guard abs(aspect - shape.aspect) > 0.001 else { return }
         shape.aspect = aspect
         drawing[id: id] = .shape(shape)
+    }
+
+    /// The box, typed into where it sits: the same font, the same padding,
+    /// the same corner and the same width as the card underneath, so the
+    /// words do not move when the caret arrives or leaves. Return puts in a
+    /// line; Escape (handled with the other keys) is done.
+    @ViewBuilder
+    private func textBoxEditor(_ shape: ShapeItem, id: UUID, item: CanvasItem, in size: CGSize) -> some View {
+        let base = item.baseBounds(in: size)
+        let box = item.bounds(in: size)
+        let fill = shape.fillHex.flatMap { Color(hex: $0) }
+        let inkHex = TextBoxStyle.readableInk(shape.colorHex, on: shape.fillHex)
+        let width = max(TextBoxStyle.minimumWidth, base.width)
+        let height = max(base.height, TextBoxStyle.height(for: shape.label, width: width))
+        TextBoxField(text: labelBinding(id), ink: NSColor(hex: inkHex) ?? .textColor)
+            .frame(width: width, height: height, alignment: .topLeading)
+            .background(RoundedRectangle(cornerRadius: TextBoxStyle.cornerRadius)
+                .fill(fill ?? Color(nsColor: .textBackgroundColor)))
+            .overlay(RoundedRectangle(cornerRadius: TextBoxStyle.cornerRadius)
+                .strokeBorder(Color.accentColor, lineWidth: 1.5))
+            .scaleEffect(item.transform.scale)
+            .rotationEffect(.radians(item.transform.rotation))
+            .position(x: box.midX, y: box.midY - scrollOffset)
     }
 
     private func labelBinding(_ id: UUID) -> Binding<String> {
@@ -666,6 +678,7 @@ struct DrawingCanvas: View {
                 if !labelSnapshot { onBeginChange?(); labelSnapshot = true }
                 shape.label = text
                 drawing[id: id] = .shape(shape)
+                if shape.kind == .text { fitTextBox(id, in: paneSize) }
             })
     }
 
@@ -717,7 +730,10 @@ struct DrawingCanvas: View {
             .onEnded { value in
                 switch interaction {
                 case .drawing:
-                    if let finished = current { drawing.items.append(.stroke(finished)) }
+                    if let finished = current {
+                        drawing.items.append(.stroke(finished))
+                        onMoved?([finished.id])
+                    }
                     current = nil
                 case .connecting(let start, let fromNode):
                     connectPreview = nil
@@ -746,6 +762,10 @@ struct DrawingCanvas: View {
                        selection.count == 1, let id = selection.first, let item = drawing[id: id],
                        case .shape(let shape) = item, shape.kind.isNode {
                         beginLabel(id)
+                    } else if abs(value.translation.height) > 2 {
+                        // It went somewhere else down the page: that is a
+                        // different cell to belong to.
+                        onMoved?(Set(snapshot.keys))
                     }
                 case .placing(let start):
                     place(from: start, to: doc(value.location), in: size)
@@ -967,6 +987,7 @@ struct DrawingCanvas: View {
         else { return }
         onBeginChange?()
         drawing.items.append(item)
+        onMoved?([item.id])
         selection = [item.id]
         // A text box is put down to be typed in.
         if case .shape(let shape) = item, shape.kind == .text { beginLabel(item.id) }

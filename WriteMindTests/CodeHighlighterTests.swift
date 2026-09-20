@@ -31,7 +31,7 @@ final class CodeHighlighterTests: XCTestCase {
         XCTAssertEqual(CodeLanguage.from(fence: "js"), .typescript)
         XCTAssertEqual(CodeLanguage.from(fence: ""), .plain)
         XCTAssertEqual(CodeLanguage.from(fence: nil), .plain)
-        XCTAssertNil(CodeLanguage.from(fence: "rust"))
+        XCTAssertNil(CodeLanguage.from(fence: "haskell"), "a language this app does not colour")
         XCTAssertNil(CodeLanguage.from(fence: "wl"), "wl is this app's maths fence, not a code language")
     }
 
@@ -102,5 +102,100 @@ final class CodeHighlighterTests: XCTestCase {
         XCTAssertEqual(run("x = \"never closed", .python).last?.1, "\"never closed")
         XCTAssertEqual(run("/* never closed", .c).last?.1, "/* never closed")
         XCTAssertEqual(run("(* never closed", .wolfram).last?.1, "(* never closed")
+    }
+}
+
+/// Rust, Java, Bash and Zsh (Sean, 2026-09-19: "add rust java bash zsh
+/// syntax highlighting").
+final class MoreLanguagesTests: XCTestCase {
+    private func kinds(_ code: String, _ language: CodeLanguage) -> [(String, CodeToken.Kind)] {
+        let text = code as NSString
+        return CodeHighlighter.tokens(in: code, language: language)
+            .map { (text.substring(with: $0.range), $0.kind) }
+    }
+
+    private func kind(of word: String, in code: String, _ language: CodeLanguage) -> CodeToken.Kind? {
+        kinds(code, language).first { $0.0 == word }?.1
+    }
+
+    // MARK: - The fences
+
+    func testEachLanguageIsNamedByItsFence() {
+        XCTAssertEqual(CodeLanguage.from(fence: "rust"), .rust)
+        XCTAssertEqual(CodeLanguage.from(fence: "rs"), .rust)
+        XCTAssertEqual(CodeLanguage.from(fence: "java"), .java)
+        XCTAssertEqual(CodeLanguage.from(fence: "bash"), .bash)
+        XCTAssertEqual(CodeLanguage.from(fence: "sh"), .bash)
+        XCTAssertEqual(CodeLanguage.from(fence: "shell"), .bash)
+        XCTAssertEqual(CodeLanguage.from(fence: "zsh"), .zsh)
+    }
+
+    func testEachOneIsOnTheMenu() {
+        // The fence menu is built from allCases, so a language that is not
+        // in it cannot be picked.
+        let titles = CodeLanguage.allCases.map(\.title)
+        for name in ["Rust", "Java", "Bash", "Zsh"] { XCTAssertTrue(titles.contains(name), name) }
+    }
+
+    // MARK: - Rust
+
+    func testRustKeywordsTypesAndComments() {
+        let code = "// count\nfn main() {\n    let mut total: u32 = 0;\n}"
+        XCTAssertEqual(kind(of: "fn", in: code, .rust), .keyword)
+        XCTAssertEqual(kind(of: "let", in: code, .rust), .keyword)
+        XCTAssertEqual(kind(of: "mut", in: code, .rust), .keyword)
+        XCTAssertEqual(kind(of: "u32", in: code, .rust), .type)
+        XCTAssertEqual(kind(of: "// count", in: code, .rust), .comment)
+        XCTAssertEqual(kind(of: "0", in: code, .rust), .number)
+    }
+
+    func testRustStringsAndCollections() {
+        let code = "let v: Vec<String> = vec![\"a\"];"
+        XCTAssertEqual(kind(of: "Vec", in: code, .rust), .type)
+        XCTAssertEqual(kind(of: "String", in: code, .rust), .type)
+        XCTAssertEqual(kind(of: "\"a\"", in: code, .rust), .string)
+    }
+
+    // MARK: - Java
+
+    func testJavaKeywordsAndTypes() {
+        let code = "public class Main {\n    /* go */\n    private static int n = 3;\n}"
+        XCTAssertEqual(kind(of: "public", in: code, .java), .keyword)
+        XCTAssertEqual(kind(of: "class", in: code, .java), .keyword)
+        XCTAssertEqual(kind(of: "int", in: code, .java), .type)
+        XCTAssertEqual(kind(of: "/* go */", in: code, .java), .comment)
+    }
+
+    func testJavaStringsAreDoubleQuoted() {
+        XCTAssertEqual(kind(of: "\"hi\"", in: "String s = \"hi\";", .java), .string)
+    }
+
+    // MARK: - The shells
+
+    func testShellCommentsAndKeywords() {
+        let code = "# build\nif [ -f x ]; then\n  echo \"hi\"\nfi"
+        XCTAssertEqual(kind(of: "# build", in: code, .bash), .comment)
+        XCTAssertEqual(kind(of: "if", in: code, .bash), .keyword)
+        XCTAssertEqual(kind(of: "then", in: code, .bash), .keyword)
+        XCTAssertEqual(kind(of: "fi", in: code, .bash), .keyword)
+        XCTAssertEqual(kind(of: "echo", in: code, .bash), .type, "a builtin, not a program")
+        XCTAssertEqual(kind(of: "\"hi\"", in: code, .bash), .string)
+    }
+
+    func testZshReadsTheSameWayAndKnowsItsOwnBuiltins() {
+        let code = "setopt extended_glob\nfor f in *.md; do print $f; done"
+        XCTAssertEqual(kind(of: "setopt", in: code, .zsh), .type)
+        XCTAssertEqual(kind(of: "for", in: code, .zsh), .keyword)
+        XCTAssertEqual(kind(of: "do", in: code, .zsh), .keyword)
+        XCTAssertEqual(kind(of: "done", in: code, .zsh), .keyword)
+    }
+
+    func testASlashCommentIsNotAThingInAShell() {
+        // `//` is a path, not a comment.
+        XCTAssertNil(kinds("cd //server/share", .bash).first { $0.1 == .comment })
+    }
+
+    func testNothingIsColouredInPlainText() {
+        XCTAssertTrue(CodeHighlighter.tokens(in: "fn main() {}", language: .plain).isEmpty)
     }
 }

@@ -38,6 +38,13 @@ final class NoteStore: ObservableObject {
     var canvasSize: CGSize = .zero
     /// How far the editor has scrolled, so a new object lands in view.
     var canvasScroll: CGFloat = 0
+    /// The cell at the top of the window, as a character offset into the
+    /// note. The two sides lay the same note out at different heights, so
+    /// a scroll POSITION does not carry across a switch between them; the
+    /// cell does (Sean, 2026-09-19: "positions stay the same in markdown
+    /// and wysiwyg mode"). Whichever pane comes up puts this cell back at
+    /// the top.
+    var topCell: Int = 0
     /// Where the caret's line is, in the pane's document coordinates — set
     /// by the editor pane, nil while the source editor is not up.
     var caretAnchor: (() -> CGRect?)?
@@ -618,9 +625,15 @@ final class NoteStore: ObservableObject {
     /// A capture is placed where it was on the page, at the page's scale —
     /// not at the size the picture happens to be.
     private func placeCapture(_ result: NotebookCapture.Result, mode: NotebookCapture.Mode) -> Bool {
-        guard let note = selectedNote,
-              let imported = DrawingStore.importImage(result.image, in: owningFolder(for: note.url),
-                                                      jpegQuality: mode == .ink ? nil : 0.85)
+        guard let note = selectedNote else { return false }
+        let folder = owningFolder(for: note.url)
+        // Traced writing goes in as a vector; a photograph, and writing too
+        // faint to trace, fall back to the picture.
+        let vector = result.vector.flatMap {
+            DrawingStore.importVector($0, size: result.frame.size, in: folder)
+        }
+        guard let imported = vector ?? DrawingStore.importImage(result.image, in: folder,
+                                                                jpegQuality: mode == .ink ? nil : 0.85)
         else { return false }
         let placement = NotebookCapture.placement(frame: result.frame, pageSize: result.pageSize,
                                                   pane: paneSize, nudge: nudge)
@@ -632,6 +645,7 @@ final class NoteStore: ObservableObject {
         beginDrawingChange()
         drawing.items.append(.image(ImageItem(file: imported.file, center: center,
                                               width: placement.width, aspect: imported.aspect)))
+        reanchor(Set([drawing.items.last?.id].compactMap { $0 }))
         if isAnchored { afterPlacing?() }
         return true
     }
@@ -682,6 +696,7 @@ final class NoteStore: ObservableObject {
                                               center: center,
                                               width: width / pane.width,
                                               aspect: imported.aspect)))
+        reanchor(Set([drawing.items.last?.id].compactMap { $0 }))
         if anchored { afterPlacing?() }
     }
 
@@ -702,9 +717,14 @@ final class NoteStore: ObservableObject {
     func addTextBox(colorHex: String) {
         guard selectedNote != nil else { return }
         beginDrawingChange()
-        let box = ShapeItem(kind: .text, center: visibleCenter, width: 0.25,
+        // A line tall, the same way it will be a line tall after the first
+        // word is typed — so the card does not jump the moment it is used.
+        let width = 0.25
+        let box = ShapeItem(kind: .text, center: visibleCenter, width: width,
+                            aspect: TextBoxStyle.aspect(for: "", boxWidth: width * paneSize.width),
                             colorHex: colorHex, lineWidth: 1)
         drawing.items.append(.shape(box))
+        reanchor([box.id])
         pendingLabelEdit = box.id
     }
 
@@ -747,6 +767,60 @@ final class NoteStore: ObservableObject {
     /// read into still land at the cursor; it is the OBJECT that has to
     /// sit between two cells.
     var cellBoundary: ((CGFloat) -> CGFloat?)?
+    /// The cell at a point down the page, as a character offset — what an
+    /// object records when it is put down, so it can be found again on the
+    /// other side (Sean, 2026-09-19: "positions stay the same in markdown
+    /// and wysiwyg mode").
+    var cellAnchor: ((CGFloat) -> Int?)?
+    /// The other way: where that cell starts in the pane showing now.
+    var cellTop: ((Int) -> CGFloat?)?
+    /// Every cell's box, for working out where a dropped object belongs.
+    var cellBoxes: (() -> [FloatingHoming.CellBox])?
+
+    /// Put every anchored object back beside its cell. Called when the
+    /// mode changes, because the note is laid out at a different height on
+    /// the other side and the objects would otherwise stay where the old
+    /// layout had put them.
+    func reanchorObjects() {
+        guard let cellTop, paneSize.height > 1, !drawing.items.isEmpty else { return }
+        let moved = CanvasAnchors.reanchored(drawing.items, in: paneSize, y: { cellTop($0) })
+        guard CanvasAnchors.differ(drawing.items, moved) else { return }
+        // Not an edit of the drawing: the objects have not changed, only
+        // the layout under them, so this is not on the undo stack.
+        drawing.items = moved
+    }
+
+    /// The cell an object now sits beside, remembered — after it is
+    /// dropped somewhere new.
+    func reanchor(_ ids: Set<UUID>) {
+        guard paneSize.height > 1 else { return }
+        // Every cell with what floats in it folded in: one box per cell,
+        // as tall as the cell and its floating things together (Sean,
+        // 2026-09-19). An object dropped inside a box belongs to that
+        // cell; dropped outside every box, it goes above the next one.
+        let boxes = FloatingHoming.boxes(
+            cells: cellBoxes?() ?? [],
+            floating: drawing.visibleItems.map { ($0.anchor, $0.bounds(in: paneSize)) })
+        for index in drawing.items.indices where ids.contains(drawing.items[index].id) {
+            let box = drawing.items[index].bounds(in: paneSize)
+            guard let home = FloatingHoming.home(for: box, in: boxes) else {
+                // No cells at all: fall back to the nearest boundary.
+                if let anchor = cellAnchor?(box.minY) { drawing.items[index].anchor = anchor }
+                continue
+            }
+            drawing.items[index].anchor = home
+            // Drawn on the empty page below its cell: the cell follows the
+            // one above it, it does not float wherever the pen happened to
+            // be (Sean, 2026-09-20: "all cells are next to eachother,
+            // there's random space between cells here"). Anything drawn
+            // beside or over the text is left exactly where it was drawn.
+            guard let cell = boxes.first(where: { $0.anchor == home }) else { continue }
+            let follows = cell.bottom + MarkdownPreview.gapHeight
+            guard box.minY > follows + 1 else { continue }
+            drawing.items[index] = CanvasAnchors.placed(drawing.items[index], atTop: follows,
+                                                        in: paneSize)
+        }
+    }
 
     private func anchoredCenter(width: CGFloat, height: CGFloat) -> (center: CGPoint, anchored: Bool) {
         let pane = paneSize
@@ -755,6 +829,7 @@ final class NoteStore: ObservableObject {
         let gap = cellBoundary?(line.maxY) ?? line.maxY
         let y = gap + 8 + height / 2
         return (CGPoint(x: x / pane.width, y: y / pane.height), true)
+        // The caller records the cell as well — see `reanchor(_:)`.
     }
 
     private func scheduleDrawingSave() {

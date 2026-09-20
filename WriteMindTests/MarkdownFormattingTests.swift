@@ -118,10 +118,10 @@ final class IndentAndQuoteTests: XCTestCase {
         XCTAssertEqual(back, "one\ntwo")
     }
 
-    func testIndentAddsTwoSpacesToAPlainLineAndToABullet() {
-        XCTAssertEqual(apply(MarkdownFormatting.indent(text: "a", selection: NSRange(location: 1, length: 0)), to: "a"), "  a")
+    func testIndentAddsFourSpacesToAPlainLineAndToABullet() {
+        XCTAssertEqual(apply(MarkdownFormatting.indent(text: "a", selection: NSRange(location: 1, length: 0)), to: "a"), "    a")
         let bullet = "- item"
-        XCTAssertEqual(apply(MarkdownFormatting.indent(text: bullet, selection: NSRange(location: 0, length: 0)), to: bullet), "  - item")
+        XCTAssertEqual(apply(MarkdownFormatting.indent(text: bullet, selection: NSRange(location: 0, length: 0)), to: bullet), "    - item")
     }
 
     func testIndentNestsAQuoteRatherThanShiftingIt() {
@@ -130,7 +130,7 @@ final class IndentAndQuoteTests: XCTestCase {
     }
 
     func testOutdentTakesSpacesFirstThenTheQuoteMarker() {
-        XCTAssertEqual(apply(MarkdownFormatting.outdent(text: "  > q", selection: NSRange(location: 5, length: 0)), to: "  > q"), "> q")
+        XCTAssertEqual(apply(MarkdownFormatting.outdent(text: "    > q", selection: NSRange(location: 7, length: 0)), to: "    > q"), "> q")
         XCTAssertEqual(apply(MarkdownFormatting.outdent(text: "> q", selection: NSRange(location: 3, length: 0)), to: "> q"), "q")
         XCTAssertEqual(apply(MarkdownFormatting.outdent(text: "q", selection: NSRange(location: 1, length: 0)), to: "q"), "q")
     }
@@ -138,24 +138,25 @@ final class IndentAndQuoteTests: XCTestCase {
     func testIndentAndOutdentSpanAMultiLineSelection() {
         let text = "- a\n- b"
         let inward = MarkdownFormatting.indent(text: text, selection: NSRange(location: 0, length: 7))
-        XCTAssertEqual(apply(inward, to: text), "  - a\n  - b")
-        let outward = MarkdownFormatting.outdent(text: "  - a\n  - b", selection: NSRange(location: 0, length: 11))
-        XCTAssertEqual(apply(outward, to: "  - a\n  - b"), "- a\n- b")
+        XCTAssertEqual(apply(inward, to: text), "    - a\n    - b")
+        let indented = "    - a\n    - b"
+        let outward = MarkdownFormatting.outdent(text: indented, selection: NSRange(location: 0, length: 15))
+        XCTAssertEqual(apply(outward, to: indented), "- a\n- b")
     }
 
     func testBlankLinesAreLeftAloneByIndent() {
         let text = "a\n\nb"
-        XCTAssertEqual(apply(MarkdownFormatting.indent(text: text, selection: NSRange(location: 0, length: 4)), to: text), "  a\n\n  b")
+        XCTAssertEqual(apply(MarkdownFormatting.indent(text: text, selection: NSRange(location: 0, length: 4)), to: text), "    a\n\n    b")
     }
 
     func testBackspaceInsideThePrefixOutdents() {
-        let text = "  - item"
-        let edit = MarkdownFormatting.outdentForBackspace(text: text, selection: NSRange(location: 4, length: 0))
+        let text = "    - item"
+        let edit = MarkdownFormatting.outdentForBackspace(text: text, selection: NSRange(location: 6, length: 0))
         XCTAssertEqual(edit.map { apply($0, to: text) }, "- item")
     }
 
     func testBackspaceInTheTextIsAnOrdinaryBackspace() {
-        XCTAssertNil(MarkdownFormatting.outdentForBackspace(text: "  - item", selection: NSRange(location: 6, length: 0)))
+        XCTAssertNil(MarkdownFormatting.outdentForBackspace(text: "    - item", selection: NSRange(location: 8, length: 0)))
         XCTAssertNil(MarkdownFormatting.outdentForBackspace(text: "plain", selection: NSRange(location: 3, length: 0)))
     }
 
@@ -232,19 +233,19 @@ final class IndentBlockTests: XCTestCase {
         let text = "one line\ntwo line\nthree line\n\nafter"
         // Caret on the SECOND line of the paragraph.
         let edit = MarkdownFormatting.indent(text: text, selection: NSRange(location: 10, length: 0))
-        XCTAssertEqual(apply(edit, to: text), "  one line\n  two line\n  three line\n\nafter")
+        XCTAssertEqual(apply(edit, to: text), "    one line\n    two line\n    three line\n\nafter")
     }
 
     func testTheParagraphStopsAtABlankLine() {
         let text = "a\n\nb\nc"
         let edit = MarkdownFormatting.indent(text: text, selection: NSRange(location: 3, length: 0))
-        XCTAssertEqual(apply(edit, to: text), "a\n\n  b\n  c")
+        XCTAssertEqual(apply(edit, to: text), "a\n\n    b\n    c")
     }
 
     func testABulletIndentsAloneNotTheWholeList() {
         let text = "- one\n- two\n- three"
         let edit = MarkdownFormatting.indent(text: text, selection: NSRange(location: 8, length: 0))
-        XCTAssertEqual(apply(edit, to: text), "- one\n  - two\n- three")
+        XCTAssertEqual(apply(edit, to: text), "- one\n    - two\n- three")
     }
 
     func testAQuoteLineAndAHeadingAlsoStandAlone() {
@@ -253,24 +254,47 @@ final class IndentBlockTests: XCTestCase {
                        "> one\n> > two")
         let heading = "# Title\nbody"
         XCTAssertEqual(apply(MarkdownFormatting.indent(text: heading, selection: NSRange(location: 2, length: 0)), to: heading),
-                       "  # Title\nbody")
+                       "    # Title\nbody")
     }
 
     func testAParagraphStopsAtAListThatFollowsIt() {
         let text = "prose one\nprose two\n- item"
         let edit = MarkdownFormatting.indent(text: text, selection: NSRange(location: 0, length: 0))
-        XCTAssertEqual(apply(edit, to: text), "  prose one\n  prose two\n- item")
+        XCTAssertEqual(apply(edit, to: text), "    prose one\n    prose two\n- item")
     }
 
     func testOutdentUndoesTheWholeParagraphToo() {
-        let text = "  one\n  two"
-        let edit = MarkdownFormatting.outdent(text: text, selection: NSRange(location: 8, length: 0))
+        let text = "    one\n    two"
+        let edit = MarkdownFormatting.outdent(text: text, selection: NSRange(location: 10, length: 0))
         XCTAssertEqual(apply(edit, to: text), "one\ntwo")
     }
 
     func testAnExplicitSelectionIsStillTakenAsGiven() {
         let text = "one\ntwo\nthree"
         let edit = MarkdownFormatting.indent(text: text, selection: NSRange(location: 0, length: 3))
-        XCTAssertEqual(apply(edit, to: text), "  one\ntwo\nthree")
+        XCTAssertEqual(apply(edit, to: text), "    one\ntwo\nthree")
+    }
+}
+
+/// One step in is four spaces, and a tab is shown four spaces wide (Sean,
+/// 2026-09-19: "indentation and tab width is 4 spaces").
+final class IndentWidthTests: XCTestCase {
+    func testTheStepIsFourSpaces() {
+        XCTAssertEqual(MarkdownFormatting.indentUnit, "    ")
+        XCTAssertEqual(MarkdownFormatting.indentUnit.count, MarkdownFormatting.tabWidth)
+    }
+
+    func testATabIsShownFourSpacesWide() {
+        let style = MarkdownTextView.paragraphStyle
+        XCTAssertTrue(style.tabStops.isEmpty, "no stops of its own, so the interval decides")
+        let four = ("    " as NSString).size(withAttributes: [.font: MarkdownTextView.font]).width
+        XCTAssertEqual(style.defaultTabInterval, four, accuracy: 0.5)
+        XCTAssertEqual(BlockTextView.paragraphStyle.defaultTabInterval, four, accuracy: 0.5)
+    }
+
+    func testOutdentTakesTheWholeStep() {
+        let text = "    deep"
+        let edit = MarkdownFormatting.outdent(text: text, selection: NSRange(location: 0, length: 0))
+        XCTAssertEqual((text as NSString).replacingCharacters(in: edit.range, with: edit.replacement), "deep")
     }
 }

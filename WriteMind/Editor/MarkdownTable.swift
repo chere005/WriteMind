@@ -86,6 +86,102 @@ struct MarkdownTable: Equatable {
         return cells.map { $0.trimmingCharacters(in: .whitespaces) }
     }
 
+    // MARK: - Editing the grid
+
+    /// A place in the table. Row 0 is the header; row 1 is the first row
+    /// under the rule, so one number walks the whole grid (Sean,
+    /// 2026-09-19: a table should be "a grid you tab through, with rows and
+    /// columns added and taken away").
+    struct Cell: Hashable {
+        var row: Int
+        var column: Int
+
+        var isHeader: Bool { row == 0 }
+    }
+
+    var rowCount: Int { rows.count + 1 }
+
+    func contains(_ cell: Cell) -> Bool {
+        cell.row >= 0 && cell.row < rowCount && cell.column >= 0 && cell.column < columns
+    }
+
+    func text(at cell: Cell) -> String {
+        guard contains(cell) else { return "" }
+        return cell.isHeader ? header[cell.column] : rows[cell.row - 1][cell.column]
+    }
+
+    func setting(_ text: String, at cell: Cell) -> MarkdownTable {
+        guard contains(cell) else { return self }
+        // A newline would end the row and a pipe would end the cell, so
+        // neither can be typed into one: the line is the storage.
+        let clean = text.replacingOccurrences(of: "\n", with: " ")
+            .replacingOccurrences(of: "|", with: "\\|")
+        var copy = self
+        if cell.isHeader { copy.header[cell.column] = clean } else { copy.rows[cell.row - 1][cell.column] = clean }
+        return copy
+    }
+
+    /// A blank row under `row` — under the header when that is where the
+    /// caret is, at the end when `row` is past the last one.
+    func insertingRow(after row: Int) -> MarkdownTable {
+        var copy = self
+        let index = min(max(row, 0), rows.count)
+        copy.rows.insert(Array(repeating: "", count: columns), at: index)
+        return copy
+    }
+
+    /// Nil when it is the last row: a table with no rows is a header and a
+    /// rule, which is still a table, but taking the LAST one leaves nothing
+    /// to take next and the command should simply be unavailable.
+    func removingRow(_ row: Int) -> MarkdownTable? {
+        guard row >= 1, row <= rows.count else { return nil }
+        var copy = self
+        copy.rows.remove(at: row - 1)
+        return copy
+    }
+
+    func insertingColumn(after column: Int) -> MarkdownTable {
+        var copy = self
+        let index = min(max(column + 1, 0), columns)
+        copy.header.insert(Self.headerName(index + 1), at: index)
+        copy.rows = copy.rows.map { row in
+            var row = row
+            row.insert("", at: min(index, row.count))
+            return row
+        }
+        return copy
+    }
+
+    /// Nil for the last column — a table needs one.
+    func removingColumn(_ column: Int) -> MarkdownTable? {
+        guard columns > 1, column >= 0, column < columns else { return nil }
+        var copy = self
+        copy.header.remove(at: column)
+        copy.rows = copy.rows.map { row in
+            var row = row
+            if column < row.count { row.remove(at: column) }
+            return row
+        }
+        return copy
+    }
+
+    /// Tab order: along the row, then down to the start of the next one.
+    /// Nil past the last cell — which is where Tab adds a row.
+    func next(after cell: Cell) -> Cell? {
+        guard contains(cell) else { return nil }
+        if cell.column + 1 < columns { return Cell(row: cell.row, column: cell.column + 1) }
+        guard cell.row + 1 < rowCount else { return nil }
+        return Cell(row: cell.row + 1, column: 0)
+    }
+
+    /// The other way, stopping at the first cell of the header.
+    func previous(before cell: Cell) -> Cell? {
+        guard contains(cell) else { return nil }
+        if cell.column > 0 { return Cell(row: cell.row, column: cell.column - 1) }
+        guard cell.row > 0 else { return nil }
+        return Cell(row: cell.row - 1, column: columns - 1)
+    }
+
     /// The table in `lines`, which must start with the header and its rule.
     /// Rows shorter than the header are padded, longer ones trimmed, so the
     /// grid is always rectangular.

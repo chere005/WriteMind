@@ -42,6 +42,8 @@ struct WriteMindApp: App {
                     .keyboardShortcut("o", modifiers: [.command, .shift])
             }
 
+            ExportMenu(store: store)
+
             ProjectMenu(store: store, projects: projects, cacheSession: cacheSession)
 
             CommandGroup(after: .sidebar) {
@@ -126,6 +128,9 @@ struct WriteMindApp: App {
 
             CommandGroup(after: .pasteboard) {
                 Divider()
+                // ⌘. as in a notebook: the selection grows a step at a time.
+                Button("Expand Selection") { appState.editor.expandSelection() }
+                    .keyboardShortcut(".", modifiers: .command)
                 Button("Select Next Occurrence") { appState.editor.selectNextOccurrence() }
                     .keyboardShortcut("d", modifiers: .command)
                 Button("Select All Occurrences") { appState.editor.selectAllOccurrences() }
@@ -222,6 +227,33 @@ struct FormatMenu: Commands {
             Divider()
             Button("Decrease Indentation") { editor.outdent() }.keyboardShortcut("[", modifiers: .command)
             Button("Increase Indentation") { editor.indent() }.keyboardShortcut("]", modifiers: .command)
+            Divider()
+            // The notebook's own two commands. ⌃D and ⌃M, not ⌘D and ⌘M:
+            // ⌘D was already Select Next Occurrence (Sean, 2026-09-19:
+            // "cmd d was already multi text selection... change make ctrl d
+            // and ctrl m divide and merge"), and ⌘M is Minimise.
+            Button("Split Cell") { editor.splitCell() }
+                .keyboardShortcut("d", modifiers: .control)
+                .disabled(store.selectedNote == nil)
+            Button("Merge Cells") { editor.mergeCells() }
+                .keyboardShortcut("m", modifiers: .control)
+                .disabled(store.selectedNote == nil)
+            Divider()
+            // A cell is a thing you can hold, the way a notebook's is
+            // (Sean, 2026-09-20). ⌘D is Sublime's multi-cursor and stays
+            // that way, so the cell commands take ⌃ keys.
+            Button("Duplicate Cell") { editor.duplicateCell() }
+                .keyboardShortcut("d", modifiers: [.control, .shift])
+                .disabled(store.selectedNote == nil)
+            Button("Delete Cell") { editor.deleteCell() }
+                .keyboardShortcut(.delete, modifiers: [.control])
+                .disabled(store.selectedNote == nil)
+            Button("Move Cell Up") { editor.moveCell(up: true) }
+                .keyboardShortcut(.upArrow, modifiers: [.control, .shift])
+                .disabled(store.selectedNote == nil)
+            Button("Move Cell Down") { editor.moveCell(up: false) }
+                .keyboardShortcut(.downArrow, modifiers: [.control, .shift])
+                .disabled(store.selectedNote == nil)
             Divider()
             Button("Move Section Up") { editor.moveSection(up: true) }
                 .keyboardShortcut(.upArrow, modifiers: [.command, .control])

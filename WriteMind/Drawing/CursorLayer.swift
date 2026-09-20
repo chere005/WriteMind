@@ -35,6 +35,24 @@ struct CursorLayer: NSViewRepresentable {
         private var isMouseInside = false
         private var monitor: Any?
 
+        /// What a pointer at `point` should be shown, given the cursor this
+        /// layer wants and whether the pointer was over it a moment ago.
+        /// Nil means "leave it alone": either the layer has no cursor of its
+        /// own, or the pointer is somewhere else and was already somewhere
+        /// else, so that view's cursor is not ours to overwrite.
+        ///
+        /// The arrow on the way out is the whole point. `NSCursor.set()` is
+        /// global and sticks until something else sets one, and the camera
+        /// pane, the toolbar and the sidebar set none — so the pencil used to
+        /// follow the pointer right out of the note (Sean, 2026-09-19: "the
+        /// pen cursor should only appear in the note pane").
+        static func cursor(_ cursor: NSCursor?, at point: CGPoint, in rect: CGRect,
+                           wasInside: Bool) -> NSCursor? {
+            guard let cursor else { return nil }
+            if rect.contains(point) { return cursor }
+            return wasInside ? .arrow : nil
+        }
+
         /// The argument with the text view is settled here, not in the view
         /// hierarchy: a cursorUpdate event is how AppKit hands a view its turn
         /// to set the cursor (the text view's I-beam, the window's arrow), so
@@ -56,7 +74,12 @@ struct CursorLayer: NSViewRepresentable {
                       !self.isHiddenOrHasHiddenAncestor
                 else { return event }
                 let point = self.convert(event.locationInWindow, from: nil)
-                guard self.visibleRect.contains(point) else { return event }
+                let inside = self.visibleRect.contains(point)
+                guard let wanted = Self.cursor(cursor, at: point, in: self.visibleRect,
+                                               wasInside: self.isMouseInside)
+                else { self.isMouseInside = inside; return event }
+                self.isMouseInside = inside
+                guard inside else { wanted.set(); return event }
                 cursor.set()
                 // A monitor runs BEFORE the event is dispatched, so anything
                 // the dispatch sets wins over this. Setting it again on the
@@ -94,7 +117,12 @@ struct CursorLayer: NSViewRepresentable {
         }
 
         override func mouseEntered(with event: NSEvent) { isMouseInside = true; cursor?.set() }
-        override func mouseExited(with event: NSEvent) { isMouseInside = false }
+
+        override func mouseExited(with event: NSEvent) {
+            let had = isMouseInside
+            isMouseInside = false
+            if had, cursor != nil { NSCursor.arrow.set() }
+        }
         override func mouseMoved(with event: NSEvent) { cursor?.set() }
 
         override func cursorUpdate(with event: NSEvent) {

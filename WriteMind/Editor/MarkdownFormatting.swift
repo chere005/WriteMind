@@ -21,9 +21,13 @@ enum MarkdownFormatting {
     static let strike = "~~"
     static let bullet = "- "
     static let quote = "> "
-    /// One level of indentation. Two spaces, because four would look like a
-    /// markdown code block on a line that is not a list item.
-    static let indentUnit = "  "
+    /// One step of indentation, and the width a tab is shown at: four
+    /// spaces (Sean, 2026-09-19: "indentation and tab width is 4 spaces").
+    /// It was two, because four spaces on a line that belongs to no list
+    /// is a markdown code block and that is what one indented paragraph
+    /// now renders as. Four is what was asked for; see docs/TODO.md.
+    static let indentUnit = "    "
+    static let tabWidth = 4
 
     // MARK: - Maths
 
@@ -328,7 +332,7 @@ enum MarkdownFormatting {
         }
     }
 
-    /// One level out: two spaces of indentation if there are any, otherwise one
+    /// One level out: a step of indentation if there is one, otherwise one
     /// `> ` marker — so Shift-Tab on a top-level quote unquotes the line.
     static func outdent(text: String, selection: NSRange) -> Edit {
         rewriteLines(text: text, selection: blockOrSelection(text: text, selection: selection)) { line in

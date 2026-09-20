@@ -153,7 +153,11 @@ enum MarkdownParser {
             }
             if !bullets.isEmpty || !dashes.isEmpty || !numbered.isEmpty || !quote.isEmpty { flush() }
             openIfNeeded()
-            paragraph.append(line)
+            // The first line keeps the spaces it was written with, so an
+            // indented paragraph is drawn indented. Four spaces is NOT a
+            // code block in WriteMind — code is what is inside ```, ` or
+            // `` and nothing else (Sean, 2026-09-20).
+            paragraph.append(paragraph.isEmpty ? String(rawLine.prefix { $0 == " " }) + line : line)
         }
 
         if let open = code {
@@ -206,7 +210,15 @@ enum MarkdownParser {
 /// HTML tags the toolbar writes: `<u>` from the underline button and
 /// `<span style="…">` from the text-style menu.
 enum MarkdownInline {
-    static func attributed(_ source: String, baseSize: CGFloat = 15) -> AttributedString {
+    /// `paper` is what this is being drawn ON, as `#RRGGBB`, when that is
+    /// something other than the window the colours were chosen in — the PDF
+    /// export passes white. A span's colour is then checked against it and
+    /// swapped for black or white if it would not be readable, because a
+    /// note that is legible on screen has to be legible on paper too (Sean,
+    /// 2026-09-19: "be mindful of text color"). Nil leaves every colour
+    /// exactly as it was written.
+    static func attributed(_ source: String, baseSize: CGFloat = 15,
+                           paper: String? = nil) -> AttributedString {
         var result = AttributedString()
         var stack: [Style] = []
 
@@ -215,7 +227,7 @@ enum MarkdownInline {
             case .open(let style): stack.append(style)
             case .close: if !stack.isEmpty { stack.removeLast() }
             case .text(let text):
-                result.append(styled(text, with: Style.merged(stack), baseSize: baseSize))
+                result.append(styled(text, with: Style.merged(stack), baseSize: baseSize, paper: paper))
             }
         }
         return result
@@ -243,10 +255,16 @@ enum MarkdownInline {
     /// bold/italic the markdown itself carries survives: it comes back as an
     /// `inlinePresentationIntent`, which is read here and folded into the
     /// span's own font rather than being overwritten by it.
-    static func styled(_ text: String, with style: Style, baseSize: CGFloat) -> AttributedString {
+    static func styled(_ text: String, with style: Style, baseSize: CGFloat,
+                       paper: String? = nil) -> AttributedString {
         var piece = render(text, baseSize: baseSize)
         if style.underline { piece.underlineStyle = .single }
-        if let hex = style.colorHex, let colour = Color(hex: hex) { piece.foregroundColor = colour }
+        if let hex = style.colorHex {
+            // One rule for "can this be read on that", shared with the text
+            // boxes on the drawing layer.
+            let readable = paper.map { TextBoxStyle.readableInk(hex, on: $0) } ?? hex
+            if let colour = Color(hex: readable) { piece.foregroundColor = colour }
+        }
 
         if style.family != nil || style.size != nil {
             let size = style.size.map { CGFloat($0) } ?? baseSize
