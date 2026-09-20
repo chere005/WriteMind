@@ -10,8 +10,10 @@ import Foundation
 /// blank line between two cells taken out: the notebook's structure lives in
 /// the markdown, and these two commands edit exactly that.
 enum NotebookCells {
-    /// The cell holding the caret, cut in two there. The caret lands at the
-    /// start of the second cell.
+    /// The cell holding the caret, cut in two there. The caret lands
+    /// BETWEEN the two cells — on the blank line the break puts in, which
+    /// is the seam the pane arms as the bar (Sean, 2026-09-20: "when
+    /// dividing a cell, the cursor should go inbetween the new cells").
     ///
     /// Nothing happens at either end of a cell (there is no cut to make that
     /// would not leave an empty one), and nothing happens inside a fenced
@@ -24,7 +26,10 @@ enum NotebookCells {
         if case .code = cell.block { return nil }
 
         // The whitespace the caret sits in goes with the break: splitting
-        // "one | two" must not leave a space hanging off either cell.
+        // "one | two" must not leave a space hanging off either cell, and
+        // a cut at a LINE boundary must not leave the newline that is
+        // already there under the two the break writes (Sean, 2026-09-20:
+        // "there shouldn't be a spuriously added newline").
         var start = caret, end = caret
         while start > cell.range.location, isBlank(string.character(at: start - 1)) { start -= 1 }
         let cellEnd = cell.range.location + cell.range.length
@@ -37,7 +42,7 @@ enum NotebookCells {
 
         return MarkdownFormatting.Edit(range: NSRange(location: start, length: end - start),
                                        replacement: "\n\n",
-                                       selection: NSRange(location: start + 2, length: 0))
+                                       selection: NSRange(location: start + 1, length: 0))
     }
 
     /// The cell holding the caret and the one after it, joined — or, in the
@@ -177,7 +182,16 @@ enum NotebookCells {
             ?? cells.last { $0.range.location + $0.range.length == character }
     }
 
+    /// What a break absorbs: a space, a tab, and the newline at a line
+    /// boundary.
+    ///
+    /// The newline is the one that was missing. The break writes its own
+    /// "\n\n", so a newline left standing beside them is a third — and
+    /// "One\ntwo" cut at the boundary came out "One\n\n\ntwo": two cells
+    /// with an empty line between them that nobody typed. It only looked
+    /// right in the tests because every one of them cut a single-line
+    /// paragraph, where the caret sits on a space.
     private static func isBlank(_ character: unichar) -> Bool {
-        character == 32 || character == 9
+        character == 32 || character == 9 || character == 10
     }
 }

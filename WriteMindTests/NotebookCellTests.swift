@@ -28,11 +28,87 @@ final class NotebookCellTests: XCTestCase {
         XCTAssertEqual(split("One two", at: 4), "One\n\ntwo")
     }
 
-    func testTheCaretLandsAtTheTopOfTheNewCell() {
+    func testTheCaretLandsBetweenTheTwoNewCells() {
+        // Not at the top of the second one. The line the break puts in is
+        // where the cursor goes (Sean, 2026-09-20: "when dividing a cell,
+        // the cursor should go inbetween the new cells"), and the pane it
+        // lands in turns it into the bar.
         let edit = NotebookCells.split(text: "One two", selection: NSRange(location: 4, length: 0))
-        XCTAssertEqual(edit?.selection, NSRange(location: 5, length: 0))
+        XCTAssertEqual(edit?.selection, NSRange(location: 4, length: 0))
         XCTAssertEqual(edit?.replacement, "\n\n")
     }
+
+    func testTheBreakAbsorbsTheNewlineThatIsAlreadyThere() {
+        // `isBlank` counted a space and a tab and not a newline, so a cut
+        // at a LINE boundary left the newline standing and wrote two more
+        // on top of it: "One\ntwo" came out "One\n\n\ntwo", two cells with
+        // an empty line between them that nobody typed (Sean, 2026-09-20:
+        // "there shouldn't be a spuriously added newline").
+        XCTAssertEqual(split("One\ntwo", at: 4), "One\n\ntwo")
+        XCTAssertEqual(split("One\ntwo", at: 3), "One\n\ntwo", "and from the other side of it")
+    }
+
+    func testAListSplitBetweenTwoOfItsItemsIsTwoLists() {
+        XCTAssertEqual(split("- a\n- b", at: 4), "- a\n\n- b")
+    }
+
+    func testTheSpacesHangingOffTheEndOfTheLineGoWithTheBreak() {
+        // A hard line break — two spaces and a newline — is three
+        // characters of whitespace at the cut, and all three belong to it.
+        XCTAssertEqual(split("One  \ntwo", at: 6), "One\n\ntwo")
+    }
+
+    func testASplitAddsExactlyOneCellAndNeverAnEmptyOne() {
+        for (text, caret) in Self.cuts.map({ ($0.text, $0.caret) }) {
+            guard let cut = split(text, at: caret) else {
+                XCTFail("\(text.debugDescription) at \(caret) did not split")
+                continue
+            }
+            let before = MarkdownParser.positioned(from: text)
+            let after = MarkdownParser.positioned(from: cut)
+            XCTAssertEqual(after.count, before.count + 1, "\(cut.debugDescription)")
+            // ONE blank line between the halves, which is what a seam is.
+            // Three newlines in a row is the empty line nobody typed —
+            // the whole of the bug, stated as an assertion. (The run
+            // before the fix printed "One\n\n\ntwo" and "- a\n\n\n- b".)
+            XCTAssertFalse(cut.contains("\n\n\n"), "\(cut.debugDescription) has an empty line in it")
+            for cell in after {
+                if case .blank = cell.block {
+                    XCTFail("\(cut.debugDescription) grew a cell of empty lines")
+                }
+            }
+        }
+    }
+
+    func testTheCaretTheSplitLeavesArmsTheSeamBetweenTheHalves() {
+        // The cursor half, end to end. `CellSeams.arm` is the one writer
+        // of the armed state — arming follows the caret — so putting the
+        // caret on the separator blank line IS putting the bar between
+        // the two new cells, in both panes and with no second mechanism.
+        for cut in Self.cuts {
+            guard let edit = NotebookCells.split(text: cut.text,
+                                                 selection: NSRange(location: cut.caret, length: 0))
+            else {
+                XCTFail("\(cut.text.debugDescription) at \(cut.caret) did not split")
+                continue
+            }
+            let after = (cut.text as NSString).replacingCharacters(in: edit.range, with: edit.replacement)
+            XCTAssertEqual(after, cut.after)
+            XCTAssertEqual(edit.selection, NSRange(location: cut.bar, length: 0))
+            XCTAssertEqual(CellSeams.arm(caret: edit.selection, in: after, current: nil), cut.seam,
+                           "\(cut.after.debugDescription)")
+        }
+    }
+
+    /// The cuts the two tests above share: the note, where it is cut, what
+    /// it becomes, where the caret is left, and the seam that arms.
+    private static let cuts: [(text: String, caret: Int, after: String, bar: Int, seam: Int)] = [
+        ("One two three", 7, "One two\n\nthree", 8, 9),
+        ("One\ntwo", 4, "One\n\ntwo", 4, 5),
+        ("- a\n- b", 4, "- a\n\n- b", 4, 5),
+        ("One  \ntwo", 6, "One\n\ntwo", 4, 5),
+        ("First cell\n\nSecond cell here", 18, "First cell\n\nSecond\n\ncell here", 19, 20),
+    ]
 
     func testNothingIsSplitOffTheEndsOfACell() {
         XCTAssertNil(split("One two", at: 0), "an empty cell above it is not a split")

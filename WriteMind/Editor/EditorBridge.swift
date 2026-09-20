@@ -20,6 +20,12 @@ final class EditorBridge {
     /// The same for merging two cells: on the rendered page a cell IS a
     /// block, so the seam between two of them is in no one text view.
     var mergeCellsInDocument: (() -> Void)?
+    /// And for splitting one. The cut is only half the job — the bar has
+    /// to end up in the seam it leaves (Sean, 2026-09-20: "when dividing
+    /// a cell, the cursor should go inbetween the new cells") — and on
+    /// the rendered page the armed state is the page's own, held nowhere
+    /// near a text view.
+    var splitCellInDocument: (() -> Void)?
     /// On the rendered page a cell is a block of the note, not a range in
     /// one text view, so the page itself applies a whole-cell edit.
     var cellRangeInDocument: (() -> NSRange?)?
@@ -168,10 +174,12 @@ final class EditorBridge {
     }
 
     /// Cut the cell the caret is in at the caret (Sean, 2026-09-19:
-    /// "cmd+d and cmd+m to split and merge cells"). On the rendered page
-    /// the block's own editor does it: a blank line typed into a block is
-    /// two blocks as soon as it is written back.
+    /// "cmd+d and cmd+m to split and merge cells"). The caret is left on
+    /// the line between the two halves, and in this pane that is all it
+    /// takes: arming follows the caret, so the bar appears there by
+    /// itself and there is still one writer of the armed state.
     func splitCell() {
+        if let splitCellInDocument { splitCellInDocument(); return }
         maybe(NotebookCells.split)
     }
 

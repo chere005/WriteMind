@@ -218,6 +218,7 @@ struct MarkdownPreview: View {
             bridge.ensureEditing = { openSomething() }
             bridge.moveSectionInDocument = { up in moveWholeSection(up: up) }
             bridge.mergeCellsInDocument = { mergeCells() }
+            bridge.splitCellInDocument = { splitCell() }
             bridge.cellRangeInDocument = { editingRange ?? items.first?.range }
             bridge.cellEditInDocument = { make in cellEdit(make) }
         }
@@ -226,6 +227,7 @@ struct MarkdownPreview: View {
             bridge.ensureEditing = nil
             bridge.moveSectionInDocument = nil
             bridge.mergeCellsInDocument = nil
+            bridge.splitCellInDocument = nil
             bridge.cellRangeInDocument = nil
             bridge.cellEditInDocument = nil
         }
@@ -754,6 +756,30 @@ struct MarkdownPreview: View {
             .first(where: { NSLocationInRange(edit.selection.location, $0.range) }) {
             beginEditing(block.range)
         }
+    }
+
+    /// Cutting the open cell in two, and leaving the bar between the
+    /// halves (Sean, 2026-09-20: "when dividing a cell, the cursor should
+    /// go inbetween the new cells").
+    ///
+    /// The note's edit and not the block's, the same as the merge: the
+    /// moment the cut is made the two halves are two blocks, and the
+    /// block editor that was holding the caret is holding a range that
+    /// spans both of them. Closing it and arming the seam under the head
+    /// is what "the cursor is between the cells" means on this side —
+    /// the markdown pane gets there by the caret alone, but there is no
+    /// caret here to follow.
+    private func splitCell() {
+        let inside = bridge.textView?.selectedRange().location ?? 0
+        let caret = (editingRange?.location ?? 0) + inside
+        guard let cell = NotebookCells.block(containing: caret, in: markdown),
+              let edit = NotebookCells.split(text: markdown,
+                                             selection: NSRange(location: caret, length: 0))
+        else { return }
+        markdown = (markdown as NSString).replacingCharacters(in: edit.range, with: edit.replacement)
+        // Nothing before the cut moved, so the head still begins where the
+        // whole cell did — and the seam under it is the one between them.
+        armSeam(beside: cell.range, below: true)
     }
 
     /// A table's block, rewritten as the lines of the table it now is.
