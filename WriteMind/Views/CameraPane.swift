@@ -99,7 +99,8 @@ struct CameraPane: View {
             HStack(spacing: 6) {
                 if !appState.showEditor {
                     corner(icon: "rectangle.lefthalf.inset.filled", label: "Back to Side by Side",
-                           help: "The notes and the video side by side again (⌃⌘E)") {
+                           help: "The notes and the video side by side again",
+                           keys: ["⌃", "⌘", "E"]) {
                         appState.toggleEditorPane()
                     }
                 }
@@ -107,6 +108,12 @@ struct CameraPane: View {
             .padding(10)
         }
         .clipped()
+        // The pane draws its own tooltip bubbles: the same ones the editor's
+        // bar has, which its buttons never got (Sean, 2026-09-19: "the
+        // camera pane's own buttons never had the tooltip treatment the
+        // editor's bar got"). Applied after `.clipped()` so a bubble is not
+        // cut off by the picture's own clip.
+        .paneTipHost()
         .onChange(of: camera.status) { _, status in
             if status != .running { section = nil; appState.cameraZooming = false }
         }
@@ -170,8 +177,10 @@ struct CameraPane: View {
         return NotebookCapture.region(from: drawn, frame: upright, in: pane)
     }
 
-    private func corner(icon: String, label: String, help: String, isOn: Bool = false,
-                        action: @escaping () -> Void) -> some View {
+    /// The shortcut goes in as KEYCAPS, not in brackets at the end of the
+    /// sentence, because the bubble draws them the way the bar's does.
+    private func corner(icon: String, label: String, help: String, keys: [String] = [],
+                        isOn: Bool = false, action: @escaping () -> Void) -> some View {
         Button(action: action) {
             Image(systemName: icon)
                 .font(.system(size: 12, weight: .semibold))
@@ -180,7 +189,7 @@ struct CameraPane: View {
                 .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 6))
         }
         .buttonStyle(.plain)
-        .help(help)
+        .paneTip(BarTip(title: label, keys: keys, detail: help))
         .accessibilityLabel(label)
     }
 
@@ -377,7 +386,9 @@ struct SectionBox: View {
                 .contentShape(Capsule())
         }
         .buttonStyle(.plain)
-        .help(help)
+        // Hosted by the camera pane, which is the view these sit over.
+        .paneTip(BarTip(title: title, detail: help))
+        .accessibilityLabel(title)
     }
 
 }

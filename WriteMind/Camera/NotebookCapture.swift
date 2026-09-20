@@ -73,6 +73,10 @@ enum NotebookCapture {
         /// False when no page was found and the whole frame stood in for one
         /// — a shape measured off that is not worth remembering.
         var pageFound: Bool
+        /// The same writing traced into outlines, as a one-page PDF (Sean,
+        /// 2026-09-19: "make it a vector graphic so it scales well"). Only
+        /// `.ink` has one; a photograph of a page is pixels and stays pixels.
+        var vector: Data?
     }
 
     /// Where a capture goes, as fractions of the pane. A whole page fits
@@ -178,7 +182,8 @@ enum NotebookCapture {
                   let picture = image(from: mask, colour: colour, box: box) else { return nil }
             return Result(image: picture, pageSize: size,
                           frame: CGRect(x: box.x, y: box.y, width: box.width, height: box.height),
-                          shape: shape, pageFound: quad != nil)
+                          shape: shape, pageFound: quad != nil,
+                          vector: InkVector.pdf(of: mask, box: box, colour: colour))
         }
     }
 

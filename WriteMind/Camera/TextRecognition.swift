@@ -114,33 +114,83 @@ enum TextRecognition {
 
     // MARK: - Putting the reading together
 
+    /// One reading of Vision's while the marks drawn on the page are being
+    /// sorted onto it: the words, where they are, and how high up the line
+    /// sits (Vision's y, so it sorts with everything else).
+    struct ReadLine {
+        var candidate: VNRecognizedText
+        var box: CGRect
+        var words: [HandwritingMarks.Word]
+        var y: CGFloat
+    }
+
     static func compose(_ observations: [VNRecognizedTextObservation], page: Page?) -> [String] {
-        var lines: [(y: CGFloat, text: String)] = []
-        var lineBoxes: [CGRect] = []
+        // With no ink mask there is nothing drawn to read: the words, in
+        // order, and that is all.
+        guard let page else {
+            return observations
+                .compactMap { observation -> (CGFloat, String)? in
+                    guard let best = observation.topCandidates(1).first else { return nil }
+                    let text = best.string.trimmingCharacters(in: .whitespaces)
+                    guard looksLikeText(text, confidence: best.confidence) else { return nil }
+                    return (observation.boundingBox.midY, HandwritingMarks.normaliseArrows(text))
+                }
+                .sorted { $0.0 > $1.0 }
+                .map(\.1)
+                .filter { !$0.isEmpty }
+        }
+
+        // Every word on the page, whether or not its reading was kept: what
+        // tells a checkbox from a small flow-chart node is the word INSIDE
+        // the square, and Vision reads that as a line of its own.
+        var onThePage: [HandwritingMarks.Word] = []
+        var read: [ReadLine] = []
 
         for observation in observations {
             guard let best = observation.topCandidates(1).first else { continue }
             let text = best.string.trimmingCharacters(in: .whitespaces)
+            let inLine = words(of: best, in: page)
+            onThePage += inLine
             guard looksLikeText(text, confidence: best.confidence) else { continue }
-            guard let page else {
-                lines.append((observation.boundingBox.midY, HandwritingMarks.normaliseArrows(text)))
-                continue
-            }
             let box = page.rect(observation.boundingBox)
             // A ring read as a letter is not a letter.
             if HandwritingMarks.isRingRead(text), rings(in: page).contains(where: {
                 HandwritingMarks.encircles($0.insetBy(dx: -2, dy: -2), word: box)
             }) { continue }
-            lineBoxes.append(box)
-            lines.append((observation.boundingBox.midY, marked(best, box: box, in: page)))
+            read.append(ReadLine(candidate: best, box: box, words: inLine,
+                                 y: observation.boundingBox.midY))
         }
 
-        // The arrows nobody read: they belong between the words they sit
-        // between, or on a line of their own.
-        if let page {
-            for (y, arrow) in arrows(in: page, avoiding: lineBoxes) {
-                lines.append((y, arrow))
+        // The arrows nobody read: some belong between two words of a line,
+        // the rest on a line of their own.
+        let placed = arrows(in: page, on: read)
+        var pieces: [Piece] = []
+        for (index, line) in read.enumerated() {
+            // A box drawn at the head of the line makes the line a task
+            // (Sean, 2026-09-19). The box goes to `marked` too, so the
+            // letter Vision read it as does not stay in the words.
+            let tick = checkbox(startingLine: line.box, words: onThePage, in: page)
+            var text = marked(line.candidate, box: line.box, in: page,
+                              ignoring: tick?.box, inserting: placed.inline[index] ?? [:])
+            if let tick { text = HandwritingMarks.taskItem(text, ticked: tick.ticked) }
+            pieces.append(Piece(y: line.y, box: line.box, text: text))
+        }
+
+        var lines = joinAcrossArrows(pieces)
+            .map { (y: $0.y, text: $0.text, box: Optional($0.box)) }
+        for (y, arrow) in placed.ownLine { lines.append((y: y, text: arrow, box: nil)) }
+
+        // A table drawn on the page comes in as a markdown table, and the
+        // words inside it are not read as lines of prose as well.
+        if let grid = DrawnTable.grid(ink: page.ink, width: page.width, height: page.height),
+           let table = DrawnTable.markdown(grid, words: onThePage) {
+            lines.removeAll { line in
+                guard let box = line.box else { return false }
+                return DrawnTable.holds(grid, word: box)
             }
+            // Its y is Vision's, upside down from the mask's: the top of
+            // the page is 1.
+            lines.append((y: 1 - grid.box.midY / CGFloat(page.height), text: table, box: nil))
         }
 
         return lines
@@ -149,15 +199,78 @@ enum TextRecognition {
             .filter { !$0.isEmpty }
     }
 
+    /// One line of the reading while it is being put together.
+    struct Piece: Equatable {
+        var y: CGFloat
+        var box: CGRect
+        var text: String
+    }
+
+    /// Vision BREAKS A LINE AT A DRAWN ARROW: "Paris → Lyon" comes back as
+    /// two readings, "Paris" and "→ Lyon", side by side on one band — which
+    /// is the other half of an arrow belonging between two words (Sean,
+    /// 2026-09-19). Put them back into one line.
+    ///
+    /// Deliberately narrow, because joining two readings that were not one
+    /// line would be worse than leaving them apart: the right-hand piece
+    /// must BEGIN with an arrow (or the left-hand one END with one), the
+    /// two must sit on the same band, the right one must start clear of the
+    /// left one, and the gap between them must be no more than three times
+    /// the taller one's height — an arrow's worth of gap, not a column of a
+    /// table away. (Measured on a drawn page: an arrow between two words
+    /// left Vision's two readings 98 points apart at a 36-point line.)
+    /// `pieces` arrive in READING ORDER — which is what `observations`
+    /// hands back, top line first and left to right within a line — and
+    /// only a piece and the one before it are ever joined. Sorting here by
+    /// y would undo that: two halves of one line have midYs a hair apart,
+    /// and the right-hand half sorted in FRONT of the left.
+    static func joinAcrossArrows(_ pieces: [Piece]) -> [Piece] {
+        var out: [Piece] = []
+        for piece in pieces {
+            if let last = out.last,
+               HandwritingMarks.startsWithArrow(piece.text) || HandwritingMarks.endsWithArrow(last.text),
+               HandwritingMarks.sameBand(last.box, piece.box),
+               piece.box.minX >= last.box.maxX,
+               piece.box.minX - last.box.maxX <= 3 * max(last.box.height, piece.box.height) {
+                out[out.count - 1].text = last.text + " " + piece.text
+                out[out.count - 1].box = last.box.union(piece.box)
+                continue
+            }
+            out.append(piece)
+        }
+        return out
+    }
+
     /// One line of writing, with what is drawn over it taken into account.
-    static func marked(_ candidate: VNRecognizedText, box: CGRect, in page: Page) -> String {
+    /// `ignoring` is a mark the line is not made of — the checkbox at its
+    /// head — so the single letter Vision read that mark as is dropped
+    /// rather than left sitting in front of the words.
+    /// `inserting` puts a drawn mark — an arrow — in FRONT of the word at
+    /// that index, so "A → B" comes back as one line.
+    static func marked(_ candidate: VNRecognizedText, box: CGRect, in page: Page,
+                       ignoring: CGRect? = nil, inserting: [Int: String] = [:]) -> String {
         let text = HandwritingMarks.normaliseArrows(candidate.string.trimmingCharacters(in: .whitespaces))
         let ringed = rings(in: page)
 
         var pieces: [String] = []
-        for word in words(of: candidate, in: page) {
+        for (index, word) in words(of: candidate, in: page).enumerated() {
+            if let arrow = inserting[index] { pieces.append(arrow) }
+            if let ignoring, HandwritingMarks.isBoxRead(word.text),
+               HandwritingMarks.mostlyInside(word.box, ignoring) { continue }
             var piece = HandwritingMarks.normaliseArrows(word.text)
-            if HandwritingMarks.struckThrough(word: word.box, ink: page.ink,
+            // An arrow is not a word with a line through it: its shaft IS a
+            // bar across the middle of its own box, which is exactly what
+            // `struckThrough` is looking for ("Paris → Lyon" came back
+            // "Paris ~~→~~ Lyon").
+            if HandwritingMarks.isArrowRead(piece) {
+                pieces.append(piece)
+                continue
+            }
+            // Nor is an operator: a word has to be more than the bar
+            // itself before a bar through it means anything, and an = or a
+            // + IS the bar (see `isOperatorRead`).
+            if !HandwritingMarks.isOperatorRead(piece),
+               HandwritingMarks.struckThrough(word: word.box, ink: page.ink,
                                               width: page.width, height: page.height) {
                 piece = "~~" + piece + "~~"
             } else if ringed.contains(where: { HandwritingMarks.encircles($0, word: word.box) }) {
@@ -215,6 +328,41 @@ enum TextRecognition {
         return out
     }
 
+    /// A checkbox found at the head of a line, and whether it is ticked.
+    struct Checkbox: Equatable {
+        var box: CGRect
+        var ticked: Bool
+    }
+
+    /// The box drawn at the start of a line, if there is one.
+    ///
+    /// The geometry is `HandwritingMarks.checkbox`; the guard that makes it
+    /// safe on a page of ordinary writing is here. A square that sits
+    /// inside a WORD Vision read — the O of "Order", the 口 of a Japanese
+    /// line — is a letter, not a box, and the line is left exactly as it
+    /// was. Only a reading of a single character, which is what a drawn box
+    /// comes back as when it comes back at all, is allowed to sit on one.
+    static func checkbox(startingLine line: CGRect, words: [HandwritingMarks.Word],
+                         in page: Page) -> Checkbox? {
+        for index in page.marks.writing {
+            let blob = page.marks.components[index]
+            let box = CGRect(x: blob.minX, y: blob.minY, width: blob.width, height: blob.height)
+            guard HandwritingMarks.startsLine(box, line: line) else { continue }
+            guard let ticked = HandwritingMarks.checkbox(box, line: line, ink: page.ink,
+                                                         width: page.width, height: page.height)
+            else { continue }
+            // Either way round: the square inside a word is one of its
+            // letters, and a word inside the square is what a small
+            // flow-chart node has in it.
+            let read = words.first {
+                HandwritingMarks.mostlyInside(box, $0.box) || HandwritingMarks.mostlyInside($0.box, box)
+            }
+            if let read, !HandwritingMarks.isBoxRead(read.text) { continue }
+            return Checkbox(box: box, ticked: ticked)
+        }
+        return nil
+    }
+
     /// The hollow rings drawn round words.
     static func rings(in page: Page) -> [CGRect] {
         page.marks.writing.compactMap { index in
@@ -224,21 +372,69 @@ enum TextRecognition {
         }
     }
 
-    /// The arrows that are not inside anything Vision read, with the height
-    /// they sit at (in Vision's coordinates, so they sort with the lines).
-    static func arrows(in page: Page, avoiding lines: [CGRect]) -> [(CGFloat, String)] {
-        page.marks.writing.compactMap { index in
+    /// Where an arrow found in the ink goes.
+    enum ArrowPlace: Equatable {
+        /// Into that line, in front of the word at that index.
+        case inline(line: Int, before: Int)
+        /// On a line of its own: the arrow is beside the writing, or above
+        /// or below it.
+        case ownLine
+        /// Over a line's words — whatever it is, Vision has already read
+        /// it, and a second copy on the page would be a duplicate.
+        case read
+    }
+
+    /// Which of the three a mark's box is, against the lines that were
+    /// read — their own boxes and their words'. Pure geometry, so the
+    /// awkward ones are tested without a camera.
+    static func place(_ box: CGRect, onLines lines: [(box: CGRect, words: [HandwritingMarks.Word])],
+                      amongInk marks: [CGRect]) -> ArrowPlace {
+        for (index, line) in lines.enumerated() {
+            // Vision may have read this very arrow: putting a second one in
+            // gave "Paris → → Lyon".
+            if line.words.contains(where: {
+                HandwritingMarks.isArrowRead(HandwritingMarks.normaliseArrows($0.text))
+                    && $0.box.intersects(box)
+            }) { return .read }
+            if let before = HandwritingMarks.betweenWords(box, line: line.box,
+                                                          words: line.words.map(\.box),
+                                                          marks: marks) {
+                return .inline(line: index, before: before)
+            }
+        }
+        let overlapped = lines.contains { line in
+            let overlap = line.box.intersection(box)
+            return !overlap.isNull && overlap.height > box.height * 0.5 && overlap.width > box.width * 0.5
+        }
+        return overlapped ? .read : .ownLine
+    }
+
+    /// The arrows Vision did not read, sorted onto the lines: the ones that
+    /// belong between two words of a line, and the ones that get a line of
+    /// their own at the height they sit at (in Vision's coordinates, so
+    /// they sort with everything else).
+    static func arrows(in page: Page, on lines: [ReadLine])
+        -> (inline: [Int: [Int: String]], ownLine: [(CGFloat, String)]) {
+        var inline: [Int: [Int: String]] = [:]
+        var ownLine: [(CGFloat, String)] = []
+        let bands = lines.map { (box: $0.box, words: $0.words) }
+        let marks = page.marks.writing.map { index -> CGRect in
             let blob = page.marks.components[index]
-            let box = CGRect(x: blob.minX, y: blob.minY, width: blob.width, height: blob.height)
-            guard !lines.contains(where: { $0.intersection(box).height > box.height * 0.5
-                                            && $0.intersection(box).width > box.width * 0.5 })
-            else { return nil }
+            return CGRect(x: blob.minX, y: blob.minY, width: blob.width, height: blob.height)
+        }
+        for box in marks {
+            let where_ = place(box, onLines: bands, amongInk: marks)
+            guard where_ != .read else { continue }
             guard let arrow = HandwritingMarks.arrow(box: box, ink: page.ink,
                                                      width: page.width, height: page.height)
-            else { return nil }
-            let y = 1 - (box.midY / CGFloat(page.height))
-            return (y, arrow)
+            else { continue }
+            switch where_ {
+            case .inline(let line, let before): inline[line, default: [:]][before] = arrow
+            case .ownLine: ownLine.append((1 - (box.midY / CGFloat(page.height)), arrow))
+            case .read: break
+            }
         }
+        return (inline, ownLine)
     }
 
     static let japaneseTag = "ja-JP"

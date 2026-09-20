@@ -51,8 +51,9 @@ struct VideoMenu: View {
             item(appState.showEditor ? "Whole Screen" : "Back to Side by Side",
                  icon: appState.showEditor ? "rectangle.inset.filled" : "rectangle.lefthalf.inset.filled",
                  help: appState.showEditor
-                     ? "Put the notes away and give the window to the video (⌃⌘E)"
-                     : "The notes and the video side by side again (⌃⌘E)",
+                     ? "Put the notes away and give the window to the video"
+                     : "The notes and the video side by side again",
+                 keys: ["⌃", "⌘", "E"],
                  wide: true, enabled: appState.showCamera) {
                 appState.toggleEditorPane()
                 // The bar this panel hangs off goes with the notes pane.
@@ -61,6 +62,12 @@ struct VideoMenu: View {
         }
         .padding(14)
         .frame(width: 244)
+        // The panel draws its own tooltip bubbles. A popover is a window of
+        // its own, so a preference set in here never reaches the bar that
+        // put it up — and it clips its content, which is why the bubble
+        // narrows itself to 244 and flips above a row near the bottom
+        // (PaneTipPlacement).
+        .paneTipHost()
         // The popover hangs off a control inside a BarSplit, which tints
         // ITS contents with the accent colour while the video is on — and
         // SwiftUI carries that tint into the popover, so every label came
@@ -70,8 +77,8 @@ struct VideoMenu: View {
         .tint(.accentColor)
     }
 
-    private func item(_ title: String, icon: String, help: String, wide: Bool = false,
-                      isOn: Bool = false, enabled: Bool = true,
+    private func item(_ title: String, icon: String, help: String, keys: [String] = [],
+                      wide: Bool = false, isOn: Bool = false, enabled: Bool = true,
                       action: @escaping () -> Void) -> some View {
         Button(action: action) {
             Label(title, systemImage: icon)
@@ -89,6 +96,9 @@ struct VideoMenu: View {
         }
         .buttonStyle(.plain)
         .disabled(!enabled)
-        .help(help)
+        // The app's own tooltip, as on the bar this panel hangs off — the
+        // row already says what it is, so the bubble is what it DOES.
+        .paneTip(BarTip(title: title, keys: keys, detail: help))
+        .accessibilityLabel(title)
     }
 }
