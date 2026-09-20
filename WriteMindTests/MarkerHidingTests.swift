@@ -96,3 +96,73 @@ final class MarkerHidingTests: XCTestCase {
         XCTAssertGreaterThan(visible, hidden + 10, "and they really were wide before")
     }
 }
+
+/// The two panes, closer to the same height (Sean, 2026-09-19: "positions
+/// stay the same in markdown and wysiwyg mode").
+final class StructuralLineTests: XCTestCase {
+    func testTheBlankLineBetweenTwoCellsIsStructure() {
+        let text = "First cell\n\nSecond cell"
+        let lines = MarkdownSourceStyle.structuralLines(in: text)
+        XCTAssertEqual(lines.count, 1)
+        XCTAssertEqual((text as NSString).substring(with: lines[0]), "\n")
+    }
+
+    func testAFencesOwnLinesAreNotCollapsed() {
+        // They mean nothing on the rendered page, but they have characters
+        // on them, and a line with characters squashed to a few points is
+        // a line of writing cut in half (Sean, 2026-09-20).
+        let text = "Words\n\n```swift\nlet a = 1\n```\n"
+        let strings = MarkdownSourceStyle.structuralLines(in: text)
+            .map { (text as NSString).substring(with: $0).trimmingCharacters(in: .newlines) }
+        XCTAssertFalse(strings.contains("```swift"), "got \(strings)")
+        XCTAssertEqual(strings, [""], "only the blank line between the two cells")
+    }
+
+    func testALineOfWritingIsNot() {
+        let text = "Just one line of prose"
+        XCTAssertTrue(MarkdownSourceStyle.structuralLines(in: text).isEmpty)
+    }
+
+    func testABlankLineIsNotWhatMakesTheGap() {
+        // The gap is the space after the cell above it, so however many
+        // blank lines the file has between two cells, the gap is one.
+        XCTAssertLessThan(MarkdownSourceStyle.structuralSize, MarkdownPreview.gapHeight)
+    }
+
+    func testAnEmptyNoteHasNothingToCollapse() {
+        XCTAssertTrue(MarkdownSourceStyle.structuralLines(in: "").isEmpty)
+    }
+}
+
+/// One gap per cell, wherever it is (Sean, 2026-09-20: "cells still aren't
+/// stacked with an even small spacing between them").
+final class CellGapInTheSourceTests: XCTestCase {
+    func testEveryCellEndsWithTheLineThatCarriesTheGap() {
+        let text = "First cell\n\n## A heading\n\nWords under it"
+        let ends = MarkdownSourceStyle.cellEndLines(in: text)
+            .map { (text as NSString).substring(with: $0).trimmingCharacters(in: .newlines) }
+        XCTAssertEqual(ends, ["First cell", "## A heading", "Words under it"])
+    }
+
+    func testACellOfSeveralLinesCarriesItOnlyOnTheLast() {
+        let text = "one\ntwo\nthree\n\nnext cell"
+        let ends = MarkdownSourceStyle.cellEndLines(in: text)
+            .map { (text as NSString).substring(with: $0).trimmingCharacters(in: .newlines) }
+        XCTAssertEqual(ends, ["three", "next cell"])
+    }
+
+    func testAHeadingWithNoBlankLineAfterItStillGetsAGap() {
+        // The gap comes from the cell, not from a blank line the file may
+        // or may not have.
+        let text = "## Title\nStraight into the words"
+        XCTAssertEqual(MarkdownSourceStyle.cellEndLines(in: text).count, 2)
+    }
+
+    func testABlankLineIsDrawnAtAlmostNothing() {
+        XCTAssertLessThanOrEqual(MarkdownSourceStyle.structuralSize, 3)
+    }
+
+    func testAnEmptyNoteHasNoCellEnds() {
+        XCTAssertTrue(MarkdownSourceStyle.cellEndLines(in: "").isEmpty)
+    }
+}

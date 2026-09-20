@@ -199,3 +199,23 @@ extension MarkdownFormatting {
         return out
     }
 }
+
+extension NSString {
+    /// The word around a character — letters, numbers and the marks that
+    /// hold a word together. Empty where the character is a space.
+    func rangeOfWord(at index: Int) -> NSRange {
+        guard length > 0, index >= 0, index < length else { return NSRange(location: index, length: 0) }
+        let letters = CharacterSet.alphanumerics.union(CharacterSet(charactersIn: "_-'"))
+        func isWord(_ at: Int) -> Bool {
+            guard at >= 0, at < length else { return false }
+            guard let scalar = Unicode.Scalar(character(at: at)) else { return false }
+            return letters.contains(scalar)
+        }
+        guard isWord(index) else { return NSRange(location: index, length: 0) }
+        var start = index, end = index + 1
+        while isWord(start - 1) { start -= 1 }
+        while isWord(end) { end += 1 }
+        return NSRange(location: start, length: end - start)
+    }
+}
+

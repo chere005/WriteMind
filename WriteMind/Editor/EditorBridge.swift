@@ -17,6 +17,18 @@ final class EditorBridge {
     /// Moving a whole section means nothing inside one block, so while the
     /// preview is up it does it over the whole note instead.
     var moveSectionInDocument: ((Bool) -> Void)?
+    /// The same for merging two cells: on the rendered page a cell IS a
+    /// block, so the seam between two of them is in no one text view.
+    var mergeCellsInDocument: (() -> Void)?
+    /// On the rendered page the cells are views, not glyphs, so the page
+    /// itself answers where a cell is and which cell a point is in.
+    var cellAnchorInDocument: ((CGFloat) -> Int?)?
+    var cellTopInDocument: ((Int) -> CGFloat?)?
+    var cellBoxesInDocument: (() -> [FloatingHoming.CellBox])?
+    /// On the rendered page a cell is a block of the note, not a range in
+    /// one text view, so the page itself applies a whole-cell edit.
+    var cellRangeInDocument: (() -> NSRange?)?
+    var cellEditInDocument: ((@escaping (NSRange, String) -> MarkdownFormatting.Edit?) -> Void)?
 
     /// Do it now if there is somewhere to do it, otherwise open a block and
     /// do it as soon as there is. SwiftUI builds the text view a turn or two
@@ -203,6 +215,89 @@ final class EditorBridge {
         return NotebookOutline.section(containing: tv.selectedRange().location, in: sections)?.key
     }
 
+    /// Cut the cell the caret is in at the caret (Sean, 2026-09-19:
+    /// "cmd+d and cmd+m to split and merge cells"). On the rendered page
+    /// the block's own editor does it: a blank line typed into a block is
+    /// two blocks as soon as it is written back.
+    func splitCell() {
+        maybe(NotebookCells.split)
+    }
+
+    /// Join the caret's cell to the one after it — the whole note's job on
+    /// the rendered side, where the seam is outside every block.
+    func mergeCells() {
+        if let mergeCellsInDocument { mergeCellsInDocument(); return }
+        maybe(NotebookCells.merge)
+    }
+
+    /// Which cell a point down the page belongs to, as a character offset
+    /// — what an object records when it is dropped there.
+    func cellAnchor(near y: CGFloat) -> Int? {
+        if let cellAnchorInDocument { return cellAnchorInDocument(y) }
+        guard let tv = textView else { return nil }
+        return MarkdownTextView.cell(atTop: y, in: tv)
+    }
+
+    /// Where that cell starts on the page showing now.
+    func cellTop(of anchor: Int) -> CGFloat? {
+        if let cellTopInDocument { return cellTopInDocument(anchor) }
+        guard let tv = textView else { return nil }
+        return MarkdownTextView.offset(ofCell: anchor, in: tv)
+    }
+
+    /// The caret's own cell, as a range in the note.
+    func caretCell() -> NSRange? {
+        if let cellRangeInDocument { return cellRangeInDocument() }
+        guard let tv = textView else { return nil }
+        return NotebookCells.block(containing: tv.selectedRange().location, in: tv.string)?.range
+    }
+
+    /// One step out: word, cell, section, note.
+    func expandSelection() {
+        perform { [weak self] in
+            guard let self, let tv = textView,
+                  let wider = NotebookCells.expand(tv.selectedRange(), in: tv.string) else { return }
+            tv.setSelectedRange(wider)
+            tv.scrollRangeToVisible(wider)
+        }
+    }
+
+    /// Take the whole cell away and close the stack behind it.
+    func deleteCell() {
+        cellEdit { CellCommands.delete($0, in: $1) }
+    }
+
+    /// The same cell again, under it.
+    func duplicateCell() {
+        cellEdit { CellCommands.duplicate($0, in: $1) }
+    }
+
+    /// Swap it with the cell above or below — what dragging its bracket
+    /// does, and what the menu does without the mouse.
+    func moveCell(up: Bool) {
+        cellEdit { CellCommands.move($0, up: up, in: $1) }
+    }
+
+    /// One edit over the caret's cell, in whichever pane is up.
+    private func cellEdit(_ make: @escaping (NSRange, String) -> MarkdownFormatting.Edit?) {
+        if let cellEditInDocument { cellEditInDocument(make); return }
+        perform { [weak self] in
+            guard let self, let tv = textView,
+                  let cell = NotebookCells.block(containing: tv.selectedRange().location,
+                                                 in: tv.string)?.range,
+                  let edit = make(cell, tv.string)
+            else { return }
+            apply(edit)
+        }
+    }
+
+    /// Every cell's box on the page showing now.
+    func cellBoxes() -> [FloatingHoming.CellBox] {
+        if let cellBoxesInDocument { return cellBoxesInDocument() }
+        guard let tv = textView else { return [] }
+        return MarkdownTextView.cellBoxes(in: tv)
+    }
+
     func list(_ style: MarkdownFormatting.ListStyle) {
         lines { MarkdownFormatting.toggleList(text: $0, selection: $1, style: style) }
     }
@@ -320,6 +415,14 @@ final class EditorBridge {
             guard let self, let tv = textView else { return }
             apply(MarkdownFormatting.toggleWrap(text: tv.string, selection: tv.selectedRange(),
                                                 open: open, close: close))
+        }
+    }
+
+    /// The same as `lines`, for an edit that may have nothing to do.
+    private func maybe(_ transform: @escaping (String, NSRange) -> MarkdownFormatting.Edit?) {
+        perform { [weak self] in
+            guard let self, let tv = textView, let edit = transform(tv.string, tv.selectedRange()) else { return }
+            apply(edit)
         }
     }
 

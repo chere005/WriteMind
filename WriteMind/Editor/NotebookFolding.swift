@@ -90,11 +90,34 @@ final class NotebookGutter: NSView {
     private static let step: CGFloat = 5
     private static let tick: CGFloat = 5
 
+    /// Whether a bracket is drawn heavy: the selection covers the whole of
+    /// what it holds, or — for a cell, and only the caret's own one — the
+    /// caret is in it. The caret counts because the rendered page lights
+    /// the cell being typed in, and the two sides show the same notebook
+    /// (Sean, 2026-09-19: "make sure the notebook bars on the side work
+    /// properly in markdown and wysiwyg mode"). A section is lit only by a
+    /// real selection, or every bracket out to the margin would light up
+    /// at once.
+    static func isPicked(_ range: NSRange, selection: NSRange, caretCell: NSRange? = nil) -> Bool {
+        if selection.length > 0 {
+            return NSIntersectionRange(selection, range).length == range.length
+        }
+        return caretCell == range
+    }
+
     var brackets: [Bracket] = [] { didSet { if brackets != oldValue { needsDisplay = true } } }
     /// A double-click on a group: fold it, or open it again.
     var onToggle: ((String) -> Void)?
     /// A single click: select what that bracket holds.
     var onSelect: ((NSRange) -> Void)?
+    /// A bracket dragged up or down: the cell changes places with its
+    /// neighbour, the way a cell is moved in a notebook (Sean,
+    /// 2026-09-20: "make cells behave like mathematica cells").
+    var onMoveCell: ((NSRange, Bool) -> Void)?
+    /// How far a bracket has to be dragged before it is a move rather
+    /// than a click that wandered.
+    static let dragThreshold: CGFloat = 10
+    private var dragging: (bracket: Bracket, from: CGFloat)?
     private var hovered: String?
     private var tracking: NSTrackingArea?
 
@@ -167,11 +190,21 @@ final class NotebookGutter: NSView {
     override func mouseDown(with event: NSEvent) {
         let point = convert(event.locationInWindow, from: nil)
         guard let bracket = bracket(at: point) else { return }
+        dragging = (bracket, point.y)
         if event.clickCount >= 2, bracket.foldable {
             onToggle?(bracket.key)
-        } else {
+        } else if bracket.range.location != NSNotFound {
+            // A drawing's bracket has no markdown behind it to select.
             onSelect?(bracket.range)
         }
+    }
+
+    override func mouseUp(with event: NSEvent) {
+        defer { dragging = nil }
+        guard let dragging, dragging.bracket.range.location != NSNotFound else { return }
+        let travelled = convert(event.locationInWindow, from: nil).y - dragging.from
+        guard abs(travelled) >= Self.dragThreshold else { return }
+        onMoveCell?(dragging.bracket.range, travelled < 0)
     }
 
     /// Only a click ON a bracket counts; everywhere else the gutter is not

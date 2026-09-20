@@ -133,6 +133,20 @@ enum MarkdownSourceStyle {
         // A fence left open by a half-typed block still colours its body.
         if fence != nil { closeFence(bodyEnd: ns.length) }
 
+        // ``a ` b`` — two backticks either side, which is how a code span
+        // holds a backtick of its own (Sean, 2026-09-20: "code blocks are
+        // only ``` and ` and `` blocks"). Before the single-backtick
+        // pattern, which would otherwise read the first two as an empty
+        // span.
+        for match in Patterns.codePair.matches(in: source, range: NSRange(location: 0, length: ns.length)) {
+            guard isFree(match.range), match.range.length > 4 else { continue }
+            runs.append(Run(range: NSRange(location: match.range.location, length: 2), kind: .marker))
+            runs.append(Run(range: NSRange(location: match.range.location + 2,
+                                           length: match.range.length - 4), kind: .code))
+            runs.append(Run(range: NSRange(location: NSMaxRange(match.range) - 2, length: 2), kind: .marker))
+            cover(match.range)
+        }
+
         // Code first, because what is inside it is not markdown at all.
         for match in Patterns.code.matches(in: source, range: NSRange(location: 0, length: ns.length)) {
             guard isFree(match.range) else { continue }
@@ -206,6 +220,9 @@ enum MarkdownSourceStyle {
 
     private enum Patterns {
         static let code = regex("`([^`\n]*)`")
+        /// Two backticks either side, holding anything but a newline — a
+        /// span that can contain a single backtick.
+        static let codePair = regex("``[^\n]*?``")
         static let link = regex("\\[([^\\]\n]*)\\]\\(([^)\n]*)\\)")
         static let tag = regex("</?[A-Za-z][^>\n]*>")
         static let bold = regex("(\\*\\*|__)(?=\\S)(?:.*?\\S)\\1")
@@ -260,6 +277,50 @@ enum MarkdownSourceStyle {
             }
         }
         storage.endEditing()
+    }
+
+    /// The blank lines between cells: structure rather than writing, so
+    /// they are drawn at the gap the rendered page leaves rather than at a
+    /// full line's height. The same note is then nearly the same height on
+    /// both sides (Sean, 2026-09-19: "positions stay the same in markdown
+    /// and wysiwyg mode", "there shouldn't be gaps between cells").
+    ///
+    /// A fence's ``` line is NOT one of these, however little it means on
+    /// the rendered page: it has characters on it, and squashing a line
+    /// with writing on it to a few points clips the writing (Sean,
+    /// 2026-09-20, with a picture of a code cell cut in half).
+    ///
+    /// Only while the markers are hidden. With the raw markdown showing,
+    /// the file is shown as it is written, full-height blank lines and all.
+    static func structuralLines(in source: String) -> [NSRange] {
+        let ns = source as NSString
+        var out: [NSRange] = []
+        var index = 0
+        while index < ns.length {
+            let line = ns.lineRange(for: NSRange(location: index, length: 0))
+            if ns.substring(with: line).trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                out.append(line)
+            }
+            index = max(NSMaxRange(line), index + 1)
+        }
+        return out
+    }
+
+    /// How tall a blank line is drawn. Nearly nothing: the gap between two
+    /// cells is made by the SPACE AFTER the cell above it, not by however
+    /// many blank lines the file happens to have between them, so that
+    /// every gap is the same one (Sean, 2026-09-20: "cells still aren't
+    /// stacked with an even small spacing between them").
+    static let structuralSize: CGFloat = 2
+
+    /// The last line of every cell — the line that carries the gap.
+    static func cellEndLines(in source: String) -> [NSRange] {
+        let ns = source as NSString
+        return MarkdownParser.positioned(from: source).compactMap { block in
+            let end = min(max(NSMaxRange(block.range) - 1, 0), max(ns.length - 1, 0))
+            guard ns.length > 0 else { return nil }
+            return ns.lineRange(for: NSRange(location: end, length: 0))
+        }
     }
 
     /// The same ladder the rendered block uses, so a heading being edited is

@@ -23,10 +23,22 @@ struct CellBrackets: View {
     static let width: CGFloat = 22
     private static let step: CGFloat = 5
     private static let tick: CGFloat = 5
+    /// A margin under the last bracket, so the strip still covers the gap
+    /// a block added at the bottom will need before the page re-measures.
+    static let tail: CGFloat = 120
+
+    /// How tall the strip has to be to hold them all.
+    static func height(of brackets: [Bracket]) -> CGFloat {
+        (brackets.map(\.bottom).max() ?? 0) + tail
+    }
 
     let brackets: [Bracket]
     var onSelect: ((NSRange) -> Void)?
     var onToggle: ((String) -> Void)?
+    /// Dragged up or down: the cell changes places with its neighbour.
+    var onMoveCell: ((NSRange, Bool) -> Void)?
+    /// How far it has to go before it is a move and not a click.
+    static let dragThreshold: CGFloat = 10
     @State private var hovered: String?
 
     /// The line a bracket is drawn on, from the right-hand edge.
@@ -93,11 +105,14 @@ struct CellBrackets: View {
         .gesture(
             DragGesture(minimumDistance: 0, coordinateSpace: .local)
                 .onEnded { value in
-                    guard let bracket = Self.bracket(at: value.location, in: brackets,
+                    guard let bracket = Self.bracket(at: value.startLocation, in: brackets,
                                                      width: Self.width) else { return }
-                    if (NSApp.currentEvent?.clickCount ?? 1) >= 2, bracket.foldable {
+                    let travelled = value.location.y - value.startLocation.y
+                    if abs(travelled) >= Self.dragThreshold, bracket.range.location != NSNotFound {
+                        onMoveCell?(bracket.range, travelled < 0)
+                    } else if (NSApp.currentEvent?.clickCount ?? 1) >= 2, bracket.foldable {
                         onToggle?(bracket.key)
-                    } else {
+                    } else if bracket.range.location != NSNotFound {
                         onSelect?(bracket.range)
                     }
                 }

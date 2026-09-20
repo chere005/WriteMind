@@ -246,3 +246,60 @@ final class NotebookGutterTests: XCTestCase {
         XCTAssertGreaterThanOrEqual(NotebookGutter.width, 20)
     }
 }
+
+/// The same notebook on both sides: what lights a bracket up, and how far
+/// down the page the brackets go (Sean, 2026-09-19: "make sure the notebook
+/// bars on the side work properly in markdown and wysiwyg mode").
+final class BracketsInBothModesTests: XCTestCase {
+    private let cell = NSRange(location: 10, length: 20)
+
+    func testASelectionOverTheWholeCellPicksIt() {
+        XCTAssertTrue(NotebookGutter.isPicked(cell, selection: NSRange(location: 10, length: 20)))
+        XCTAssertTrue(NotebookGutter.isPicked(cell, selection: NSRange(location: 0, length: 40)))
+    }
+
+    func testHalfASelectionDoesNot() {
+        XCTAssertFalse(NotebookGutter.isPicked(cell, selection: NSRange(location: 10, length: 5)))
+    }
+
+    func testTheCaretsOwnCellIsPickedTheWayTheRenderedPagePicksIt() {
+        // The rendered page draws the cell it is editing heavy; with only a
+        // caret, the markdown side now says the same thing.
+        XCTAssertTrue(NotebookGutter.isPicked(cell, selection: NSRange(location: 14, length: 0),
+                                              caretCell: cell))
+        XCTAssertFalse(NotebookGutter.isPicked(cell, selection: NSRange(location: 14, length: 0),
+                                               caretCell: NSRange(location: 30, length: 10)))
+    }
+
+    func testASectionIsNotLitByACaretAlone() {
+        // Sections are given no caret cell: otherwise every bracket out to
+        // the margin would light up at once.
+        XCTAssertFalse(NotebookGutter.isPicked(cell, selection: NSRange(location: 14, length: 0)))
+    }
+
+    func testTheCaretsCellIsTheBlockItIsIn() {
+        let text = "First cell\n\n## A heading\n\nWords under it"
+        XCTAssertEqual(NotebookCells.block(containing: 3, in: text)?.range.location, 0)
+        XCTAssertEqual(NotebookCells.block(containing: 30, in: text)?.range.location, 26)
+    }
+
+    func testTheRenderedPagesBracketStripReachesTheLastBracket() {
+        // It used to be 4000 points tall whatever the note was, so a long
+        // note had cells with no bracket beside them.
+        let deep = [CellBrackets.Bracket(key: "cell:1", depth: 0, top: 20, bottom: 60,
+                                         range: NSRange(location: 0, length: 1)),
+                    CellBrackets.Bracket(key: "cell:2", depth: 0, top: 9_000, bottom: 9_400,
+                                         range: NSRange(location: 1, length: 1))]
+        XCTAssertGreaterThan(CellBrackets.height(of: deep), 9_400)
+        XCTAssertEqual(CellBrackets.height(of: []), CellBrackets.tail, "an empty page needs none")
+    }
+
+    func testBothSidesDrawTheirBracketsOnTheSameLines() {
+        // One furniture, two renderers: the x of a depth has to agree, or
+        // switching modes would shift every bracket sideways.
+        let gutter = NotebookGutter(frame: NSRect(x: 0, y: 0, width: NotebookGutter.width, height: 100))
+        gutter.brackets = [.init(key: "a", depth: 2, top: 0, bottom: 50, collapsed: false)]
+        XCTAssertEqual(CellBrackets.width, NotebookGutter.width)
+        XCTAssertEqual(CellBrackets.x(for: 2, in: CellBrackets.width), NotebookGutter.width - 6 - 10)
+    }
+}

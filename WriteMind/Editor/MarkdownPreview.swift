@@ -29,6 +29,12 @@ struct MarkdownPreview: View {
     /// How far the preview has scrolled, so the drawing layer can scroll
     /// with it and a picture stays beside the block it was put next to.
     var onScroll: ((CGFloat) -> Void)?
+    /// The cell at the top of the window, as a character offset — reported
+    /// as the page scrolls, and asked for when the page appears, so the
+    /// two modes show the same place (Sean, 2026-09-19: "positions stay
+    /// the same in markdown and wysiwyg mode").
+    var onTopCell: ((Int) -> Void)?
+    var topCell: Int = 0
     /// The notebook sections that are folded away — the same set the
     /// markdown editor uses, so the notebook is the same on both sides.
     var collapsed: Set<String> = []
@@ -52,12 +58,29 @@ struct MarkdownPreview: View {
     @State private var hoveredGap: Int?
 
     private static let space = "WriteMindPreview"
-    private static let topInset: CGFloat = 22
-    /// The insertion strip between two cells. It is part of the stack, so
-    /// the brackets and the picture bands have to count it — leaving it out
-    /// put every bracket a strip higher than its cell, and the error piled
-    /// up down the page (Sean, 2026-09-19: "notebook bar placement bugs").
-    static let gapHeight: CGFloat = 14
+    /// The air above the first cell and below the last. Not private: the
+    /// PDF export lays the same column out on paper and has to start it in
+    /// the same place, or the drawing's objects would sit a margin off the
+    /// text they were put beside.
+    static let topInset: CGFloat = 22
+    /// The page's left and right margin, the same both sides.
+    static let sideInset: CGFloat = 28
+    /// The ONE gap between two cells — the same four points everywhere,
+    /// whatever the cells are (Sean, 2026-09-19: "gaps should just be a
+    /// small fixed padding, not some varying amount"). No block adds
+    /// padding of its own on top of it.
+    ///
+    /// Thin on purpose: cells sit against each
+    /// other the way a notebook's do (Sean, 2026-09-19: "there shouldn't
+    /// be gaps between cells"), and this is only enough to put the pointer
+    /// in — the insertion line itself is drawn over the seam rather than
+    /// inside a band of empty page.
+    ///
+    /// It is still part of the stack, so the brackets and the picture
+    /// bands count it — leaving it out put every bracket a strip higher
+    /// than its cell, and the error piled up down the page (Sean,
+    /// 2026-09-19: "notebook bar placement bugs").
+    static let gapHeight: CGFloat = 8
 
     /// What each block has to move down by to clear the pictures.
     private var pushes: [Int: CGFloat] {
@@ -67,6 +90,7 @@ struct MarkdownPreview: View {
     }
 
     var body: some View {
+        ScrollViewReader { page in
         ScrollView {
             VStack(alignment: .leading, spacing: 0) {
                 // Reports how far the content has scrolled, in the same
@@ -80,6 +104,7 @@ struct MarkdownPreview: View {
                 ForEach(items) { item in
                     gap(at: item.range.location)
                     row(item)
+                        .id(item.id)
                         .padding(.top, pushes[item.id] ?? 0)
                         .background {
                             GeometryReader { proxy in
@@ -99,14 +124,22 @@ struct MarkdownPreview: View {
                 }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(.horizontal, 28)
+            .padding(.horizontal, Self.sideInset)
             .padding(.vertical, Self.topInset)
             // The cell brackets, in the margin the page already leaves.
             .overlay(alignment: .topTrailing) {
                 CellBrackets(brackets: cellBrackets,
                              onSelect: { beginEditing($0) },
-                             onToggle: { onToggleSection?($0) })
-                    .frame(height: 4000, alignment: .top)
+                             onToggle: { onToggleSection?($0) },
+                             onMoveCell: { range, up in
+                                 cellEdit { _, text in CellCommands.move(range, up: up, in: text) }
+                             })
+                    // As tall as the brackets go, not a fixed 4000 points:
+                    // past that the page had cells with no bracket beside
+                    // them (Sean, 2026-09-19: "make sure the notebook bars
+                    // on the side work properly in markdown and wysiwyg
+                    // mode").
+                    .frame(height: CellBrackets.height(of: cellBrackets), alignment: .top)
                     // Clear of the scroller, and clear of the page's own
                     // right margin.
                     .padding(.trailing, 4)
@@ -123,21 +156,50 @@ struct MarkdownPreview: View {
                 if abs((rowHeights[id] ?? -1) - bare) > 0.5 { rowHeights[id] = bare }
             }
         }
-        .onPreferenceChange(PreviewScrollKey.self) { onScroll?($0) }
+        .onPreferenceChange(PreviewScrollKey.self) { offset in
+            onScroll?(offset)
+            // Which cell the fold is on, for the other mode to open at.
+            let places = PreviewLayout.positions(rows: items.map { ($0.id, rowHeights[$0.id] ?? 0) },
+                                                 spacing: Self.gapHeight,
+                                                 top: Self.topInset + Self.gapHeight,
+                                                 bands: keepClear)
+            if let top = PreviewLayout.topRow(positions: places, scroll: offset) { onTopCell?(top) }
+        }
         .background(Color(nsColor: .textBackgroundColor))
         .onChange(of: editingRange) { _, range in onEditingChanged?(range != nil) }
         .onAppear {
+            // Open where the markdown pane was left, on the same cell.
+            if topCell > 0,
+               let block = MarkdownParser.positioned(from: markdown)
+                .last(where: { $0.range.location <= topCell }) {
+                DispatchQueue.main.async { page.scrollTo(block.range.location, anchor: .top) }
+            }
             guard editable else { return }
             // Every button on the bar works on this side: pressing one with
             // nothing clicked opens a block first (Sean, 2026-09-19: "allow
             // wysiwyg editing including all the buttons on the bar").
             bridge.ensureEditing = { openSomething() }
             bridge.moveSectionInDocument = { up in moveWholeSection(up: up) }
+            bridge.mergeCellsInDocument = { mergeCells() }
+            bridge.cellAnchorInDocument = { y in cellAnchor(near: y) }
+            bridge.cellTopInDocument = { anchor in cellTop(of: anchor) }
+            bridge.cellRangeInDocument = { editingRange ?? items.first?.range }
+            bridge.cellEditInDocument = { make in cellEdit(make) }
+            bridge.cellBoxesInDocument = {
+                places.map { FloatingHoming.CellBox(anchor: $0.key, top: $0.value.top,
+                                                    bottom: $0.value.bottom) }
+            }
         }
         .onDisappear {
             onEditingChanged?(false)
             bridge.ensureEditing = nil
             bridge.moveSectionInDocument = nil
+            bridge.mergeCellsInDocument = nil
+            bridge.cellAnchorInDocument = nil
+            bridge.cellTopInDocument = nil
+            bridge.cellBoxesInDocument = nil
+            bridge.cellRangeInDocument = nil
+            bridge.cellEditInDocument = nil
         }
         .environment(\.openURL, OpenURLAction { url in
             let destination = url.absoluteString
@@ -146,6 +208,7 @@ struct MarkdownPreview: View {
                   let onFollow, onFollow(destination) else { return .systemAction }
             return .handled
         })
+        }
     }
 
     // MARK: - What is on the page
@@ -217,6 +280,18 @@ struct MarkdownPreview: View {
                                             selected: editingRange == item.range, range: item.range))
         }
 
+        // A drawing is a cell too, as tall as the drawing (Sean,
+        // 2026-09-19: "drawings from the pen tool or that are grabbed from
+        // the camera should go in a cell.. the cell is the height of the
+        // drawn stuff"). It has no markdown behind it, so its bracket
+        // selects nothing — it is there to show the cell.
+        let beside = out.map { (top: $0.top, depth: $0.depth) }
+        for ink in InkBands.cells(for: keepClear, beside: beside) {
+            out.append(CellBrackets.Bracket(key: ink.key, depth: ink.depth,
+                                            top: ink.top, bottom: ink.bottom,
+                                            range: NSRange(location: NSNotFound, length: 0)))
+        }
+
         for section in sections {
             let inside = shown.filter {
                 NSIntersectionRange($0.range, section.range).length == $0.range.length
@@ -249,15 +324,23 @@ struct MarkdownPreview: View {
                         onSplit: { head, tail in split(head: head, tail: tail) },
                         onDeleteEmpty: { removeBlock() },
                         onMove: { move($0) })
-                .padding(.horizontal, fence == nil ? 8 : 12)
-                .padding(.vertical, fence == nil ? 6 : 10)
+                // The same room the rendered block has — nothing at all
+                // for prose, the code block's own twelve for a fence — so
+                // opening a cell moves no text (Sean, 2026-09-19: "gaps
+                // should just be a small fixed padding").
+                .padding(.horizontal, fence == nil ? 0 : 12)
+                .padding(.vertical, fence == nil ? 0 : 12)
                 // A code block being typed in keeps looking like a code
                 // block, so nothing jumps when it is clicked.
                 .background(fence == nil ? AnyShapeStyle(Color.accentColor.opacity(0.07))
                                          : AnyShapeStyle(CodeColours.background),
                             in: RoundedRectangle(cornerRadius: 6))
                 .overlay(RoundedRectangle(cornerRadius: 6).strokeBorder(Color.accentColor.opacity(0.35)))
-                .padding(.vertical, 2)
+        } else if case .table(let table)? = item.block, editable {
+            // A table is typed into as a grid, not as its markdown (Sean's
+            // to-do list: "a grid you tab through"). The bracket beside it
+            // still opens the raw lines.
+            TableEditor(table: table) { edited in replace(item.range, with: edited) }
         } else if let block = item.block {
             // NO .textSelection here. A selectable Text takes the click
             // itself, so tapping the WORDS of a block did nothing and only
@@ -267,7 +350,6 @@ struct MarkdownPreview: View {
             // text is what the editor that opens is for.
             BlockView(block: block)
                 .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(.vertical, 3)
                 .contentShape(Rectangle())
                 .onTapGesture { beginEditing(item.range) }
         }
@@ -290,6 +372,9 @@ struct MarkdownPreview: View {
                         Capsule().frame(height: 2)
                     }
                     .foregroundStyle(Color.accentColor)
+                    // Drawn over the seam, not inside it: the strip is
+                    // four points tall and the mark is bigger than that.
+                    .frame(height: 12)
                     .transition(.opacity)
                 }
             }
@@ -366,6 +451,78 @@ struct MarkdownPreview: View {
 
     /// Moving a section from the preview moves it in the whole note, with
     /// the block being edited standing in for the caret.
+    /// Where each cell sits on the rendered page, measured.
+    private var places: [Int: (top: CGFloat, bottom: CGFloat)] {
+        PreviewLayout.positions(rows: items.map { ($0.id, rowHeights[$0.id] ?? 0) },
+                                spacing: Self.gapHeight, top: Self.topInset + Self.gapHeight,
+                                bands: keepClear)
+    }
+
+    /// The cell a point down the page belongs to — an object dropped there
+    /// remembers it, so it is beside the same cell in the markdown pane.
+    private func cellAnchor(near y: CGFloat) -> Int? {
+        PreviewLayout.topRow(positions: places, scroll: y)
+    }
+
+    /// Where that cell starts here.
+    private func cellTop(of anchor: Int) -> CGFloat? {
+        guard let block = MarkdownParser.positioned(from: markdown)
+            .last(where: { $0.range.location <= anchor }) else { return nil }
+        return places[block.range.location]?.top
+    }
+
+    /// A whole-cell edit — delete, duplicate, move — over the note, with
+    /// the cell that is open (or the first one) as the subject. A cell on
+    /// this side is a block, so the edit cannot go through one block's own
+    /// text view (Sean, 2026-09-20: "make cells behave like mathematica
+    /// cells").
+    private func cellEdit(_ make: (NSRange, String) -> MarkdownFormatting.Edit?) {
+        let cell = editingRange ?? items.first?.range
+        guard let cell, let edit = make(cell, markdown) else { return }
+        let updated = (markdown as NSString).replacingCharacters(in: edit.range, with: edit.replacement)
+        markdown = updated
+        // Follow the cell: to where it went, or to whatever moved up into
+        // the place of the one that was taken away.
+        if let block = MarkdownParser.positioned(from: updated)
+            .first(where: { NSLocationInRange(edit.selection.location, $0.range)
+                || $0.range.location == edit.selection.location }) {
+            beginEditing(block.range)
+        } else {
+            editingRange = nil
+        }
+    }
+
+    /// Joining the open cell to the one after it. The seam is between two
+    /// blocks, so it is the note that is edited, not the block's own text
+    /// view (Sean, 2026-09-19: "cmd+d and cmd+m to split and merge cells").
+    private func mergeCells() {
+        let inside = bridge.textView?.selectedRange().location ?? 0
+        let caret = (editingRange?.location ?? 0) + inside
+        guard let edit = NotebookCells.merge(text: markdown,
+                                             selection: NSRange(location: caret, length: 0))
+        else { return }
+        let updated = (markdown as NSString).replacingCharacters(in: edit.range, with: edit.replacement)
+        markdown = updated
+        // Stay in the cell the two became.
+        if editingRange != nil,
+           let block = MarkdownParser.positioned(from: updated)
+            .first(where: { NSLocationInRange(edit.selection.location, $0.range) }) {
+            beginEditing(block.range)
+        }
+    }
+
+    /// A table's block, rewritten as the lines of the table it now is.
+    private func replace(_ range: NSRange, with table: MarkdownTable) {
+        let text = markdown as NSString
+        guard range.location >= 0, NSMaxRange(range) <= text.length else { return }
+        // The block's range stops at the last line; whatever followed it —
+        // the blank line, the next cell — is left exactly as it was.
+        let kept = text.substring(with: range)
+        let trailing = kept.hasSuffix("\n") ? "\n" : ""
+        markdown = text.replacingCharacters(in: range,
+                                            with: table.lines.joined(separator: "\n") + trailing)
+    }
+
     private func moveWholeSection(up: Bool) {
         let caret = editingRange?.location ?? 0
         guard let edit = NotebookOutline.moveSection(text: markdown,
@@ -452,17 +609,18 @@ struct MarkdownPreview: View {
 
     struct BlockView: View {
         let block: MarkdownBlock
+        @Environment(\.notePaper) private var paper
 
         var body: some View {
             switch block {
             case .heading(let level, let text):
-                Text(MarkdownInline.attributed(text, baseSize: Self.headingSize(level)))
+                Text(MarkdownInline.attributed(text, baseSize: Self.headingSize(level), paper: paper))
                     .font(Self.headingFont(level))
                     .italic(level == 6)
                     .foregroundStyle(level >= 5 ? AnyShapeStyle(.secondary) : AnyShapeStyle(.primary))
                     .padding(.top, level <= 2 ? 8 : 4)
             case .paragraph(let text):
-                Text(MarkdownInline.attributed(text))
+                Text(MarkdownInline.attributed(text, paper: paper))
                     .font(.system(size: 15))
                     .lineSpacing(4)
             case .bullets(let items):
@@ -470,7 +628,7 @@ struct MarkdownPreview: View {
                     ForEach(Array(items.enumerated()), id: \.offset) { _, item in
                         HStack(alignment: .firstTextBaseline, spacing: 8) {
                             Text("•").foregroundStyle(.secondary)
-                            Text(MarkdownInline.attributed(item)).font(.system(size: 15))
+                            Text(MarkdownInline.attributed(item, paper: paper)).font(.system(size: 15))
                         }
                     }
                 }
@@ -481,7 +639,7 @@ struct MarkdownPreview: View {
                     ForEach(Array(items.enumerated()), id: \.offset) { _, item in
                         HStack(alignment: .firstTextBaseline, spacing: 8) {
                             Text("\u{2013}").foregroundStyle(.secondary)
-                            Text(MarkdownInline.attributed(item)).font(.system(size: 15))
+                            Text(MarkdownInline.attributed(item, paper: paper)).font(.system(size: 15))
                         }
                     }
                 }
@@ -491,7 +649,7 @@ struct MarkdownPreview: View {
                     ForEach(Array(items.enumerated()), id: \.offset) { index, item in
                         HStack(alignment: .firstTextBaseline, spacing: 8) {
                             Text("\(index + 1).").foregroundStyle(.secondary).monospacedDigit()
-                            Text(MarkdownInline.attributed(item)).font(.system(size: 15))
+                            Text(MarkdownInline.attributed(item, paper: paper)).font(.system(size: 15))
                         }
                     }
                 }
@@ -499,7 +657,7 @@ struct MarkdownPreview: View {
             case .quote(let text):
                 HStack(spacing: 12) {
                     RoundedRectangle(cornerRadius: 2).fill(Color.accentColor.opacity(0.6)).frame(width: 3)
-                    Text(MarkdownInline.attributed(text))
+                    Text(MarkdownInline.attributed(text, paper: paper))
                         .font(.system(size: 15))
                         .italic()
                         .foregroundStyle(.secondary)
@@ -557,11 +715,33 @@ struct MarkdownPreview: View {
 }
 
 
+/// What the blocks are being drawn ON, as `#RRGGBB`.
+///
+/// Nil on screen, where the preview's background is the very thing the
+/// colours were picked against. The PDF export sets it to white, because
+/// paper is white whatever the window is, and a `<span style="color:…">`
+/// that reads on a dark editor is not there at all on a printed page
+/// (Sean, 2026-09-19: "be mindful of text color... it should always be
+/// visible against the background"). `MarkdownInline` does the checking;
+/// this only says what it is checking against.
+struct NotePaperKey: EnvironmentKey {
+    static let defaultValue: String? = nil
+}
+
+extension EnvironmentValues {
+    var notePaper: String? {
+        get { self[NotePaperKey.self] }
+        set { self[NotePaperKey.self] = newValue }
+    }
+}
+
+
 /// A table in the preview: the header in bold over a rule, and grid lines
 /// only when the markdown asked for them (Sean, 2026-09-19: "add tables with
 /// grids or no grids").
 struct TableBlock: View {
     let table: MarkdownTable
+    @Environment(\.notePaper) private var paper
 
     private var lineColour: Color { Color.primary.opacity(0.18) }
 
@@ -594,7 +774,7 @@ struct TableBlock: View {
     }
 
     private func cellView(_ cell: String, bold: Bool) -> some View {
-        Text(MarkdownInline.attributed(cell))
+        Text(MarkdownInline.attributed(cell, paper: paper))
             .font(.system(size: 14, weight: bold ? .semibold : .regular))
             .padding(.horizontal, 10)
             .padding(.vertical, 5)

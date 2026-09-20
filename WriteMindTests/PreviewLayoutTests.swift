@@ -100,3 +100,77 @@ final class CellBracketTests: XCTestCase {
                      "below the cell is not the cell")
     }
 }
+
+/// The same place, whichever mode is showing (Sean, 2026-09-19: "positions
+/// stay the same in markdown and wysiwyg mode"). The two sides lay a note
+/// out at different heights, so what carries across is the CELL at the top,
+/// not the number of points scrolled.
+final class TopCellTests: XCTestCase {
+    private let places: [Int: (top: CGFloat, bottom: CGFloat)] = [
+        0: (top: 20, bottom: 80),
+        12: (top: 94, bottom: 180),
+        40: (top: 194, bottom: 600),
+        90: (top: 614, bottom: 700),
+    ]
+
+    func testTheTopOfThePageIsTheFirstCell() {
+        XCTAssertEqual(PreviewLayout.topRow(positions: places, scroll: 0), 0)
+    }
+
+    func testScrollingPastACellMovesTheAnswerOn() {
+        XCTAssertEqual(PreviewLayout.topRow(positions: places, scroll: 100), 12)
+        XCTAssertEqual(PreviewLayout.topRow(positions: places, scroll: 300), 40)
+        XCTAssertEqual(PreviewLayout.topRow(positions: places, scroll: 5_000), 90)
+    }
+
+    func testACellAlmostAtTheTopCountsAsTheTopOne() {
+        // A few points short of a cell's top, the window is showing that
+        // cell, not the sliver of the one before it — and a switch back
+        // lands on the same one, so modes do not walk the page.
+        XCTAssertEqual(PreviewLayout.topRow(positions: places, scroll: 194), 40)
+        XCTAssertEqual(PreviewLayout.topRow(positions: places, scroll: 190), 40, "within the tolerance")
+        XCTAssertEqual(PreviewLayout.topRow(positions: places, scroll: 180), 12, "outside it")
+    }
+
+    func testSwitchingBackAndForthStaysOnTheSameCell() {
+        let places = self.places
+        var scroll: CGFloat = 300
+        for _ in 0..<4 {
+            let cell = PreviewLayout.topRow(positions: places, scroll: scroll)
+            XCTAssertEqual(cell, 40)
+            scroll = places[cell ?? 0]?.top ?? 0
+        }
+    }
+
+    func testAnEmptyPageHasNoTopCell() {
+        XCTAssertNil(PreviewLayout.topRow(positions: [:], scroll: 0))
+    }
+
+    func testTheCellIsFoundFromAnOffsetInsideIt() {
+        // What the rendered page scrolls to when the markdown pane hands it
+        // a character offset that is halfway through a block.
+        let text = "First cell\n\n## A heading\n\nWords under it"
+        let blocks = MarkdownParser.positioned(from: text)
+        XCTAssertEqual(blocks.last(where: { $0.range.location <= 30 })?.range.location, 26)
+        XCTAssertEqual(blocks.last(where: { $0.range.location <= 0 })?.range.location, 0)
+    }
+}
+
+/// One gap, the same everywhere (Sean, 2026-09-19: "there shouldn't be
+/// gaps between cells" / "gaps should just be a small fixed padding, not
+/// some varying amount").
+final class CellSpacingTests: XCTestCase {
+    func testTheGapBetweenCellsIsSmallAndFixed() {
+        XCTAssertLessThanOrEqual(MarkdownPreview.gapHeight, 10)
+        XCTAssertGreaterThan(MarkdownPreview.gapHeight, 0, "the pointer still has to fit in it")
+    }
+
+    func testEverySeamIsThatSameGap() {
+        let rows = [(id: 1, height: CGFloat(40)), (id: 2, height: CGFloat(120)),
+                    (id: 3, height: CGFloat(18))]
+        let places = PreviewLayout.positions(rows: rows, spacing: MarkdownPreview.gapHeight,
+                                             top: MarkdownPreview.topInset, bands: [])
+        XCTAssertEqual(places[2]!.top - places[1]!.bottom, MarkdownPreview.gapHeight, accuracy: 0.001)
+        XCTAssertEqual(places[3]!.top - places[2]!.bottom, MarkdownPreview.gapHeight, accuracy: 0.001)
+    }
+}
