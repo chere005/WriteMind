@@ -172,16 +172,26 @@ CoreMind's `bin/report-status.sh`.
   `BlockTextView` inherits it and asks `EditorBridge.pasteImage`). The
   monitor returns nil to swallow a key — anything it does not take must be
   returned unchanged or typing dies.
-- **THE PANE HAS ONE MODE, and only one of the three is the notebook's.**
-  Sean, 2026-09-20: "the pen button section should allow choosing between
-  pen mode, cursor mode, and pointer select mode… pen and pointer select
-  mode operate in the same space (along with placed squares and such.. the
-  cursor interacts with the notebook (which is markdown)".
-  `AppState.CanvasMode` is that switch — `cursor`, `pen`, `select` — kept in
-  the defaults like the pen's size and colour, and named in the footer
-  whenever it is not `cursor`, because a pane that swallows every click and
-  comes up that way after a launch needs somewhere on screen that says why.
-  `penActive` is a question about the mode now and is stored nowhere.
+- **THE PANE HAS ONE MODE, AND THERE ARE TWO OF THEM.** Sean, 2026-09-21:
+  "drop the cursor and select buttons.. clicking the pen outside of the
+  dropdown is the toggle between pen and cursor.. in both modes holding
+  cmd is how to get the selector". `AppState.CanvasMode` is that switch —
+  `cursor` and `pen`, kept in the defaults like the pen's size and colour,
+  and named in the footer whenever it is not `cursor`, because a pane that
+  swallows every click and comes up that way after a launch needs
+  somewhere on screen that says why. `penActive` is a question about the
+  mode and is stored nowhere. ONE BUTTON on the bar says which, and
+  pressing it toggles; the cursor and the marquee each had one beside it,
+  which was three buttons for two answers. A remembered `select` from
+  before decodes to nothing and `CanvasMode(rawValue:) ?? .cursor` gives
+  the pane back to the notebook.
+  **What a press does is `CanvasMode.press(with:)` and nothing else
+  decides it**: ⌘ is the selector in BOTH modes, so it is asked BEFORE the
+  mode — a modifier held down is asked for by hand, and that is what
+  overrides a mode. Under the pen a ⌘-drag used to draw a stroke over the
+  thing it was meant to be picking up. The pointer stays a pencil there
+  even so: the pencil is set by the text view as well as by the layer, and
+  two answers to one pointer is the flicker that cost seven rounds.
 - **A MARK IS AN ICON, AND IT GOES WHERE IT IS CLICKED.** Sean,
   2026-09-21: "the checkmark shouldn't be placed until i click where it
   goes, like an arrow.. it's far too big, it would be a checkmark next
@@ -231,11 +241,11 @@ CoreMind's `bin/report-status.sh`.
   the pane: the pencil, the crosshair, or nil for "the notebook's own
   four"). The list used to be written out in three places, and a fourth
   thing holding the pane meant finding all three.
-  Select mode is the ⌘-drag marquee made a mode, not moved: ⌘ still pulls
-  a rectangle in cursor mode, and both end in `Drawing.ids(touching:)`,
-  which skips a hidden picture exactly as `index(at:)` and `bounds(of:)`
-  do — a rectangle over blank space must not hand ⌫ something nothing on
-  screen said was there.
+  The marquee is one rule wherever the drag came from — ⌘ under the pen,
+  ⌘ over the words — and every one of them ends in
+  `Drawing.ids(touching:)`, which skips a hidden picture exactly as
+  `index(at:)` and `bounds(of:)` do: a rectangle over blank space must not
+  hand ⌫ something nothing on screen said was there.
 - **The pencil cursor wins by swallowing cursorUpdate events.** A
   cursorUpdate event is how AppKit hands a view its turn to set the cursor
   — the text view's I-beam, the window's arrow — and cursor rects, a pushed

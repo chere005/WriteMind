@@ -79,7 +79,7 @@ is how the code is put together.
   back to plain text, which is what every bar starts out as. On a
   note with nothing in it yet the line sits where the first cell will
   land, not against the top of the pane. The seams belong to cursor
-  mode: in pen or select mode the drawing layer has the pane and there
+  mode: with the pen down the drawing layer has the pane and there
   are no seams at all. The markdown pane and the
   rendered page do exactly the same thing, the way a Mathematica notebook
   does on both.
@@ -224,18 +224,18 @@ is how the code is put together.
 - **Collapse what you're not using.** The notes list and the video from the
   sidebar's header; the notes pane from the corner of the video. ⌃⌘S, ⌃⌘E,
   ⌃⌘C.
-- **Three modes over one page: cursor, pen, select.** The drawing layer is
-  there in the markdown and on the rendered page alike — the drawing belongs
-  to the note, not to one way of looking at it — and the pen button's menu
-  says which of the three the pane is in. **Cursor** is the notebook's: the
-  words, the bars between the cells and the brackets take the clicks, and
-  the drawings are things you can handle — drag one to move it, or use the
-  buttons that appear (move, turn, resize, delete). **Pen** draws, and the
-  pointer is a pencil over that pane and nowhere else. **Select** pulls a
-  rectangle anywhere on the page and takes everything it *touches*, whole
-  or not, with the pointer a crosshair and nothing reaching the text; hold
-  **⌘ and drag** to do the same from cursor mode. The mode is remembered
-  between launches and the footer names it whenever it is not the cursor.
+- **Two modes over one page, and one button between them.** The drawing
+  layer is there in the markdown and on the rendered page alike — the
+  drawing belongs to the note, not to one way of looking at it — and the
+  pen button says which mode the pane is in: press it to put the pen down
+  or pick it up. With the pen **up** the notebook has the clicks: the
+  words, the bars between the cells and the brackets, and the drawings are
+  things you can handle — drag one to move it, or use the buttons that
+  appear (move, turn, resize, delete). With the pen **down** it draws, and
+  the pointer is a pencil over that pane and nowhere else. In either mode,
+  hold **⌘ and drag** to pull a rectangle over the page: it takes
+  everything it *touches*, whole or not. The mode is remembered between
+  launches and the footer names it whenever the pen is down.
 - **Several things held as one.** Pick two or more — a marquee, or ⇧-click
   — and **⌃G** holds them together; the same key on a group you have picked
   takes it apart, and a button beside the selection says which it will do.

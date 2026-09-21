@@ -85,13 +85,6 @@ struct TopBar: View {
             BarGroup(.insert) { insertTools }
             BarGroup(.maths) { mathsTools }
             BarGroup(.flowchart) { flowChartTools }
-            // The way back to the notebook, ALWAYS on the bar (Sean,
-            // 2026-09-21: "always show a cursor in the menu bar"). It sits
-            // outside the pen's section on purpose: a section can be put
-            // away, and putting that one away while the pane was in pen or
-            // select mode left no button anywhere that gave the clicks back
-            // to the words.
-            cursorButton
             BarGroup(.capture) { captureTools }
 
             Spacer(minLength: 6)
@@ -273,28 +266,15 @@ struct TopBar: View {
         }
     }
 
-    /// Cursor mode: the notebook's own. Never disabled and never hidden —
-    /// it is the way out of the other two.
-    private var cursorButton: some View {
-        BarButton(systemImage: "cursorarrow", label: "Cursor",
-                  help: "The notebook takes the clicks: the words, the bars between the cells, the brackets",
-                  isOn: appState.canvasMode == .cursor) {
-            appState.canvasMode = .cursor
-        }
-    }
-
     @ViewBuilder
     private var captureTools: some View {
-        // A button each for the three modes, the way Sean asked (2026-09-20:
-        // "cursor select and pen should each be buttons in the menu bar..
-        // pen should have the dropdown for its further options"). Each one
-        // says which mode the pane is in, so the bar shows the answer
-        // instead of hiding it a popover deep — and only the pen carries a
-        // chevron, because only the pen has anything more to set.
-        //
-        // Cursor is not in here: it is on the bar itself, so that putting
-        // this section away can never strand the pane in pen or select
-        // mode with no way back.
+        // ONE BUTTON FOR THE PANE: the pen, lit while it is down (Sean,
+        // 2026-09-21: "drop the cursor and select buttons.. clicking the
+        // pen outside of the dropdown is the toggle between pen and
+        // cursor"). The cursor and the marquee each had one beside it —
+        // three buttons for two answers and a mode that ⌘ already gives
+        // in both. The chevron is the pen's own options, and pressing it
+        // does not put the pen down.
         //
         // The capture button that used to sit here is gone: the camera
         // pane's own three buttons say what to do with a box (Sean,
@@ -302,7 +282,9 @@ struct TopBar: View {
         Group {
             BarSplit(isOn: appState.canvasMode == .pen) {
                 BarButton(systemImage: "pencil", label: "Pen",
-                          help: appState.penActive ? "Put the pen down" : "Draw over the note",
+                          help: appState.penActive
+                              ? "Put the pen down and give the clicks back to the notebook"
+                              : "Draw over the note (hold ⌘ in either mode to pull a rectangle over what is on the page)",
                           isOn: appState.canvasMode == .pen, bare: true) {
                     // A second press puts it down rather than doing
                     // nothing, which is what a pen button has always done
@@ -315,12 +297,6 @@ struct TopBar: View {
                     .barTip(BarTip(title: "Pen", detail: "Size, colour, and what is on the layer"))
                     .accessibilityLabel("Pen Options")
                     .popover(isPresented: $showPenMenu, arrowEdge: .bottom) { PenMenu() }
-            }
-
-            BarButton(systemImage: "rectangle.dashed", label: "Select",
-                      help: "Drag a rectangle to pick up drawings, pictures and captures (⌃G groups them)",
-                      isOn: appState.canvasMode == .select) {
-                appState.canvasMode = appState.canvasMode == .select ? .cursor : .select
             }
         }
         .disabled(!canDraw)

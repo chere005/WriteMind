@@ -806,22 +806,15 @@ struct DrawingCanvas: View {
             connectPreview = (point, point)
             return
         }
-        if penActive { interaction = .drawing; return }
-        // Select mode: the drag is a rectangle wherever it starts — never
-        // a stroke, never a move, and never a click that reaches the words
-        // (Sean, 2026-09-20: "pointer select mode which draws rectangles
-        // that can select drawn (or captured) stuff"). ⇧ adds to what is
-        // already picked, as it does under ⌘. ⌥ from a node draws its line
-        // here as it does under the pen, above: a modifier held down is
-        // asked for by hand, and that is what overrides a mode.
-        if mode == .select {
-            let additive = NSEvent.modifierFlags.contains(.shift)
-            if !additive { selection = [] }
-            interaction = .marquee(start: point, additive: additive)
-            marquee = CGRect(origin: point, size: .zero)
-            return
-        }
-        if connectActive {
+        // What the mode makes of this press — and ⌘ is the selector in
+        // BOTH of them, which is what the third mode used to be
+        // (`CanvasMode.press`). ⌥ from a node draws its line above
+        // whatever the answer here is: a modifier held down is asked for
+        // by hand, and that is what overrides a mode.
+        let flags = NSEvent.modifierFlags
+        let press = mode.press(with: flags)
+        if press == .draw { interaction = .drawing; return }
+        if press == .objects, connectActive {
             interaction = .connecting(from: point, node: drawing.attachable(at: point, in: size))
             connectPreview = (point, point)
             return
@@ -832,9 +825,10 @@ struct DrawingCanvas: View {
         styling = nil
         editingLabel = nil
 
-        let flags = NSEvent.modifierFlags
+        // ⇧ adds to what is already picked, whether the rectangle came
+        // from ⌘ or a bare click did.
         let additive = flags.contains(.shift)
-        if flags.contains(.command) {
+        if press == .marquee {
             if !additive { selection = [] }
             interaction = .marquee(start: point, additive: additive)
             marquee = CGRect(origin: point, size: .zero)
@@ -1080,10 +1074,11 @@ struct DrawingCanvas: View {
         if interaction == .moving || (interaction == .handle && hoveredHandles.contains("move")) {
             return .closedHand
         }
-        // The crosshair everywhere a rectangle can be pulled, which in
-        // select mode is everywhere but the handles round the selection —
-        // those are still buttons and still take a drag of their own.
-        if mode == .select { return hoveredHandles.isEmpty ? .crosshair : .openHand }
+        // The crosshair wherever a ⌘-drag would pull a rectangle. Not
+        // under the pen, though it pulls one there too: the pencil is
+        // set by the text view as well as by the layer (see AGENTS), and
+        // two answers to one pointer is the flicker that cost seven
+        // rounds. The pen stays a pencil and the drag still selects.
         if commandDown, NSEvent.modifierFlags.contains(.command), !drawing.isEmpty { return .crosshair }
         if hovered != nil || !hoveredHandles.isEmpty { return .openHand }
         return nil

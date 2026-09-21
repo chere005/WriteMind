@@ -12,12 +12,14 @@ final class AppState: ObservableObject {
     /// operate in the same space (along with placed squares and such.. the
     /// cursor interacts with the notebook (which is markdown)").
     ///
-    /// Two of the three are the drawing layer's and one is the notebook's,
-    /// which is the whole distinction: in `cursor` the clicks go through to
-    /// the words, the seams and the brackets, and in the other two they do
-    /// not go through at all.
+    /// TWO modes, and one button says which (Sean, 2026-09-21: "drop the
+    /// cursor and select buttons.. clicking the pen outside of the dropdown
+    /// is the toggle between pen and cursor"). In `cursor` the clicks go
+    /// through to the words, the seams and the brackets; under the pen they
+    /// do not go through at all. Select was a third, and is now what it
+    /// always was underneath — a ⌘-drag, in either mode.
     enum CanvasMode: String, CaseIterable, Identifiable {
-        case cursor, pen, select
+        case cursor, pen
 
         var id: String { rawValue }
 
@@ -26,7 +28,6 @@ final class AppState: ObservableObject {
             switch self {
             case .cursor: return "Cursor"
             case .pen: return "Pen"
-            case .select: return "Select"
             }
         }
 
@@ -34,16 +35,37 @@ final class AppState: ObservableObject {
             switch self {
             case .cursor: return "cursorarrow"
             case .pen: return "pencil.tip"
-            case .select: return "rectangle.dashed"
             }
         }
 
         var help: String {
             switch self {
             case .cursor: return "The notebook takes the clicks — the words, the bars between the cells, the brackets. Objects on the page can still be dragged by hand."
-            case .pen: return "Draw over the note."
-            case .select: return "Drag a rectangle over the page: everything it touches is selected, and nothing is drawn."
+            case .pen: return "Draw over the note. Hold ⌘ to pull a rectangle over what is on the page instead."
             }
+        }
+
+        /// What a press on the pane does, once the one-gesture tools have
+        /// had their say.
+        enum Press: Equatable {
+            /// Pull a rectangle over the page and pick up what it touches.
+            case marquee
+            /// Draw.
+            case draw
+            /// The objects on the layer: pick one up, or let the click
+            /// through to the notebook.
+            case objects
+        }
+
+        /// ⌘ IS THE SELECTOR, IN BOTH MODES (Sean, 2026-09-21: "in both
+        /// modes holding cmd is how to get the selector") — which is why
+        /// there is no third mode any more. It is asked before the mode,
+        /// because a modifier held down is asked for by hand and that is
+        /// what overrides a mode; under the pen a ⌘-drag used to draw a
+        /// stroke over whatever it was meant to be picking up.
+        func press(with modifiers: NSEvent.ModifierFlags) -> Press {
+            if modifiers.contains(.command) { return .marquee }
+            return self == .pen ? .draw : .objects
         }
     }
 
@@ -160,7 +182,6 @@ final class AppState: ObservableObject {
         if placing != nil || connectActive { return .crosshair }
         switch canvasMode {
         case .pen: return DrawingCursors.pencil
-        case .select: return .crosshair
         case .cursor: return nil
         }
     }

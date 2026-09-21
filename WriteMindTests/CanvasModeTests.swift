@@ -2,10 +2,10 @@ import AppKit
 import XCTest
 @testable import WriteMind
 
-/// Three modes over one pane, and only one of them is the notebook's (Sean,
-/// 2026-09-20: "the pen button section should allow choosing between pen
-/// mode, cursor mode, and pointer select mode… pen and pointer select mode
-/// operate in the same space… the cursor interacts with the notebook").
+/// Two modes over one pane, and only one of them is the notebook's (Sean,
+/// 2026-09-21: "clicking the pen outside of the dropdown is the toggle
+/// between pen and cursor.. in both modes holding cmd is how to get the
+/// selector").
 @MainActor
 final class CanvasModeTests: XCTestCase {
     private var suite: String!
@@ -32,10 +32,6 @@ final class CanvasModeTests: XCTestCase {
         XCTAssertTrue(app.canvasOwnsPane)
         XCTAssertTrue(app.penActive, "the pen is the mode now, not a flag beside it")
 
-        app.canvasMode = .select
-        XCTAssertTrue(app.canvasOwnsPane, "no click reaches the text while the marquee is the mode")
-        XCTAssertFalse(app.penActive)
-
         app.canvasMode = .cursor
         XCTAssertFalse(app.canvasOwnsPane)
     }
@@ -60,14 +56,14 @@ final class CanvasModeTests: XCTestCase {
 
         app.placing = .shape(.oval)
         XCTAssertEqual(app.canvasMode, .cursor, "arming a shape puts the pen down, as it always did")
-        app.canvasMode = .select
+        app.canvasMode = .pen
         XCTAssertNil(app.placing, "and picking a mode puts the armed shape away")
     }
 
     func testTheModeIsRememberedTheWayThePensSizeIs() {
         let first = state()
-        first.canvasMode = .select
-        XCTAssertEqual(state().canvasMode, .select, "a launch comes up where it was left")
+        first.canvasMode = .pen
+        XCTAssertEqual(state().canvasMode, .pen, "a launch comes up where it was left")
 
         first.canvasMode = .cursor
         XCTAssertEqual(state().canvasMode, .cursor)
@@ -84,9 +80,6 @@ final class CanvasModeTests: XCTestCase {
         app.canvasMode = .pen
         XCTAssertTrue(app.paneCursor === DrawingCursors.pencil)
 
-        app.canvasMode = .select
-        XCTAssertTrue(app.paneCursor === NSCursor.crosshair)
-
         app.canvasMode = .cursor
         XCTAssertNil(app.paneCursor, "a mode switch leaves no cursor behind it")
 
@@ -97,6 +90,32 @@ final class CanvasModeTests: XCTestCase {
         XCTAssertTrue(app.paneCursor === NSCursor.crosshair)
         app.placing = nil
         XCTAssertNil(app.paneCursor)
+    }
+
+    func testTheModesAreThePenAndTheCursorAndNothingElse() {
+        // Sean, 2026-09-21: "drop the cursor and select buttons..
+        // clicking the pen outside of the dropdown is the toggle between
+        // pen and cursor". Two modes and one button: the pen is down or
+        // it is not, and the button says which.
+        XCTAssertEqual(AppState.CanvasMode.allCases, [.cursor, .pen])
+    }
+
+    func testAPaneLeftInAModeThatIsGoneComesUpAsTheNotebooks() {
+        let defaults = UserDefaults(suiteName: suite)!
+        defaults.set("select", forKey: "canvasMode")
+        XCTAssertEqual(AppState(defaults: defaults).canvasMode, .cursor,
+                       "a remembered mode that no longer exists is the notebook's")
+    }
+
+    func testCommandIsTheSelectorInBothModes() {
+        // Sean, 2026-09-21: "in both modes holding cmd is how to get the
+        // selector". Under the pen a ⌘-drag used to draw a stroke.
+        XCTAssertEqual(AppState.CanvasMode.pen.press(with: [.command]), .marquee)
+        XCTAssertEqual(AppState.CanvasMode.cursor.press(with: [.command]), .marquee)
+        XCTAssertEqual(AppState.CanvasMode.pen.press(with: [.command, .shift]), .marquee,
+                       "⇧ says whether it adds to what is picked, not what the drag is")
+        XCTAssertEqual(AppState.CanvasMode.pen.press(with: []), .draw)
+        XCTAssertEqual(AppState.CanvasMode.cursor.press(with: []), .objects)
     }
 
     /// A symbol that does not exist draws as nothing at all, and the button
@@ -111,8 +130,9 @@ final class CanvasModeTests: XCTestCase {
     }
 }
 
-/// What the rectangle takes. Select mode is this marquee promoted to a mode,
-/// so what it selects is the one rule underneath both it and ⌘-drag.
+/// What the rectangle takes. It is one rule wherever the drag came from —
+/// ⌘ under the pen, ⌘ over the words, and the mode that used to be beside
+/// them.
 final class CanvasMarqueeTests: XCTestCase {
     private let pane = CGSize(width: 1000, height: 200)
 
