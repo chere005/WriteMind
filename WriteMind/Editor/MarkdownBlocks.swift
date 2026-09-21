@@ -10,6 +10,8 @@ enum MarkdownBlock: Equatable {
     /// A list written with `* `, shown with a dash (Sean, 2026-09-19: "picks
     /// dots or dashes or numbered"). Ordinary markdown either way.
     case dashes([String])
+    /// A GFM task list: the words, and whether the box is ticked.
+    case todos([TodoItem])
     case numbered([String])
     case quote(String)
     case code(language: String?, body: String)
@@ -27,6 +29,12 @@ enum MarkdownBlock: Equatable {
 /// A block and the slice of source it was parsed from — the range is what
 /// makes editing the rendered preview possible: a block is written back over
 /// its own source and nothing else is touched.
+/// One line of a task list: what it says, and whether it is done.
+struct TodoItem: Equatable {
+    var text: String
+    var done: Bool
+}
+
 struct PositionedBlock: Equatable, Identifiable {
     let block: MarkdownBlock
     let range: NSRange
@@ -42,6 +50,7 @@ enum MarkdownParser {
         var blocks: [PositionedBlock] = []
         var paragraph: [String] = []
         var bullets: [String] = []
+        var todos: [TodoItem] = []
         var dashes: [String] = []
         var numbered: [String] = []
         var quote: [String] = []
@@ -65,6 +74,7 @@ enum MarkdownParser {
         func flush() {
             if !paragraph.isEmpty { emit(.paragraph(paragraph.joined(separator: " "))); paragraph = [] }
             if !bullets.isEmpty { emit(.bullets(bullets)); bullets = [] }
+            if !todos.isEmpty { emit(.todos(todos)); todos = [] }
             if !dashes.isEmpty { emit(.dashes(dashes)); dashes = [] }
             if !numbered.isEmpty { emit(.numbered(numbered)); numbered = [] }
             if !quote.isEmpty { emit(.quote(quote.joined(separator: " "))); quote = [] }
@@ -72,8 +82,8 @@ enum MarkdownParser {
 
         /// The first line of a block sets its start; every line extends its end.
         func openIfNeeded() {
-            if paragraph.isEmpty && bullets.isEmpty && dashes.isEmpty && numbered.isEmpty
-                && quote.isEmpty && code == nil {
+            if paragraph.isEmpty && bullets.isEmpty && todos.isEmpty && dashes.isEmpty
+                && numbered.isEmpty && quote.isEmpty && code == nil {
                 blockStart = lineStart
             }
         }
@@ -159,30 +169,44 @@ enum MarkdownParser {
                 flush(); blockStart = lineStart; emit(.heading(level: level, text: text)); continue
             }
             if line.hasPrefix(">") {
-                if !paragraph.isEmpty || !bullets.isEmpty || !dashes.isEmpty || !numbered.isEmpty { flush() }
+                if !paragraph.isEmpty || !bullets.isEmpty || !todos.isEmpty
+                    || !dashes.isEmpty || !numbered.isEmpty { flush() }
                 openIfNeeded()
                 quote.append(line.dropFirst().trimmingCharacters(in: .whitespaces))
                 continue
             }
+            // Before the plain bullet, because `- [ ] milk` starts with
+            // `- ` and would otherwise be a bullet whose words are a box.
+            if let item = todoItem(line) {
+                if !paragraph.isEmpty || !bullets.isEmpty || !dashes.isEmpty
+                    || !numbered.isEmpty || !quote.isEmpty { flush() }
+                openIfNeeded()
+                todos.append(item)
+                continue
+            }
             if let item = bulletItem(line) {
-                if !paragraph.isEmpty || !dashes.isEmpty || !numbered.isEmpty || !quote.isEmpty { flush() }
+                if !paragraph.isEmpty || !todos.isEmpty || !dashes.isEmpty
+                    || !numbered.isEmpty || !quote.isEmpty { flush() }
                 openIfNeeded()
                 bullets.append(item)
                 continue
             }
             if let item = dashItem(line) {
-                if !paragraph.isEmpty || !bullets.isEmpty || !numbered.isEmpty || !quote.isEmpty { flush() }
+                if !paragraph.isEmpty || !bullets.isEmpty || !todos.isEmpty
+                    || !numbered.isEmpty || !quote.isEmpty { flush() }
                 openIfNeeded()
                 dashes.append(item)
                 continue
             }
             if let item = numberedItem(line) {
-                if !paragraph.isEmpty || !bullets.isEmpty || !dashes.isEmpty || !quote.isEmpty { flush() }
+                if !paragraph.isEmpty || !bullets.isEmpty || !todos.isEmpty
+                    || !dashes.isEmpty || !quote.isEmpty { flush() }
                 openIfNeeded()
                 numbered.append(item)
                 continue
             }
-            if !bullets.isEmpty || !dashes.isEmpty || !numbered.isEmpty || !quote.isEmpty { flush() }
+            if !bullets.isEmpty || !todos.isEmpty || !dashes.isEmpty
+                || !numbered.isEmpty || !quote.isEmpty { flush() }
             openIfNeeded()
             // The first line keeps the spaces it was written with, so an
             // indented paragraph is drawn indented. Four spaces is NOT a
@@ -217,6 +241,28 @@ enum MarkdownParser {
     }
 
     /// A dot bullet: `- ` or `+ `.
+    /// A task-list line: `- [ ] words` or `- [x] words`, the box either
+    /// way round in case and either a dash or a star in front of it, which
+    /// is what other markdown editors write.
+    static func todoItem(_ line: String) -> TodoItem? {
+        for marker in ["- ", "* ", "+ "] where line.hasPrefix(marker) {
+            let rest = line.dropFirst(marker.count)
+            guard rest.hasPrefix("["), rest.count >= 3 else { return nil }
+            let box = rest.dropFirst().prefix(1)
+            guard rest.dropFirst(2).hasPrefix("]") else { return nil }
+            let after = rest.dropFirst(3)
+            // `- []x` is not a task; the box is followed by a space or
+            // it is the whole of the line.
+            guard after.isEmpty || after.hasPrefix(" ") else { return nil }
+            switch box.lowercased() {
+            case " ": return TodoItem(text: String(after.dropFirst(0)).trimmedLeadingSpace, done: false)
+            case "x": return TodoItem(text: String(after).trimmedLeadingSpace, done: true)
+            default: return nil
+            }
+        }
+        return nil
+    }
+
     static func bulletItem(_ line: String) -> String? {
         for marker in ["- ", "+ "] where line.hasPrefix(marker) {
             return String(line.dropFirst(2))
@@ -403,4 +449,10 @@ enum MarkdownInline {
         }
         return style
     }
+}
+
+extension String {
+    /// The one space after a task list's box, dropped — the words start
+    /// after it, and a line with nothing after the box is empty.
+    var trimmedLeadingSpace: String { hasPrefix(" ") ? String(dropFirst()) : self }
 }

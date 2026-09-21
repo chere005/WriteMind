@@ -411,6 +411,23 @@ CoreMind's `bin/report-status.sh`.
   UserDefaults); the prompt fires the first time the Input Devices menu is
   used. Keep it that way — a writing app that opens with a camera dialog is
   the wrong first impression.
+- **A to-do is a list STYLE, not a cell of its own.** Sean, 2026-09-21:
+  "add a bullet type which are todo bullets that can be checked or
+  unchecked". It is GFM's task list in the file — `- [ ] ` and `- [x] ` —
+  so `MarkdownFormatting.ListStyle.todo` sits beside dots, dashes and
+  numbered, and the list button, the Format menu and the `+` on the
+  insertion bar all pick it up from `allCases` without being told. Three
+  things it needed that the others did not. The parser reads a task
+  BEFORE a plain bullet, because `- [ ] milk` starts with `- ` and would
+  otherwise be a bullet whose words begin with a box. `ListStyle.matches`
+  for dots and dashes says NO to a task for the same reason — asking for
+  dots on a task list read it as already styled and took the markers off
+  instead of swapping them. And `stripListMarker` takes the box with the
+  dash, or the new marker landed in front of the old box. Ticking is
+  `MarkdownFormatting.toggleTodo`, which rewrites ONE character — the box
+  — so the words, the indentation and whichever of `-`, `*`, `+` the line
+  was written with survive a tick; the note is the only place the answer
+  lives, and there is no state beside it to get out of step.
 - **The heading ladder is Sean's naming, and it is six deep** (2026-09-18):
   Title `#` · Header `##` · Section `###` · Subsection `####` ·
   Subsubsection `#####` · **Author subheader `######`**, which the preview

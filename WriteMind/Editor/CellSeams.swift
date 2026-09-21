@@ -334,8 +334,21 @@ enum CellSeams {
         // the empty page.
         let line: CGFloat
         switch edge {
+        // Between two cells the bar is EQUALLY spaced between them, in
+        // the middle of the space it belongs to (Sean, 2026-09-21: "bar
+        // spaced equally between cells"). On an eight-point seam that is
+        // where half a gap under the cell above already put it; on a
+        // wider one — the markdown pane's seams carry a blank line's own
+        // height as well as the gap — it is not, and the bar sat against
+        // the cell above with a visible gap under it.
+        case .middle: line = (top + bottom) / 2
+        // The two ENDS of the page are not spaces between two cells: they
+        // are the whole of the empty page above the first cell and below
+        // the last, and a bar in the middle of one of those is adrift
+        // (Sean, 2026-09-20: "the bar should go immediately after the
+        // last cell"). Each hugs the cell it belongs to.
         case .top: line = bottom - minimum / 2
-        case .middle, .bottom: line = top + minimum / 2
+        case .bottom: line = top + minimum / 2
         }
         guard bottom - top < minimum else {
             return Seam(top: top, bottom: bottom, offset: offset, line: line)

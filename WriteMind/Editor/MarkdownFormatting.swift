@@ -207,7 +207,12 @@ enum MarkdownFormatting {
     /// as a dash, and a numbered list counts from 1. All three are ordinary
     /// markdown lists to anything else that opens the note.
     enum ListStyle: String, CaseIterable, Identifiable {
-        case dots, dashes, numbered
+        /// `todo` is GFM's task list — `- [ ] ` and `- [x] ` — a dots list
+        /// with a box in front of the words (Sean, 2026-09-21: "add a
+        /// bullet type which are todo bullets that can be checked or
+        /// unchecked"). It is a list style and not a cell of its own,
+        /// because that is what it is in the file.
+        case dots, dashes, numbered, todo
 
         var id: String { rawValue }
 
@@ -216,6 +221,7 @@ enum MarkdownFormatting {
             case .dots: return "Dots"
             case .dashes: return "Dashes"
             case .numbered: return "Numbered"
+            case .todo: return "To-do"
             }
         }
 
@@ -224,6 +230,7 @@ enum MarkdownFormatting {
             case .dots: return "list.bullet"
             case .dashes: return "list.dash"
             case .numbered: return "list.number"
+            case .todo: return "checklist"
             }
         }
 
@@ -233,15 +240,23 @@ enum MarkdownFormatting {
             case .dots: return "- "
             case .dashes: return "* "
             case .numbered: return "\(index). "
+            // Unticked: a new item is something still to do.
+            case .todo: return "- [ ] "
             }
         }
 
         /// Whether `rest` (a line past its indentation) carries this marker.
         func matches(_ rest: String) -> Bool {
             switch self {
-            case .dots: return rest.hasPrefix("- ") || rest.hasPrefix("+ ")
-            case .dashes: return rest.hasPrefix("* ")
+            // A task is NOT a dots list that happens to start with a
+            // dash: asking dots of a task list read it as already styled
+            // and took the markers off instead of swapping them, so
+            // "- [x] milk" became "milk".
+            case .dots:
+                return (rest.hasPrefix("- ") || rest.hasPrefix("+ ")) && MarkdownParser.todoItem(rest) == nil
+            case .dashes: return rest.hasPrefix("* ") && MarkdownParser.todoItem(rest) == nil
             case .numbered: return MarkdownParser.numberedItem(rest) != nil
+            case .todo: return MarkdownParser.todoItem(rest) != nil
             }
         }
     }
@@ -268,8 +283,48 @@ enum MarkdownFormatting {
         }
     }
 
+    /// The `index`th task line inside `block` ticked, or unticked if it
+    /// already was (Sean, 2026-09-21: "todo bullets that can be checked or
+    /// unchecked"). Nil when that line is not a task after all — the note
+    /// may have been edited since the box was drawn.
+    ///
+    /// Only the box is rewritten: the words, the indentation and whichever
+    /// of `-`, `*` and `+` the line was written with are left exactly as
+    /// they are, because this is a tick and not a reformat.
+    static func toggleTodo(text: String, block: NSRange, item index: Int) -> Edit? {
+        let ns = text as NSString
+        guard block.location >= 0, NSMaxRange(block) <= ns.length else { return nil }
+        var line = block.location
+        var seen = 0
+        while line < NSMaxRange(block) {
+            let range = ns.lineRange(for: NSRange(location: line, length: 0))
+            let body = ns.substring(with: range)
+            let bare = body.hasSuffix("\n") ? String(body.dropLast()) : body
+            let indent = leadingWhitespace(bare)
+            if MarkdownParser.todoItem(String(bare.dropFirst(indent.count))) != nil {
+                if seen == index {
+                    // The box is the character after "- [", whatever the
+                    // marker and the indentation were.
+                    let box = range.location + indent.count + 3
+                    guard box < ns.length else { return nil }
+                    let now = ns.substring(with: NSRange(location: box, length: 1))
+                    let next = now.lowercased() == "x" ? " " : "x"
+                    return Edit(range: NSRange(location: box, length: 1), replacement: next,
+                                selection: NSRange(location: box + 1, length: 0))
+                }
+                seen += 1
+            }
+            line = NSMaxRange(range)
+            if range.length == 0 { break }
+        }
+        return nil
+    }
+
     /// `rest` without whichever list marker heads it.
     static func stripListMarker(_ rest: String) -> String {
+        // The box first: a to-do is `- ` and then `[ ] `, and taking only
+        // the dash would leave the box standing in the words.
+        if let item = MarkdownParser.todoItem(rest) { return item.text }
         for marker in ["- ", "* ", "+ "] where rest.hasPrefix(marker) { return String(rest.dropFirst(2)) }
         if let item = MarkdownParser.numberedItem(rest) { return item }
         return rest

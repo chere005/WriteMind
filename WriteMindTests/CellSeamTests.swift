@@ -193,8 +193,38 @@ final class CellSeamTests: XCTestCase {
         let flat: [CellSeams.Box] = [(20, 60, 0), (100, 100, 12), (140, 200, 30)]
         let out = seams(flat)
         XCTAssertEqual(out.count, 4)
-        XCTAssertEqual(out[1], CellSeams.Seam(top: 60, bottom: 100, offset: 12, line: 64))
-        XCTAssertEqual(out[2], CellSeams.Seam(top: 100, bottom: 140, offset: 30, line: 104))
+        // And the bar in each sits halfway between the cells either side
+        // of it (Sean, 2026-09-21: "bar spaced equally between cells") —
+        // it used to be half a gap under the cell above, which reads as
+        // adrift on any seam wider than the gap itself.
+        XCTAssertEqual(out[1], CellSeams.Seam(top: 60, bottom: 100, offset: 12, line: 80))
+        XCTAssertEqual(out[2], CellSeams.Seam(top: 100, bottom: 140, offset: 30, line: 120))
+    }
+
+    func testTheBarBetweenTwoCellsIsEquallySpacedBetweenThem() {
+        // The markdown pane's seams are taller than the eight-point gap —
+        // a blank line of its own carries height too — so "half a gap
+        // under the cell above" left the bar against the cell above with
+        // a visible space under it (Sean, 2026-09-21).
+        let out = seams([(20, 60, 0), (100, 140, 12)])
+        XCTAssertEqual(out[1].line, 80, "midway between 60 and 100")
+        XCTAssertEqual(out[1].line - out[1].top, out[1].bottom - out[1].line, accuracy: 0.001)
+    }
+
+    func testAnOrdinaryGapPutsTheBarWhereItAlwaysWas() {
+        // Eight points between two cells: the middle and half a gap under
+        // the cell above are the same point, and nothing moves.
+        let out = seams([(20, 60, 0), (68, 100, 12)])
+        XCTAssertEqual(out[1].line, 64)
+    }
+
+    func testTheBarsAtTheTwoEndsStillHugTheirCell() {
+        // They are not spaces BETWEEN two cells: they are the empty page
+        // above the first and below the last, and a bar in the middle of
+        // one of those is hundreds of points from the note.
+        let out = seams([(200, 240, 0)], pageTop: 0, pageBottom: 2000)
+        XCTAssertEqual(out[0].line, 196, "just above the first cell")
+        XCTAssertEqual(out[1].line, 244, "just under the last")
     }
 
     func testTwoCellsThatOverlapDoNotFoldTheSeamBetweenThemInsideOut() {

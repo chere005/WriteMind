@@ -431,7 +431,7 @@ struct MarkdownPreview: View {
             // can't edit this" (Sean, 2026-09-19: "i still cant do things
             // like edit code or text etc in wysiwyg editing"). Selecting
             // text is what the editor that opens is for.
-            BlockView(block: block)
+            BlockView(block: block, onToggleTodo: { index in tickTodo(item.range, at: index) })
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .contentShape(Rectangle())
                 .onTapGesture { beginEditing(item.range) }
@@ -558,6 +558,15 @@ struct MarkdownPreview: View {
             // just does nothing at all.
             Color.clear.frame(height: height)
         }
+    }
+
+    /// A box ticked, or unticked. The note is the only place the answer
+    /// lives — there is no state beside it to get out of step.
+    private func tickTodo(_ block: NSRange, at index: Int) {
+        guard editable,
+              let edit = MarkdownFormatting.toggleTodo(text: markdown, block: block, item: index)
+        else { return }
+        markdown = (markdown as NSString).replacingCharacters(in: edit.range, with: edit.replacement)
     }
 
     /// A drag that began on a bar: the cells between where it started and
@@ -1230,7 +1239,7 @@ struct MarkdownPreview: View {
     /// it starts the next block.
     private static func keepsNewlines(_ block: MarkdownBlock?) -> Bool {
         switch block {
-        case .bullets, .dashes, .numbered, .quote, .code: return true
+        case .bullets, .todos, .dashes, .numbered, .quote, .code: return true
         default: return false
         }
     }
@@ -1239,6 +1248,9 @@ struct MarkdownPreview: View {
 
     struct BlockView: View {
         let block: MarkdownBlock
+        /// Ticking the nth box of a task list. Nil on paper and anywhere
+        /// else the note cannot be written to.
+        var onToggleTodo: ((Int) -> Void)?
         @Environment(\.notePaper) private var paper
 
         var body: some View {
@@ -1258,6 +1270,32 @@ struct MarkdownPreview: View {
                         HStack(alignment: .firstTextBaseline, spacing: 8) {
                             Text("•").foregroundStyle(.secondary)
                             Text(MarkdownInline.attributed(item, paper: paper)).font(.system(size: 15))
+                        }
+                    }
+                }
+                .padding(.leading, 8)
+            case .todos(let items):
+                // A task list: the box is the control, and only the box —
+                // a tap on the words opens the cell for typing like any
+                // other (Sean, 2026-09-21: "todo bullets that can be
+                // checked or unchecked").
+                VStack(alignment: .leading, spacing: 4) {
+                    ForEach(Array(items.enumerated()), id: \.offset) { index, item in
+                        HStack(alignment: .firstTextBaseline, spacing: 8) {
+                            Button { onToggleTodo?(index) } label: {
+                                Image(systemName: item.done ? "checkmark.square.fill" : "square")
+                                    .font(.system(size: 14))
+                                    .foregroundStyle(item.done ? Color.accentColor : .secondary)
+                            }
+                            .buttonStyle(.plain)
+                            .disabled(onToggleTodo == nil)
+                            .help(item.done ? "Done — click to undo it" : "Click when it is done")
+                            Text(MarkdownInline.attributed(item.text, paper: paper))
+                                .font(.system(size: 15))
+                                // Done is struck through and faded, the way
+                                // a finished line in a notebook is.
+                                .strikethrough(item.done, color: .secondary)
+                                .foregroundStyle(item.done ? AnyShapeStyle(.secondary) : AnyShapeStyle(.primary))
                         }
                     }
                 }

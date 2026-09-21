@@ -80,6 +80,12 @@ enum PreviewEditing {
         let indent = line.prefix { $0 == " " || $0 == "\t" }
         let rest = line.dropFirst(indent.count)
 
+        // A task list carries on as a task, unticked: the next thing is
+        // something still to do (Sean, 2026-09-21).
+        if let task = MarkdownParser.todoItem(String(rest)) {
+            let marker = String(rest.prefix(2))
+            return task.text.isEmpty ? "" : String(indent) + marker + "[ ] "
+        }
         for marker in ["- ", "* ", "+ ", "> "] where rest.hasPrefix(marker) {
             let content = rest.dropFirst(marker.count).trimmingCharacters(in: .whitespaces)
             return content.isEmpty ? "" : String(indent) + marker

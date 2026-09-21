@@ -11,7 +11,7 @@ final class CellTypeListTests: XCTestCase {
         XCTAssertEqual(CellTypes.all.map(\.name),
                        ["Body Text",
                         "Title", "Chapter", "Author", "Section", "Subsection", "Subsubsection",
-                        "Dots List", "Dashes List", "Numbered List", "Quote",
+                        "Dots List", "Dashes List", "Numbered List", "To-do List", "Quote",
                         "Code Block"])
     }
 

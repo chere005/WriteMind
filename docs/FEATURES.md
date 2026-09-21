@@ -21,6 +21,13 @@ is how the code is put together.
   italic and slightly bigger than the body text. From the `aA` menu, the
   Format menu, or ⌘1 title, ⌘2 chapter, ⌘3 author, ⌘4–⌘6 section to
   subsubsection, ⌘7 back to body.
+- **To-do bullets.** A fourth kind of list: `- [ ]` and `- [x]`, GFM's
+  own task list, so any other markdown editor reads them too. The list
+  button's chevron picks it, the `+` on the insertion bar offers it, and
+  Return carries the list on with a fresh empty box. On the rendered page
+  the box is a control — click it and the line is ticked, struck through
+  and faded; click it again and it is not. Only the box: a click on the
+  words opens the cell for typing like any other.
 - **Code cells behave like a code editor.** In a fenced block, `(`, `[`,
   `{`, `"`, `'` and a backtick bring their partner; typing the closer
   steps over it; a bracket typed with something selected wraps it;
