@@ -43,6 +43,23 @@ CoreMind's `bin/report-status.sh`.
   own; a rename or a trash is a gesture in the sidebar. Tests never touch that
   folder — `DrawingStoreTests` makes its own temp directory, and the parser
   and formatting tests are pure.
+- **THE SMOKE RUNS AGAINST A SCRATCH FOLDER, AND A SAVE NEVER CLOBBERS.**
+  On 2026-09-20 a deploy took two cells out of Sean's note. `tools/smoke.sh`
+  launches the built bundle to see that it stays up and then `kill`s it —
+  and that copy had opened his real session, his real note, and answered
+  the SIGTERM by flushing a save of whatever it was holding. The baseline
+  rule covers it in one line: a check that can reach the real thing is not
+  a check. Two locks, and keep both. The smoke sets
+  `WRITEMIND_SCRATCH_NOTES`, which `TestHost.isActive` reads exactly as it
+  reads XCTest's variables, so that run keeps its notes in a temp folder
+  and leaves the camera alone — it is read from the ENVIRONMENT and
+  nowhere else, so an app Sean launches can never fall into it. And
+  `NoteStore.saveNow` asks `NoteWriting.mayWrite` first: the app owns the
+  file only while the bytes on disk are the bytes it last read or wrote,
+  and anything else means another writer — a second instance, a script,
+  another editor — whose work is not ours to throw away. It keeps the
+  buffer, says so in the footer, and lets the folder watcher bring the
+  newer file in.
 - **A SECTION IS A FOLDER.** The sidebar tree is the folder tree under the
   notes directory — `Ideas/` is a section, `Ideas/2026/` a subsection — so a
   note moved in WriteMind is moved in Finder and vice versa. Nothing is

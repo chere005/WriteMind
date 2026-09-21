@@ -10,17 +10,6 @@ had to say it. Verification is the job, not an item.
 
 ## Open
 
-- **A note lost two cells during a deploy, and the cause is not found.**
-  2026-09-20, 19:27: `~/Documents/WriteMind/Untitled.md` went from 120
-  bytes to 45 — the last heading and the four lines under it were replaced
-  by two blank lines — while `tools/deploy.sh` ran with an instance of the
-  app still open on that note. The deploy smoke-launches `dist/WriteMind.app`,
-  so two instances had the same file open, which AGENTS.md already warns
-  against for a different reason ("do not rebuild under a running app").
-  It has not been reproduced and nothing is pinned. Until it is, quit the
-  app before every deploy — and the real fix is probably that a second
-  instance must not write a note the first one has open.
-
 - **Flow charts, further.** Rectangles, rounded rectangles, ovals and
   diamonds come off a sketch; triangles, parallelograms, ticks and crosses
   are deliberately left as ink. The composite (hole-finding grouping +

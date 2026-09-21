@@ -379,10 +379,23 @@ final class NoteStore: ObservableObject {
         defer { isLoadingText = false }
         drawingHistory.removeAll()
         drawingFuture.removeAll()
-        guard let note = notes.first(where: { $0.id == id }) else { text = ""; drawing = Drawing(); return }
-        text = (try? String(contentsOf: note.url, encoding: .utf8)) ?? ""
+        guard let note = notes.first(where: { $0.id == id }) else {
+            text = ""
+            drawing = Drawing()
+            onDisk = nil
+            return
+        }
+        let read = try? String(contentsOf: note.url, encoding: .utf8)
+        text = read ?? ""
+        // What the file held when we took it. `saveNow` will not write
+        // over anything else — see NoteWriting.
+        onDisk = read
         drawing = DrawingStore.load(for: note.url, in: owningFolder(for: note.url))
     }
+
+    /// The bytes this app last read from the open note's file, or last
+    /// wrote to it. Nil while no note is open.
+    private var onDisk: String?
 
     // MARK: - Notebook sections
 
@@ -815,8 +828,25 @@ final class NoteStore: ObservableObject {
     private func saveNow() {
         guard let note = selectedNote else { return }
         let body = text
+        // Somebody else may have written to this file since we read it —
+        // a second instance of the app (the deploy smoke-launches one), a
+        // script, another editor. Overwriting it takes their work away
+        // without a word, which is how a note lost two cells on
+        // 2026-09-20. The buffer is kept and the watcher brings the newer
+        // file in; nothing is lost by not writing.
+        let now = try? String(contentsOf: note.url, encoding: .utf8)
+        guard NoteWriting.mayWrite(onDisk: now, known: onDisk) else {
+            NSLog("WriteMind: \(note.url.lastPathComponent) changed underneath us — not overwriting it")
+            notice("\(note.url.lastPathComponent) changed on disk, so it was not overwritten.")
+            // Take the newer file as what is there, so the watcher's
+            // reload is the thing that decides what happens next rather
+            // than this refusing on every keystroke from here on.
+            onDisk = now
+            return
+        }
         do {
             try body.write(to: note.url, atomically: true, encoding: .utf8)
+            onDisk = body
             lastSaved = Date()
             refreshRow(for: note.url, contents: body)
         } catch {
