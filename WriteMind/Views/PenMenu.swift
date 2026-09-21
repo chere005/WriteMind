@@ -1,7 +1,12 @@
 import SwiftUI
 
-/// The small menu under the pen button: which of the three modes the pane is
-/// in, the pen's size and colour, and a way to start over.
+/// The small menu under the pen button: the pen's OWN settings — its size
+/// and its colour — and a way to start over.
+///
+/// The three modes are not in here. They are three buttons on the bar now
+/// (Sean, 2026-09-20: "cursor select and pen should each be buttons in the
+/// menu bar.. pen should have the dropdown for its further options"), and
+/// every button has exactly one place.
 struct PenMenu: View {
     @EnvironmentObject private var appState: AppState
     @EnvironmentObject private var store: NoteStore
@@ -9,23 +14,6 @@ struct PenMenu: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
             Text("Pen").font(.headline)
-
-            // The switch that was here said On and Off, and there are three
-            // answers now (Sean, 2026-09-20: "the pen button section should
-            // allow choosing between pen mode, cursor mode, and pointer
-            // select mode"). One picker, so picking one is putting the
-            // others down.
-            HStack(spacing: 12) {
-                Text("Mode").frame(width: 36, alignment: .leading)
-                Picker("Mode", selection: $appState.canvasMode) {
-                    ForEach(AppState.CanvasMode.allCases) { mode in
-                        Text(mode.title).tag(mode)
-                    }
-                }
-                .pickerStyle(.segmented)
-                .labelsHidden()
-                .help(appState.canvasMode.help)
-            }
 
             HStack(spacing: 12) {
                 Text("Size").frame(width: 36, alignment: .leading)
@@ -95,9 +83,9 @@ struct PenMenu: View {
 
             Divider()
 
-            // Three modes over one page, so it is worth saying which of
-            // them a drag belongs to.
-            Text("Cursor is the notebook's: the words, the bars between the cells and the brackets take the clicks, and an object can still be dragged by hand or worked with its handles. Pen draws. Select pulls a rectangle and takes everything it touches, which ⌘ and drag still does from cursor mode. Pictures can be pasted straight in.")
+            // The three buttons beside this one each say what they do; what
+            // is worth saying here is what holds across all three.
+            Text("An object can be dragged by hand or worked with its handles in any mode. ⌘ and drag pulls a selection rectangle without leaving cursor mode, ⌃G holds what is picked together or takes it apart, and a picture can be pasted straight in.")
                 .font(.caption)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)

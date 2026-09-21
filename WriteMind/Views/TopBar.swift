@@ -308,27 +308,45 @@ struct TopBar: View {
 
     @ViewBuilder
     private var captureTools: some View {
-        // The pen: the icon picks it up or puts it down (never opens its
-        // settings — Sean, 2026-09-18); the chevron does that. The capture
-        // button that used to sit beside it is gone: the camera pane's own
-        // three buttons say what to do with a box, and there is nothing
-        // left for a button over here to mean (Sean, 2026-09-19: "get rid
-        // of the capture button in the toolbar").
-        BarSplit(isOn: appState.penActive) {
-            BarButton(systemImage: "pencil", label: "Pen",
-                      help: appState.penActive ? "Put the pen down" : "Draw over the note",
-                      isOn: appState.penActive, bare: true) {
-                // The icon is the pen, so it says pen or it says nothing:
-                // it goes back to the cursor from wherever it was, and the
-                // three-way pick is under the chevron beside it.
-                appState.canvasMode = appState.penActive ? .cursor : .pen
+        // A button each for the three modes, the way Sean asked (2026-09-20:
+        // "cursor select and pen should each be buttons in the menu bar..
+        // pen should have the dropdown for its further options"). Each one
+        // says which mode the pane is in, so the bar shows the answer
+        // instead of hiding it a popover deep — and only the pen carries a
+        // chevron, because only the pen has anything more to set.
+        //
+        // The capture button that used to sit here is gone: the camera
+        // pane's own three buttons say what to do with a box (Sean,
+        // 2026-09-19: "get rid of the capture button in the toolbar").
+        Group {
+            BarButton(systemImage: "cursorarrow", label: "Cursor",
+                      help: "The notebook takes the clicks: the words, the bars between the cells, the brackets",
+                      isOn: appState.canvasMode == .cursor) {
+                appState.canvasMode = .cursor
             }
-        } chevron: {
-            Button { showPenMenu.toggle() } label: { BarChevron() }
-                .buttonStyle(.plain)
-                .barTip(BarTip(title: "Pen", detail: "Cursor, pen or select — and the pen's size and colour"))
-                .accessibilityLabel("Pen Options")
-                .popover(isPresented: $showPenMenu, arrowEdge: .bottom) { PenMenu() }
+
+            BarSplit(isOn: appState.canvasMode == .pen) {
+                BarButton(systemImage: "pencil", label: "Pen",
+                          help: appState.penActive ? "Put the pen down" : "Draw over the note",
+                          isOn: appState.canvasMode == .pen, bare: true) {
+                    // A second press puts it down rather than doing
+                    // nothing, which is what a pen button has always done
+                    // here (Sean, 2026-09-18).
+                    appState.canvasMode = appState.penActive ? .cursor : .pen
+                }
+            } chevron: {
+                Button { showPenMenu.toggle() } label: { BarChevron() }
+                    .buttonStyle(.plain)
+                    .barTip(BarTip(title: "Pen", detail: "Size, colour, and what is on the layer"))
+                    .accessibilityLabel("Pen Options")
+                    .popover(isPresented: $showPenMenu, arrowEdge: .bottom) { PenMenu() }
+            }
+
+            BarButton(systemImage: "rectangle.dashed", label: "Select",
+                      help: "Drag a rectangle to pick up drawings, pictures and captures (⌃G groups them)",
+                      isOn: appState.canvasMode == .select) {
+                appState.canvasMode = appState.canvasMode == .select ? .cursor : .select
+            }
         }
         .disabled(!canDraw)
     }
