@@ -165,6 +165,23 @@ CoreMind's `bin/report-status.sh`.
   whenever it is not `cursor`, because a pane that swallows every click and
   comes up that way after a launch needs somewhere on screen that says why.
   `penActive` is a question about the mode now and is stored nowhere.
+- **A group is a shared id, and every rule about it is in `CanvasGroups`.**
+  Sean, 2026-09-20: "toggle grouping with the button on the screen or
+  ctrl+g". `group: UUID?` sits on `Stroke`, `ImageItem` and `ShapeItem`
+  (in `CodingKeys`, in the memberwise init, `decodeIfPresent` so an older
+  sidecar still opens); a `ConnectorItem` has none, because it is held by
+  the nodes at its ends and follows them. Nothing about a group is
+  positional, so ungrouping moves nothing. The canvas holds NO rule of its
+  own: `whole(_:in:)` grows a selection (click, marquee and `handleIDs`
+  all go through it), `toggle(_:in:)` says which way ⌃G goes, and
+  `toggled(_:in:)` returns nil for a no-op so it never reaches the undo
+  stack. ⌃G is in `handleKey`, and it returns FALSE when there was nothing
+  to do — a key monitor that swallows a key it did not use is how typing
+  dies. One toggle both ways: two or more not-already-one-group become a
+  group, a whole group comes apart, and a group plus something loose
+  GROUPS (it swallows, so bigger groups are built without unpicking the
+  smaller ones first) — which is why `grouped` also re-labels members that
+  were not themselves picked, or half a group would be left behind.
   The arrow tool and an armed placement are NOT modes: they take the pane
   for one gesture and hand it back, so picking either puts the mode back to
   `cursor` and picking a mode puts them away. TWO READERS, and everything
@@ -660,7 +677,8 @@ tools/                    build.sh run.sh test.sh (both source signing.sh)
   (dots, dashes or numbers, whichever the chevron picked) · ⌃⌘Q quote ·
   ⌘[ ⌘] outdent/indent (⇥ and ⇧⇥ too) · ⌘1–⌘7 the heading ladder (title,
   chapter, author, section, subsection, subsubsection, body) · ⌘8 code
-  block · ⌃⌘↑/↓ move section · ⌥⌘Z / ⇧⌥⌘Z undo and redo the
+  block · ⌃⌘↑/↓ move section · ⌃G group/ungroup what is picked on the
+  drawing layer · ⌥⌘Z / ⇧⌥⌘Z undo and redo the
   DRAWING (⌘Z does it too while the pen is up) · ⌘D select next occurrence,
   ⌃⌘G all of them · ⌥⌘R refresh cameras · ⇧⌘O open the notes folder.
 - **EVERY FORMATTING SHORTCUT LIVES IN THE FORMAT MENU**, not on the toolbar

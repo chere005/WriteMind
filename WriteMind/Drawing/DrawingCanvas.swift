@@ -396,7 +396,7 @@ struct DrawingCanvas: View {
     /// (Sean, 2026-09-18: "edit buttons on an image selection should only
     /// appear after the image is clicked").
     private var handleIDs: Set<UUID> {
-        if !selection.isEmpty { return selection }
+        if !selection.isEmpty { return CanvasGroups.whole(selection, in: drawing.items) }
         if let hovered, let item = drawing[id: hovered], item.image == nil { return [hovered] }
         return []
     }
@@ -542,6 +542,17 @@ struct DrawingCanvas: View {
         Handle(systemImage: "trash", help: "Delete (⌫ does too)", hovered: $hoveredHandles, name: "trash")
             .position(x: x(box.minX - 12), y: y(box.minY - 12))
             .onTapGesture { deleteSelection() }
+
+        // Hold what is picked together, or take it apart — the button says
+        // which it will do, and ⌃G does the same (Sean, 2026-09-20).
+        if groupingToggle != .nothing {
+            let ungrouping = groupingToggle == .ungroup
+            Handle(systemImage: ungrouping ? "rectangle.on.rectangle.slash" : "square.on.square",
+                   help: ungrouping ? "Ungroup these (⌃G does too)" : "Group these (⌃G does too)",
+                   hovered: $hoveredHandles, name: "group")
+                .position(x: x(box.midX), y: y(box.maxY + 20))
+                .onTapGesture { toggleGrouping() }
+        }
 
         // An arrow's heads and line come from its bar; this is the way back
         // to it once it has gone.
@@ -767,7 +778,8 @@ struct DrawingCanvas: View {
                     place(from: start, to: doc(value.location), in: size)
                 case .marquee(let start, let additive):
                     let rect = CanvasGeometry.rect(from: start, to: doc(value.location))
-                    let touched = drawing.ids(touching: rect, in: size)
+                    let touched = CanvasGroups.whole(drawing.ids(touching: rect, in: size),
+                                                     in: drawing.items)
                     selection = additive ? selection.union(touched) : touched
                     marquee = nil
                 default:
@@ -836,9 +848,9 @@ struct DrawingCanvas: View {
         }
         let id = drawing.items[index].id
         if additive {
-            selection.insert(id)
+            selection.formUnion(CanvasGroups.whole([id], in: drawing.items))
         } else if !selection.contains(id) {
-            selection = [id]
+            selection = CanvasGroups.whole([id], in: drawing.items)
         }
         beginManipulation(in: size)
         interaction = .moving
@@ -905,6 +917,26 @@ struct DrawingCanvas: View {
         delete(handleIDs)
     }
 
+    /// What ⌃G and the button would do next, so the button can say which.
+    private var groupingToggle: CanvasGroups.Toggle {
+        CanvasGroups.toggle(handleIDs, in: drawing.items)
+    }
+
+    /// ⌃G. True when the layer took the key — a toggle with nothing to do
+    /// hands it on rather than swallowing it, because a monitor that eats
+    /// a key it did nothing with is how typing dies (AGENTS.md).
+    @discardableResult
+    private func toggleGrouping() -> Bool {
+        let picked = handleIDs
+        guard let items = CanvasGroups.toggled(picked, in: drawing.items) else { return false }
+        onBeginChange?()
+        drawing.items = items
+        // Grouping widens what is held to every member, so the handles go
+        // round the whole thing at once rather than after the next click.
+        selection = CanvasGroups.whole(picked, in: items)
+        return true
+    }
+
     private func delete(_ ids: Set<UUID>) {
         guard !ids.isEmpty else { return }
         onBeginChange?()
@@ -962,6 +994,13 @@ struct DrawingCanvas: View {
         if canvasOwnsUndo, event.charactersIgnoringModifiers?.lowercased() == "z" {
             if flags == .command, onUndo?() == true { return true }
             if flags == [.command, .shift], onRedo?() == true { return true }
+        }
+        // ⌃G holds what is picked together, or takes it apart — one key,
+        // both ways (Sean, 2026-09-20: "toggle grouping with the button on
+        // the screen or ctrl+g"). ⌘G is the text's Find Again and is not
+        // ours to take.
+        if flags == .control, event.charactersIgnoringModifiers?.lowercased() == "g" {
+            return toggleGrouping()
         }
         if flags == .command, event.charactersIgnoringModifiers?.lowercased() == "v" {
             // A text view of ours pastes pictures itself; a field editor or

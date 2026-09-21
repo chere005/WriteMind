@@ -225,6 +225,15 @@ is how the code is put together.
   or not, with the pointer a crosshair and nothing reaching the text; hold
   **⌘ and drag** to do the same from cursor mode. The mode is remembered
   between launches and the footer names it whenever it is not the cursor.
+- **Several things held as one.** Pick two or more — a marquee, or ⇧-click
+  — and **⌃G** holds them together; the same key on a group you have picked
+  takes it apart, and a button beside the selection says which it will do.
+  After that, clicking any one of them picks up all of them, a rectangle
+  that touches one brings the rest, and move, resize, turn and delete are
+  over the whole group. Grouping and ungrouping move nothing: a group is
+  only a name they share. Pick a group and something loose together and
+  ⌃G makes one bigger group of the lot, so groups nest by swallowing
+  rather than by stacking.
   The pen button itself is still the pen, on and off; its menu also picks
   the size and the colour (a circular colour well plus six swatches). ⌘Z
   undoes a stroke while the pen is up — ⇧⌘Z puts it back — and Undo Drawing

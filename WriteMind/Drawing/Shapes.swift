@@ -160,14 +160,19 @@ struct ShapeItem: Codable, Equatable, Identifiable {
     /// What a node says. Marks have none.
     var label: String
     var transform = ItemTransform()
+    /// The group this belongs to, if it has been put in one (Sean,
+    /// 2026-09-20: "select drawn (or captured) stuff for grouping,
+    /// deleting, ungrouping"). Picking any member picks them all; the
+    /// objects are otherwise untouched by it, so ungrouping moves nothing.
+    var group: UUID?
 
     private enum CodingKeys: String, CodingKey {
-        case id, kind, center, width, aspect, colorHex, lineWidth, fillHex, label, transform
+        case id, kind, center, width, aspect, colorHex, lineWidth, fillHex, label, transform, group
     }
 
     init(id: UUID = UUID(), kind: Kind, center: CGPoint = CGPoint(x: 0.5, y: 0.5), width: Double = 0.18,
          aspect: Double? = nil, colorHex: String, lineWidth: Double = 2, fillHex: String? = nil,
-         label: String = "", transform: ItemTransform = ItemTransform()) {
+         label: String = "", transform: ItemTransform = ItemTransform(), group: UUID? = nil) {
         self.id = id
         self.kind = kind
         self.center = center
@@ -178,6 +183,7 @@ struct ShapeItem: Codable, Equatable, Identifiable {
         self.fillHex = fillHex
         self.label = label
         self.transform = transform
+        self.group = group
     }
 
     init(from decoder: Decoder) throws {
@@ -192,6 +198,7 @@ struct ShapeItem: Codable, Equatable, Identifiable {
         fillHex = try container.decodeIfPresent(String.self, forKey: .fillHex)
         label = try container.decodeIfPresent(String.self, forKey: .label) ?? ""
         transform = try container.decodeIfPresent(ItemTransform.self, forKey: .transform) ?? ItemTransform()
+        group = try container.decodeIfPresent(UUID.self, forKey: .group)
     }
 }
 
