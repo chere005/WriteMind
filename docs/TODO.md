@@ -14,12 +14,13 @@ capability table. 157 transcribed tests.
 
 ## Not ported yet, in the order they are worth doing
 
-- **The drawing layer.** `Drawing`, `DrawingGeometry`, `CanvasPlacement`,
-  `CanvasGroups`, `Shapes` and `ConnectorRouting` are all pure and port as
-  the rest did; the layer itself is a `<canvas>` over the editor with
-  pointer events, and the sidecar is already read and written by the main
-  process (`drawing:read` / `drawing:write`). Until this lands there is
-  nowhere for a capture to go, which is why the camera waits on it.
+- **The drawing layer, the rest of it.** The pen, the marquee, moving,
+  scaling, turning, grouping, deleting, the marks and the flow-chart
+  shapes, the arrows and the sidecar all work. Still missing: PICTURES
+  (paste and drop, the crop box, and the `<img>` layer the canvas leaves
+  a hole for), the connector ROUTING (`ConnectorRouting`, so a line
+  attached to two nodes turns right angles), a node's label, and undo
+  through the app's own menu rather than ⌥⌘Z on the layer.
 - **The camera.** Frames through `getUserMedia`, the box dragged by hand,
   and then the pure pipeline: `Homography`, `PageShape`, the local-mean
   threshold, connected components, and `ShapeInk` + `FlowGrouping` +

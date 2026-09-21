@@ -1,0 +1,400 @@
+/**
+ * Where an object actually is: the base points, the matrix, hit testing on
+ * the INK rather than the box, marquee intersection where touching is
+ * enough, and the move/scale/rotate maths a group and a single object
+ * share. Ported from `WriteMind/Drawing/DrawingGeometry.swift`.
+ *
+ * Pure, and tested — the same reason it was pure over there.
+ */
+
+import {
+  isClosed as shapeIsClosed, polylines, type Point, type Rect,
+} from "./shapes"
+import {
+  isHidden, itemTransform, type CanvasItem, type Drawing, type ItemTransform,
+} from "./model"
+
+export interface Size { width: number; height: number }
+
+export const distance = (a: Point, b: Point): number => Math.hypot(a.x - b.x, a.y - b.y)
+
+/** Distance from a point to a line segment. */
+export function distanceToSegment(point: Point, a: Point, b: Point): number {
+  const dx = b.x - a.x, dy = b.y - a.y
+  const lengthSquared = dx * dx + dy * dy
+  if (lengthSquared <= 0) return distance(point, a)
+  let t = ((point.x - a.x) * dx + (point.y - a.y) * dy) / lengthSquared
+  t = Math.min(Math.max(t, 0), 1)
+  return distance(point, { x: a.x + t * dx, y: a.y + t * dy })
+}
+
+export const rectFrom = (a: Point, b: Point): Rect => ({
+  x: Math.min(a.x, b.x), y: Math.min(a.y, b.y),
+  width: Math.abs(a.x - b.x), height: Math.abs(a.y - b.y),
+})
+
+export const rectContains = (rect: Rect, point: Point): boolean =>
+  point.x >= rect.x && point.x <= rect.x + rect.width
+  && point.y >= rect.y && point.y <= rect.y + rect.height
+
+const direction = (a: Point, b: Point, c: Point): number =>
+  (c.x - a.x) * (b.y - a.y) - (c.y - a.y) * (b.x - a.x)
+
+const onSegment = (a: Point, b: Point, point: Point): boolean =>
+  Math.min(a.x, b.x) <= point.x && point.x <= Math.max(a.x, b.x)
+  && Math.min(a.y, b.y) <= point.y && point.y <= Math.max(a.y, b.y)
+
+/** Do two segments cross? Orientation signs, with the collinear cases folded in. */
+export function cross(p1: Point, p2: Point, p3: Point, p4: Point): boolean {
+  const d1 = direction(p3, p4, p1), d2 = direction(p3, p4, p2)
+  const d3 = direction(p1, p2, p3), d4 = direction(p1, p2, p4)
+  if (((d1 > 0 && d2 < 0) || (d1 < 0 && d2 > 0)) && ((d3 > 0 && d4 < 0) || (d3 < 0 && d4 > 0))) return true
+  if (d1 === 0 && onSegment(p3, p4, p1)) return true
+  if (d2 === 0 && onSegment(p3, p4, p2)) return true
+  if (d3 === 0 && onSegment(p1, p2, p3)) return true
+  if (d4 === 0 && onSegment(p1, p2, p4)) return true
+  return false
+}
+
+export function segmentIntersectsRect(a: Point, b: Point, rect: Rect): boolean {
+  if (rectContains(rect, a) || rectContains(rect, b)) return true
+  const corners: Point[] = [
+    { x: rect.x, y: rect.y }, { x: rect.x + rect.width, y: rect.y },
+    { x: rect.x + rect.width, y: rect.y + rect.height }, { x: rect.x, y: rect.y + rect.height },
+  ]
+  for (let index = 0; index < 4; index++) {
+    if (cross(a, b, corners[index]!, corners[(index + 1) % 4]!)) return true
+  }
+  return false
+}
+
+/** Where segment a–b crosses segment c–d, or null when it does not. */
+export function segmentIntersection(a: Point, b: Point, c: Point, d: Point): Point | null {
+  const r = { x: b.x - a.x, y: b.y - a.y }
+  const s = { x: d.x - c.x, y: d.y - c.y }
+  const denominator = r.x * s.y - r.y * s.x
+  if (Math.abs(denominator) < 1e-9) return null
+  const ac = { x: c.x - a.x, y: c.y - a.y }
+  const t = (ac.x * s.y - ac.y * s.x) / denominator
+  const u = (ac.x * r.y - ac.y * r.x) / denominator
+  if (t < 0 || t > 1 || u < 0 || u > 1) return null
+  return { x: a.x + t * r.x, y: a.y + t * r.y }
+}
+
+export function polygonContains(points: Point[], point: Point): boolean {
+  if (points.length <= 2) return false
+  let inside = false
+  let j = points.length - 1
+  for (let i = 0; i < points.length; i++) {
+    const a = points[i]!, b = points[j]!
+    if ((a.y > point.y) !== (b.y > point.y)
+      && point.x < ((b.x - a.x) * (point.y - a.y)) / (b.y - a.y) + a.x) {
+      inside = !inside
+    }
+    j = i
+  }
+  return inside
+}
+
+/** The box a centred, width-and-aspect item occupies, in view points. */
+export function boxOf(center: Point, width: number, aspect: number, size: Size): Rect {
+  const w = width * size.width
+  const h = w * aspect
+  return { x: center.x * size.width - w / 2, y: center.y * size.height - h / 2, width: w, height: h }
+}
+
+const cornersOf = (rect: Rect): Point[] => [
+  { x: rect.x, y: rect.y }, { x: rect.x + rect.width, y: rect.y },
+  { x: rect.x + rect.width, y: rect.y + rect.height }, { x: rect.x, y: rect.y + rect.height },
+]
+
+/** How long an arrow's head is, for a line this wide. */
+export const headLength = (lineWidth: number): number => 7 + 2.5 * lineWidth
+
+/** The whole route of a connector, ends included. */
+export const route = (connector: { start: Point; end: Point; bends: Point[] }): Point[] =>
+  [connector.start, ...connector.bends, connector.end]
+
+/**
+ * The outline before the transform, in view points: a stroke's own points,
+ * or the four corners of a picture.
+ */
+export function basePoints(item: CanvasItem, size: Size): Point[] {
+  switch (item.kind) {
+    case "stroke":
+      return item.stroke.points.map((p) => ({ x: p.x * size.width, y: p.y * size.height }))
+    case "image":
+      return cornersOf(boxOf(item.image.center, item.image.width, item.image.aspect, size))
+    case "shape":
+      // Every polyline of it, so a cross's box still holds both strokes.
+      return polylines(item.shape.kind,
+        boxOf(item.shape.center, item.shape.width, item.shape.aspect, size)).flat()
+    case "connector":
+      return route(item.connector).map((p) => ({ x: p.x * size.width, y: p.y * size.height }))
+  }
+}
+
+/** A picture and a closed shape are hit anywhere inside; a line only on the line. */
+export function itemIsClosed(item: CanvasItem): boolean {
+  switch (item.kind) {
+    case "image": return true
+    case "shape": return shapeIsClosed(item.shape.kind)
+    default: return false
+  }
+}
+
+const unionRect = (points: Point[]): Rect => {
+  const xs = points.map((p) => p.x), ys = points.map((p) => p.y)
+  const minX = Math.min(...xs), minY = Math.min(...ys)
+  return { x: minX, y: minY, width: Math.max(...xs) - minX, height: Math.max(...ys) - minY }
+}
+
+const inset = (rect: Rect, by: number): Rect => ({
+  x: rect.x - by, y: rect.y - by, width: rect.width + by * 2, height: rect.height + by * 2,
+})
+
+/**
+ * The box the item occupies before the transform. A stroke's ink is as wide
+ * as the pen, so half a nib is added on every side.
+ */
+export function baseBounds(item: CanvasItem, size: Size): Rect {
+  if (item.kind === "shape") {
+    // The box the shape was drawn into, not the outline's extent — a check
+    // mark's handles should hold its box, not hug the tick.
+    return boxOf(item.shape.center, item.shape.width, item.shape.aspect, size)
+  }
+  const points = basePoints(item, size)
+  if (points.length === 0) return { x: 0, y: 0, width: 0, height: 0 }
+  const rect = unionRect(points)
+  if (item.kind === "stroke") return inset(rect, item.stroke.width / 2)
+  if (item.kind === "connector") {
+    return inset(rect, Math.max(item.connector.lineWidth / 2, headLength(item.connector.lineWidth) / 2))
+  }
+  return rect
+}
+
+export function baseCenter(item: CanvasItem, size: Size): Point {
+  const rect = baseBounds(item, size)
+  return { x: rect.x + rect.width / 2, y: rect.y + rect.height / 2 }
+}
+
+/** Where the item's centre actually is now. */
+export function placedCenter(item: CanvasItem, size: Size): Point {
+  const centre = baseCenter(item, size)
+  const transform = itemTransform(item)
+  return { x: centre.x + transform.dx * size.width, y: centre.y + transform.dy * size.height }
+}
+
+/**
+ * Rotate and scale about the item's own centre, then translate — the same
+ * matrix `CGAffineTransform` was building, written out.
+ */
+export function applyMatrix(item: CanvasItem, size: Size, point: Point): Point {
+  const centre = baseCenter(item, size)
+  const t = itemTransform(item)
+  const x = (point.x - centre.x) * t.scale
+  const y = (point.y - centre.y) * t.scale
+  const c = Math.cos(t.rotation), s = Math.sin(t.rotation)
+  return {
+    x: centre.x + t.dx * size.width + x * c - y * s,
+    y: centre.y + t.dy * size.height + x * s + y * c,
+  }
+}
+
+/** The outline where it is now. */
+export const outline = (item: CanvasItem, size: Size): Point[] =>
+  basePoints(item, size).map((point) => applyMatrix(item, size, point))
+
+/** The four corners of the item's own box where they are now. */
+export const frameCorners = (item: CanvasItem, size: Size): Point[] =>
+  cornersOf(baseBounds(item, size)).map((point) => applyMatrix(item, size, point))
+
+/** The upright box around the item where it is now — what the handles hang off. */
+export function bounds(item: CanvasItem, size: Size): Rect {
+  return unionRect(frameCorners(item, size))
+}
+
+/** The upright box around a set of items. */
+export function boundsOf(drawing: Drawing, ids: Set<string>, size: Size): Rect | null {
+  const boxes = drawing.items
+    .filter((item) => ids.has(itemIdOf(item)) && !isHidden(item))
+    .map((item) => bounds(item, size))
+  if (boxes.length === 0) return null
+  return boxes.reduce((whole, box) => {
+    const minX = Math.min(whole.x, box.x), minY = Math.min(whole.y, box.y)
+    return {
+      x: minX, y: minY,
+      width: Math.max(whole.x + whole.width, box.x + box.width) - minX,
+      height: Math.max(whole.y + whole.height, box.y + box.height) - minY,
+    }
+  })
+}
+
+const itemIdOf = (item: CanvasItem): string => {
+  switch (item.kind) {
+    case "stroke": return item.stroke.id
+    case "image": return item.image.id
+    case "shape": return item.shape.id
+    case "connector": return item.connector.id
+  }
+}
+
+const near = (point: Point, lines: Point[][], reach: number): boolean => {
+  for (const line of lines) {
+    if (line.length < 2) continue
+    for (let index = 0; index < line.length - 1; index++) {
+      if (distanceToSegment(point, line[index]!, line[index + 1]!) <= reach) return true
+    }
+  }
+  return false
+}
+
+/**
+ * Does a click land on the item? ON THE INK, not on the box around it —
+ * otherwise one big stroke would swallow every click near it.
+ */
+export function hitTest(item: CanvasItem, point: Point, size: Size): boolean {
+  const shape = outline(item, size)
+  if (shape.length === 0) return false
+  const scale = itemTransform(item).scale
+  switch (item.kind) {
+    case "image":
+      return polygonContains(shape, point)
+    case "shape": {
+      const reach = Math.max((item.shape.lineWidth * scale) / 2, 6)
+      if (shapeIsClosed(item.shape.kind)) {
+        return polygonContains(shape, point) || near(point, [[...shape, shape[0]!]], reach)
+      }
+      const lines = polylines(item.shape.kind, baseBounds(item, size))
+        .map((line) => line.map((p) => applyMatrix(item, size, p)))
+      return near(point, lines, reach)
+    }
+    case "connector":
+      return near(point, [shape], Math.max((item.connector.lineWidth * scale) / 2, 6))
+    case "stroke": {
+      const reach = Math.max((item.stroke.width * scale) / 2, 6)
+      if (shape.length === 1) return distance(point, shape[0]!) <= reach
+      return near(point, [shape], reach)
+    }
+  }
+}
+
+/**
+ * Does the marquee touch the item at all? Touching is enough — the whole
+ * drawing does not have to be inside the rectangle.
+ */
+export function intersects(item: CanvasItem, rect: Rect, size: Size): boolean {
+  const shape = outline(item, size)
+  if (shape.length === 0) return false
+  if (shape.some((point) => rectContains(rect, point))) return true
+  if (shape.length === 1) return false
+  const closed = itemIsClosed(item)
+  for (let index = 0; index < shape.length - 1; index++) {
+    if (segmentIntersectsRect(shape[index]!, shape[index + 1]!, rect)) return true
+  }
+  if (closed && segmentIntersectsRect(shape[shape.length - 1]!, shape[0]!, rect)) return true
+  // A marquee drawn entirely inside a picture still selects it.
+  return closed && polygonContains(shape,
+    { x: rect.x + rect.width / 2, y: rect.y + rect.height / 2 })
+}
+
+/** The topmost item under a point — a hidden picture is not there at all. */
+export function indexAt(drawing: Drawing, point: Point, size: Size): number | null {
+  for (let index = drawing.items.length - 1; index >= 0; index--) {
+    const item = drawing.items[index]!
+    if (isHidden(item)) continue
+    if (hitTest(item, point, size)) return index
+  }
+  return null
+}
+
+/** Everything the marquee touches. */
+export function idsTouching(drawing: Drawing, rect: Rect, size: Size): Set<string> {
+  const out = new Set<string>()
+  for (const item of drawing.items) {
+    if (isHidden(item)) continue
+    if (intersects(item, rect, size)) out.add(itemIdOf(item))
+  }
+  return out
+}
+
+/**
+ * Where `item` ends up after a gesture that started with `original`:
+ * dragged by `translate`, then scaled and turned about `pivot`. Pure, and
+ * shared by the drag of the items themselves and the drags of the handles,
+ * so one item and a group of twelve behave the same way.
+ */
+export function transformed(item: CanvasItem, original: ItemTransform, options: {
+  translate?: { dx: number; dy: number }
+  scale?: number
+  rotate?: number
+  pivot: Point
+  size: Size
+}): ItemTransform {
+  const { pivot, size } = options
+  if (size.width <= 0 || size.height <= 0) return original
+  const translate = options.translate ?? { dx: 0, dy: 0 }
+  const scale = options.scale ?? 1
+  const rotate = options.rotate ?? 0
+
+  const snapshot = { ...item } as CanvasItem
+  const placed = placedCenter(withOriginal(snapshot, original), size)
+  const moved = { x: placed.x + translate.dx, y: placed.y + translate.dy }
+  const offset = { x: moved.x - pivot.x, y: moved.y - pivot.y }
+  const c = Math.cos(rotate), s = Math.sin(rotate)
+  const turned = {
+    x: pivot.x + scale * (offset.x * c - offset.y * s),
+    y: pivot.y + scale * (offset.x * s + offset.y * c),
+  }
+  const base = baseCenter(item, size)
+  return {
+    scale: Math.max(0.02, original.scale * scale),
+    rotation: original.rotation + rotate,
+    dx: (turned.x - base.x) / size.width,
+    dy: (turned.y - base.y) / size.height,
+  }
+}
+
+const withOriginal = (item: CanvasItem, transform: ItemTransform): CanvasItem => {
+  switch (item.kind) {
+    case "stroke": return { kind: "stroke", stroke: { ...item.stroke, transform } }
+    case "image": return { kind: "image", image: { ...item.image, transform } }
+    case "shape": return { kind: "shape", shape: { ...item.shape, transform } }
+    case "connector": return { kind: "connector", connector: { ...item.connector, transform } }
+  }
+}
+
+/**
+ * Where a line from `centre` towards `target` leaves the item — the point
+ * an arrow attached to it lands on. The OUTERMOST crossing of the outline,
+ * so a star's arrow stops at its points.
+ */
+export function boundaryPoint(item: CanvasItem, centre: Point, target: Point, size: Size): Point {
+  const shape = outline(item, size)
+  if (shape.length < 2) return centre
+  const edges: [Point, Point][] = []
+  for (let index = 0; index < shape.length - 1; index++) edges.push([shape[index]!, shape[index + 1]!])
+  edges.push([shape[shape.length - 1]!, shape[0]!])
+  let best: { t: number; point: Point } | null = null
+  for (const [a, b] of edges) {
+    const hit = segmentIntersection(centre, target, a, b)
+    if (!hit) continue
+    const t = distance(centre, hit)
+    if (!best || t > best.t) best = { t, point: hit }
+  }
+  return best ? best.point : centre
+}
+
+/** The angle of a point about a pivot — what a rotate handle is dragged through. */
+export const angleAbout = (point: Point, pivot: Point): number =>
+  Math.atan2(point.y - pivot.y, point.x - pivot.x)
+
+/**
+ * How much bigger the drag has made the selection. Clamped, so a flick
+ * through the pivot cannot turn an object inside out.
+ */
+export function scaleFactor(start: Point, current: Point, pivot: Point): number {
+  const before = distance(start, pivot)
+  if (before <= 1) return 1
+  return Math.min(Math.max(distance(current, pivot) / before, 0.05), 20)
+}

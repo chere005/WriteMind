@@ -8,7 +8,10 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import type { EditorView } from "@codemirror/view"
-import type { Note } from "@writemind/core"
+import {
+  emptyDrawing, readDrawing, writeDrawing, type Drawing, type Note, type Placement,
+} from "@writemind/core"
+import { Canvas, type CanvasMode } from "./Canvas"
 import { Notebook } from "./Notebook"
 import { Sidebar } from "./Sidebar"
 import { TopBar } from "./TopBar"
@@ -30,6 +33,15 @@ export function App() {
   const [stale, setStale] = useState(false)
   const [view, setView] = useState<EditorView | null>(null)
   const [showSidebar, setShowSidebar] = useState(true)
+  // The drawing is a SIDECAR, not part of the note: it lives in its own
+  // file beside the markdown and nothing on it ever edits the text.
+  const [drawing, setDrawing] = useState<Drawing>(emptyDrawing())
+  const [mode, setMode] = useState<CanvasMode>("cursor")
+  const [penColour, setPenColour] = useState("#2D7DD2")
+  const [penWidth, setPenWidth] = useState(3)
+  const [placing, setPlacing] = useState<Placement | null>(null)
+  const drawingTimer = useRef<number | null>(null)
+  const drawingDirty = useRef(false)
 
   const timer = useRef<number | null>(null)
   const dirty = useRef(false)
@@ -68,9 +80,12 @@ export function App() {
     if (current && dirty.current) await window.wm.writeNote(current, text)
     dirty.current = false
     const contents = await window.wm.readNote(note.path)
+    const sidecar = await window.wm.readDrawing(note.path)
     setOpen((was) => (was.some((other) => other.path === note.path) ? was : [...was, note]))
     setCurrent(note.path)
     setText(contents)
+    setDrawing(readDrawing(sidecar))
+    drawingDirty.current = false
     setStale(false)
   }, [current, text])
 
@@ -94,6 +109,36 @@ export function App() {
   const change = useCallback((next: string) => {
     dirty.current = true
     setText(next)
+  }, [])
+
+  const changeDrawing = useCallback((next: Drawing) => {
+    drawingDirty.current = true
+    setDrawing(next)
+  }, [])
+
+  // The sidecar saves on the same debounce as the note, and separately
+  // from it: a drawing is never part of the markdown.
+  useEffect(() => {
+    if (!current || !drawingDirty.current) return
+    if (drawingTimer.current) window.clearTimeout(drawingTimer.current)
+    drawingTimer.current = window.setTimeout(() => {
+      void window.wm.writeDrawing(current, writeDrawing(drawing))
+      drawingDirty.current = false
+    }, SAVE_AFTER)
+    return () => { if (drawingTimer.current) window.clearTimeout(drawingTimer.current) }
+  }, [drawing, current])
+
+  // The arrow tool and an armed placement are NOT modes: they take the
+  // pane for one gesture and hand it back, so picking either puts the pen
+  // down and picking the pen puts them away.
+  const arm = useCallback((next: Placement | null) => {
+    setPlacing(next)
+    if (next) setMode("cursor")
+  }, [])
+
+  const toggleMode = useCallback(() => {
+    setPlacing(null)
+    setMode((was) => (was === "pen" ? "cursor" : "pen"))
   }, [])
 
   const newNote = useCallback(async (folder: string) => {
@@ -159,14 +204,28 @@ export function App() {
         </div>
         {current ? (
           <>
-            <TopBar view={view} onExportPDF={() => { void window.wm.exportPDF(title.replace(/\.md$/, "")) }} />
-            <Notebook file={current} text={text} onChange={change} onReady={setView} />
+            <TopBar view={view} onExportPDF={() => { void window.wm.exportPDF(title.replace(/\.md$/, "")) }}
+                    mode={mode} onToggleMode={toggleMode}
+                    penColour={penColour} onPenColour={setPenColour}
+                    penWidth={penWidth} onPenWidth={setPenWidth}
+                    onPlace={arm} placing={placing} />
+            <div className="stack">
+              <Notebook file={current} text={text} onChange={change} onReady={setView} />
+              <Canvas drawing={drawing} onChange={changeDrawing} mode={mode}
+                      colorHex={penColour} penWidth={penWidth}
+                      placing={placing} onPlaced={() => setPlacing(null)}
+                      scroller={view ? view.scrollDOM : null} />
+            </div>
             <div className="footer">
               <span>{title}</span>
               <div className="spacer" />
               {stale && <span title="The file changed under the app; nothing was overwritten">
                 file changed on disk — not saved
               </span>}
+              {mode === "pen" && <span>Pen</span>}
+              {drawing.items.length > 0 && (
+                <span>{drawing.items.length === 1 ? "1 object" : `${drawing.items.length} objects`}</span>
+              )}
               <span>{words === 1 ? "1 word" : `${words} words`}</span>
               {saved && <span>Saved {saved.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</span>}
             </div>

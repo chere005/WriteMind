@@ -271,3 +271,47 @@ button { font: inherit; color: inherit; }
   background: rgba(109, 169, 240, 0.12);
   pointer-events: none;
 }
+
+/* The drawing layer sits OVER the notebook and lets every click it does not
+   want go through to the words underneath. */
+.stack { position: relative; flex: 1; min-height: 0; display: flex; }
+.stack .editor { flex: 1; min-width: 0; }
+
+.wm-canvas { position: absolute; inset: 0; overflow: hidden; }
+.wm-canvas canvas { position: absolute; left: 0; top: 0; }
+.wm-handles { position: absolute; inset: 0; pointer-events: none; }
+
+.wm-handle {
+  position: absolute;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border-radius: 50%;
+  border: 1px solid var(--wm-rule);
+  background: var(--wm-chrome);
+  color: var(--wm-soft);
+  font-size: 11px;
+  line-height: 1;
+  cursor: pointer;
+  box-shadow: 0 1px 4px var(--wm-shadow);
+}
+.wm-handle:hover { color: var(--wm-accent); border-color: var(--wm-accent); }
+.wm-handle-wide { width: 28px; border-radius: 11px; }
+
+.pen-colour {
+  width: 22px;
+  height: 20px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+}
+.swatch {
+  width: 13px;
+  height: 13px;
+  margin: 0 1px;
+  padding: 0;
+  border: 1px solid var(--wm-rule);
+  border-radius: 50%;
+  cursor: pointer;
+}

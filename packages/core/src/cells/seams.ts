@@ -234,7 +234,8 @@ export const PLUS_SIZE = 10
 /** And how much slack there is round it — a small control is hard to hit exactly. */
 export const PLUS_GRIP = 4
 
-export interface Rect { x: number; y: number; width: number; height: number }
+import type { Rect } from "../drawing/shapes"
+export type { Rect }
 
 /** The dot itself, on the seam's own line. */
 export const plus = (line: number, leading: number): Rect =>
