@@ -196,6 +196,19 @@ enum CellSeams {
     static func bands(seams: [Seam], pageTop: CGFloat, pageBottom: CGFloat) -> [Band] {
         guard pageBottom > pageTop else { return [] }
         var out: [Band] = []
+        // WHOLE PIXELS. A cursor rect can only be drawn on pixel edges,
+        // and the point test the events use reads the same seam as a
+        // float — so on a boundary that fell mid-pixel the two answered
+        // differently and a pointer crawling across it chattered between
+        // the two cursors (Sean, 2026-09-21: "it's while the mouse is
+        // moving slowly"). Both now read `pixels`.
+        let seams = seams.map { seam -> Seam in
+            var seam = seam
+            let edges = pixels(seam)
+            seam.top = edges.top
+            seam.bottom = edges.bottom
+            return seam
+        }
         // How far down the page the bands have reached. Widening can
         // leave two seams overlapping, and a band that ran backwards is
         // a cursor rect AppKit throws away — with it the I-beam is back.
@@ -209,6 +222,43 @@ enum CellSeams {
         }
         if reached < pageBottom { out.append(Band(top: reached, bottom: pageBottom, horizontal: false)) }
         return out
+    }
+
+    /// A seam's edges snapped OUT to whole pixels — the only edges a
+    /// cursor rect can have, and therefore the only edges the point test
+    /// may use if the two are to agree.
+    static func pixels(_ seam: Seam) -> (top: CGFloat, bottom: CGFloat) {
+        (seam.top.rounded(.down), seam.bottom.rounded(.up))
+    }
+
+    /// How far outside a seam the pointer has to get before the cursor
+    /// stops being the horizontal one. Enough to cover a pixel of
+    /// rounding either way, and small enough that nobody sees it.
+    static let pointerSlack: CGFloat = 2
+
+    /// Which seam the POINTER should be shown as being in — not the same
+    /// question as which seam a CLICK lands in, which is `seam(at:)` and
+    /// is exact.
+    ///
+    /// It is sticky: once the pointer is being shown as in a seam it
+    /// stays in that seam until it is clearly out of it. Two mechanisms
+    /// set this cursor (a rect AppKit owns and a point test the events
+    /// use), they meet on the seam's own edge, and a pointer moving
+    /// slowly across that edge made each of them answer in turn — which
+    /// is the flicker. Nothing else needed to change: neither answer was
+    /// wrong, they were just not the same answer at the same place.
+    ///
+    /// `showing` is the offset of the seam the pointer is being shown in.
+    static func pointerSeam(at y: CGFloat, in seams: [Seam], showing: Int?,
+                            slack: CGFloat = pointerSlack) -> Seam? {
+        if let showing, let held = seams.first(where: { $0.offset == showing }) {
+            let edges = pixels(held)
+            if y >= edges.top - slack, y <= edges.bottom + slack { return held }
+        }
+        return seams.first { seam in
+            let edges = pixels(seam)
+            return y >= edges.top && y <= edges.bottom
+        }
     }
 
     // MARK: - The + at the end of the bar

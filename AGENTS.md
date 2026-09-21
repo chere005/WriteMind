@@ -898,6 +898,19 @@ tools/                    build.sh run.sh test.sh (both source signing.sh)
      formatting bar above the pane maps into the note as soon as it is
      scrolled), and `CellInsertions.seam(at:)` answering nothing for a
      point that is not on the layer at all.
+  A SIXTH, and the one that survived all of the above: the two
+  mechanisms meet on a seam's own EDGE and answered differently there.
+  The rects can only be drawn on pixel edges; the point test read the
+  same seam as a float. A pointer moving slowly across the boundary
+  therefore got each answer in turn (Sean, 2026-09-21: "cursor still
+  flickers between horizontal and vertical… it's while the mouse is
+  moving slowly"). Neither answer was wrong — they were not the SAME
+  answer at the same place. So `CellSeams.pixels` snaps a seam's edges
+  out to whole pixels and BOTH `bands` and the point test read those,
+  and `CellSeams.pointerSeam` makes the pointer's reading sticky: the
+  seam it is already being shown in keeps it until it is two points
+  clear. Sticky for the CURSOR only — a click still asks the exact
+  `seam(at:)`, because arming the wrong seam is worse than a flicker.
   On the rendered page there was a fifth with the same face: the seam
   handed the cursor back by looking at what was on screen
   (`current == .iBeamCursorForVerticalLayout`), and the seam the pointer

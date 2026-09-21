@@ -79,6 +79,10 @@ final class CellInsertions: NSView {
     /// from this, is a promise: a press there opens nothing at all,
     /// because `mouseDown` measures against the seams as they are.
     private var hoveredOffset: Int? { didSet { if hoveredOffset != oldValue { markChanged() } } }
+    /// The seam the POINTER is being shown as being in. It is not the
+    /// hovered one and not the armed one: it is what stops the cursor
+    /// chattering on a seam's edge — see `CellSeams.pointerSeam`.
+    private var showingSeam: Int?
     private var hovered: CellSeams.Seam? {
         guard let hoveredOffset else { return nil }
         return seams.first { $0.offset == hoveredOffset }
@@ -212,7 +216,16 @@ final class CellInsertions: NSView {
     /// both views and whichever runs last wins, so two views deciding
     /// separately is a disagreement one event wide, which is a flicker.
     func cursor(at point: CGPoint) -> NSCursor? {
-        guard let seam = seam(at: point) else { return nil }
+        guard !isHidden, bounds.contains(point),
+              point.x < bounds.width - NotebookGutter.width else {
+            showingSeam = nil
+            return nil
+        }
+        guard let seam = CellSeams.pointerSeam(at: point.y, in: seams, showing: showingSeam) else {
+            showingSeam = nil
+            return nil
+        }
+        showingSeam = seam.offset
         // `armed ?? seam` rather than `marked`: `hovered` is set by the
         // move that arrives with the pointer and a cursorUpdate can
         // arrive before it, so reading the point itself is the one
@@ -313,6 +326,10 @@ final class CellInsertions: NSView {
 
     override func mouseExited(with event: NSEvent) {
         hoveredOffset = nil
+        // The stickiness is only for a pointer crossing an edge INSIDE
+        // the page; off the layer entirely it has to let go, or coming
+        // back gives the last seam's cursor wherever it comes back.
+        showingSeam = nil
     }
 
     override func mouseDown(with event: NSEvent) {

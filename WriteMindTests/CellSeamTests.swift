@@ -479,3 +479,76 @@ final class SeamCutTests: XCTestCase {
         XCTAssertEqual(CellSeams.cut(strip, around: strip.insetBy(dx: -10, dy: -10)), [])
     }
 }
+
+/// The pointer's reading of which seam it is in, which is NOT the click's.
+/// Two mechanisms set that cursor — a rect AppKit owns and a point test
+/// the events use — they meet on a seam's own edge, and a pointer moving
+/// slowly across it made each answer in turn (Sean, 2026-09-21: "cursor
+/// still flickers between horizontal and vertical... it's while the mouse
+/// is moving slowly").
+final class PointerSeamTests: XCTestCase {
+    private let seams = [CellSeams.Seam(top: 20, bottom: 40, offset: 0, line: 30),
+                         CellSeams.Seam(top: 80, bottom: 100, offset: 12, line: 90)]
+
+    func testAPointInASeamIsInThatSeam() {
+        XCTAssertEqual(CellSeams.pointerSeam(at: 30, in: seams, showing: nil)?.offset, 0)
+        XCTAssertEqual(CellSeams.pointerSeam(at: 90, in: seams, showing: nil)?.offset, 12)
+    }
+
+    func testAPointOnACellIsInNone() {
+        XCTAssertNil(CellSeams.pointerSeam(at: 60, in: seams, showing: nil))
+    }
+
+    func testTheSeamItIsSHOWINGKeepsThePointerJustPastItsEdge() {
+        // A pixel or two past the edge is where the rect and the point
+        // test disagree; the one already on screen wins there.
+        XCTAssertEqual(CellSeams.pointerSeam(at: 41, in: seams, showing: 0)?.offset, 0)
+        XCTAssertEqual(CellSeams.pointerSeam(at: 19, in: seams, showing: 0)?.offset, 0)
+    }
+
+    func testAndLetsGoOnceThePointerIsClearlyOut() {
+        XCTAssertNil(CellSeams.pointerSeam(at: 45, in: seams, showing: 0))
+        XCTAssertNil(CellSeams.pointerSeam(at: 14, in: seams, showing: 0))
+    }
+
+    func testTheStickinessNeverReachesTheNextSeam() {
+        // It holds the one it is in; it does not hand the pointer a seam
+        // it is nowhere near.
+        XCTAssertNil(CellSeams.pointerSeam(at: 60, in: seams, showing: 0))
+        XCTAssertEqual(CellSeams.pointerSeam(at: 90, in: seams, showing: 0)?.offset, 12)
+    }
+
+    func testAShowingSeamThatHasGoneIsNotHeld() {
+        // The note changed under the pointer: the offset names nothing.
+        XCTAssertNil(CellSeams.pointerSeam(at: 60, in: seams, showing: 999))
+    }
+
+    func testTheEdgesAreWholePixelsBothWays() {
+        // A rect can only have pixel edges, so the point test uses the
+        // same ones — snapped OUT, so no row belongs to neither.
+        let ragged = CellSeams.Seam(top: 20.3, bottom: 39.6, offset: 0, line: 30)
+        let edges = CellSeams.pixels(ragged)
+        XCTAssertEqual(edges.top, 20)
+        XCTAssertEqual(edges.bottom, 40)
+        XCTAssertEqual(CellSeams.pointerSeam(at: 20.1, in: [ragged], showing: nil)?.offset, 0,
+                       "the row the seam starts in is the seam's")
+        XCTAssertEqual(CellSeams.pointerSeam(at: 39.9, in: [ragged], showing: nil)?.offset, 0)
+    }
+
+    func testTheBandsUseThoseSameEdges() {
+        let ragged = [CellSeams.Seam(top: 20.3, bottom: 39.6, offset: 0, line: 30)]
+        let bands = CellSeams.bands(seams: ragged, pageTop: 0, pageBottom: 100)
+        let horizontal = bands.filter(\.horizontal)
+        XCTAssertEqual(horizontal.count, 1)
+        XCTAssertEqual(horizontal[0].top, 20)
+        XCTAssertEqual(horizontal[0].bottom, 40)
+        // And the page is still covered end to end, with no row in two
+        // bands and none in none.
+        var reached: CGFloat = 0
+        for band in bands.sorted(by: { $0.top < $1.top }) {
+            XCTAssertEqual(band.top, reached, accuracy: 0.001, "a gap or an overlap at \(band.top)")
+            reached = band.bottom
+        }
+        XCTAssertEqual(reached, 100)
+    }
+}
