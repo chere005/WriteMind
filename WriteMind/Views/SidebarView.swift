@@ -413,6 +413,10 @@ struct SidebarView: View {
         .padding(.vertical, 2)
     }
 
+    /// How tall the two icons on the add row are — one number, so they
+    /// cannot be different heights.
+    private static let addIconHeight: CGFloat = 13
+
     /// One half of that box.
     private func addHalf(_ section: NoteSection, makesSection: Bool) -> some View {
         let target = AddTarget(section: section.id, makesSection: makesSection)
@@ -426,7 +430,16 @@ struct SidebarView: View {
         } label: {
             HStack(spacing: 4) {
                 if makesSection {
-                    Image(systemName: "folder.badge.plus").font(.system(size: 10))
+                    // THE SAME HEIGHT AS THE PAGE BESIDE IT (Sean,
+                    // 2026-09-21: "make the new note and new section
+                    // icons the same height"). A symbol sized by its
+                    // FONT is as tall as that font's glyph, which is
+                    // not the height of the shape drawn next to it;
+                    // resizable and fitted to a frame is.
+                    Image(systemName: "folder.badge.plus")
+                        .resizable()
+                        .scaledToFit()
+                        .frame(height: Self.addIconHeight)
                 } else {
                     // A page with a + in it, drawn rather than named: no
                     // SF Symbol is a blank page, and "doc.badge.plus"
@@ -434,7 +447,7 @@ struct SidebarView: View {
                     ZStack {
                         RoundedRectangle(cornerRadius: 2)
                             .strokeBorder(style: StrokeStyle(lineWidth: 1, dash: [2.5, 2]))
-                            .frame(width: 11, height: 14)
+                            .frame(width: Self.addIconHeight * 0.8, height: Self.addIconHeight)
                         Image(systemName: "plus").font(.system(size: 6.5, weight: .bold))
                     }
                 }
