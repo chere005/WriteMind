@@ -148,7 +148,8 @@ is how the code is put together.
   again.
 - **A flow chart sketched on paper comes in as a flow chart.** Reading a
   picture that holds one brings the boxes in as nodes — rectangles, rounded
-  rectangles, ovals and diamonds — with the words inside them as their
+  rectangles, ovals, diamonds, triangles and parallelograms — with the
+  words inside them as their
   labels, and the arrows between them as real connectors that follow the
   nodes when they move. It is deliberately hard to trigger: a node is found
   as the PAPER a drawn outline encloses (which survives an arrow touching

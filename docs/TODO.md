@@ -10,10 +10,12 @@ had to say it. Verification is the job, not an item.
 
 ## Open
 
-- **Flow charts, further.** Rectangles, rounded rectangles, ovals and
-  diamonds come off a sketch; triangles, parallelograms, ticks and crosses
-  are deliberately left as ink. The composite (hole-finding grouping +
-  classifier veto) is measured on drawn corpora and in the suite.
+- **Flow charts, further.** Six shapes come off a sketch now. A tick, a
+  cross and a star are read by the classifier and deliberately left as
+  ink: they are marks in a note rather than objects, and the app already
+  reads a tick in a drawn box as a task item, so putting one on the page
+  here as well would read the same ink twice. Worth revisiting if Sean
+  wants a tick he can drag.
 - **Tables, from scratch.** The feature came out whole on 2026-09-20 (Sean:
   "tables is weird right now... just completely remove tables as a feature
   and we'll rebuild that from scratch"). Gone with it: the GFM block and

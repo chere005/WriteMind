@@ -94,13 +94,18 @@ final class FlowChartReadingTests: XCTestCase {
                                              in: pane, colorHex: "#000000", lineWidth: 2).isEmpty)
     }
 
-    func testTheKindsThatAreNotShippedStayInk() {
-        XCTAssertFalse(FlowChartReading.shipped.contains(.triangle))
-        XCTAssertFalse(FlowChartReading.shipped.contains(.parallelogram))
+    func testTheMarksStayInkAndTheShapesDoNot() {
+        // The six shapes a chart is drawn with, including the triangle and
+        // the parallelogram that used to be held back (Sean, 2026-09-21).
+        XCTAssertEqual(FlowChartReading.shipped,
+                       [.rectangle, .roundedRectangle, .oval, .diamond, .triangle, .parallelogram])
+        // And the marks, which the classifier reads perfectly well and
+        // which this must not put on the page anyway: a tick in a drawn
+        // box is already a task item, and reading it here as well would
+        // read the same ink twice.
         XCTAssertFalse(FlowChartReading.shipped.contains(.check))
         XCTAssertFalse(FlowChartReading.shipped.contains(.cross))
         XCTAssertFalse(FlowChartReading.shipped.contains(.star))
-        XCTAssertEqual(FlowChartReading.shipped, [.rectangle, .roundedRectangle, .oval, .diamond])
     }
 
     func testTheObjectsAreMovedIntoTheBoxTheyBelongIn() {

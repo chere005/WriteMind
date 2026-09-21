@@ -14,11 +14,27 @@ import Foundation
 /// feature has to have. A sketch that comes in as the wrong shapes is
 /// worse than one that comes in as ink.
 enum FlowChartReading {
-    /// The kinds allowed onto the page. A triangle reads perfectly and is
-    /// also where scribbles go; nobody draws one in a flow chart. A
-    /// parallelogram costs the rectangle — the class that must not break.
-    /// A tick, a cross and a star are marks in a note, not objects.
-    static let shipped: Set<ShapeItem.Kind> = [.rectangle, .roundedRectangle, .oval, .diamond]
+    /// The kinds allowed onto the page. The four node shapes a flow chart
+    /// is drawn with, and the two that used to be held back with it:
+    /// a triangle and a parallelogram are both real flow-chart shapes —
+    /// the parallelogram is input and output in every notation there is —
+    /// and Sean asked for them (2026-09-21).
+    ///
+    /// They were held back on two fears, and `ShapeInkCorpusTests` is
+    /// what answers them rather than an argument: a scribble with three
+    /// long strokes in it is NOT read as a triangle, and a rectangle
+    /// drawn freehand with every corner three, six and nine points out of
+    /// true is NOT read as a parallelogram. The rectangle is the class
+    /// that must not break, and it does not.
+    ///
+    /// A TICK, A CROSS AND A STAR STAY OUT, and not for want of a
+    /// classifier — it reads all three. They are marks in a note rather
+    /// than objects in a chart, and the app already reads them as marks:
+    /// a tick in a drawn box is what makes a task item
+    /// (`TextRecognition.checkbox`), and letting this put a floating ✓ on
+    /// the page as well would read the same ink twice.
+    static let shipped: Set<ShapeItem.Kind> = [.rectangle, .roundedRectangle, .oval, .diamond,
+                                               .triangle, .parallelogram]
 
     /// Above this it is a printed diagram or a screenshot, not a sketch.
     static let maximumNodes = 12
