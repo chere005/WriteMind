@@ -25,6 +25,18 @@ asarUnpack:
 
 mac:
   category: public.app-category.productivity
+  # THE IDENTITY BY ITS FINGERPRINT, not by its name — this says WHICH
+  # certificate is meant, and it is the valid one.
+  #
+  # It is not the whole fix, and that is worth knowing: electron-builder
+  # resolves the hash and then calls `codesign --sign <NAME>`, so a
+  # keychain holding two certificates with the SAME name still fails with
+  # "ambiguous". Sean's did — the first Apple Development certificate was
+  # revoked on 2026-08-09 and reissued seven minutes later, and both were
+  # left in the login keychain. The build picked the revoked one. The cure
+  # is to take the dead one out (docs/BUILDING.md says how); this line
+  # says which one to use once there is a choice again.
+  identity: 744460685372E9982A2A85D7B351A9499AFF2EF6
   target:
     - target: dmg
       arch: [arm64, x64]

@@ -76,6 +76,30 @@ Two Arch things worth knowing:
 Linux `gio trash` (glib2). Without it a trash would be a delete, so glib2
 is a dependency rather than an optional one.
 
+## Signing the Mac build
+
+`codesign` picks a certificate BY NAME, and it refuses when two in the
+keychain share one. Sean's login keychain held two "Apple Development:
+seancheren@gmail.com (UN3PQ6VWGN)" certificates — the first revoked on
+2026-08-09 and reissued seven minutes later — and the build failed with
+`ambiguous`, having chosen the revoked one.
+
+The two have different key pairs, so taking the dead one out cannot touch
+the live one:
+
+```sh
+security find-identity -v -p codesigning     # look first: the revoked one says CSSMERR_TP_CERT_REVOKED
+security delete-identity -Z 90E9251F3FCE40DF8583E0715118BABB456DD6B2
+```
+
+macOS asks for the keychain password, which is why this is not in a
+script. Afterwards `security find-identity -v -p codesigning` should show
+one Apple Development identity, and `npm -w @writemind/desktop run
+package:mac` signs without being told anything.
+
+`CSC_IDENTITY_AUTO_DISCOVERY=false` builds unsigned in the meantime, which
+is what a local check needs.
+
 ## The version
 
 `apps/desktop/package.json` holds it, and electron-builder reads it from
