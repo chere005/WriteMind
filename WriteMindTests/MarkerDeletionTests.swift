@@ -13,6 +13,56 @@ final class MarkerDeletionTests: XCTestCase {
         return out as String
     }
 
+    // MARK: - Replacing, not only deleting
+
+    /// The same widening, with something put in the widened range instead
+    /// of nothing — what typing over a selection does.
+    private func replacing(_ range: NSRange, in text: String, with typed: String) -> String {
+        let ranges = MarkerDeletion.deletions(for: range, in: text)
+        let asked = MarkerDeletion.asked(range, in: ranges)
+        var out = text as NSString
+        for one in ranges {
+            out = out.replacingCharacters(in: one, with: one == asked ? typed : "") as NSString
+        }
+        return out as String
+    }
+
+    func testTypingOverHalfAPairTakesTheOtherHalfWithIt() {
+        // The bug the to-do list had as a delete: it is a replace as well.
+        // Left alone this was "xld** here" — a closing pair with nothing
+        // to close. The words that were NOT selected stay, of course.
+        XCTAssertEqual(replacing(NSRange(location: 0, length: 4), in: "**bold** here", with: "x"),
+                       "xld here")
+    }
+
+    func testTheTypedTextLandsWhereTheSelectionWas() {
+        XCTAssertEqual(replacing(NSRange(location: 6, length: 2), in: "**bold** here", with: "X"),
+                       "boldX here")
+    }
+
+    func testPastingSeveralWordsInIsTheSameRule() {
+        XCTAssertEqual(replacing(NSRange(location: 1, length: 3), in: "**bold** here", with: "one two"),
+                       "one twold here")
+    }
+
+    func testAskedNamesTheSelectionAndNotTheOrphanedPartner() {
+        let text = "**bold** here"
+        let range = NSRange(location: 0, length: 4)
+        let ranges = MarkerDeletion.deletions(for: range, in: text)
+        XCTAssertEqual(ranges.count, 2, "the selection, widened, and the closing pair")
+        XCTAssertEqual(MarkerDeletion.asked(range, in: ranges), NSRange(location: 0, length: 4))
+    }
+
+    // MARK: - A range that runs off the end is clamped, not applied
+
+    func testARangePastTheEndCannotBeApplied() {
+        // It used to come back as given and throw on the way in.
+        let ranges = MarkerDeletion.deletions(for: NSRange(location: 4, length: 80), in: "**a**\n**b**")
+        for range in ranges {
+            XCTAssertLessThanOrEqual(NSMaxRange(range), 11, "\(range) is off the end")
+        }
+    }
+
     func testHalfAMarkerIsNeverLeftBehind() {
         // "**bo" selected out of "**bold** here".
         XCTAssertEqual(deleting(NSRange(location: 0, length: 4), from: "**bold** here"), "ld here")

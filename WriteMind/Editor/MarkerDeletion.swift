@@ -16,7 +16,16 @@ enum MarkerDeletion {
     /// The ranges a delete should really take, biggest location first so a
     /// caller can apply them back to front without recomputing anything.
     /// One range — the one asked for — when there is nothing to widen.
+    ///
+    /// The FIRST element of the result is the range that was asked for,
+    /// widened; the rest are orphaned partners, which are always deleted
+    /// outright. A caller replacing rather than deleting needs to tell the
+    /// two apart, so `asked(in:)` says which is which.
     static func deletions(for range: NSRange, in source: String) -> [NSRange] {
+        // A range that runs off the end is nobody's edit, and the marker
+        // maths below would hand back ranges that cannot be applied.
+        let length = (source as NSString).length
+        let range = NSIntersectionRange(range, NSRange(location: 0, length: length))
         guard range.length > 0 else { return [range] }
         let runs = MarkdownSourceStyle.runs(in: source)
         guard !runs.isEmpty else { return [range] }
@@ -39,6 +48,18 @@ enum MarkerDeletion {
         }
 
         return ([wanted] + extra).sorted { $0.location > $1.location }
+    }
+
+    /// Which of `deletions` is the range the user actually selected — the
+    /// one a replacement goes into. The others are orphaned markers and
+    /// are only ever removed.
+    ///
+    /// It matters because a delete is not the only thing that can cut a
+    /// pair in half: TYPING over such a selection, or pasting into it,
+    /// does the same damage and used to go straight through unwidened —
+    /// "**bo" replaced by "x" in "**bold** here" left "xld** here".
+    static func asked(_ range: NSRange, in deletions: [NSRange]) -> NSRange {
+        deletions.first { NSIntersectionRange($0, range).length > 0 } ?? range
     }
 
     /// The marker either side of a styled run — the two halves that have to

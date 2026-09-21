@@ -835,30 +835,46 @@ struct MarkdownTextView: NSViewRepresentable {
                     return false
                 }
             }
-            return widenedDelete(textView, range: affectedCharRange, replacement: replacementString)
+            return widenedEdit(textView, range: affectedCharRange, replacement: replacementString)
         }
 
-        /// A delete over hidden markers takes them whole, and takes a pair
+        /// An edit over hidden markers takes them whole, and takes a pair
         /// together — see `MarkerDeletion`. True means "go ahead as asked",
-        /// which is the answer for everything that is not such a delete.
+        /// which is the answer for everything that is not such an edit.
+        ///
+        /// Deleting is not the only way to cut a pair in half: TYPING over
+        /// such a selection and pasting into it do the same, and both went
+        /// straight through while this only looked at empty replacements
+        /// — "**bo" typed over in "**bold** here" left "xld** here". The
+        /// widened range takes the replacement; the orphaned partner is
+        /// always removed outright.
+        ///
         /// Only while the markers ARE hidden: with the raw markdown
         /// showing, what is selected is what the eye saw, and half a `**`
         /// is then a fair thing to delete.
-        private func widenedDelete(_ tv: NSTextView, range: NSRange,
-                                   replacement: String?) -> Bool {
-            guard hiding.isEnabled, replacement?.isEmpty == true, range.length > 0,
-                  let storage = tv.textStorage else { return true }
+        private func widenedEdit(_ tv: NSTextView, range: NSRange,
+                                 replacement: String?) -> Bool {
+            guard hiding.isEnabled, range.length > 0,
+                  let replacement, let storage = tv.textStorage else { return true }
             let ranges = MarkerDeletion.deletions(for: range, in: tv.string)
             guard ranges != [range] else { return true }
+            let asked = MarkerDeletion.asked(range, in: ranges)
+            let strings = ranges.map { $0 == asked ? replacement : "" }
             guard tv.shouldChangeText(inRanges: ranges.map { NSValue(range: $0) },
-                                      replacementStrings: ranges.map { _ in "" }) else { return false }
+                                      replacementStrings: strings) else { return false }
             // Back to front, so an earlier range's location still means
             // what it meant when it was worked out.
             storage.beginEditing()
-            for range in ranges { storage.replaceCharacters(in: range, with: "") }
+            for (range, string) in zip(ranges, strings) {
+                storage.replaceCharacters(in: range, with: string)
+            }
             storage.endEditing()
             tv.didChangeText()
-            if let first = ranges.last { tv.setSelectedRange(NSRange(location: first.location, length: 0)) }
+            // After whatever went in, not before it.
+            if let last = ranges.last {
+                let typed = last == asked ? (replacement as NSString).length : 0
+                tv.setSelectedRange(NSRange(location: last.location + typed, length: 0))
+            }
             restyle(tv, force: true)
             return false
         }

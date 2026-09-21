@@ -24,8 +24,6 @@ had to say it. Verification is the job, not an item.
   are read now, and an arrow between two words of a line. A filled square
   bullet wider than the ink mask's local window still reads as an empty
   checkbox.
-- **Deleting across a hidden marker.** A selection that spans one `**` of a
-  pair can leave `**bold*` behind. The delete should take the pair.
 - **The two panes are close to the same height, not exactly.** The blank
   line between cells and a fence's own lines are drawn at the rendered
   page's gap, and the heading ladder already matches — but a code block's
