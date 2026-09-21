@@ -53,7 +53,6 @@ struct TopBar: View {
     @State private var showMath = false
     @State private var showShapes = false
     @State private var showMarks = false
-    @State private var showVideoMenu = false
 
     /// The text buttons work wherever there is text to work on: the source,
     /// a block being edited in the preview, and — since 2026-09-19 — the
@@ -96,51 +95,12 @@ struct TopBar: View {
             BarGroup(.capture) { captureTools }
 
             Spacer(minLength: 6)
-            // A divider between the preview button and the tools (Sean,
-            // 2026-09-18).
-            BarDivider()
-
-            // ONE BUTTON, lit while the preview is up (Sean, 2026-09-18) —
-            // not a two-segment picker. It also keeps the bar inside the pane,
-            // which a 180pt segmented control did not.
-            // ONE switch, two states: the markdown as it is written, and
-            // the note rendered and still typed into (Sean, 2026-09-19:
-            // "switching between raw markdown, and the rendered but
-            // editable wysiwyg"). There is no third button beside it.
-            BarButton(systemImage: appState.mode == .preview ? "doc.richtext" : "doc.plaintext",
-                      label: appState.mode == .preview ? "Rendered" : "Markdown",
-                      help: appState.mode == .preview
-                          ? "Showing the note rendered — click for the markdown behind it"
-                          : "Showing the markdown — click to render it and go on typing",
-                      keys: ["⇧", "⌘", "P"],
-                      isOn: appState.mode == .preview) {
-                appState.toggleMode()
-            }
-            .disabled(store.selectedNote == nil)
-
-            // The video: the icon shows and hides it, the chevron carries
-            // everything else it can do — turning the picture, its size,
-            // the box to zoom into, and giving it the whole window (Sean,
-            // 2026-09-19: "picture and whole screen should be dropdowns
-            // from the show video button").
-            BarSplit(isOn: appState.showCamera) {
-                BarButton(systemImage: appState.showCamera ? "video.fill" : "video.slash",
-                          label: appState.showCamera ? "Hide Video" : "Show Video",
-                          help: appState.showCamera ? "Put the camera pane away"
-                                                    : "Bring the camera pane back",
-                          keys: ["⌃", "⌘", "C"],
-                          isOn: appState.showCamera, bare: true) {
-                    appState.toggleCameraPane()
-                }
-            } chevron: {
-                Button { showVideoMenu.toggle() } label: { BarChevron() }
-                    .buttonStyle(.plain)
-                    .barTip(BarTip(title: "Video", detail: "The picture, and the whole screen"))
-                    .accessibilityLabel("Video Options")
-                    .popover(isPresented: $showVideoMenu, arrowEdge: .bottom) {
-                        VideoMenu(isPresented: $showVideoMenu)
-                    }
-            }
+            // The markdown toggle and the video's switch used to end this
+            // bar. They are on the SIDEBAR's bar now (Sean, 2026-09-21:
+            // "move the markdown toggle and video button to the menubar
+            // above the sidebar"), which leaves this one to the tools and
+            // nothing else — and keeps the rule that a pane's switch is on
+            // a different pane, once.
         }
         .padding(.horizontal, 8)
         .frame(height: 38)

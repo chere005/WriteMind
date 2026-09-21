@@ -795,8 +795,15 @@ tools/                    build.sh run.sh test.sh (both source signing.sh)
     shown only while the sidebar is hidden — the two are never both up.
   - ⌃⌘S / ⌃⌘E / ⌃⌘C in the View menu for all three. A MENU item is not a
     second button; a second button on screen is.
-  The one duplicate that stays is New Note (sidebar header, the `+` tab,
-  ⌘N) — Sean asked for the tab knowing it repeats the button.
+  Moved 2026-09-21, on Sean's word ("move the markdown toggle and video
+  button to the menubar above the sidebar"): the MARKDOWN toggle and the
+  VIDEO switch are on the SIDEBAR's bar now, which reads edit · add
+  section · separator · markdown · video. The rule is unchanged and the
+  move obeys it better — neither switch is on the pane it governs.
+  New Note left that bar altogether: it is `SidebarRow.add`, a
+  note-shaped row with a + in it at the top of the list and at the top
+  of every section, so the way to make a note is where the note will
+  land. The duplicate that stays is the `+` tab and ⌘N.
   The rest of the inventory, so the next audit has a baseline: sidebar
   header (collapse, edit, new section, new note); sidebar row in edit mode
   (duplicate, trash); sidebar footer (the Folder menu); the tab bar (tabs,

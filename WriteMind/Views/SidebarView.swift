@@ -56,6 +56,11 @@ struct SidebarView: View {
     @State private var expanded: Set<NoteSection.ID> = []
     @State private var dropTarget: NoteSection.ID?
     @State private var dropRow: Note.ID?
+    /// The video's own menu, which came over from the text bar with its
+    /// button (Sean, 2026-09-21).
+    @State private var showVideoMenu = false
+    /// Which section's + the pointer is on, so only that one lights.
+    @State private var hoveredAdd: NoteSection.ID?
 
     var body: some View {
         VStack(spacing: 0) {
@@ -75,6 +80,8 @@ struct SidebarView: View {
                                 noteRow(note, in: section, indent: indent)
                             case .section(let section, let indent):
                                 sectionRow(section, indent: indent)
+                            case .add(let section, let indent):
+                                addRow(section, indent: indent)
                             }
                         }
                     }
@@ -188,6 +195,11 @@ struct SidebarView: View {
         // spot (where it is when it's closed)"). The three that are left
         // keep the right edge, and the bar keeps its 44 points. The buttons
         // are narrower here than in the text bar.
+        // Edit, add section, a separator, then the two switches that came
+        // over from the text bar (Sean, 2026-09-21: "that menubar should
+        // be edit, add section, separator, markdown, video"). New Note is
+        // not here any more: it is the note-shaped row with a + in it at
+        // the top of the list, and at the top of every section.
         HStack(spacing: 1) {
             Spacer(minLength: 2)
             BarButton(systemImage: editing ? "checkmark" : "slider.horizontal.3",
@@ -200,8 +212,37 @@ struct SidebarView: View {
                       help: "New section in \(store.targetSection.name)", width: 22) {
                 if let made = store.createSection() { expanded.insert(made.id) }
             }
-            BarButton(systemImage: "square.and.pencil", label: "New Note",
-                      help: "New note in \(store.targetSection.name) (⌘N)", width: 22) { store.createNote() }
+
+            BarDivider()
+
+            BarButton(systemImage: appState.mode == .preview ? "doc.richtext" : "doc.plaintext",
+                      label: appState.mode == .preview ? "Rendered" : "Markdown",
+                      help: appState.mode == .preview
+                          ? "Showing the note rendered — click for the markdown behind it"
+                          : "Showing the markdown — click to render it and go on typing",
+                      keys: ["⇧", "⌘", "P"],
+                      isOn: appState.mode == .preview, width: 22) {
+                appState.toggleMode()
+            }
+            .disabled(store.selectedNote == nil)
+
+            BarSplit(isOn: appState.showCamera) {
+                BarButton(systemImage: appState.showCamera ? "video.fill" : "video.slash",
+                          label: appState.showCamera ? "Hide Video" : "Show Video",
+                          help: appState.showCamera ? "Put the camera pane away"
+                                                    : "Bring the camera pane back",
+                          keys: ["⌃", "⌘", "C"],
+                          isOn: appState.showCamera, bare: true, width: 22) {
+                    appState.toggleCameraPane()
+                }
+            } chevron: {
+                Button { showVideoMenu.toggle() } label: { BarChevron() }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("Video Options")
+                    .popover(isPresented: $showVideoMenu, arrowEdge: .bottom) {
+                        VideoMenu(isPresented: $showVideoMenu)
+                    }
+            }
         }
         .padding(.horizontal, 6)
         .frame(height: 44)
@@ -323,6 +364,9 @@ struct SidebarView: View {
     private var rows: [SidebarRow] {
         var out: [SidebarRow] = []
         func walk(_ section: NoteSection, indent: Int) {
+            // The + comes FIRST, so the way to make a note is where the
+            // note will appear rather than up on the bar.
+            out.append(.add(section, indent))
             for note in section.notes { out.append(.note(note, section, indent)) }
             for child in section.sections {
                 out.append(.section(child, indent))
@@ -341,6 +385,36 @@ struct SidebarView: View {
             }
         }
         return out
+    }
+
+    /// The note-shaped + at the top of a section: a new note, where it
+    /// will land. Drawn as a small page outline with a + inside it, faint
+    /// until the pointer is on it — it is an invitation rather than an
+    /// item, and a sidebar of ten sections should not look like a sidebar
+    /// of twenty rows.
+    private func addRow(_ section: NoteSection, indent: Int) -> some View {
+        Button {
+            store.selectedSectionID = section.id
+            store.createNote()
+        } label: {
+            HStack(spacing: 6) {
+                ZStack {
+                    RoundedRectangle(cornerRadius: 2.5)
+                        .strokeBorder(style: StrokeStyle(lineWidth: 1, dash: [2.5, 2]))
+                        .frame(width: 13, height: 16)
+                    Image(systemName: "plus").font(.system(size: 7, weight: .bold))
+                }
+                Text("New note").font(.system(size: 11))
+                Spacer(minLength: 0)
+            }
+            .foregroundStyle(hoveredAdd == section.id ? Color.accentColor : Color.secondary.opacity(0.55))
+            .padding(.leading, CGFloat(indent) * 14 + 4)
+            .padding(.vertical, 2)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .onHover { inside in hoveredAdd = inside ? section.id : (hoveredAdd == section.id ? nil : hoveredAdd) }
+        .help("New note in \(section.name) (⌘N)")
     }
 
     /// A note's row. THE DRAG SOURCE GOES ON BEFORE THE TAP, here and in
@@ -595,11 +669,19 @@ struct SidebarView: View {
 enum SidebarRow: Identifiable {
     case note(Note, NoteSection, Int)
     case section(NoteSection, Int)
+    /// The note-shaped row with a + in it that makes a new note in that
+    /// section (Sean, 2026-09-21: "put a small entry that looks like a
+    /// note at the top of the bar with a + inside it to make a general
+    /// note, and also have that + entry at the top of each section"). It
+    /// replaces the New Note button that was on the bar: the place a new
+    /// note will land is now shown rather than described.
+    case add(NoteSection, Int)
 
     var id: String {
         switch self {
         case .note(let note, _, _): return "n:" + note.id
         case .section(let section, _): return "s:" + section.id
+        case .add(let section, _): return "+:" + section.id
         }
     }
 }
