@@ -42,5 +42,10 @@ capability table. 157 transcribed tests.
 - **Dragging a row** to reorder or to move a note between sections (the
   order file is written already; the gesture is not).
 - **The session**: which notes are open, and where the caret was.
-- **Packaging**: electron-builder for a signed `.app` and an `.exe`, and a
-  `dtp` lane of its own.
+- **Packaging, the rest of it**: the three targets are configured and the
+  macOS bundle has been packed and run from `dist-electron/`. Still to do:
+  run the Linux build ON Linux (an Arch box or a container — a
+  `.pkg.tar.zst` cannot be cross-built from a Mac), the Windows build on
+  Windows, a signed Mac build (Sean's keychain holds TWO identities with
+  the same name, and `codesign` refuses an ambiguous one), and a `dtp`
+  lane of its own.

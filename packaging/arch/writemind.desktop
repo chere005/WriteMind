@@ -1,0 +1,12 @@
+[Desktop Entry]
+Type=Application
+Name=WriteMind
+GenericName=Notebook
+Comment=A notebook, a camera and a drawing layer over both
+Exec=writemind %F
+Icon=writemind
+Terminal=false
+Categories=Office;TextEditor;
+MimeType=text/markdown;text/plain;
+Keywords=notes;markdown;notebook;writing;
+StartupWMClass=WriteMind

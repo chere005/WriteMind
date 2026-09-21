@@ -36,7 +36,21 @@ there so we can keep working on the macos version here"). It is a clone of
   writing one folder is the bug that cost two cells on 2026-09-20, and
   `mayWrite` is a guard, not a licence.
 - **`npm test` is the suite.** It must pass before anything is committed,
-  the same way `tools/test.sh` gates the Swift side.
+  the same way `tools/test.sh` gates the Swift side. It covers
+  `packages/*/test` AND `apps/*/test` — the shell's own rules (which
+  reader this machine has, where a shipped helper lives inside an asar)
+  are testable and are tested.
+- **THREE PLATFORMS, AND ARCH IS ONE OF THEM** (Sean, 2026-09-21: "make a
+  version of writemind for linux also.. make sure to target functioning on
+  ArchLinux"). `docs/BUILDING.md` is the how and `packaging/arch/PKGBUILD`
+  is the Arch way — built against the system `electron` rather than
+  shipping a second Chromium. A package is built ON the platform it is
+  for: an AppImage cross-builds from a Mac, a `.pkg.tar.zst` does not.
+- **A capability is a FILE BEING THERE, and it is asked once**
+  (`capabilitiesFor(platform, {ocr})` plus `apps/desktop/src/main/
+  helpers.ts`). Do not add a second `process.platform` check anywhere; add
+  a helper lookup instead, and let the side that has not got it show
+  nothing at all.
 
 Everything below this line is the macOS app's own AGENTS.md, kept whole
 because almost all of it is about the MODEL rather than about AppKit — the

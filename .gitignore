@@ -23,3 +23,6 @@ out/
 
 # The compiled macOS helper: built by tools/build-vision.sh, never committed
 apps/desktop/out/
+
+# electron-builder output
+dist-electron/

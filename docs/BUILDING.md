@@ -1,72 +1,82 @@
-# Building, shipping, and where things live
+# Building and shipping WriteMind
 
-## Building
-
-Xcode 26 on macOS 14 or later. No dependencies, no package manager.
-
-```sh
-sh tools/run.sh          # Debug build, then open it
-sh tools/test.sh         # the unit suite (WriteMindTests)
-sh tools/build.sh --release
-```
-
-Or open `WriteMind.xcodeproj` and press Run.
-
-Run this once, first:
+One codebase, three platforms. Nothing below is different per platform
+except the last step, which is what a package IS.
 
 ```sh
-sh tools/setup-signing.sh
+npm install
+npm test        # the ported model, against the transcribed Swift suite
+npm run dev     # vite + electron, the window reloading on save
 ```
 
-The mark — the one-stroke WM in `assets/logo.svg`, cousin to CalMind's CM
-and AcctMind's AM — is the only source of the app icon; `sh tools/make-icons.sh`
-renders every size from it.
-
-It puts a local code-signing certificate in your login keychain (the keychain
-asks for your password — that dialog is macOS's, and only you can answer it).
-macOS remembers "allow the camera" and "allow this folder" against an app's
-signature, so without a stable one every rebuild looks like a new app and asks
-again. With it, you allow each once and they stay allowed. Builds work without
-it; they just say so. If the folder permission is ever refused anyway, the
-sidebar offers **Choose Folder…** — a folder you pick is granted then and
-there.
-
-## The layout
-
-```
-WriteMind/          the app: WriteMindApp, AppState, Notes/, Camera/,
-                    Editor/, Drawing/, Views/, Support/, Assets.xcassets
-WriteMindTests/     XCTest — formatting, parsing, titles, colours, sidecars
-WriteMind.xcodeproj synchronized root groups: a file on disk is in the target
-tools/              the scripts, all `sh tools/<name>.sh`
-AGENTS.md           how to work in here; imports the AgentSuite baseline
-```
-
-`AGENTS.md` has the file-by-file map and the standing rules.
-
-## Releasing
+## The build
 
 ```sh
-sh tools/dtp.sh      # deploy, tag, push
-sh tools/tdtp.sh     # the unit suite first, then the same
+npm -w @writemind/desktop run build
 ```
 
-There is no server and no store: **the deploy is the Mac bundle.** The lane
-bumps the minor version in the pbxproj, builds Release into
-`dist/WriteMind.app`, smokes it (launches and stays up), installs it at
-`/Applications/WriteMind.app`, tags a bare `x.y.0`, and pushes atomically.
-A failed build leaves the version untagged and the re-run reuses it. Each
-run reports to seancheren.com/status through CoreMind's `bin/report-status.sh`
-when CoreMind is checked out beside this repo, and CoreMind's
-`npm run dtp -- all` ships WriteMind in turn, as an independent target.
+Three things, in order: the renderer (vite → `apps/desktop/out/renderer`),
+the shell (esbuild → `out/main/main.mjs` and `out/preload/preload.cjs`), and
+`tools/build-vision.sh`, which compiles the macOS Vision helper when it is
+run on a Mac and **does nothing anywhere else** — that is not a failure, it
+is the capability rule: see `docs/PORT.md`.
 
-## Where things are on disk
+## Packages
 
-| what | where |
-|---|---|
-| notes | `~/Documents/WriteMind/<name>.md`, in section folders |
-| sidebar order | `~/Documents/WriteMind/.writemind/order.json` |
-| drawing objects | `~/Documents/WriteMind/.drawings/<name>.json` |
-| pictures | `~/Documents/WriteMind/.drawings/media/<uuid>.png` |
-| settings (panes, pen, text style, last camera) | `defaults read com.seancheren.WriteMind` |
-| the installed app | `/Applications/WriteMind.app` |
+```sh
+npm -w @writemind/desktop run package:mac      # dmg + zip
+npm -w @writemind/desktop run package:win      # nsis + portable
+npm -w @writemind/desktop run package:linux    # pacman + AppImage + deb
+```
+
+They land in `dist-electron/`. `apps/desktop/electron-builder.yml` is the
+whole configuration.
+
+**A package is built on the platform it is for.** An AppImage can be
+cross-built from a Mac; a `.pkg.tar.zst` cannot, and a package nobody has
+installed is not one to ship.
+
+## Arch Linux
+
+Arch is a first-class target, and there are two ways to install on it.
+
+**The package electron-builder makes** — self-contained, its own Chromium:
+
+```sh
+sh tools/build-linux.sh pacman
+sudo pacman -U dist-electron/writemind-*.pkg.tar.zst
+```
+
+**The Arch way** — built from source against the system `electron`, which
+is smaller and updates with Arch's own:
+
+```sh
+cd packaging/arch
+makepkg -si
+```
+
+`packaging/arch/PKGBUILD` declares `electron gtk3 nss alsa-lib glib2
+xdg-utils`, and `tesseract` + `tesseract-data-eng` as OPTIONAL — they are
+what "Read the words out of this picture" needs, and with neither installed
+the app runs the same and simply does not offer it.
+
+Two Arch things worth knowing:
+
+- **Wayland.** The app sets `--ozone-platform-hint=auto` itself, so a
+  Wayland session gets a Wayland window rather than a blurry Xwayland one.
+  Nothing to pass.
+- **The sandbox.** Electron's `chrome-sandbox` must be setuid root. Both
+  packages install it that way; running `electron out/main/main.mjs`
+  straight out of a source tree on a kernel with unprivileged user
+  namespaces off needs `--no-sandbox`.
+
+## Trashing a note
+
+`shell.trashItem` is the desktop's own trash — Finder's, Explorer's, and on
+Linux `gio trash` (glib2). Without it a trash would be a delete, so glib2
+is a dependency rather than an optional one.
+
+## The version
+
+`apps/desktop/package.json` holds it, and electron-builder reads it from
+there. The Swift app's `MARKETING_VERSION` is its own and is not this one.

@@ -212,7 +212,10 @@ export function App() {
   const readPicture = useCallback(async (file: string, id: string) => {
     const out = await window.wm.readPicture(file)
     const words = out.lines.filter((line) => line.confidence >= 0.3).map((line) => line.text)
-    if (words.length === 0) return
+    if (words.length === 0) {
+      console.error("WriteMind: the reader found no words in that picture")
+      return
+    }
     const editor = view
     const at = editor ? editor.state.selection.main.head : text.length
     const opened = insertBlock(text, at)

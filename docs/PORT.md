@@ -57,19 +57,25 @@ the shell, and neither may decide any of it for itself.
 `packages/core/src/platform/capabilities.ts` is the ONE place that answers
 this. Nothing else asks `process.platform`.
 
-| | macOS | Windows |
-|---|---|---|
-| The notebook, the drawing layer, the files | yes | yes |
-| Export ▸ PDF | yes | yes (Chromium prints the page) |
-| The camera, the box, and the ink lifted off the paper | yes | yes |
-| Reading handwriting into markdown | yes — `tools/vision/wm-vision.swift` | no |
-| Finding the page in the frame by itself | not yet (the helper answers, nothing warps the frame through it) | no |
+| | macOS | Windows | Linux (Arch) |
+|---|---|---|---|
+| The notebook, the drawing layer, the files | yes | yes | yes |
+| Export ▸ PDF | yes | yes | yes (Chromium prints the page) |
+| The camera, the box, and the ink lifted off the paper | yes | yes | yes |
+| Reading a picture's words | `wm-vision` (Vision) | `tesseract` if installed | `tesseract` if installed |
+| Finding the page in the frame by itself | not yet — the helper answers, nothing warps the frame through it | no | no |
 
-**The Mac's extra feature is a BINARY BEING THERE.** `tools/build-vision.sh`
-compiles `wm-vision` on macOS and does nothing anywhere else, and the
-capability is whether that file exists and is executable. Nothing asks
-`process.platform` at the point of use, a Mac with no helper built is a Mac
-without OCR, and the Windows build shows no button for it at all.
+**A CAPABILITY IS A FILE BEING THERE, and that is the whole rule.** There is
+no table of operating systems in the code: `capabilitiesFor(platform,
+{ocr})` asks one question, and the shell answers the helper half by looking
+for `wm-vision` (built by `tools/build-vision.sh` on macOS) or `tesseract`
+on the PATH — Arch's `tesseract` and `tesseract-data-eng`, which the package
+lists as OPTIONAL. A Mac with no helper built is a Mac without OCR. Nothing
+anywhere else asks `process.platform`.
+
+Vision reads handwriting and tesseract does not, much — so the Mac keeps
+its extra feature rather than everyone being levelled down to the worst
+reader, which is what a "one codebase" port usually costs.
 
 **The rule for the side that cannot do it: say nothing and show nothing.** A
 button that is there but dead, or a dialog explaining what this build cannot
@@ -88,6 +94,26 @@ its first run.
 `NoteWriting.mayWrite` came across with everything else: the app owns the
 file only while the bytes on disk are the bytes it last read or wrote. A
 refusal keeps the buffer and says so in the footer.
+
+## Linux, and Arch in particular
+
+Sean, 2026-09-21: "make a version of writemind for linux also.. make sure
+to target functioning on ArchLinux". It is the same build; what Arch needed
+was four things, and all four are in the tree rather than in a wiki page:
+
+- **`pacman` is a target** beside the AppImage, and `packaging/arch/PKGBUILD`
+  is the other route — built from source against Arch's OWN `electron`
+  rather than shipping a second Chromium, which is what an AUR user
+  expects.
+- **Wayland**: the app sets `--ozone-platform-hint=auto` itself, so a
+  Wayland session gets a Wayland window instead of a blurred Xwayland one.
+- **The notes folder** is `app.getPath("documents")`, which reads the XDG
+  user directory — a machine whose documents folder is somewhere else is
+  respected rather than corrected.
+- **Trashing a note** is `shell.trashItem`, which on Linux is `gio trash`;
+  glib2 is a dependency because without it a trash would be a delete.
+
+`docs/BUILDING.md` is the how.
 
 ## Running it
 

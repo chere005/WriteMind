@@ -5,11 +5,13 @@ and a drawing layer over both. Notes are plain `.md` files in a folder —
 nothing here is a database, and nothing rewrites a file the user did not
 type in.
 
-**This repo is the cross-platform WriteMind: macOS and Windows, one
-codebase.** The macOS-only Swift app it was ported from is in `WriteMind/`
+**This repo is the cross-platform WriteMind: macOS, Windows and Linux,
+one codebase.** The macOS-only Swift app it was ported from is in `WriteMind/`
 as a reference, and its living copy is `~/GIT/WriteMind`.
 
 - `docs/PORT.md` — what was ported, what was rebuilt, and why CodeMirror
+- `docs/BUILDING.md` — the build, the three packages, and Arch in
+  particular
 - `docs/TODO.md` — what is left
 - `AGENTS.md` — how the code is put together (the Mac app's own rules are
   in there too, and they are still the rules: they were never about AppKit)

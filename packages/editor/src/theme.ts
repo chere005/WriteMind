@@ -15,7 +15,7 @@ export const notebookTheme = EditorView.theme({
     height: "100%",
   },
   ".cm-scroller": {
-    fontFamily: "-apple-system, 'Segoe UI', system-ui, sans-serif",
+    fontFamily: "-apple-system, 'Segoe UI', Cantarell, 'Noto Sans', Ubuntu, 'DejaVu Sans', system-ui, sans-serif",
     lineHeight: "1.45",
     overflow: "auto",
     position: "relative",
@@ -35,7 +35,7 @@ export const notebookTheme = EditorView.theme({
   ".wm-underline": { textDecoration: "underline" },
   ".wm-strike": { textDecoration: "line-through" },
   ".wm-code": {
-    fontFamily: "ui-monospace, SFMono-Regular, Menlo, Consolas, monospace",
+    fontFamily: "ui-monospace, SFMono-Regular, Menlo, Consolas, 'DejaVu Sans Mono', monospace",
     fontSize: "14.2px",
     color: "var(--wm-code)",
   },
@@ -68,7 +68,7 @@ export const notebookTheme = EditorView.theme({
     color: "var(--wm-soft)",
   },
   ".wm-code-line": {
-    fontFamily: "ui-monospace, SFMono-Regular, Menlo, Consolas, monospace",
+    fontFamily: "ui-monospace, SFMono-Regular, Menlo, Consolas, 'DejaVu Sans Mono', monospace",
     fontSize: "14.2px",
     backgroundColor: "var(--wm-code-bg)",
   },

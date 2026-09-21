@@ -41,7 +41,10 @@ html, body, #root {
   height: 100%;
   margin: 0;
   overflow: hidden;
-  font-family: -apple-system, "Segoe UI", system-ui, sans-serif;
+  /* Every platform's own: San Francisco, Segoe, and Arch's usual
+     Cantarell / Noto / DejaVu before the generic fallback. */
+  font-family: -apple-system, "Segoe UI", Cantarell, "Noto Sans", Ubuntu,
+    "DejaVu Sans", system-ui, sans-serif;
   color: var(--wm-text);
   background: var(--wm-page);
   -webkit-font-smoothing: antialiased;

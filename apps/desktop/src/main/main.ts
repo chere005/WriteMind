@@ -13,11 +13,8 @@
 import {
   app, BrowserWindow, dialog, ipcMain, net, protocol, session, shell, systemPreferences,
 } from "electron"
-import { execFile } from "node:child_process"
-import { promisify } from "node:util"
-import { accessSync, constants, watch, type FSWatcher } from "node:fs"
+import { watch, type FSWatcher } from "node:fs"
 import { promises as fs } from "node:fs"
-import os from "node:os"
 import path from "node:path"
 import { fileURLToPath } from "node:url"
 import { capabilitiesFor } from "@writemind/core"
@@ -25,6 +22,7 @@ import {
   createNote, createSection, mediaPath, readDrawing, readNote, renameNote, reorder, saveMedia,
   tree, writeDrawing, writeNote,
 } from "./notes"
+import { canRead, readWords } from "./helpers"
 
 const here = path.dirname(fileURLToPath(import.meta.url))
 
@@ -34,32 +32,24 @@ const here = path.dirname(fileURLToPath(import.meta.url))
 protocol.registerSchemesAsPrivileged([
   { scheme: "wm", privileges: { standard: true, secure: true, supportFetchAPI: true } },
 ])
+
+// WAYLAND. Arch is as likely to be Wayland as X11, and Electron defaults to
+// X11 through Xwayland — which works, but blurs the window on a scaled
+// display and drops fractional scaling. The hint takes Wayland when the
+// session is Wayland and changes nothing anywhere else.
+if (process.platform === "linux") {
+  app.commandLine.appendSwitch("ozone-platform-hint", "auto")
+}
 const DEV = process.env.WRITEMIND_DEV === "1"
 
-const run = promisify(execFile)
-
 /**
- * THE MAC'S EXTRA FEATURES ARE A BINARY BEING THERE. `tools/build-vision.sh`
- * compiles it on macOS and does nothing anywhere else, so the capability is
- * simply whether it exists — no platform check at the point of use, and a
- * Windows build offers nothing it cannot do.
+ * Where the notes live. `app.getPath("documents")` rather than
+ * `~/Documents`: on Linux that reads the XDG user directory, so a machine
+ * whose documents folder is called something else — or is somewhere else
+ * entirely — is respected rather than corrected.
  */
-const visionHelper = (): string | null => {
-  if (process.platform !== "darwin") return null
-  const where = path.join(here, "../helpers/wm-vision")
-  try {
-    // `require` does not exist in this bundle — it is ESM — and reaching
-    // for it here quietly turned the capability off, which showed up as
-    // the Mac's own feature simply not being offered.
-    accessSync(where, constants.X_OK)
-    return where
-  } catch {
-    return null
-  }
-}
-
 const notesRoot = (): string =>
-  process.env.WRITEMIND_NOTES ?? path.join(os.homedir(), "Documents", "WriteMindCross")
+  process.env.WRITEMIND_NOTES ?? path.join(app.getPath("documents"), "WriteMindCross")
 
 let window: BrowserWindow | null = null
 let watcher: FSWatcher | null = null
@@ -87,12 +77,24 @@ async function createWindow(): Promise<void> {
     // because a window that does not look like the system's is the first
     // thing that says "this was ported".
     titleBarStyle: process.platform === "darwin" ? "hiddenInset" : "default",
+    // Linux window managers take the icon from the window itself; macOS
+    // and Windows take it from the bundle.
+    ...(process.platform === "linux"
+      ? { icon: path.join(here, "../renderer/icon.png") }
+      : {}),
     webPreferences: {
       preload: path.join(here, "../preload/preload.cjs"),
       contextIsolation: true,
       nodeIntegration: false,
       sandbox: false,
     },
+  })
+
+  // THE RENDERER'S CONSOLE GOES TO THE APP'S LOG. A desktop app has no
+  // console anybody has open, and a message nobody sees is a bug nobody
+  // finds — this is how the two that cost an hour today were caught.
+  window.webContents.on("console-message", (_event, level, message, line, source) => {
+    if (level >= 2) console.error(`[renderer] ${message} (${source}:${line})`)
   })
 
   if (DEV) await window.loadURL("http://localhost:5173")
@@ -126,18 +128,12 @@ app.whenReady().then(async () => {
   })
 
   ipcMain.handle("app:capabilities", () => {
-    const helper = visionHelper()
     return {
-      ...capabilitiesFor(process.platform),
-      // What the helper can actually do, rather than what the platform
-      // could in principle: a Mac with no helper built is a Mac without
-      // OCR, and it says so by not offering it.
-      handwritingOCR: helper !== null,
-      // Not yet: the page quad is found, but nothing warps the frame
-      // through it — see docs/TODO.md. Until it does, the box is dragged
-      // by hand on both platforms, which is the one absence the camera
-      // pane mentions out loud.
-      findsThePage: false,
+      // A CAPABILITY IS A FILE BEING THERE: `wm-vision` on macOS,
+      // `tesseract` anywhere. Neither is a dependency — with neither
+      // installed the app runs the same and simply does not offer to
+      // read a picture.
+      ...capabilitiesFor(process.platform, { ocr: canRead(here) }),
       platform: process.platform,
       root: notesRoot(),
     }
@@ -158,13 +154,9 @@ app.whenReady().then(async () => {
   ipcMain.handle("notes:reveal", () => shell.openPath(notesRoot()))
   ipcMain.handle("media:save", (_event, bytes: Uint8Array, extension: string) =>
     saveMedia(notesRoot(), bytes, extension))
-  /** The words in a picture, by Vision, on the platform that has it. */
-  ipcMain.handle("vision:read", async (_event, file: string) => {
-    const helper = visionHelper()
-    if (!helper) return { lines: [] }
-    const { stdout } = await run(helper, ["text", mediaPath(notesRoot(), file)])
-    return JSON.parse(stdout) as { lines: { text: string; confidence: number }[] }
-  })
+  /** The words in a picture, by whichever reader this machine has. */
+  ipcMain.handle("vision:read", (_event, file: string) =>
+    readWords(here, mediaPath(notesRoot(), file)))
 
   ipcMain.handle("media:choose", async () => {
     if (!window) return null

@@ -1,0 +1,86 @@
+# How WriteMind is packaged, for the three platforms it runs on.
+#
+# ARCH LINUX IS A FIRST-CLASS TARGET (Sean, 2026-09-21: "make sure to
+# target functioning on ArchLinux"), so `pacman` is in the list beside the
+# AppImage — an Arch box installs the app with `pacman -U` and gets a
+# desktop entry, an icon and a MIME type, rather than a file it has to
+# remember where it put.
+appId: com.seancheren.writemind
+productName: WriteMind
+copyright: Sean Cheren
+directories:
+  buildResources: ../../packaging
+  output: ../../dist-electron
+
+files:
+  - out/**
+  - package.json
+
+# THE HELPER MUST BE A FILE ON DISK. Everything inside an asar archive is
+# read through Electron, and nothing inside one can be executed — so the
+# macOS Vision binary is unpacked beside it, and `helpers.ts` knows to look
+# in `app.asar.unpacked` when it is running from an archive.
+asarUnpack:
+  - out/helpers/**
+
+mac:
+  category: public.app-category.productivity
+  target:
+    - target: dmg
+      arch: [arm64, x64]
+    - target: zip
+      arch: [arm64, x64]
+  # The camera prompt's wording, which macOS shows verbatim.
+  extendInfo:
+    NSCameraUsageDescription: WriteMind uses the camera to take the writing off a notebook page.
+
+win:
+  target:
+    - target: nsis
+      arch: [x64, arm64]
+    - target: portable
+      arch: [x64]
+
+linux:
+  category: Office
+  synopsis: A notebook, a camera and a drawing layer over both
+  description: >
+    WriteMind is a markdown notebook whose notes are plain .md files in a
+    folder, with a drawing layer over the words and a camera that takes the
+    writing off a page. Nothing here is a database and nothing rewrites a
+    file you did not type in.
+  desktop:
+    entry:
+      MimeType: text/markdown;text/plain;
+      Keywords: notes;markdown;notebook;writing;
+  target:
+    - target: pacman
+      arch: [x64, arm64]
+    - target: AppImage
+      arch: [x64, arm64]
+    - target: deb
+      arch: [x64]
+
+pacman:
+  # What an Arch box needs BESIDE the app. `gtk3`, `nss` and `alsa-lib` are
+  # Electron's own; `libnotify` and `xdg-utils` are the desktop's. Trashing
+  # a note goes through `gio`, which is glib2's. TESSERACT IS NOT HERE ON
+  # PURPOSE: it is the optional reader, and the app runs without it and
+  # simply does not offer to read a picture (see docs/PORT.md) — the
+  # PKGBUILD in packaging/arch lists it as an optdepend, which is the
+  # field electron-builder's pacman target has no room for.
+  depends:
+    - gtk3
+    - nss
+    - alsa-lib
+    - libnotify
+    - xdg-utils
+    - glib2
+
+deb:
+  depends:
+    - libgtk-3-0
+    - libnss3
+    - libasound2
+    - libnotify4
+    - xdg-utils

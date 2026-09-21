@@ -1,0 +1,55 @@
+# Maintainer: Sean Cheren <seancheren@gmail.com>
+#
+# The Arch way: build the app from source and run it on the SYSTEM electron
+# rather than shipping a second Chromium. `npm -w @writemind/desktop run
+# package:linux` is the other route and makes a self-contained package;
+# this one is smaller, updates with Arch's electron, and is what an AUR
+# user expects.
+pkgname=writemind
+pkgver=0.1.0
+pkgrel=1
+pkgdesc="A notebook, a camera and a drawing layer over both"
+arch=('x86_64' 'aarch64')
+url="https://github.com/chere005/WriteMindCross"
+license=('MIT')
+depends=('electron' 'gtk3' 'nss' 'alsa-lib' 'glib2' 'xdg-utils')
+makedepends=('npm' 'nodejs' 'git')
+optdepends=(
+  'tesseract: reading the words out of a captured page'
+  'tesseract-data-eng: the English data tesseract reads with'
+)
+source=("git+https://github.com/chere005/WriteMindCross.git")
+sha256sums=('SKIP')
+
+build() {
+  cd "$srcdir/WriteMindCross"
+  npm install --no-audit --no-fund
+  npm -w @writemind/desktop run build
+}
+
+check() {
+  cd "$srcdir/WriteMindCross"
+  npm test
+}
+
+package() {
+  cd "$srcdir/WriteMindCross"
+  install -dm755 "$pkgdir/usr/lib/$pkgname"
+  cp -r apps/desktop/out "$pkgdir/usr/lib/$pkgname/"
+  install -Dm644 apps/desktop/package.json "$pkgdir/usr/lib/$pkgname/package.json"
+
+  # The launcher. `--ozone-platform-hint=auto` is set by the app itself;
+  # this is only here for a session that wants to override it.
+  install -dm755 "$pkgdir/usr/bin"
+  cat > "$pkgdir/usr/bin/$pkgname" <<'LAUNCH'
+#!/bin/sh
+exec electron /usr/lib/writemind/out/main/main.mjs "$@"
+LAUNCH
+  chmod 755 "$pkgdir/usr/bin/$pkgname"
+
+  install -Dm644 packaging/arch/writemind.desktop \
+    "$pkgdir/usr/share/applications/$pkgname.desktop"
+  install -Dm644 packaging/icon.png \
+    "$pkgdir/usr/share/icons/hicolor/512x512/apps/$pkgname.png"
+  install -Dm644 LICENSE "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
+}
