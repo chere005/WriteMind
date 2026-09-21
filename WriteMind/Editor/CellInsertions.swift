@@ -88,6 +88,19 @@ final class CellInsertions: NSView {
     /// The caret was put in a seam: whoever owns the keyboard is told, and
     /// the note itself is untouched until something is typed.
     var onArm: ((Int) -> Void)?
+    /// Cells picked up by dragging a bar up or down the page (Sean,
+    /// 2026-09-21). The same command the bracket gutter's drag gives.
+    var onSelectCells: (([NSRange]) -> Void)?
+    /// Where every cell is, for that drag to read. The pane hands these
+    /// in beside the seams — they are measured off the same layout.
+    var cellSpans: [CellSelection.Span] = []
+    /// How far a press has to travel before it is a drag and not a click
+    /// that wandered. The same distance a bracket asks for.
+    static let dragThreshold: CGFloat = 10
+    /// The press that is still deciding which it is.
+    private var pressed: (seam: CellSeams.Seam, y: CGFloat)?
+    /// The cell a drag is growing from, once it has started.
+    private var picking: NSRange?
     /// The + on the bar was pressed and a kind picked off the menu.
     var onChoose: ((CellTypes.Kind) -> Void)?
 
@@ -134,8 +147,12 @@ final class CellInsertions: NSView {
         // The armed bar stays drawn — it IS the cursor; the hovered one is
         // only a hint and goes with the pointer.
         guard let seam = marked else { return }
+        // The one that follows the pointer is a HINT and is drawn as one;
+        // the armed bar is the cursor and is drawn like it (Sean,
+        // 2026-09-21: "the bar that appears when moving the cursor is a
+        // much fainter one until it is clicked").
         let accent = NSColor.controlAccentColor
-        accent.withAlphaComponent(0.85).setFill()
+        accent.withAlphaComponent(armed == nil ? 0.22 : 0.85).setFill()
         // The line runs the width of the page, the way a cell insertion
         // bar does in a notebook.
         NSBezierPath(rect: NSRect(x: 18, y: seam.line - 1, width: max(0, bounds.width - 40), height: 2)).fill()
@@ -304,11 +321,35 @@ final class CellInsertions: NSView {
         // matters is whether there was a + under the pointer when it went
         // down.
         let drawn = marked
+        pressed = (seam, point.y)
+        picking = nil
         onArm?(seam.offset)
         guard Self.pressesPlus(at: point, in: seam, drawnOn: drawn) else { return }
         let target = CellSeams.plusTarget(in: seam, leading: Self.plusLeading)
         CellTypeMenu.popUp(current: chosenType, at: NSPoint(x: 2, y: target.maxY),
                            in: self) { [weak self] kind in self?.onChoose?(kind) }
+    }
+
+    override func mouseDragged(with event: NSEvent) {
+        guard let start = pressed else { return }
+        let point = convert(event.locationInWindow, from: nil)
+        let travelled = point.y - start.y
+        guard picking != nil || abs(travelled) >= Self.dragThreshold else { return }
+        // The anchor is settled by the first real movement and then kept:
+        // a drag that starts downwards and is dragged back up past its
+        // own start still grows from the cell it began with, the way a
+        // drag down the bracket gutter does.
+        let anchor = picking ?? CellSelection.cell(fromSeamAt: start.seam.line,
+                                                   goingDown: travelled > 0, in: cellSpans)
+        guard let anchor else { return }
+        picking = anchor
+        guard let over = CellSelection.cell(at: point.y, in: cellSpans) else { return }
+        onSelectCells?(CellSelection.between(anchor, over, in: cellSpans.map(\.range)))
+    }
+
+    override func mouseUp(with event: NSEvent) {
+        pressed = nil
+        picking = nil
     }
 
     /// The bar goes out when the caret goes anywhere else.

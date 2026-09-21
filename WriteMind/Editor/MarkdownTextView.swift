@@ -157,6 +157,16 @@ struct MarkdownTextView: NSViewRepresentable {
         // a click, an arrow key, a note switch, the pen going up.
         tv.onArmChanged = { [weak insertions] offset in insertions?.armedOffset = offset }
         // And the + hands its choice back to the same one truth.
+        // Dragging a bar up or down takes the cells it passes, the same
+        // command the bracket gutter's drag gives (Sean, 2026-09-21).
+        insertions.onSelectCells = { [weak coordinator = context.coordinator, weak tv] ranges in
+            guard let coordinator, let tv else { return }
+            // A drag is a selection, not an insertion point: the bar it
+            // started from goes out, or the note would have a cursor
+            // between two cells AND three cells held at once.
+            (tv as? PasteAwareTextView)?.armedSeam = nil
+            coordinator.select(ranges, in: tv)
+        }
         insertions.onChoose = { [weak tv] kind in
             (tv as? PasteAwareTextView)?.armedType = kind
         }
@@ -752,6 +762,12 @@ struct MarkdownTextView: NSViewRepresentable {
                                                                 height: max(tv.bounds.height, 1)))
                 if insertions.frame != wanted { insertions.frame = wanted }
                 insertions.measure(MarkdownTextView.seams(in: tv))
+                // The same boxes the gutter's brackets are drawn from, so
+                // a drag down a bar picks up exactly what a drag down the
+                // brackets does.
+                insertions.cellSpans = brackets
+                    .filter { !$0.foldable }
+                    .map { (top: $0.top, bottom: $0.bottom, range: $0.range) }
             }
         }
 

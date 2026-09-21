@@ -12,6 +12,50 @@ final class CellSelectionTests: XCTestCase {
     private let note = "First cell\n\nSecond cell\n\nThird cell"
     private var cells: [NSRange] { MarkdownParser.positioned(from: note).map(\.range) }
 
+    /// Three cells, each 20 points tall with an 8-point seam between them,
+    /// the way the page stacks them.
+    private var stack: [CellSelection.Span] {
+        [(top: 20, bottom: 40, range: cells[0]),
+         (top: 48, bottom: 68, range: cells[1]),
+         (top: 76, bottom: 96, range: cells[2])]
+    }
+
+    // MARK: - Dragging a bar up or down
+
+    func testADragDownABarStartsOnTheCellBelowIt() {
+        // The bar between the first two cells, at y = 44.
+        XCTAssertEqual(CellSelection.cell(fromSeamAt: 44, goingDown: true, in: stack), cells[1])
+    }
+
+    func testADragUpABarStartsOnTheCellAboveIt() {
+        XCTAssertEqual(CellSelection.cell(fromSeamAt: 44, goingDown: false, in: stack), cells[0])
+    }
+
+    func testTheBarAboveTheFirstCellHasNothingAboveItSoItTakesTheFirst() {
+        // A drag has to select something; the nearest cell the other way
+        // is the honest answer at either end of the note.
+        XCTAssertEqual(CellSelection.cell(fromSeamAt: 10, goingDown: false, in: stack), cells[0])
+    }
+
+    func testTheTailBarHasNothingBelowItSoItTakesTheLast() {
+        XCTAssertEqual(CellSelection.cell(fromSeamAt: 400, goingDown: true, in: stack), cells[2])
+    }
+
+    func testANoteWithNoCellsHasNothingToDragTo() {
+        XCTAssertNil(CellSelection.cell(fromSeamAt: 44, goingDown: true, in: []))
+    }
+
+    func testADragFromABarDownTwoCellsTakesBoth() {
+        let anchor = try! XCTUnwrap(CellSelection.cell(fromSeamAt: 44, goingDown: true, in: stack))
+        let over = try! XCTUnwrap(CellSelection.cell(at: 90, in: stack))
+        XCTAssertEqual(CellSelection.between(anchor, over, in: cells), [cells[1], cells[2]])
+    }
+
+    func testSpansOutOfOrderAreStillReadTopToBottom() {
+        XCTAssertEqual(CellSelection.cell(fromSeamAt: 44, goingDown: true, in: stack.reversed()),
+                       cells[1])
+    }
+
     // MARK: - What lights a bracket
 
     func testOneRangeOverTheWholeCellPicksIt() {

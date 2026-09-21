@@ -82,6 +82,25 @@ enum CellSelection {
         return spans.min { reach(from: y, to: $0) < reach(from: y, to: $1) }?.range
     }
 
+    /// The cell a drag that STARTED IN A SEAM is anchored on: the one
+    /// below the bar when the drag goes down, the one above it when it
+    /// goes up (Sean, 2026-09-21: "clicking and draging a bar up or down
+    /// can select cells").
+    ///
+    /// The bar is between two cells and belongs to neither, so the
+    /// direction is the only thing that says which end the drag is
+    /// growing from. At the top of the note there is nothing above and at
+    /// the bottom nothing below; the nearest cell in the other direction
+    /// is the honest answer, because a drag has to select something.
+    static func cell(fromSeamAt y: CGFloat, goingDown: Bool, in spans: [Span]) -> NSRange? {
+        guard !spans.isEmpty else { return nil }
+        let ordered = spans.sorted { $0.top < $1.top }
+        if goingDown {
+            return (ordered.first { $0.top >= y } ?? ordered.last)?.range
+        }
+        return (ordered.last { $0.bottom <= y } ?? ordered.first)?.range
+    }
+
     private static func reach(from y: CGFloat, to span: Span) -> CGFloat {
         y < span.top ? span.top - y : y - span.bottom
     }

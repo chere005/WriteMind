@@ -69,6 +69,10 @@ struct MarkdownPreview: View {
     @State private var focusToken = 0
     @State private var caretAtStart = false
     @State private var hoveredSeam: SeamID?
+    /// The cell a drag from a bar is growing from, once it has started —
+    /// settled by the first movement and then kept, so dragging back past
+    /// the start does not swap ends.
+    @State private var seamDragAnchor: NSRange?
     /// What this page's seams last put on the pointer, so one of them
     /// can tell its own cursor from the hand a bracket set on the way
     /// past. Every one of them writes it: which seam put it up is
@@ -474,7 +478,12 @@ struct MarkdownPreview: View {
                             .help("What the next thing typed here becomes")
                             Capsule().frame(height: 2)
                         }
-                        .foregroundStyle(Color.accentColor)
+                        // A hint while the pointer is only passing, the
+                        // cursor itself once it is armed (Sean,
+                        // 2026-09-21: "the bar that appears when moving
+                        // the cursor is a much fainter one until it is
+                        // clicked").
+                        .foregroundStyle(Color.accentColor.opacity(armedSeam == id ? 1 : 0.26))
                         // Drawn inside the page's margin though the seam
                         // itself reaches both edges: the bar is furniture
                         // and lines up with the words, the hit area is
@@ -522,6 +531,21 @@ struct MarkdownPreview: View {
                     }
                 }
                 .onTapGesture { arm(id) }
+                // Dragging a bar up or down takes the cells it passes
+                // (Sean, 2026-09-21: "clicking and draging a bar up or
+                // down can select cells") — the same command a drag down
+                // the bracket column gives, from the other side of the
+                // page. In the seam's own coordinates, so the y is turned
+                // back into the page's before the cells are asked.
+                .gesture(
+                    DragGesture(minimumDistance: CellInsertions.dragThreshold,
+                                coordinateSpace: .local)
+                        .onChanged { value in
+                            dragSeam(from: seam, by: value.translation.height,
+                                     to: seam.top + value.location.y)
+                        }
+                        .onEnded { _ in seamDragAnchor = nil }
+                )
                 // The bar has to hear the keyboard, and there is no text
                 // view on this side to hear it for us.
                 .focusable()
@@ -534,6 +558,23 @@ struct MarkdownPreview: View {
             // just does nothing at all.
             Color.clear.frame(height: height)
         }
+    }
+
+    /// A drag that began on a bar: the cells between where it started and
+    /// where it is now. It is a selection, not an insertion point, so the
+    /// bar goes out — a cursor between two cells and three cells held at
+    /// once are two different answers to "where am I".
+    private func dragSeam(from seam: CellSeams.Seam, by travelled: CGFloat, to y: CGFloat) {
+        let spans = cellBrackets
+            .filter { !$0.foldable && $0.range.location != NSNotFound }
+            .map { (top: $0.top, bottom: $0.bottom, range: $0.range) }
+        let anchor = seamDragAnchor
+            ?? CellSelection.cell(fromSeamAt: seam.line, goingDown: travelled > 0, in: spans)
+        guard let anchor, let over = CellSelection.cell(at: y, in: spans) else { return }
+        seamDragAnchor = anchor
+        armedSeam = nil
+        editingRange = nil
+        selectedCells = CellSelection.between(anchor, over, in: spans.map(\.range))
     }
 
     /// The + on the bar, in the seam view's OWN coordinates — the same
