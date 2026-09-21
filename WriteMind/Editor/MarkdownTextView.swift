@@ -145,6 +145,8 @@ struct MarkdownTextView: NSViewRepresentable {
         // the way of every click that is not in a seam.
         let insertions = CellInsertions(frame: tv.bounds)
         insertions.autoresizingMask = [.width, .height]
+        insertions.onClick = { onClick?() }
+        gutter.onClick = { onClick?() }
         insertions.onArm = { [weak tv] offset in
             guard let tv = tv as? PasteAwareTextView else { return }
             tv.armedSeam = offset

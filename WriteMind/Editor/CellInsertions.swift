@@ -88,6 +88,14 @@ final class CellInsertions: NSView {
     /// The caret was put in a seam: whoever owns the keyboard is told, and
     /// the note itself is untouched until something is typed.
     var onArm: ((Int) -> Void)?
+    /// A click landed here rather than on the drawing layer, so whatever
+    /// was picked up over there should be let go (Sean, 2026-09-21:
+    /// "click away from selected object should deselect"). This layer sits
+    /// ABOVE the text view and swallows the clicks in a seam, so the text
+    /// view's own `onClick` never fired for them — and the tail seam is
+    /// the whole empty page under the last cell, which is exactly where
+    /// "away from the object" is.
+    var onClick: (() -> Void)?
     /// Cells picked up by dragging a bar up or down the page (Sean,
     /// 2026-09-21). The same command the bracket gutter's drag gives.
     var onSelectCells: (([NSRange]) -> Void)?
@@ -310,6 +318,7 @@ final class CellInsertions: NSView {
     override func mouseDown(with event: NSEvent) {
         let point = convert(event.locationInWindow, from: nil)
         guard let seam = seam(at: point) else { return }
+        onClick?()
         // The text view is told, and it tells this layer back through
         // `armedOffset`. Setting it here as well would be a second writer.
         //

@@ -129,6 +129,9 @@ final class NotebookGutter: NSView {
     /// at once (Sean, 2026-09-20: "fix selecting multiple cells by clicking
     /// and dragging, shift clicking, or cmd clicking").
     var onSelectCells: (([NSRange]) -> Void)?
+    /// A click landed on the gutter, so the drawing layer lets go of
+    /// whatever it was holding — see `CellInsertions.onClick`.
+    var onClick: (() -> Void)?
     /// A bracket dragged up or down: the cell changes places with its
     /// neighbour, the way a cell is moved in a notebook (Sean,
     /// 2026-09-20: "make cells behave like mathematica cells").
@@ -229,6 +232,7 @@ final class NotebookGutter: NSView {
         let point = convert(event.locationInWindow, from: nil)
         gesture = nil
         guard let bracket = bracket(at: point) else { return }
+        onClick?()
         if event.clickCount >= 2, bracket.foldable {
             onToggle?(bracket.key)
             return

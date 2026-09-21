@@ -64,6 +64,7 @@ struct EditorPane: View {
                                             scrollOffset = offset
                                             store.canvasScroll = offset
                                         },
+                                        onClick: { textClicks += 1 },
                                         onTopCell: { store.topCell = $0 },
                                         topCell: store.topCell,
                                         collapsed: store.collapsedHere,

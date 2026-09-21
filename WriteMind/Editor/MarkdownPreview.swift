@@ -30,6 +30,12 @@ struct MarkdownPreview: View {
     /// as the page scrolls, and asked for when the page appears, so the
     /// two modes show the same place (Sean, 2026-09-19: "positions stay
     /// the same in markdown and wysiwyg mode").
+    /// A click landed on this page rather than on the drawing layer over
+    /// it, so whatever is picked up there is let go (Sean, 2026-09-21:
+    /// "click away from selected object should deselect"). The source
+    /// pane has had this since the text view's own `onClick`; this side
+    /// never did, so an object stayed picked up whatever was clicked.
+    var onClick: (() -> Void)?
     var onTopCell: ((Int) -> Void)?
     var topCell: Int = 0
     /// The notebook sections that are folded away — the same set the
@@ -569,6 +575,7 @@ struct MarkdownPreview: View {
     /// A box ticked, or unticked. The note is the only place the answer
     /// lives — there is no state beside it to get out of step.
     private func tickTodo(_ block: NSRange, at index: Int) {
+        onClick?()
         guard editable,
               let edit = MarkdownFormatting.toggleTodo(text: markdown, block: block, item: index)
         else { return }
@@ -774,6 +781,7 @@ struct MarkdownPreview: View {
     /// was holding a cursor lets go — a block open for typing and an armed
     /// seam are both a cursor, and three lit brackets are a third.
     private func selectCells(_ ranges: [NSRange]) {
+        onClick?()
         guard editable else { return }
         disarm()
         dropHover()
@@ -845,6 +853,7 @@ struct MarkdownPreview: View {
     /// A click in a seam: the bar goes there and takes the keyboard.
     /// Nothing is written — the note is not touched until a key arrives.
     private func arm(_ id: SeamID) {
+        onClick?()
         guard editable, seamsEnabled else { return }
         // The bar IS the cursor, so nothing else may be holding one: the
         // block that was open closes, caret and all (Sean, 2026-09-20:
@@ -1024,6 +1033,7 @@ struct MarkdownPreview: View {
 
     private func beginEditing(_ range: NSRange, caretAtStart: Bool = false) {
         guard editable else { return }
+        onClick?()
         // Two cursors is what he was looking at before: a block with a
         // caret in it is not a seam with a bar in it, and neither of them
         // is a handful of cells held by their brackets.
