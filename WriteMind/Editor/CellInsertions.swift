@@ -156,20 +156,35 @@ final class CellInsertions: NSView {
     override var isFlipped: Bool { true }
 
     override func draw(_ dirtyRect: NSRect) {
-        // The armed bar stays drawn — it IS the cursor; the hovered one is
-        // only a hint and goes with the pointer.
-        guard let seam = marked else { return }
+        // BOTH of them, when they are not the same seam (Sean,
+        // 2026-09-21: "show the feint bar… even when a solid bar is
+        // drawn between cells"). The armed bar is the cursor and stays
+        // drawn wherever the pointer goes; the faint one still follows
+        // the pointer, so the page always says where a click would put
+        // the cursor next. Only one of them was drawn before, and with a
+        // bar up the page stopped answering that question.
+        if let armed { bar(armed, faint: false) }
+        if let hovered, hovered.offset != armed?.offset { bar(hovered, faint: true) }
+    }
+
+    /// One bar: the line across the page, and the + at the end of it
+    /// where one is drawn.
+    private func bar(_ seam: CellSeams.Seam, faint: Bool) {
         // The one that follows the pointer is a HINT and is drawn as one;
         // the armed bar is the cursor and is drawn like it (Sean,
         // 2026-09-21: "the bar that appears when moving the cursor is a
         // much fainter one until it is clicked").
         let accent = NSColor.controlAccentColor
-        accent.withAlphaComponent(armed == nil ? 0.22 : 0.85).setFill()
+        accent.withAlphaComponent(faint ? 0.22 : 0.85).setFill()
         // The line runs the width of the page, the way a cell insertion
         // bar does in a notebook.
         NSBezierPath(rect: NSRect(x: 18, y: seam.line - 1, width: max(0, bounds.width - 40), height: 2)).fill()
-        // And the plus, which is a button: it brings up the kinds of cell
-        // the next thing typed here can be.
+        // The + is a button and belongs to ONE seam — `marked`, which the
+        // click measures against too. A second + on the faint bar would
+        // be a button that pops no menu, and worse: `pressesPlus` would
+        // have to answer for two seams, which is the hole that put the
+        // cell-type menu up on a plain click (2026-09-20).
+        guard marked?.offset == seam.offset else { return }
         let dot = Self.plus(onTheLineAt: seam.line)
         NSBezierPath(ovalIn: dot).fill()
         NSColor.white.setStroke()
