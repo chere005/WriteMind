@@ -180,7 +180,7 @@ final class MarkArtworkTests: XCTestCase {
         // A cap is half the stroke wide and hangs off the end of the
         // line; on the edge of the unit square it hangs out of the box
         // the handles are drawn round.
-        for kind in [ShapeItem.Kind.check, .cross, .star] {
+        for kind in [ShapeItem.Kind.check, .cross, .star, .question] {
             let box = box(kind)
             XCTAssertGreaterThanOrEqual(box.minX, 0.04, "\(kind) touches the left edge")
             XCTAssertGreaterThanOrEqual(box.minY, 0.04, "\(kind) touches the top edge")
@@ -204,6 +204,43 @@ final class MarkArtworkTests: XCTestCase {
         XCTAssertEqual(short / long, 0.4, accuracy: 0.12, "a tick, not a wide V")
         XCTAssertLessThan(tick[1].x, 0.5, "the knee is left of centre")
         XCTAssertGreaterThan(tick[1].y, tick[0].y, "and below where it starts")
+    }
+
+    func testTheQuestionMarkIsAHookOverADot() {
+        // Sean, 2026-09-21: "yellow ?". A question mark is two strokes
+        // — the hook, and the dot under it — and the hook has to go
+        // OVER the top and come back down to a stem in the middle, or
+        // it is a bent line.
+        let parts = ShapeItem.Kind.question.unitPolylines
+        XCTAssertEqual(parts.count, 2, "the hook and the dot")
+        let hook = parts[0], dot = parts[1]
+
+        let top = hook.min { $0.y < $1.y }!
+        XCTAssertLessThan(top.y, 0.25, "the bowl goes over the top")
+        XCTAssertEqual(top.x, 0.5, accuracy: 0.08, "and its apex is over the middle")
+        XCTAssertLessThan(hook.min { $0.x < $1.x }!.x, 0.35, "round the left")
+        XCTAssertGreaterThan(hook.max { $0.x < $1.x }!.x, 0.65, "and round the right")
+
+        let stem = hook.last!
+        XCTAssertEqual(stem.x, 0.5, accuracy: 0.03, "the stem comes back to the middle")
+        XCTAssertGreaterThan(stem.y, 0.55, "below the bowl")
+        XCTAssertLessThan(stem.y, 0.78)
+        XCTAssertGreaterThan(hook.first!.y, top.y, "and it starts below its own apex")
+    }
+
+    func testTheQuestionMarksDotIsADotUnderTheStem() {
+        let parts = ShapeItem.Kind.question.unitPolylines
+        let hook = parts[0], dot = parts[1]
+        func length(_ line: [CGPoint]) -> CGFloat {
+            zip(line, line.dropFirst()).reduce(0) { $0 + hypot($1.1.x - $1.0.x, $1.1.y - $1.0.y) }
+        }
+        // A round cap draws the dot, so the segment under it is barely
+        // there — long enough that no renderer drops it, short enough
+        // that it is a dot and not a dash.
+        XCTAssertLessThan(length(dot), 0.03, "a dot, not a dash")
+        XCTAssertGreaterThan(length(dot), 0, "but not nothing, which some renderers drop")
+        XCTAssertEqual(dot[0].x, 0.5, accuracy: 0.03, "under the stem")
+        XCTAssertGreaterThan(dot[0].y, hook.last!.y + 0.08, "with a gap below it")
     }
 
     func testTheStarIsAFivePointedStarAndNotASpider() {

@@ -1,11 +1,15 @@
 import CoreGraphics
 import Foundation
 
-/// What the next drag on the pane puts down. Picking a shape or a mark from
-/// the palette arms this; the drag that follows says where the thing starts
-/// and where it ends (Sean, 2026-09-19: "when selecting a mark when i click
-/// i start the mark and drag and release where the mark ends"). A click with
-/// no drag still works — the object arrives at its own size, as it used to.
+/// What the next gesture on the pane puts down. Picking a shape or a mark
+/// from the palette arms this; the drag that follows says where the thing
+/// starts and where it ends (Sean, 2026-09-19: "when selecting a mark when
+/// i click i start the mark and drag and release where the mark ends").
+///
+/// A MARK IS PUT WHERE IT IS CLICKED, and not before (Sean, 2026-09-21:
+/// "the checkmark shouldn't be placed until i click where it goes, like an
+/// arrow"). It arrives at one line of text's worth of size, because what a
+/// tick is for is standing beside a word; a drag still sizes it by hand.
 enum CanvasPlacement: Equatable {
     case shape(ShapeItem.Kind)
     case line(start: ConnectorItem.Head, end: ConnectorItem.Head)
@@ -34,7 +38,9 @@ enum CanvasPlacement: Equatable {
     /// growing the way it went, so a check mark is never stretched.
     static func box(from: CGPoint, to: CGPoint, kind: ShapeItem.Kind, in size: CGSize) -> CGRect {
         guard isDrag(from: from, to: to) else {
-            let width = (kind.isNode ? 0.18 : 0.07) * size.width
+            // A node is a chart's box and takes a share of the pane; a
+            // mark is an annotation and takes a line of the writing.
+            let width = kind.isNode ? 0.18 * size.width : ShapeItem.markSide
             return CGRect(x: from.x - width / 2, y: from.y - width * kind.defaultAspect / 2,
                           width: width, height: width * kind.defaultAspect)
         }
@@ -55,12 +61,18 @@ enum CanvasPlacement: Equatable {
                       colorHex: String, lineWidth: Double) -> ShapeItem? {
         guard size.width > 1, size.height > 1 else { return nil }
         let box = self.box(from: from, to: to, kind: kind, in: size)
-        let stroke = kind.isNode ? min(max(lineWidth, 1.5), 4) : min(max(lineWidth, 2), 8)
+        // A mark the size of a line of text cannot carry the pen it was
+        // drawn with: at eight points a tick in an eighteen-point box is
+        // a blob. The BOX is what limits it, so one dragged out big
+        // takes the whole pen.
+        let stroke = kind.isNode
+            ? min(max(lineWidth, 1.5), 4)
+            : min(max(lineWidth, 1.5), max(2, Double(box.width) * 0.16))
         return ShapeItem(kind: kind,
                          center: CGPoint(x: box.midX / size.width, y: box.midY / size.height),
                          width: box.width / size.width,
                          aspect: box.height / max(box.width, 1),
-                         colorHex: colorHex, lineWidth: stroke)
+                         colorHex: kind.inkHex ?? colorHex, lineWidth: stroke)
     }
 
     /// The line a drag makes: it starts where the press went down and

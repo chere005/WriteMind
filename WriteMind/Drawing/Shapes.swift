@@ -2,14 +2,14 @@ import AppKit
 import SwiftUI
 
 /// A drawn figure: a flow-chart node — rectangle, oval, diamond, triangle —
-/// or one of the marks people draw all the time, a check, a cross, a star
-/// (Sean, 2026-09-18). The outline is drawn in a unit square and scaled into
+/// or one of the marks people draw all the time, a check, a cross, a star,
+/// a query (Sean, 2026-09-18). The outline is drawn in a unit square and scaled into
 /// the item's box, so a diamond and a check mark are the same kind of thing,
 /// and the box is what the handles hold.
 struct ShapeItem: Codable, Equatable, Identifiable {
     enum Kind: String, Codable, CaseIterable, Identifiable {
         case rectangle, roundedRectangle, oval, diamond, triangle, parallelogram
-        case check, cross, star
+        case check, cross, star, question
         /// A box of text with no outline of its own (Sean, 2026-09-18:
         /// "a free floating text box"): a node for every other purpose —
         /// arrows land on it, the text runs round it like a picture.
@@ -21,7 +21,7 @@ struct ShapeItem: Codable, Equatable, Identifiable {
         var isNode: Bool {
             switch self {
             case .rectangle, .roundedRectangle, .oval, .diamond, .triangle, .parallelogram, .text: return true
-            case .check, .cross, .star: return false
+            case .check, .cross, .star, .question: return false
             }
         }
 
@@ -29,7 +29,7 @@ struct ShapeItem: Codable, Equatable, Identifiable {
         /// the line itself.
         var isClosed: Bool {
             switch self {
-            case .check, .cross: return false
+            case .check, .cross, .question: return false
             default: return true
             }
         }
@@ -45,6 +45,7 @@ struct ShapeItem: Codable, Equatable, Identifiable {
             case .check: return "Check Mark"
             case .cross: return "Cross"
             case .star: return "Star"
+            case .question: return "Question Mark"
             case .text: return "Text Box"
             }
         }
@@ -64,7 +65,25 @@ struct ShapeItem: Codable, Equatable, Identifiable {
             case .check: return "checkmark"
             case .cross: return "xmark"
             case .star: return "star"
+            case .question: return "questionmark"
             case .text: return "character.textbox"
+            }
+        }
+
+        /// The colour the mark means, whatever the pen is holding — a
+        /// tick is green, a cross is red and a query is yellow, and a
+        /// tick in the pen's black beside a red cross says nothing
+        /// (Sean, 2026-09-21: "a similarly sized red x and yellow ?").
+        /// They are the app's OWN preset colours rather than three new
+        /// ones, so a mark matches a stroke drawn in the same colour.
+        /// Nil is "the pen's": a node is the note's drawing, and so is
+        /// a star, which means whatever it is put there to mean.
+        var inkHex: String? {
+            switch self {
+            case .check: return AppState.presetColors[2]
+            case .cross: return AppState.presetColors[0]
+            case .question: return AppState.presetColors[1]
+            default: return nil
             }
         }
 
@@ -75,7 +94,7 @@ struct ShapeItem: Codable, Equatable, Identifiable {
             case .oval: return 0.6
             case .diamond: return 0.7
             case .triangle: return 0.8
-            case .check, .cross, .star: return 1
+            case .check, .cross, .star, .question: return 1
             case .text: return 0.3
             }
         }
@@ -98,7 +117,7 @@ struct ShapeItem: Codable, Equatable, Identifiable {
             case .parallelogram:
                 return [[CGPoint(x: 0.2, y: 0), CGPoint(x: 1, y: 0), CGPoint(x: 0.8, y: 1), CGPoint(x: 0, y: 1)]]
 
-            // The three MARKS are drawn to look like the thing, not like
+            // The MARKS are drawn to look like the thing, not like
             // a polyline that happens to be near it (Sean, 2026-09-21:
             // "all the assets look like shit, fix them"). Each is inset
             // from the unit square so a round cap does not hang out of
@@ -124,6 +143,26 @@ struct ShapeItem: Codable, Equatable, Identifiable {
                     let radius = step.isMultiple(of: 2) ? outer : inner
                     return CGPoint(x: 0.5 + radius * cos(angle), y: 0.5 + radius * sin(angle))
                 }]
+            case .question:
+                // Two strokes, like the glyph: the bowl and the dot. The
+                // bowl is a 235-degree arc — from low on the left, over
+                // the top, round the right — and then the tail curves
+                // back in to a stem on the middle line. Drawn rather
+                // than taken from a font because everything else here is
+                // a unit outline, and a scaled outline is what the
+                // handles resize.
+                let centre = CGPoint(x: 0.5, y: 0.31), radius = 0.21
+                let bowl = (0...12).map { step -> CGPoint in
+                    let angle = (160 + Double(step) / 12 * 235) * Double.pi / 180
+                    return CGPoint(x: centre.x + radius * cos(angle),
+                                   y: centre.y + radius * sin(angle))
+                }
+                // The dot is a segment too short to see, drawn by the
+                // round cap on the end of it. Not a zero-length one:
+                // that is a dot some renderers drop altogether.
+                return [bowl + [CGPoint(x: 0.57, y: 0.53), CGPoint(x: 0.5, y: 0.62),
+                                CGPoint(x: 0.5, y: 0.68)],
+                        [CGPoint(x: 0.497, y: 0.86), CGPoint(x: 0.503, y: 0.86)]]
             }
         }
 
@@ -154,6 +193,14 @@ struct ShapeItem: Codable, Equatable, Identifiable {
             }
         }
     }
+
+    /// How big a mark is when it is simply put down: one line of the
+    /// note's own text tall (Sean, 2026-09-21: "it's far too big, it
+    /// would be a checkmark next to a piece of text"). It is POINTS and
+    /// not a fraction of the pane, because what it has to match is the
+    /// writing beside it — as a fraction it was four lines tall on a
+    /// wide window and half of that on a narrow one.
+    static let markSide: CGFloat = NSLayoutManager().defaultLineHeight(for: MarkdownTextView.font)
 
     /// How tall a text box has to be, as height over width, to hold its
     /// text at this width in points. The measuring itself lives in

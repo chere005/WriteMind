@@ -203,9 +203,12 @@ is how the code is put together.
   modes, and the text stays exactly where it was. A pasted or captured
   picture is dropped one gap under the line the cursor is on, flush with
   the text, and is yours to move from there.
-- **Marks.** The next button puts down the things drawn all the time —
-  check marks, crosses, stars, boxes, circles, triangles, arrows and lines —
-  as objects in the pen's colour.
+- **Marks.** The next button holds the things drawn all the time — a tick,
+  a cross, a query, a star, boxes, circles, triangles, arrows and lines.
+  Pick one and then click where it goes: it lands the size of a line of
+  writing, a green tick, a red cross and a yellow query, and the handles
+  move, size and turn it from there. Drag instead of clicking to size it as
+  it goes down; a line or an arrow runs from the press to the release.
 - **A folder can leave the project without leaving the disk.** Right-click
   a folder in the sidebar: *Remove Folder from Project* hides it (Folder ▸
   Hidden Folders brings it back); *Move to Trash* is the one that moves it.

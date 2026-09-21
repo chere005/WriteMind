@@ -41,9 +41,8 @@ struct ShapeMenu: View {
 struct MarkMenu: View {
     @Binding var isPresented: Bool
     @EnvironmentObject private var appState: AppState
-    @EnvironmentObject private var store: NoteStore
 
-    private let marks: [ShapeItem.Kind] = [.check, .cross, .star, .rectangle, .oval, .triangle]
+    private let marks: [ShapeItem.Kind] = [.check, .cross, .question, .star, .rectangle, .oval, .triangle]
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -51,18 +50,13 @@ struct MarkMenu: View {
             LazyVGrid(columns: Array(repeating: GridItem(.fixed(64), spacing: 6), count: 3), spacing: 6) {
                 ForEach(marks) { kind in
                     PaletteButton(title: kind.title, symbol: kind.symbol) {
-                        // CLICK TO INSERT. A mark is an icon, not a
-                        // drawing: picking one puts it on the page there
-                        // and then, at its own size, picked up and ready
-                        // to be moved or resized by its handles (Sean,
-                        // 2026-09-21: "these are simple click to insert
-                        // icons.. just place it and allow resizing").
-                        // Arming the pane and waiting for a drag is what
-                        // the shapes of a chart do, and it made putting a
-                        // tick on a page a two-handed job.
-                        appState.canvasMode = .cursor
-                        store.addShape(kind, colorHex: appState.penColorHex,
-                                       lineWidth: appState.penWidth)
+                        // PICKING A MARK ARMS IT; THE CLICK IS WHERE IT
+                        // GOES (Sean, 2026-09-21: "the checkmark
+                        // shouldn't be placed until i click where it
+                        // goes, like an arrow"). It lands at one line of
+                        // text's size, which is what a tick beside a
+                        // word is, and a drag still sizes it by hand.
+                        appState.placing = .shape(kind)
                         isPresented = false
                     }
                 }
@@ -70,7 +64,7 @@ struct MarkMenu: View {
                 line("Both Ways", symbol: "arrow.left.and.right", start: .arrow, end: .arrow)
                 line("Line", symbol: "minus", start: .none, end: .none)
             }
-            Text("A mark goes on the page as soon as you pick it — move it, size it and turn it by its handles. A line or an arrow is drawn instead: press where it starts and let go where it ends.")
+            Text("Pick a mark and then click where it goes: it lands the size of a line of writing, and the handles move, size and turn it. Drag instead of clicking to size it as it goes down. A line or an arrow runs from the press to the release.")
                 .font(.caption)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)

@@ -48,6 +48,54 @@ final class CanvasPlacementTests: XCTestCase {
         XCTAssertEqual(shape.aspect, ShapeItem.Kind.rectangle.defaultAspect, accuracy: 0.0001)
     }
 
+    func testAMarkGoesDownAtTextSizeWhateverThePaneIsWide() {
+        // Sean, 2026-09-21: "it's far too big, it would be a checkmark
+        // next to a piece of text". A mark is an annotation beside a
+        // word, so it is measured against the note's own line in POINTS
+        // — a fraction of the pane made it four lines tall on a wide
+        // window and half that on a narrow one.
+        let click = CGPoint(x: 100, y: 100)
+        let narrow = CanvasPlacement.box(from: click, to: click, kind: .check,
+                                         in: CGSize(width: 400, height: 600))
+        let wide = CanvasPlacement.box(from: click, to: click, kind: .check,
+                                       in: CGSize(width: 1600, height: 600))
+        XCTAssertEqual(narrow.width, wide.width, accuracy: 0.001, "the pane's width is not the mark's")
+        XCTAssertEqual(narrow.height, narrow.width, accuracy: 0.001, "and it is square")
+        XCTAssertEqual(narrow.midX, click.x, accuracy: 0.001, "on the click")
+        XCTAssertEqual(narrow.midY, click.y, accuracy: 0.001)
+        XCTAssertLessThan(narrow.width, 1.5 * MarkdownTextView.lineHeight,
+                          "a tick beside a word, not a poster")
+        XCTAssertGreaterThan(narrow.width, 0.5 * MarkdownTextView.lineHeight)
+    }
+
+    func testAMarkThatMeansSomethingCarriesItsOwnColour() throws {
+        // Sean, 2026-09-21: "a similarly sized red x and yellow ?". The
+        // colour is part of what the mark SAYS, so it does not come off
+        // the pen — and the three are the app's own preset red, green
+        // and yellow rather than three new ones.
+        let click = CGPoint(x: 50, y: 50)
+        func hex(_ kind: ShapeItem.Kind) throws -> String {
+            try XCTUnwrap(CanvasPlacement.shape(kind, from: click, to: click, in: pane,
+                                                colorHex: "#112233", lineWidth: 2)).colorHex
+        }
+        XCTAssertEqual(try hex(.check).uppercased(), "#2FBF71")
+        XCTAssertEqual(try hex(.cross).uppercased(), "#F2542D")
+        XCTAssertEqual(try hex(.rectangle), "#112233", "a node is still drawn in the pen's colour")
+        XCTAssertEqual(try hex(.star), "#112233", "and so is a star, which means nothing on its own")
+    }
+
+    func testATextSizedMarkIsNotDrawnWithAnEightPointPen() throws {
+        let tick = try XCTUnwrap(CanvasPlacement.shape(.check, from: CGPoint(x: 50, y: 50),
+                                                       to: CGPoint(x: 50, y: 50), in: pane,
+                                                       colorHex: "#000000", lineWidth: 8))
+        XCTAssertLessThanOrEqual(tick.lineWidth, 3.5, "an 18-point box cannot carry an 8-point stroke")
+        XCTAssertGreaterThanOrEqual(tick.lineWidth, 1.5)
+        let dragged = try XCTUnwrap(CanvasPlacement.shape(.check, from: .zero,
+                                                          to: CGPoint(x: 120, y: 120), in: pane,
+                                                          colorHex: "#000000", lineWidth: 8))
+        XCTAssertEqual(dragged.lineWidth, 8, accuracy: 0.001, "a mark dragged out big can")
+    }
+
     func testATinyDragIsAClickAndARealOneIsNot() {
         XCTAssertFalse(CanvasPlacement.isDrag(from: .zero, to: CGPoint(x: 3, y: 3)))
         XCTAssertTrue(CanvasPlacement.isDrag(from: .zero, to: CGPoint(x: 5, y: 0)))

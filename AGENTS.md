@@ -182,18 +182,29 @@ CoreMind's `bin/report-status.sh`.
   whenever it is not `cursor`, because a pane that swallows every click and
   comes up that way after a launch needs somewhere on screen that says why.
   `penActive` is a question about the mode now and is stored nowhere.
-- **A MARK IS AN ICON; A SHAPE IS A DRAWING.** Sean, 2026-09-21: "the
-  marks shouldn't be like shapes or drawings.. these are simple click to
-  insert icons.. just place it and allow resizing". So the Marks popover
-  calls `NoteStore.addShape` and the mark is on the page before the
-  popover has closed, picked up, with its handles — no arming, no second
-  gesture. `CanvasPlacement` is still how a chart's shapes and the lines
-  go down, and that is the difference: a rectangle is drawn at a size
-  and in a place, a tick is just put there. A LINE OR AN ARROW runs from
-  the press to the release and nowhere else; a press that never moved
-  now puts down NOTHING and leaves the tool armed, where it used to put
-  down a short horizontal line centred on the click — a different line
-  from the one asked for, in a different place.
+- **A MARK IS AN ICON, AND IT GOES WHERE IT IS CLICKED.** Sean,
+  2026-09-21: "the checkmark shouldn't be placed until i click where it
+  goes, like an arrow.. it's far too big, it would be a checkmark next
+  to a piece of text.. and a similarly sized red x and yellow ?". So
+  EVERYTHING on the palette arms `CanvasPlacement` — nodes, marks and
+  lines alike — and nothing puts an object down in the middle of the
+  pane on its own (`NoteStore.addShape` is gone; the click is the
+  placement). Three things say what a mark is, and all three are in the
+  model rather than in a view. `ShapeItem.markSide` is how big it
+  arrives: ONE LINE OF THE NOTE'S TEXT, in points off
+  `MarkdownTextView.font` — as a fraction of the pane it was four lines
+  tall on a wide window and half that on a narrow one, and what a tick
+  has to match is the writing beside it. `Kind.inkHex` is what colour it
+  means — a green tick, a red cross, a yellow query, from the app's own
+  preset swatches, because a black tick beside a red cross says nothing;
+  it is nil for a node and for a star, which take the pen's. And the
+  stroke is limited by the BOX and not only by the pen: an eight-point
+  pen in an eighteen-point box is a blob. A drag still sizes a mark by
+  hand and a dragged mark takes the whole pen. A LINE OR AN ARROW runs
+  from the press to the release and nowhere else; a press that never
+  moved puts down NOTHING and leaves the tool armed, where it used to
+  put down a short horizontal line centred on the click — a different
+  line from the one asked for, in a different place.
 - **A group is a shared id, and every rule about it is in `CanvasGroups`.**
   Sean, 2026-09-20: "toggle grouping with the button on the screen or
   ctrl+g". `group: UUID?` sits on `Stroke`, `ImageItem` and `ShapeItem`

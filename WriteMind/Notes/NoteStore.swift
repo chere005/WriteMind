@@ -709,17 +709,6 @@ final class NoteStore: ObservableObject {
 
     // MARK: - Shapes
 
-    /// A flow-chart node or a mark, in the middle of the pane, in the pen's
-    /// colour (Sean, 2026-09-18).
-    func addShape(_ kind: ShapeItem.Kind, colorHex: String, lineWidth: Double) {
-        guard selectedNote != nil else { return }
-        beginDrawingChange()
-        let width = kind.isNode ? 0.18 : 0.07
-        let stroke = kind.isNode ? min(max(lineWidth, 1.5), 4) : min(max(lineWidth, 2), 8)
-        drawing.items.append(.shape(ShapeItem(kind: kind, center: visibleCenter,
-                                              width: width, colorHex: colorHex, lineWidth: stroke)))
-    }
-
     /// A text box, empty, handed straight to the canvas to be typed in.
     func addTextBox(colorHex: String) {
         guard selectedNote != nil else { return }
