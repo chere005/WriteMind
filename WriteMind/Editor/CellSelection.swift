@@ -51,6 +51,24 @@ enum CellSelection {
         return inside.isEmpty ? [bracket] : inside
     }
 
+    /// Whether a bracket is HELD — and for an OUTER one that is a
+    /// question about the cells under it, not about its own characters
+    /// (Sean, 2026-09-21: "highlighting all of this should have
+    /// highlighted all the outermost cells").
+    ///
+    /// `covers` asks whether ONE selected range holds the whole of a
+    /// range, deliberately: the union of two cells picked up separately
+    /// would swallow the blank line between them and light every bracket
+    /// out to the margin. But cells picked up one at a time are several
+    /// ranges, so no one of them ever covered the section round them, and
+    /// the outer bracket stayed grey with every cell in it picked up.
+    /// Asking it of the CELLS instead gives both: a section is held when
+    /// all of its cells are, and two cells out of three still light
+    /// nothing outside themselves.
+    static func holds(_ bracket: NSRange, cells: [NSRange], selection: [NSRange]) -> Bool {
+        self.cells(of: bracket, in: cells).allSatisfy { covers($0, selection) }
+    }
+
     /// Every cell from one bracket to the other, both ends included —
     /// what a shift-click extends over, and what a drag has passed.
     /// Either way round: a drag upwards reaches the same cells.

@@ -732,19 +732,25 @@ struct MarkdownTextView: NSViewRepresentable {
                 ? NotebookCells.block(containing: caret?.location ?? 0, in: tv.string)?.range
                 : nil
 
+            // The cells, measured once: a SECTION's bracket is held when
+            // every cell under it is, and that cannot be asked of its own
+            // characters (`CellSelection.holds`).
+            let blocks = MarkdownParser.positioned(from: tv.string)
+            let cellRanges = blocks.map(\.range)
+
             func bracket(key: String, depth: Int, range: NSRange, foldable: Bool) -> NotebookGutter.Bracket? {
                 let clipped = NSIntersectionRange(range, NSRange(location: 0, length: text.length))
                 guard clipped.length > 0 else { return nil }
                 let glyphs = layout.glyphRange(forCharacterRange: clipped, actualCharacterRange: nil)
                 let box = layout.boundingRect(forGlyphRange: glyphs, in: container)
                 guard box.height > 1 else { return nil }
-                let picked = NotebookGutter.isPicked(clipped, selection: selection,
-                                                     caretCell: foldable ? nil : caretCell)
                 // Lit and HELD are not the same thing: the caret's own
                 // cell is drawn heavy with nothing selected, and the
                 // gestures may not read that as a cell the user is
                 // holding (2026-09-20).
-                let held = CellSelection.covers(clipped, selection)
+                let held = CellSelection.holds(clipped, cells: cellRanges, selection: selection)
+                let picked = held || NotebookGutter.isPicked(clipped, selection: selection,
+                                                             caretCell: foldable ? nil : caretCell)
                 return NotebookGutter.Bracket(key: key, depth: depth,
                                               top: box.minY + origin.y, bottom: box.maxY + origin.y,
                                               collapsed: collapsed.contains(key), selected: picked,
@@ -761,7 +767,7 @@ struct MarkdownTextView: NSViewRepresentable {
 
             // The cells themselves: one per block, drawn inside whichever
             // section holds them.
-            for block in MarkdownParser.positioned(from: tv.string) {
+            for block in blocks {
                 let depth = NotebookOutline.cellDepth(at: block.range.location, in: sections)
                 if let cell = bracket(key: "cell:\(block.range.location)", depth: depth,
                                       range: block.range, foldable: false) {

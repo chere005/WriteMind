@@ -398,7 +398,11 @@ struct MarkdownPreview: View {
             guard let first = places.map(\.top).min(), let last = places.map(\.bottom).max(),
                   last - first > 1
             else { continue }
-            let held = CellSelection.covers(section.range, selectedCells)
+            // Held when every cell under it is — not when one selected
+            // range happens to cover the characters, which cells picked
+            // up one at a time never do (`CellSelection.holds`).
+            let held = CellSelection.holds(section.range, cells: inside.map(\.range),
+                                           selection: selectedCells)
             out.append(CellBrackets.Bracket(key: section.key, depth: section.depth,
                                             top: first, bottom: last,
                                             collapsed: collapsed.contains(section.key),

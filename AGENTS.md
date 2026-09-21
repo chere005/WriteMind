@@ -1024,6 +1024,19 @@ tools/                    build.sh run.sh test.sh (both source signing.sh)
   bracket reorder the note, a plain click on it do nothing whatever, and
   a cmd-click quietly add a cell nobody had clicked — three reviewers,
   one root (2026-09-20). Both panes carry both flags.
+  **AN OUTER BRACKET IS HELD BY ITS CELLS, not by its own characters.**
+  `CellSelection.covers` asks whether ONE selected range holds the whole
+  of a range — deliberately, because the union of two cells picked up
+  separately would swallow the blank line between them and light every
+  bracket out to the margin. But cells picked up one at a time ARE
+  several ranges, so no one of them ever covered the section round them
+  and the outer bracket stayed grey with every cell in it held (Sean,
+  2026-09-21: "highlighting all of this should have highlighted all the
+  outermost cells"). `CellSelection.holds` asks it of the cells instead —
+  `cells(of:in:)`, then `covers` on each — and both panes call it for
+  every bracket, a cell's own included: a cell holds itself, a section
+  holds all of its cells, and two cells out of three still light nothing
+  outside themselves.
 - **The gutter takes only the clicks it has a bracket for.** Its
   22-point column is 22 of the text container's own 24 points of right
   margin, so a `hitTest` that answers for the WHOLE column eats the click

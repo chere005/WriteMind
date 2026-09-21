@@ -426,3 +426,48 @@ final class HeldCellKeyTests: XCTestCase {
         XCTAssertEqual(MarkdownPreview.cellKey(characters: "", modifiers: []), .pass)
     }
 }
+/// An OUTER bracket is held when the cells under it are (Sean, 2026-09-21:
+/// "highlighting all of this should have highlighted all the outermost
+/// cells").
+final class OuterBracketTests: XCTestCase {
+    private let cells = [NSRange(location: 0, length: 5),
+                         NSRange(location: 7, length: 3),
+                         NSRange(location: 12, length: 4)]
+    private var section: NSRange { NSRange(location: 0, length: 16) }
+
+    func testASectionIsHeldWhenEveryCellUnderItIs() {
+        // Cells picked up one at a time are SEVERAL ranges, and no one
+        // of them covers the section round them — which is the question
+        // `covers` asks, and why the outer bracket stayed grey with the
+        // whole note picked up.
+        XCTAssertTrue(CellSelection.holds(section, cells: cells, selection: cells))
+        XCTAssertFalse(CellSelection.covers(section, cells),
+                       "which is why holding a section is a rule of its own")
+    }
+
+    func testOneCellShortIsNotTheSection() {
+        XCTAssertFalse(CellSelection.holds(section, cells: cells,
+                                           selection: [cells[0], cells[1]]))
+        XCTAssertFalse(CellSelection.holds(section, cells: cells, selection: []))
+    }
+
+    func testOneSweepOverTheWholeNoteHoldsItToo() {
+        // A drag through the text is one range, and it covered the
+        // section already. It still does.
+        XCTAssertTrue(CellSelection.holds(section, cells: cells,
+                                          selection: [NSRange(location: 0, length: 16)]))
+    }
+
+    func testACellsOwnBracketAsksTheSameQuestionOfItself() {
+        XCTAssertTrue(CellSelection.holds(cells[1], cells: cells, selection: [cells[1]]))
+        XCTAssertFalse(CellSelection.holds(cells[1], cells: cells, selection: [cells[0]]))
+    }
+
+    func testABracketWithNoCellsInItFallsBackToItsOwnCharacters() {
+        // Before the page has measured anything there are no cells to
+        // ask about, and a bracket that answered "held" for an empty
+        // list would light the whole margin.
+        XCTAssertFalse(CellSelection.holds(section, cells: [], selection: []))
+        XCTAssertTrue(CellSelection.holds(section, cells: [], selection: [section]))
+    }
+}
