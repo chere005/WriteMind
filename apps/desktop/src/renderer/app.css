@@ -1,0 +1,273 @@
+/*
+ * The app's own colours, given twice — light and dark — because the Mac
+ * learned that the hard way: nothing that carries text may take the system
+ * accent, since the accent can be yellow and yellow on white is not text.
+ */
+
+:root {
+  --wm-page: #ffffff;
+  --wm-chrome: #f4f4f6;
+  --wm-text: #1c1c1e;
+  --wm-soft: #55555c;
+  --wm-faint: #a0a0a8;
+  --wm-rule: #d3d3d9;
+  --wm-accent: #2d7dd2;
+  --wm-code: #8e44ad;
+  --wm-code-bg: #f2f2f5;
+  --wm-selection: #b7d4f5;
+  --wm-shadow: rgba(0, 0, 0, 0.08);
+  color-scheme: light dark;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --wm-page: #1e1f22;
+    --wm-chrome: #26272b;
+    --wm-text: #e8e8ea;
+    --wm-soft: #a8a8b0;
+    --wm-faint: #6a6a74;
+    --wm-rule: #3a3b41;
+    --wm-accent: #6aa9f0;
+    --wm-code: #d3a0f0;
+    --wm-code-bg: #2a2b30;
+    --wm-selection: #2f4a6b;
+    --wm-shadow: rgba(0, 0, 0, 0.4);
+  }
+}
+
+* { box-sizing: border-box; }
+
+html, body, #root {
+  height: 100%;
+  margin: 0;
+  overflow: hidden;
+  font-family: -apple-system, "Segoe UI", system-ui, sans-serif;
+  color: var(--wm-text);
+  background: var(--wm-page);
+  -webkit-font-smoothing: antialiased;
+}
+
+button { font: inherit; color: inherit; }
+
+.app { display: flex; height: 100%; }
+
+/* The sidebar is a plain flex child, shown or hidden — never a split-view
+   column, because the bar above it has to stay put. */
+.sidebar {
+  width: 232px;
+  flex: 0 0 232px;
+  display: flex;
+  flex-direction: column;
+  background: var(--wm-chrome);
+  border-right: 1px solid var(--wm-rule);
+}
+
+.sidebar-bar {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  height: 38px;
+  padding: 0 6px;
+  -webkit-app-region: drag;
+  border-bottom: 1px solid var(--wm-rule);
+}
+
+.sidebar-bar > * { -webkit-app-region: no-drag; }
+.sidebar-bar .spacer { flex: 1; }
+.mac .sidebar-bar { padding-left: 78px; }
+
+.icon-button {
+  width: 24px;
+  height: 22px;
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--wm-soft);
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+.icon-button:hover { background: var(--wm-rule); }
+.icon-button.on { background: var(--wm-accent); color: #fff; }
+
+.bar-divider { width: 1px; height: 16px; background: var(--wm-rule); margin: 0 4px; }
+
+.rows { flex: 1; overflow: auto; padding: 6px; }
+
+/* The add row: a box of its own, split down the middle — a new note on the
+   left, a new section on the right, both landing where the row is. */
+.add-row {
+  display: flex;
+  align-items: stretch;
+  margin: 2px 2px 4px;
+  border: 1px dashed var(--wm-rule);
+  border-radius: 4px;
+}
+.add-row button {
+  flex: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  padding: 3px 0;
+  border: 0;
+  background: transparent;
+  color: var(--wm-faint);
+  font-size: 11px;
+  cursor: pointer;
+}
+.add-row button:hover { color: var(--wm-accent); }
+.add-row .split { width: 1px; background: var(--wm-rule); margin: 3px 0; }
+.add-row svg { display: block; }
+
+.note-row, .section-row {
+  display: block;
+  width: 100%;
+  text-align: left;
+  border: 0;
+  background: transparent;
+  border-radius: 5px;
+  padding: 4px 6px;
+  cursor: pointer;
+}
+.note-row:hover, .section-row:hover { background: var(--wm-rule); }
+.note-row.open { background: var(--wm-accent); color: #fff; }
+.note-row.open .snippet { color: rgba(255, 255, 255, 0.75); }
+.note-row .title { font-size: 12.5px; }
+.note-row .snippet {
+  font-size: 11px;
+  color: var(--wm-faint);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.section-row { font-size: 12px; font-weight: 600; color: var(--wm-soft); }
+
+.pane { flex: 1; display: flex; flex-direction: column; min-width: 0; }
+
+.tab-bar {
+  display: flex;
+  align-items: stretch;
+  height: 30px;
+  background: var(--wm-chrome);
+  border-bottom: 1px solid var(--wm-rule);
+  -webkit-app-region: drag;
+  overflow: hidden;
+}
+.tab-bar > * { -webkit-app-region: no-drag; }
+.tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 10px;
+  border: 0;
+  border-right: 1px solid var(--wm-rule);
+  background: transparent;
+  color: var(--wm-soft);
+  font-size: 12px;
+  cursor: pointer;
+  max-width: 200px;
+}
+.tab.open { background: var(--wm-page); color: var(--wm-text); }
+.tab .close { opacity: 0.5; }
+.tab .close:hover { opacity: 1; }
+
+.top-bar {
+  display: flex;
+  align-items: center;
+  gap: 1px;
+  height: 32px;
+  padding: 0 6px;
+  border-bottom: 1px solid var(--wm-rule);
+  background: var(--wm-chrome);
+  overflow: hidden;
+}
+
+.editor { flex: 1; min-height: 0; position: relative; }
+.editor .cm-editor { height: 100%; }
+
+.footer {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  height: 24px;
+  padding: 0 12px;
+  font-size: 11px;
+  color: var(--wm-faint);
+  border-top: 1px solid var(--wm-rule);
+  background: var(--wm-chrome);
+}
+.footer .spacer { flex: 1; }
+
+.empty {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  color: var(--wm-faint);
+}
+
+/* The + on the bar names a KIND; the menu is the one list of them. */
+.kind-menu {
+  position: fixed;
+  z-index: 20;
+  min-width: 190px;
+  padding: 4px;
+  border-radius: 8px;
+  border: 1px solid var(--wm-rule);
+  background: var(--wm-chrome);
+  box-shadow: 0 8px 24px var(--wm-shadow);
+}
+.kind-menu button {
+  display: block;
+  width: 100%;
+  text-align: left;
+  border: 0;
+  background: transparent;
+  padding: 4px 8px;
+  border-radius: 5px;
+  font-size: 12.5px;
+  cursor: pointer;
+}
+.kind-menu button:hover { background: var(--wm-accent); color: #fff; }
+.kind-menu hr { border: 0; border-top: 1px solid var(--wm-rule); margin: 4px 2px; }
+
+.camera {
+  flex: 0 0 38%;
+  border-left: 1px solid var(--wm-rule);
+  background: #101012;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  color: #8a8a92;
+  position: relative;
+  min-width: 260px;
+}
+.camera video { width: 100%; height: 100%; object-fit: contain; background: #000; }
+.camera .camera-bar {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  display: flex;
+  gap: 4px;
+}
+.camera .note {
+  position: absolute;
+  bottom: 10px;
+  left: 0;
+  right: 0;
+  text-align: center;
+  font-size: 11px;
+  color: #8a8a92;
+}
+.camera .box {
+  position: absolute;
+  border: 1.5px dashed var(--wm-accent);
+  background: rgba(109, 169, 240, 0.12);
+  pointer-events: none;
+}

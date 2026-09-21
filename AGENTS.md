@@ -1,8 +1,53 @@
-# Working in WriteMind
+# Working in WriteMind (macOS and Windows)
 
 The baseline for all of Sean's repos lives in ~/GIT/AgentSuite/AGENTS.md
 and is imported here; this file holds only what is true of THIS repo.
 @../AgentSuite/AGENTS.md
+
+## This repo is the PORT, and the Swift tree in it is a snapshot
+
+Started 2026-09-21 on Sean's word ("copy this into another repo and do it
+there so we can keep working on the macos version here"). It is a clone of
+~/GIT/WriteMind with a TypeScript app grown beside the Swift one.
+
+- **The macOS app lives at ~/GIT/WriteMind, not here.** `WriteMind/`,
+  `WriteMindTests/` and `tools/` in this repo are a REFERENCE COPY — what
+  the port is ported from. Do not edit them here and never deploy from
+  here; `git pull macos main` (the `macos` remote is that working copy)
+  brings the Swift side forward when it has moved.
+- **The port is `packages/` and `apps/`.** `docs/PORT.md` is the map:
+  what came across, what was rebuilt on CodeMirror, and why.
+- **A rule and its test transcribe together.** Every file in
+  `packages/core/` names the Swift file it came from, and every test file
+  in `packages/core/test/` names the XCTest file it came from. A ported
+  rule with no ported test is a rule nobody has checked; a test that had to
+  be changed to pass is a behaviour change, and it gets said out loud.
+- **`packages/core` has no platform in it.** No DOM, no Electron, no
+  React, no `process`. The editor package may use CodeMirror; the app may
+  use Electron; the core may use neither, which is what lets the same
+  model answer for both platforms and for the test runner.
+- **ONE place asks what the platform can do**
+  (`packages/core/src/platform/capabilities.ts`), and the side that cannot
+  do a thing SHOWS NOTHING — no dead button, no dialog explaining the
+  build. The single exception is the camera's box, because its absence
+  changes what the user does.
+- **The port's notes folder is `~/Documents/WriteMindCross`**
+  (`WRITEMIND_NOTES` overrides). Not Sean's real notes folder: two apps
+  writing one folder is the bug that cost two cells on 2026-09-20, and
+  `mayWrite` is a guard, not a licence.
+- **`npm test` is the suite.** It must pass before anything is committed,
+  the same way `tools/test.sh` gates the Swift side.
+
+Everything below this line is the macOS app's own AGENTS.md, kept whole
+because almost all of it is about the MODEL rather than about AppKit — the
+cell rules, the seam rules, the bracket rules, the write guard, the folder
+tree — and all of that is exactly what the port obeys too. Where it talks
+about NSTextView, cursor rects and TextKit, read it as the history of why
+the rule exists: `docs/PORT.md` says what does that job here.
+
+---
+
+# Working in WriteMind (the macOS app)
 
 A macOS-only writing app: a markdown editor on the left, a live camera on the
 right, a sidebar of notes that are plain `.md` files in `~/Documents/WriteMind`.

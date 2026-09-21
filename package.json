@@ -1,0 +1,27 @@
+{
+  "name": "writemind-cross",
+  "private": true,
+  "version": "0.1.0",
+  "description": "WriteMind for macOS and Windows: one notebook, two platforms.",
+  "workspaces": [
+    "packages/*",
+    "apps/*"
+  ],
+  "scripts": {
+    "test": "vitest run",
+    "typecheck": "tsc -b --pretty false",
+    "dev": "npm -w @writemind/desktop run dev",
+    "build": "npm -w @writemind/desktop run build"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.2",
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
+    "@vitejs/plugin-react": "^5.2.0",
+    "electron": "^44.4.3",
+    "esbuild": "^0.28.2",
+    "typescript": "^5.7.2",
+    "vite": "^7.3.6",
+    "vitest": "^3.0.5"
+  }
+}

@@ -1,5 +1,32 @@
 # WriteMind
 
+A writing app: a markdown notebook on the left, a live camera on the right,
+and a drawing layer over both. Notes are plain `.md` files in a folder —
+nothing here is a database, and nothing rewrites a file the user did not
+type in.
+
+**This repo is the cross-platform WriteMind: macOS and Windows, one
+codebase.** The macOS-only Swift app it was ported from is in `WriteMind/`
+as a reference, and its living copy is `~/GIT/WriteMind`.
+
+- `docs/PORT.md` — what was ported, what was rebuilt, and why CodeMirror
+- `docs/TODO.md` — what is left
+- `AGENTS.md` — how the code is put together (the Mac app's own rules are
+  in there too, and they are still the rules: they were never about AppKit)
+
+```sh
+npm install
+npm test        # the ported model, against the transcribed Swift suite
+npm run dev     # the app
+```
+
+
+---
+
+## The macOS app this came from
+
+# WriteMind
+
 <img src="assets/logo-512.png" width="80" alt="The WriteMind mark: a one-stroke WM">
 
 A macOS writing app: markdown notes on the left, a live camera on the right.

@@ -14,3 +14,9 @@ DerivedData/
 
 *.log
 .DS_Store
+
+# The TypeScript port
+node_modules/
+out/
+.vite/
+*.tsbuildinfo

@@ -1,0 +1,21 @@
+{
+  "name": "@writemind/desktop",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "out/main/main.mjs",
+  "scripts": {
+    "build:app": "node scripts/build.mjs",
+    "build": "vite build && node scripts/build.mjs",
+    "start": "electron .",
+    "dev": "node scripts/dev.mjs"
+  },
+  "dependencies": {
+    "@codemirror/commands": "^6.11.1",
+    "@codemirror/language": "^6.12.4",
+    "@codemirror/state": "^6.7.5",
+    "@codemirror/view": "^6.43.12",
+    "react": "^19.3.0",
+    "react-dom": "^19.3.0"
+  }
+}

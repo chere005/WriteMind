@@ -1,0 +1,118 @@
+/**
+ * The desktop shell: one window, the file work, and nothing about the
+ * notebook itself — that is all in `@writemind/core` and `@writemind/editor`,
+ * which know nothing about Electron.
+ *
+ * WHICH FOLDER. The Mac app keeps its notes in `~/Documents/WriteMind`.
+ * This one keeps its own in `~/Documents/WriteMindCross` until it is told
+ * otherwise (`WRITEMIND_NOTES`), because two apps writing one folder is the
+ * exact shape of the bug that cost two cells on 2026-09-20 — and because a
+ * port is not something to point at somebody's real notes on its first run.
+ */
+
+import { app, BrowserWindow, dialog, ipcMain, shell } from "electron"
+import { watch, type FSWatcher } from "node:fs"
+import { promises as fs } from "node:fs"
+import os from "node:os"
+import path from "node:path"
+import { fileURLToPath } from "node:url"
+import { capabilitiesFor } from "@writemind/core"
+import {
+  createNote, createSection, readDrawing, readNote, renameNote, reorder, tree,
+  writeDrawing, writeNote,
+} from "./notes"
+
+const here = path.dirname(fileURLToPath(import.meta.url))
+const DEV = process.env.WRITEMIND_DEV === "1"
+
+const notesRoot = (): string =>
+  process.env.WRITEMIND_NOTES ?? path.join(os.homedir(), "Documents", "WriteMindCross")
+
+let window: BrowserWindow | null = null
+let watcher: FSWatcher | null = null
+
+function watchNotes(root: string): void {
+  watcher?.close()
+  try {
+    watcher = watch(root, { recursive: true }, () => {
+      window?.webContents.send("notes:changed")
+    })
+  } catch {
+    watcher = null
+  }
+}
+
+async function createWindow(): Promise<void> {
+  window = new BrowserWindow({
+    width: 1440,
+    height: 900,
+    minWidth: 720,
+    minHeight: 480,
+    title: "WriteMind",
+    backgroundColor: "#1e1f22",
+    // The Mac gets its inset traffic lights; Windows keeps its own frame,
+    // because a window that does not look like the system's is the first
+    // thing that says "this was ported".
+    titleBarStyle: process.platform === "darwin" ? "hiddenInset" : "default",
+    webPreferences: {
+      preload: path.join(here, "../preload/preload.cjs"),
+      contextIsolation: true,
+      nodeIntegration: false,
+      sandbox: false,
+    },
+  })
+
+  if (DEV) await window.loadURL("http://localhost:5173")
+  else await window.loadFile(path.join(here, "../renderer/index.html"))
+
+  const root = notesRoot()
+  await fs.mkdir(root, { recursive: true })
+  watchNotes(root)
+}
+
+app.whenReady().then(async () => {
+  ipcMain.handle("app:capabilities", () => ({
+    ...capabilitiesFor(process.platform),
+    platform: process.platform,
+    root: notesRoot(),
+  }))
+  ipcMain.handle("notes:tree", () => tree(notesRoot()))
+  ipcMain.handle("note:read", (_event, file: string) => readNote(file))
+  ipcMain.handle("note:write", (_event, file: string, text: string) => writeNote(file, text))
+  ipcMain.handle("note:create", (_event, folder: string) => createNote(folder))
+  ipcMain.handle("note:rename", (_event, file: string, title: string) => renameNote(file, title))
+  ipcMain.handle("note:trash", async (_event, file: string) => { await shell.trashItem(file) })
+  ipcMain.handle("section:create", (_event, parent: string) => createSection(parent))
+  ipcMain.handle("section:trash", async (_event, folder: string) => { await shell.trashItem(folder) })
+  ipcMain.handle("order:set", (_event, folder: string, names: string[]) =>
+    reorder(notesRoot(), folder, names))
+  ipcMain.handle("drawing:read", (_event, note: string) => readDrawing(notesRoot(), note))
+  ipcMain.handle("drawing:write", (_event, note: string, json: string) =>
+    writeDrawing(notesRoot(), note, json))
+  ipcMain.handle("notes:reveal", () => shell.openPath(notesRoot()))
+
+  // Export ▸ PDF, which both platforms have because Chromium prints the
+  // page — the one thing the port gets for free that the Mac had to build.
+  ipcMain.handle("export:pdf", async (_event, suggested: string) => {
+    if (!window) return null
+    const where = await dialog.showSaveDialog(window, {
+      defaultPath: `${suggested}.pdf`,
+      filters: [{ name: "PDF", extensions: ["pdf"] }],
+    })
+    if (where.canceled || !where.filePath) return null
+    const pdf = await window.webContents.printToPDF({ printBackground: true })
+    await fs.writeFile(where.filePath, pdf)
+    return where.filePath
+  })
+
+  await createWindow()
+
+  app.on("activate", async () => {
+    if (BrowserWindow.getAllWindows().length === 0) await createWindow()
+  })
+})
+
+app.on("window-all-closed", () => {
+  watcher?.close()
+  if (process.platform !== "darwin") app.quit()
+})
