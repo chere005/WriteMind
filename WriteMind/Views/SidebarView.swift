@@ -59,8 +59,9 @@ struct SidebarView: View {
     /// The video's own menu, which came over from the text bar with its
     /// button (Sean, 2026-09-21).
     @State private var showVideoMenu = false
-    /// Which section's + the pointer is on, so only that one lights.
-    @State private var hoveredAdd: NoteSection.ID?
+    /// Which half of which section's + the pointer is on, so only that
+    /// one lights.
+    @State private var hoveredAdd: AddTarget?
 
     var body: some View {
         VStack(spacing: 0) {
@@ -387,34 +388,71 @@ struct SidebarView: View {
         return out
     }
 
-    /// The note-shaped + at the top of a section: a new note, where it
-    /// will land. Drawn as a small page outline with a + inside it, faint
-    /// until the pointer is on it — it is an invitation rather than an
-    /// item, and a sidebar of ten sections should not look like a sidebar
-    /// of twenty rows.
+    /// The + at the top of a section: a box of its own, SPLIT DOWN THE
+    /// MIDDLE — a new note on the left, a new section on the right (Sean,
+    /// 2026-09-21: "put a border around new note and center the
+    /// icon/text; split the button in half, left side is new note, right
+    /// side is new section"). Both make the thing WHERE THE ROW IS, which
+    /// is the whole point of the row: the place it will land is shown
+    /// rather than described. Faint until the pointer is on it — it is an
+    /// invitation rather than an item, and only the half under the
+    /// pointer lights.
     private func addRow(_ section: NoteSection, indent: Int) -> some View {
-        Button {
-            store.selectedSectionID = section.id
-            store.createNote()
-        } label: {
-            HStack(spacing: 6) {
-                ZStack {
-                    RoundedRectangle(cornerRadius: 2.5)
-                        .strokeBorder(style: StrokeStyle(lineWidth: 1, dash: [2.5, 2]))
-                        .frame(width: 13, height: 16)
-                    Image(systemName: "plus").font(.system(size: 7, weight: .bold))
-                }
-                Text("New note").font(.system(size: 11))
-                Spacer(minLength: 0)
+        HStack(spacing: 0) {
+            addHalf(section, makesSection: false)
+            Divider().frame(height: 13)
+            addHalf(section, makesSection: true)
+        }
+        .background(
+            RoundedRectangle(cornerRadius: 4)
+                .strokeBorder(Color.secondary.opacity(0.3),
+                              style: StrokeStyle(lineWidth: 1, dash: [3, 2.5]))
+        )
+        .padding(.leading, CGFloat(indent) * 14 + 2)
+        .padding(.trailing, 2)
+        .padding(.vertical, 2)
+    }
+
+    /// One half of that box.
+    private func addHalf(_ section: NoteSection, makesSection: Bool) -> some View {
+        let target = AddTarget(section: section.id, makesSection: makesSection)
+        return Button {
+            if makesSection {
+                if let made = store.createSection(in: section) { expanded.insert(made.id) }
+            } else {
+                store.selectedSectionID = section.id
+                store.createNote()
             }
-            .foregroundStyle(hoveredAdd == section.id ? Color.accentColor : Color.secondary.opacity(0.55))
-            .padding(.leading, CGFloat(indent) * 14 + 4)
-            .padding(.vertical, 2)
+        } label: {
+            HStack(spacing: 4) {
+                if makesSection {
+                    Image(systemName: "folder.badge.plus").font(.system(size: 10))
+                } else {
+                    // A page with a + in it, drawn rather than named: no
+                    // SF Symbol is a blank page, and "doc.badge.plus"
+                    // has lines of writing on it.
+                    ZStack {
+                        RoundedRectangle(cornerRadius: 2)
+                            .strokeBorder(style: StrokeStyle(lineWidth: 1, dash: [2.5, 2]))
+                            .frame(width: 11, height: 14)
+                        Image(systemName: "plus").font(.system(size: 6.5, weight: .bold))
+                    }
+                }
+                Text(makesSection ? "New section" : "New note")
+                    .font(.system(size: 11))
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.75)
+            }
+            // Centred in its own half, which is what makes the two of
+            // them read as one control with a line down it.
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 3)
+            .foregroundStyle(hoveredAdd == target ? Color.accentColor : Color.secondary.opacity(0.55))
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .onHover { inside in hoveredAdd = inside ? section.id : (hoveredAdd == section.id ? nil : hoveredAdd) }
-        .help("New note in \(section.name) (⌘N)")
+        .onHover { inside in hoveredAdd = inside ? target : (hoveredAdd == target ? nil : hoveredAdd) }
+        .help(makesSection ? "New section in \(section.name)" : "New note in \(section.name) (⌘N)")
     }
 
     /// A note's row. THE DRAG SOURCE GOES ON BEFORE THE TAP, here and in
@@ -664,17 +702,24 @@ struct SidebarView: View {
     }
 }
 
+/// Which half of which section's add row the pointer is over.
+struct AddTarget: Equatable {
+    let section: NoteSection.ID
+    let makesSection: Bool
+}
+
 /// One line of the sidebar: a note (with the section holding it, so tapping
 /// it also selects where the next note goes) or a section.
 enum SidebarRow: Identifiable {
     case note(Note, NoteSection, Int)
     case section(NoteSection, Int)
-    /// The note-shaped row with a + in it that makes a new note in that
-    /// section (Sean, 2026-09-21: "put a small entry that looks like a
-    /// note at the top of the bar with a + inside it to make a general
-    /// note, and also have that + entry at the top of each section"). It
-    /// replaces the New Note button that was on the bar: the place a new
-    /// note will land is now shown rather than described.
+    /// The row with a + in it at the top of a section (Sean, 2026-09-21:
+    /// "put a small entry that looks like a note at the top of the bar
+    /// with a + inside it to make a general note, and also have that +
+    /// entry at the top of each section"). It is a box split in two — a
+    /// new note on the left, a new section on the right — and it
+    /// replaces the New Note button that was on the bar: the place the
+    /// new thing will land is shown rather than described.
     case add(NoteSection, Int)
 
     var id: String {
