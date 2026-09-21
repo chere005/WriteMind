@@ -211,6 +211,22 @@ CoreMind's `bin/report-status.sh`.
   more on the next run-loop turn, after whatever the dispatch did. The
   pencil itself is black with a white halo at 28pt — the first, a thin white
   glyph, was invisible on the page.
+- **THE PENCIL HAS TO BE HANDED BACK WHEN THE POINTER LEAVES THE APP.**
+  `NSCursor.set()` is global and sticks until something else sets one, and
+  nothing outside this app ever will — so the pencil followed the pointer
+  onto the desktop, onto Finder, onto everything (Sean, 2026-09-21: "make
+  sure the draw pen only shows while its in the notes pane, not outside
+  the app"). `CursorLayer.CursorRectView.cursor(_:at:in:wasInside:)` deals
+  with the pointer leaving the note for somewhere else IN THE WINDOW; it
+  cannot deal with this one, because no mouse-moved event is delivered at
+  all once the pointer is somebody else's. Three watchers cover it, and
+  each is needed: a GLOBAL NSEvent monitor (the only thing that sees a
+  move going to another app — it can watch and not modify, which is all
+  this needs, and its arrival IS the news), `NSWindow.didResignKey`, and
+  `NSApplication.didResignActive`. They all go through `handBack`, which
+  asks the pure `reclaimed(cursor:wasInside:)` so it fires once and only
+  when the pencil was ours to begin with.
+
 - **An armed seam IS the cursor, so the caret is turned off — and it has
   to come back.** A click in the space between two cells arms it: the line
   drawn across the page is where typing will go (Sean, 2026-09-20: "when

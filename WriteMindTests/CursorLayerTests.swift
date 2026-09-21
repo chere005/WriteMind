@@ -22,6 +22,26 @@ final class CursorLayerTests: XCTestCase {
         XCTAssertTrue(cursor(at: CGPoint(x: 900, y: 300), wasInside: true) === NSCursor.arrow)
     }
 
+    // MARK: - The other way out: off the window altogether
+
+    func testThePencilIsHandedBackWhenThePointerLeavesTheApp() {
+        // A global mouse-moved, the window losing key, the app going
+        // inactive: each says the pointer is somewhere this app cannot
+        // draw on, and nothing else will ever put the arrow back.
+        XCTAssertEqual(CursorLayer.CursorRectView.reclaimed(cursor: DrawingCursors.pencil,
+                                                            wasInside: true),
+                       NSCursor.arrow)
+    }
+
+    func testNothingIsHandedBackIfThePointerWasNotOursToBeginWith() {
+        XCTAssertNil(CursorLayer.CursorRectView.reclaimed(cursor: DrawingCursors.pencil,
+                                                          wasInside: false))
+    }
+
+    func testWithThePenDownThereIsNothingToHandBack() {
+        XCTAssertNil(CursorLayer.CursorRectView.reclaimed(cursor: nil, wasInside: true))
+    }
+
     func testNothingIsForcedOnAPointerThatWasNeverOverTheNote() {
         // Otherwise every mouse move anywhere in the window would fight the
         // split divider's resize cursor and the gutter's pointing hand.

@@ -34,6 +34,9 @@ struct CursorLayer: NSViewRepresentable {
         }
         private var isMouseInside = false
         private var monitor: Any?
+        /// Sees the pointer once it is over another application.
+        private var outside: Any?
+        private var observers: [NSObjectProtocol] = []
 
         /// What a pointer at `point` should be shown, given the cursor this
         /// layer wants and whether the pointer was over it a moment ago.
@@ -53,6 +56,22 @@ struct CursorLayer: NSViewRepresentable {
             return wasInside ? .arrow : nil
         }
 
+        /// Whether the pencil has to be handed back, given that the pointer
+        /// is no longer ours. Nil means there is nothing to hand back.
+        ///
+        /// `cursor(_:at:in:wasInside:)` above deals with the pointer moving
+        /// from this layer to somewhere else IN THE WINDOW — the camera
+        /// pane, the toolbar, the sidebar. This one is the other way out:
+        /// the pointer leaves the WINDOW, or the app stops being the active
+        /// one, and no mouse-moved event is ever delivered to say so, so the
+        /// pencil was left lying over Finder and everything else (Sean,
+        /// 2026-09-21: "make sure the draw pen only shows while its in the
+        /// notes pane, not outside the app").
+        static func reclaimed(cursor: NSCursor?, wasInside: Bool) -> NSCursor? {
+            guard cursor != nil, wasInside else { return nil }
+            return .arrow
+        }
+
         /// The argument with the text view is settled here, not in the view
         /// hierarchy: a cursorUpdate event is how AppKit hands a view its turn
         /// to set the cursor (the text view's I-beam, the window's arrow), so
@@ -65,6 +84,7 @@ struct CursorLayer: NSViewRepresentable {
             if window == nil {
                 if let monitor { NSEvent.removeMonitor(monitor) }
                 monitor = nil
+                stopWatchingForLeaving()
                 return
             }
             // Without this the window is only told about mouse moves while
@@ -73,6 +93,7 @@ struct CursorLayer: NSViewRepresentable {
             // pencil stayed on over there (Sean, 2026-09-20: "cursor only
             // becomes a pen in the notes pane in drawing mode!!!!!").
             window?.acceptsMouseMovedEvents = true
+            watchForLeaving()
             guard monitor == nil else { return }
             monitor = NSEvent.addLocalMonitorForEvents(
                 matching: [.cursorUpdate, .mouseMoved, .leftMouseDragged, .mouseEntered, .mouseExited]) { [weak self] event in
@@ -101,6 +122,42 @@ struct CursorLayer: NSViewRepresentable {
 
         deinit {
             if let monitor { NSEvent.removeMonitor(monitor) }
+            if let outside { NSEvent.removeMonitor(outside) }
+            observers.forEach(NotificationCenter.default.removeObserver)
+        }
+
+        /// The three ways the pointer stops being ours without a mouse-moved
+        /// event ever saying so: it crosses into another application (a
+        /// GLOBAL monitor is the only thing that sees that, and it can only
+        /// watch, which is all this needs), the window stops being key, or
+        /// the app stops being active. Each hands the pencil back.
+        private func watchForLeaving() {
+            guard outside == nil else { return }
+            outside = NSEvent.addGlobalMonitorForEvents(matching: [.mouseMoved, .leftMouseDragged]) {
+                [weak self] _ in
+                // A global monitor only fires for events going to ANOTHER
+                // app, so its arrival is itself the news: the pointer is not
+                // here any more.
+                self?.handBack()
+            }
+            for name in [NSWindow.didResignKeyNotification, NSApplication.didResignActiveNotification] {
+                observers.append(NotificationCenter.default.addObserver(
+                    forName: name, object: nil, queue: .main) { [weak self] _ in self?.handBack() })
+            }
+        }
+
+        private func stopWatchingForLeaving() {
+            if let outside { NSEvent.removeMonitor(outside) }
+            outside = nil
+            observers.forEach(NotificationCenter.default.removeObserver)
+            observers = []
+        }
+
+        /// Put the arrow back, once, if the pencil is ours and still up.
+        private func handBack() {
+            guard let wanted = Self.reclaimed(cursor: cursor, wasInside: isMouseInside) else { return }
+            isMouseInside = false
+            wanted.set()
         }
 
         override func resetCursorRects() {
