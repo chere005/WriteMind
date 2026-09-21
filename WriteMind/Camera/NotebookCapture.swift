@@ -449,12 +449,23 @@ enum NotebookCapture {
     /// the raw ink, dots and specks and page edge included.
     static func darkerThanPaper(gray: [UInt8], width: Int, height: Int, darkerBy threshold: Int = 28) -> [Bool] {
         precondition(gray.count == width * height)
-        let mean = localMean(gray, width: width, height: height, radius: max(8, min(width, height) / 40))
+        let mean = localMean(gray, width: width, height: height,
+                             radius: localMeanRadius(width: width, height: height))
         var ink = [Bool](repeating: false, count: width * height)
         for index in 0..<(width * height) where Int(mean[index]) - Int(gray[index]) >= threshold {
             ink[index] = true
         }
         return ink
+    }
+
+    /// How far the "darker than the paper round it" test looks. It is the
+    /// one number that decides how big a solid shape has to be before the
+    /// test hollows it out — past about this radius the middle of a blot
+    /// is no darker than its own surroundings and stops being ink — so
+    /// anything that has to tell a drawn outline from a hollowed-out blob
+    /// asks for it rather than guessing (`HandwritingMarks.checkbox`).
+    static func localMeanRadius(width: Int, height: Int) -> Int {
+        max(8, min(width, height) / 40)
     }
 
     /// The average of a square window round every pixel, from a summed-area

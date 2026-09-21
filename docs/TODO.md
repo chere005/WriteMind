@@ -20,10 +20,6 @@ had to say it. Verification is the job, not an item.
   its parsing, the grid you typed in, the toolbar button and ⌃⌘T, and
   reading a ruled table off a photograph, which existed only to write one.
   `git show` the removal commit for the old one when the new one is wanted.
-- **OCR, further.** Strikethrough, rings, arrows, checkboxes and algebra
-  are read now, and an arrow between two words of a line. A filled square
-  bullet wider than the ink mask's local window still reads as an empty
-  checkbox.
 - **The two panes are close to the same height, not exactly.** The blank
   line between cells and a fence's own lines are drawn at the rendered
   page's gap, and the heading ladder already matches — but a code block's

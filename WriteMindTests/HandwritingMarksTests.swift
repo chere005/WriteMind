@@ -269,6 +269,40 @@ final class HandwritingMarksTests: XCTestCase {
         XCTAssertNil(read(drawn { $0.fill(square) }), "a blot is a bullet, not a box")
     }
 
+    func testAFatBulletTheThresholdHollowedOutIsStillNotACheckbox() {
+        // A solid bullet wider than the ink mask's local window comes back
+        // HOLLOW: the middle of it is no darker than its own surroundings,
+        // so the mask keeps only a thick ring — four inked edges and an
+        // empty middle, which is exactly what an unticked box looks like
+        // (the open list, 2026-09-20). What gives it away is the depth of
+        // the ink at the walls: a pen draws two or three pixels and this
+        // is as deep as the threshold looks.
+        let radius = NotebookCapture.localMeanRadius(width: width, height: height)
+        let hollowed = drawn { context in
+            context.setLineWidth(CGFloat(radius))
+            context.stroke(self.square.insetBy(dx: CGFloat(radius) / 2, dy: CGFloat(radius) / 2))
+        }
+        XCTAssertNil(read(hollowed), "a bullet, not a box")
+    }
+
+    func testTheWallsOfADrawnBoxAreAPensWidthAndNoMore() {
+        let box = drawn { $0.stroke(square) }
+        let walls = HandwritingMarks.wallThickness(inkBox(box), ink: box, width: width, height: height)
+        // Four pixels of a thirty-two pixel square: an eighth, and the
+        // rule wants a quarter before it calls something a blot.
+        XCTAssertLessThan(walls, Double(HandwritingMarks.inkBoxSide(inkBox(box))) * 0.25,
+                          "or every hand-drawn box would be read as a blot")
+    }
+
+    func testAThinBoxIsStillReadOnAPageSizedMask() {
+        // The rule is in units of the threshold's own window, so it has to
+        // hold at the size a real page comes in at, not only on this
+        // test's small canvas.
+        let radius = NotebookCapture.localMeanRadius(width: 1200, height: 1600)
+        XCTAssertEqual(radius, 30, "the window a 1200-pixel page is read with")
+        XCTAssertLessThan(3.0, Double(radius) / 2, "a three-pixel pen stroke is still a box")
+    }
+
     func testARoundLetterAtTheHeadOfALineIsNotACheckbox() {
         // The shapes that are nearly square and hollow, which is exactly
         // what the four-edges rule is there to throw out.

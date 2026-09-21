@@ -233,11 +233,59 @@ enum HandwritingMarks {
             return nil
         }
         guard edgesInked(box, ink: ink, width: width, height: height) >= 0.8 else { return nil }
+        // A SOLID bullet big enough to outrun the threshold's window comes
+        // back hollow, and a hollow square with four inked edges is exactly
+        // what this function is looking for — so a fat filled square read
+        // as an EMPTY checkbox (the open list, 2026-09-20). What tells them
+        // apart is how THICK the ink round the hollow is: a pen draws two
+        // to four pixels, and the ring a hollowed-out blob keeps is as deep
+        // as the test looks, which is `localMeanRadius`. Nothing drawn with
+        // a pen is that thick, so a box whose walls are is not a box.
+        //
+        // TWO readings, and it takes both, because either alone throws a
+        // real box away. A wall as deep as the test looks is suspicious,
+        // but on a small mask that window has a floor of 8 and an inked
+        // pen stroke measures 4 — so the wall also has to be a large part
+        // of the BOX, which a pen's line never is (4 pixels of a 32-pixel
+        // square is an eighth) and a hollowed blob's ring always is.
+        let radius = NotebookCapture.localMeanRadius(width: width, height: height)
+        let walls = wallThickness(box, ink: ink, width: width, height: height)
+        if walls >= Double(radius) * 0.5, walls >= Double(shortSide) * 0.25 { return nil }
         let inside = insideInk(box, ink: ink, width: width, height: height)
         // A tick fills about a third of the inside and a cross about
-        // three fifths; a filled square fills all of it.
+        // three fifths; a filled square small enough to stay solid in the
+        // mask fills all of it.
         guard inside < 0.7 else { return nil }
         return inside >= 0.08
+    }
+
+    /// The short side of a box — what the wall rule measures against.
+    static func inkBoxSide(_ box: CGRect) -> CGFloat { min(box.width, box.height) }
+
+    /// How deep the ink is at the four walls of a box: from the middle of
+    /// each edge, inwards, the run of ink before the first gap. The
+    /// THINNEST of the four, because one heavy side is a pen pressed
+    /// harder and a blob is thick on every side.
+    static func wallThickness(_ box: CGRect, ink: [Bool], width: Int, height: Int) -> Double {
+        let x0 = max(0, Int(box.minX)), x1 = min(width, Int(box.maxX.rounded(.up)))
+        let y0 = max(0, Int(box.minY)), y1 = min(height, Int(box.maxY.rounded(.up)))
+        guard x1 > x0, y1 > y0, ink.count == width * height else { return 0 }
+        let midX = (x0 + x1) / 2, midY = (y0 + y1) / 2
+
+        func run(_ steps: [Int], _ at: (Int) -> Bool) -> Double {
+            var depth = 0
+            for step in steps {
+                guard at(step) else { break }
+                depth += 1
+            }
+            return Double(depth)
+        }
+
+        let top = run(Array(y0..<y1)) { ink[$0 * width + midX] }
+        let bottom = run(Array((y0..<y1).reversed())) { ink[$0 * width + midX] }
+        let left = run(Array(x0..<x1)) { ink[midY * width + $0] }
+        let right = run(Array((x0..<x1).reversed())) { ink[midY * width + $0] }
+        return min(min(top, bottom), min(left, right))
     }
 
     /// How much of the WORST of the four edges of a box is inked: for each
