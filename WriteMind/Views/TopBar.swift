@@ -86,6 +86,13 @@ struct TopBar: View {
             BarGroup(.insert) { insertTools }
             BarGroup(.maths) { mathsTools }
             BarGroup(.flowchart) { flowChartTools }
+            // The way back to the notebook, ALWAYS on the bar (Sean,
+            // 2026-09-21: "always show a cursor in the menu bar"). It sits
+            // outside the pen's section on purpose: a section can be put
+            // away, and putting that one away while the pane was in pen or
+            // select mode left no button anywhere that gave the clicks back
+            // to the words.
+            cursorButton
             BarGroup(.capture) { captureTools }
 
             Spacer(minLength: 6)
@@ -306,6 +313,16 @@ struct TopBar: View {
         }
     }
 
+    /// Cursor mode: the notebook's own. Never disabled and never hidden —
+    /// it is the way out of the other two.
+    private var cursorButton: some View {
+        BarButton(systemImage: "cursorarrow", label: "Cursor",
+                  help: "The notebook takes the clicks: the words, the bars between the cells, the brackets",
+                  isOn: appState.canvasMode == .cursor) {
+            appState.canvasMode = .cursor
+        }
+    }
+
     @ViewBuilder
     private var captureTools: some View {
         // A button each for the three modes, the way Sean asked (2026-09-20:
@@ -315,16 +332,14 @@ struct TopBar: View {
         // instead of hiding it a popover deep — and only the pen carries a
         // chevron, because only the pen has anything more to set.
         //
+        // Cursor is not in here: it is on the bar itself, so that putting
+        // this section away can never strand the pane in pen or select
+        // mode with no way back.
+        //
         // The capture button that used to sit here is gone: the camera
         // pane's own three buttons say what to do with a box (Sean,
         // 2026-09-19: "get rid of the capture button in the toolbar").
         Group {
-            BarButton(systemImage: "cursorarrow", label: "Cursor",
-                      help: "The notebook takes the clicks: the words, the bars between the cells, the brackets",
-                      isOn: appState.canvasMode == .cursor) {
-                appState.canvasMode = .cursor
-            }
-
             BarSplit(isOn: appState.canvasMode == .pen) {
                 BarButton(systemImage: "pencil", label: "Pen",
                           help: appState.penActive ? "Put the pen down" : "Draw over the note",
