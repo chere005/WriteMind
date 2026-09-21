@@ -10,7 +10,7 @@
  * port is not something to point at somebody's real notes on its first run.
  */
 
-import { app, BrowserWindow, dialog, ipcMain, shell } from "electron"
+import { app, BrowserWindow, dialog, ipcMain, net, protocol, shell } from "electron"
 import { watch, type FSWatcher } from "node:fs"
 import { promises as fs } from "node:fs"
 import os from "node:os"
@@ -18,11 +18,18 @@ import path from "node:path"
 import { fileURLToPath } from "node:url"
 import { capabilitiesFor } from "@writemind/core"
 import {
-  createNote, createSection, readDrawing, readNote, renameNote, reorder, tree,
-  writeDrawing, writeNote,
+  createNote, createSection, mediaPath, readDrawing, readNote, renameNote, reorder, saveMedia,
+  tree, writeDrawing, writeNote,
 } from "./notes"
 
 const here = path.dirname(fileURLToPath(import.meta.url))
+
+// The pictures are served over a scheme of the app's own rather than read
+// into the page as base64: a capture is a megabyte or two, and the note
+// that holds six of them should not carry them in its markup.
+protocol.registerSchemesAsPrivileged([
+  { scheme: "wm", privileges: { standard: true, secure: true, supportFetchAPI: true } },
+])
 const DEV = process.env.WRITEMIND_DEV === "1"
 
 const notesRoot = (): string =>
@@ -71,6 +78,13 @@ async function createWindow(): Promise<void> {
 }
 
 app.whenReady().then(async () => {
+  protocol.handle("wm", (request) => {
+    const url = new URL(request.url)
+    if (url.hostname !== "media") return new Response("not found", { status: 404 })
+    const file = mediaPath(notesRoot(), decodeURIComponent(url.pathname.replace(/^\//, "")))
+    return net.fetch(`file://${file}`)
+  })
+
   ipcMain.handle("app:capabilities", () => ({
     ...capabilitiesFor(process.platform),
     platform: process.platform,
@@ -90,6 +104,18 @@ app.whenReady().then(async () => {
   ipcMain.handle("drawing:write", (_event, note: string, json: string) =>
     writeDrawing(notesRoot(), note, json))
   ipcMain.handle("notes:reveal", () => shell.openPath(notesRoot()))
+  ipcMain.handle("media:save", (_event, bytes: Uint8Array, extension: string) =>
+    saveMedia(notesRoot(), bytes, extension))
+  ipcMain.handle("media:choose", async () => {
+    if (!window) return null
+    const chosen = await dialog.showOpenDialog(window, {
+      properties: ["openFile"],
+      filters: [{ name: "Pictures", extensions: ["png", "jpg", "jpeg", "gif", "webp", "heic"] }],
+    })
+    if (chosen.canceled || chosen.filePaths.length === 0) return null
+    const file = chosen.filePaths[0]!
+    return { bytes: await fs.readFile(file), extension: path.extname(file) }
+  })
 
   // Export ▸ PDF, which both platforms have because Chromium prints the
   // page — the one thing the port gets for free that the Mac had to build.

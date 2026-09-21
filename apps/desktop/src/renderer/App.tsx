@@ -9,7 +9,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import type { EditorView } from "@codemirror/view"
 import {
-  emptyDrawing, readDrawing, writeDrawing, type Drawing, type Note, type Placement,
+  emptyDrawing, newID, noTransform, placedCentre, readDrawing, writeDrawing,
+  type Drawing, type Note, type Placement,
 } from "@writemind/core"
 import { Canvas, type CanvasMode } from "./Canvas"
 import { Notebook } from "./Notebook"
@@ -69,6 +70,13 @@ export function App() {
         if (!file || dirty.current) return
         const fresh = await window.wm.readNote(file).catch(() => null)
         if (fresh !== null) setText((was) => (was === fresh ? was : fresh))
+        // The sidecar too: the drawing is the note's other half, and an
+        // edit to it from outside — another window, a sync — has to show
+        // up the same way the words do.
+        if (drawingDirty.current) return
+        const sidecar = await window.wm.readDrawing(file).catch(() => null)
+        const next = readDrawing(sidecar)
+        setDrawing((was) => (writeDrawing(was) === writeDrawing(next) ? was : next))
       })()
     })
   }, [reload])
@@ -135,6 +143,68 @@ export function App() {
     setPlacing(next)
     if (next) setMode("cursor")
   }, [])
+
+  /**
+   * A picture pasted or dropped on the page. It goes one gap UNDER the
+   * caret's line and flush with the text, and NOTHING MOVES to make room:
+   * the picture floats over the note and the note does not know it is
+   * there.
+   */
+  const addPicture = useCallback(async (blob: Blob) => {
+    const bytes = new Uint8Array(await blob.arrayBuffer())
+    const bitmap = await createImageBitmap(blob).catch(() => null)
+    if (!bitmap) return
+    const extension = blob.type.includes("jpeg") ? ".jpg"
+      : blob.type.includes("gif") ? ".gif"
+      : blob.type.includes("webp") ? ".webp" : ".png"
+    const saved = await window.wm.saveMedia(bytes, extension)
+    const pane = view
+      ? { width: view.scrollDOM.clientWidth, height: view.scrollDOM.clientHeight }
+      : { width: 800, height: 600 }
+    const scroll = view ? view.scrollDOM.scrollTop : 0
+    const aspect = bitmap.height / Math.max(bitmap.width, 1)
+    const width = Math.min(pane.width * 0.45, bitmap.width)
+    // Where the caret's line is, in the same coordinates the layer uses.
+    let caretLine = null as null | { x: number; y: number; width: number; height: number }
+    if (view) {
+      const main = view.state.selection.main
+      const block = view.lineBlockAt(main.head)
+      caretLine = { x: 30, y: block.top, width: pane.width - 60, height: block.height }
+    }
+    const centre = placedCentre({ width, height: width * aspect, pane, scroll, caretLine })
+    changeDrawing({
+      items: [...drawing.items, {
+        kind: "image",
+        image: {
+          id: newID(), file: saved.file, center: centre, width: width / pane.width,
+          aspect, transform: noTransform(), hidden: false, group: null,
+        },
+      }],
+    })
+  }, [changeDrawing, drawing.items, view])
+
+  /** Insert ▸ Image: the third way in, landing where the other two do. */
+  const choosePicture = useCallback(async () => {
+    const chosen = await window.wm.choosePicture()
+    if (!chosen) return
+    await addPicture(new Blob([new Uint8Array(chosen.bytes)],
+      { type: chosen.extension === ".png" ? "image/png" : "image/jpeg" }))
+  }, [addPicture])
+
+  // ⌘V pastes a picture straight in — and only when the clipboard has one:
+  // text pasted into the notebook is the editor's business, never ours.
+  useEffect(() => {
+    const paste = (event: ClipboardEvent) => {
+      const file = [...(event.clipboardData?.items ?? [])]
+        .find((item) => item.kind === "file" && item.type.startsWith("image/"))
+        ?.getAsFile()
+      if (!file) return
+      event.preventDefault()
+      void addPicture(file)
+    }
+    window.addEventListener("paste", paste)
+    return () => window.removeEventListener("paste", paste)
+  }, [addPicture])
 
   const toggleMode = useCallback(() => {
     setPlacing(null)
@@ -205,11 +275,19 @@ export function App() {
         {current ? (
           <>
             <TopBar view={view} onExportPDF={() => { void window.wm.exportPDF(title.replace(/\.md$/, "")) }}
+                    onAddPicture={() => { void choosePicture() }}
                     mode={mode} onToggleMode={toggleMode}
                     penColour={penColour} onPenColour={setPenColour}
                     penWidth={penWidth} onPenWidth={setPenWidth}
                     onPlace={arm} placing={placing} />
-            <div className="stack">
+            <div className="stack"
+                 onDragOver={(event) => { event.preventDefault() }}
+                 onDrop={(event) => {
+                   const file = [...event.dataTransfer.files].find((one) => one.type.startsWith("image/"))
+                   if (!file) return
+                   event.preventDefault()
+                   void addPicture(file)
+                 }}>
               <Notebook file={current} text={text} onChange={change} onReady={setView} />
               <Canvas drawing={drawing} onChange={changeDrawing} mode={mode}
                       colorHex={penColour} penWidth={penWidth}

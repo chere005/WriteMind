@@ -16,7 +16,8 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import {
-  applyMatrix, angleAbout, basePoints, bounds, boundsOf, emptyDrawing, headLength, idsTouching,
+  applyMatrix, angleAbout, baseBounds, baseCenter, basePoints, bounds, boundsOf, emptyDrawing,
+  headLength, idsTouching,
   indexAt, isHidden, itemId, itemTransform, newID, noTransform, placedItem, polylines, rectFrom,
   removing, route, scaleFactor, toggled, transformed, unitPolylines, whole, withTransform,
   type CanvasItem, type Drawing, type ItemTransform, type Placement, type Point, type Rect,
@@ -58,6 +59,32 @@ type Gesture =
 
 const HANDLE = 11
 
+/**
+ * The pictures, loaded once each and kept — a note with six captures in it
+ * would otherwise decode all six on every repaint. They are served over the
+ * app's own `wm://media/` scheme by the main process rather than read into
+ * the page as base64.
+ */
+const pictures = new Map<string, HTMLImageElement>()
+
+function picture(file: string, onLoad: () => void): HTMLImageElement | null {
+  const held = pictures.get(file)
+  if (held) return held.complete && held.naturalWidth > 0 ? held : null
+  const image = new Image()
+  image.onload = onLoad
+  image.onerror = () => {
+    // A picture that will not load is a picture the note has lost track
+    // of, and saying nothing is how that goes unnoticed for weeks.
+    console.error(`WriteMind: could not load ${image.src}`)
+    window.dispatchEvent(new ErrorEvent("error", {
+      message: `could not load the picture ${file}`,
+    }))
+  }
+  image.src = `wm://media/${encodeURIComponent(file)}`
+  pictures.set(file, image)
+  return null
+}
+
 export function Canvas({
   drawing, onChange, mode, colorHex, penWidth, placing, onPlaced, scroller, onSelectionChanged,
 }: Props) {
@@ -70,6 +97,8 @@ export function Canvas({
   const [command, setCommand] = useState(false)
   const undoStack = useRef<Drawing[]>([])
   const redoStack = useRef<Drawing[]>([])
+  /** Bumped when a picture finishes loading, which is a reason to repaint. */
+  const [loaded, setLoaded] = useState(0)
 
   const latest = useRef({ drawing, selection, gesture, placing, mode })
   latest.current = { drawing, selection, gesture, placing, mode }
@@ -138,7 +167,7 @@ export function Canvas({
 
     for (const item of drawing.items) {
       if (isHidden(item)) continue
-      paint(context, item, size)
+      paint(context, item, size, () => setLoaded((tick) => tick + 1))
     }
     if (gesture?.kind === "drawing" && gesture.points.length > 0) {
       paint(context, {
@@ -174,7 +203,7 @@ export function Canvas({
       context.strokeRect(box.x - 3, box.y - 3, box.width + 6, box.height + 6)
       context.setLineDash([])
     }
-  }, [drawing, size, scroll, gesture, box, colorHex, penWidth, placing])
+  }, [drawing, size, scroll, gesture, box, colorHex, penWidth, placing, loaded])
 
   // MARK: - The gestures
 
@@ -451,7 +480,8 @@ const edited = (drawing: Drawing, snapshot: Map<string, ItemTransform>,
 })
 
 /** One object, drawn where it is now. */
-function paint(context: CanvasRenderingContext2D, item: CanvasItem, size: Size): void {
+function paint(context: CanvasRenderingContext2D, item: CanvasItem, size: Size,
+  onPictureLoad: () => void = () => {}): void {
   const place = (point: Point) => applyMatrix(item, size, point)
   context.lineCap = "round"
   context.lineJoin = "round"
@@ -528,11 +558,29 @@ function paint(context: CanvasRenderingContext2D, item: CanvasItem, size: Size):
       if (item.connector.startHead === "arrow") head(points[0]!, points[1]!)
       return
     }
-    case "image":
-      // A picture is drawn by the DOM layer above, which has the <img>;
-      // the canvas draws its outline so the handles have something to sit
-      // against while it loads.
+    case "image": {
+      const image = picture(item.image.file, onPictureLoad)
+      const box = baseBounds(item, size)
+      const centre = baseCenter(item, size)
+      const t = item.image.transform
+      context.save()
+      context.translate(centre.x + t.dx * size.width, centre.y + t.dy * size.height)
+      context.rotate(t.rotation)
+      context.scale(t.scale, t.scale)
+      context.translate(-centre.x, -centre.y)
+      if (image) {
+        context.drawImage(image, box.x, box.y, box.width, box.height)
+      } else {
+        // Still loading: its box, so the handles have something to sit
+        // against and the page does not jump when it arrives.
+        context.strokeStyle = "rgba(128,128,136,0.5)"
+        context.setLineDash([4, 3])
+        context.strokeRect(box.x, box.y, box.width, box.height)
+        context.setLineDash([])
+      }
+      context.restore()
       return
+    }
   }
 }
 

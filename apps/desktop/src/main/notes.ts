@@ -171,6 +171,30 @@ export async function writeDrawing(root: string, note: string, json: string): Pr
   await fs.writeFile(file, json, "utf8")
 }
 
+/**
+ * A picture put on the drawing layer: bytes in, a file in `.drawings/media`
+ * out. The media folder is the app's own bookkeeping — hidden, beside the
+ * notes, and swept of anything no sidecar points at any more.
+ */
+export async function saveMedia(root: string, bytes: Uint8Array, extension: string):
+Promise<{ file: string }> {
+  const folder = path.join(root, ".drawings", "media")
+  await fs.mkdir(folder, { recursive: true })
+  const stamp = createHash("sha1").update(bytes).digest("hex").slice(0, 16)
+  const file = `${stamp}${extension.startsWith(".") ? extension : `.${extension}`}`
+  const where = path.join(folder, file)
+  // The same picture pasted twice is one file: the name IS its contents.
+  try {
+    await fs.access(where)
+  } catch {
+    await fs.writeFile(where, bytes)
+  }
+  return { file }
+}
+
+export const mediaPath = (root: string, file: string): string =>
+  path.join(root, ".drawings", "media", path.basename(file))
+
 /** Order, kept honest when a row is dragged. */
 export async function reorder(root: string, folder: string, names: string[]): Promise<void> {
   await writeOrder(root, setOrder(await readOrder(root), names, folder, root))

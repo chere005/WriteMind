@@ -29,6 +29,8 @@ declare global {
       readDrawing(note: string): Promise<string | null>
       writeDrawing(note: string, json: string): Promise<void>
       revealNotes(): Promise<string>
+      saveMedia(bytes: Uint8Array, extension: string): Promise<{ file: string }>
+      choosePicture(): Promise<{ bytes: Uint8Array; extension: string } | null>
       exportPDF(suggested: string): Promise<string | null>
       onNotesChanged(listener: () => void): () => void
     }

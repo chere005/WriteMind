@@ -398,3 +398,80 @@ export function scaleFactor(start: Point, current: Point, pivot: Point): number 
   if (before <= 1) return 1
   return Math.min(Math.max(distance(current, pivot) / before, 0.05), 20)
 }
+
+/**
+ * A picture with only the part inside `rect` (fractions of it, top-left
+ * origin) left, on a new file: the kept part stays exactly where it was on
+ * the pane, and the transform is untouched.
+ */
+export function cropped(item: CanvasItem, rect: Rect, file: string, aspect: number, size: Size):
+CanvasItem {
+  if (item.kind !== "image" || size.width <= 0 || size.height <= 0) return item
+  const image = item.image
+  const base = baseBounds(item, size)
+  // The kept part's centre before the transform, and where it is now.
+  const centre = {
+    x: base.x + (rect.x + rect.width / 2) * base.width,
+    y: base.y + (rect.y + rect.height / 2) * base.height,
+  }
+  const placed = applyMatrix(item, size, centre)
+  // The transform turns and scales about the item's own centre and then
+  // moves it by (dx, dy), so the new centre goes where the kept part is
+  // now, less that move.
+  return {
+    kind: "image",
+    image: {
+      ...image,
+      file,
+      width: image.width * rect.width,
+      aspect,
+      center: {
+        x: (placed.x - image.transform.dx * size.width) / size.width,
+        y: (placed.y - image.transform.dy * size.height) / size.height,
+      },
+    },
+  }
+}
+
+/**
+ * One corner of the crop box dragged to `point` (fractions of the picture):
+ * 0 top left, 1 top right, 2 bottom right, 3 bottom left. The box stays
+ * inside the picture and never thinner than `minimum`.
+ */
+export function cropRect(rect: Rect, corner: number, point: Point, minimum = 0.05): Rect {
+  const x = Math.min(Math.max(point.x, 0), 1), y = Math.min(Math.max(point.y, 0), 1)
+  let minX = rect.x, minY = rect.y
+  let maxX = rect.x + rect.width, maxY = rect.y + rect.height
+  switch (corner) {
+    case 0: minX = Math.min(x, maxX - minimum); minY = Math.min(y, maxY - minimum); break
+    case 1: maxX = Math.max(x, minX + minimum); minY = Math.min(y, maxY - minimum); break
+    case 2: maxX = Math.max(x, minX + minimum); maxY = Math.max(y, minY + minimum); break
+    default: minX = Math.min(x, maxX - minimum); maxY = Math.max(y, minY + minimum); break
+  }
+  return { x: minX, y: minY, width: maxX - minX, height: maxY - minY }
+}
+
+/**
+ * Where a new picture lands: under the caret's line, one gap below it and
+ * flush with the text's left edge — and NOTHING MOVES to make room, because
+ * the object floats over the note and the note does not know it is there.
+ * The middle of what is on screen when there is no caret to go by.
+ */
+export function placedCentre(options: {
+  width: number
+  height: number
+  pane: Size
+  scroll: number
+  caretLine?: Rect | null
+  gap?: number
+}): Point {
+  const { width, height, pane, scroll } = options
+  const gap = options.gap ?? 8
+  const line = options.caretLine
+  if (!line) {
+    return { x: 0.5, y: (scroll + pane.height / 2) / Math.max(pane.height, 1) }
+  }
+  const x = Math.min(line.x + width / 2, Math.max(width / 2, pane.width - width / 2))
+  const y = line.y + line.height + gap + height / 2
+  return { x: x / Math.max(pane.width, 1), y: y / Math.max(pane.height, 1) }
+}

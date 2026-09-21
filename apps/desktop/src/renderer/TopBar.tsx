@@ -27,11 +27,12 @@ interface Props {
   onPenWidth(width: number): void
   placing: Placement | null
   onPlace(placing: Placement | null): void
+  onAddPicture(): void
 }
 
 export function TopBar({
   view, onExportPDF, mode, onToggleMode, penColour, onPenColour, penWidth, onPenWidth,
-  placing, onPlace,
+  placing, onPlace, onAddPicture,
 }: Props) {
   const run = (command: (view: EditorView) => boolean) => () => { if (view) command(view) }
 
@@ -80,6 +81,8 @@ export function TopBar({
       <Button label="⇤" title="Outdent  ⌘[" onClick={run(outdentLines)} />
       <Button label="⇥" title="Indent  ⌘]" onClick={run(indentLines)} />
       <div className="bar-divider" />
+      <Button label="▣" title="Add a picture (⌘V pastes one, and so does a drop)"
+              onClick={onAddPicture} />
       {/* ONE BUTTON FOR THE PANE: the pen, lit while it is down. ⌘ is the
           selector in either mode, so the marquee needs none of its own. */}
       <button className={`icon-button${mode === "pen" ? " on" : ""}`}

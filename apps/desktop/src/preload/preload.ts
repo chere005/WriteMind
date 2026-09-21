@@ -20,6 +20,9 @@ const api = {
   readDrawing: (note: string) => ipcRenderer.invoke("drawing:read", note),
   writeDrawing: (note: string, json: string) => ipcRenderer.invoke("drawing:write", note, json),
   revealNotes: () => ipcRenderer.invoke("notes:reveal"),
+  saveMedia: (bytes: Uint8Array, extension: string) =>
+    ipcRenderer.invoke("media:save", bytes, extension),
+  choosePicture: () => ipcRenderer.invoke("media:choose"),
   exportPDF: (suggested: string) => ipcRenderer.invoke("export:pdf", suggested),
   onNotesChanged: (listener: () => void) => {
     const wrapped = () => listener()

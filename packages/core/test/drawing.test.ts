@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest"
 import {
-  angleAbout, baseBounds, boundsOf, hitTest, idsTouching, intersects, noTransform, placedCenter,
-  scaleFactor, transformed, type CanvasItem, type Size,
+  angleAbout, baseBounds, boundsOf, cropped, cropRect, hitTest, idsTouching, intersects,
+  noTransform, placedCenter, placedCentre, scaleFactor, transformed, type CanvasItem, type Size,
 } from "../src/index"
 import {
   grouped, toggle, toggled, ungrouped, whole,
@@ -371,5 +371,59 @@ describe("the sidecar", () => {
   it("reads nothing at all as an empty drawing", () => {
     expect(readDrawing(null)).toEqual(emptyDrawing())
     expect(readDrawing("not json")).toEqual(emptyDrawing())
+  })
+})
+
+/** The crop box, transcribed from `WriteMindTests/CropTests.swift`. */
+describe("cropping a picture", () => {
+  const image = (): CanvasItem => ({
+    kind: "image",
+    image: {
+      id: "i", file: "a.png", center: { x: 0.5, y: 0.5 }, width: 0.4, aspect: 0.5,
+      transform: noTransform(), hidden: false, group: null,
+    },
+  })
+
+  it("leaves the kept part exactly where it was on the pane", () => {
+    const whole = image()
+    const box = baseBounds(whole, pane)
+    // The right-hand half of it.
+    const half = { x: 0.5, y: 0, width: 0.5, height: 1 }
+    const out = cropped(whole, half, "b.png", 1, pane)
+    if (out.kind !== "image") throw new Error("not a picture")
+    expect(out.image.file).toBe("b.png")
+    expect(out.image.width).toBeCloseTo(0.2, 4)
+    const after = baseBounds(out, pane)
+    expect(after.x + after.width / 2).toBeCloseTo(box.x + box.width * 0.75, 3)
+  })
+
+  it("keeps a dragged corner inside the picture and never thinner than the minimum", () => {
+    const rect = { x: 0, y: 0, width: 1, height: 1 }
+    expect(cropRect(rect, 0, { x: 0.3, y: 0.2 })).toEqual({ x: 0.3, y: 0.2, width: 0.7, height: 0.8 })
+    // Dragged past the far edge, and past itself.
+    const pinched = cropRect(rect, 0, { x: 2, y: 2 })
+    expect(pinched.width).toBeCloseTo(0.05, 4)
+    expect(pinched.height).toBeCloseTo(0.05, 4)
+    const negative = cropRect(rect, 2, { x: -1, y: -1 })
+    expect(negative.width).toBeCloseTo(0.05, 4)
+  })
+})
+
+describe("where a new picture lands", () => {
+  it("goes one gap under the caret's line, flush with the text", () => {
+    const centre = placedCentre({
+      width: 200, height: 100, pane: { width: 1000, height: 400 }, scroll: 0,
+      caretLine: { x: 30, y: 50, width: 400, height: 20 },
+    })
+    expect(centre.x).toBeCloseTo((30 + 100) / 1000, 4)
+    expect(centre.y).toBeCloseTo((50 + 20 + 8 + 50) / 400, 4)
+  })
+
+  it("lands in the middle of what is on screen with no caret to go by", () => {
+    const centre = placedCentre({
+      width: 200, height: 100, pane: { width: 1000, height: 400 }, scroll: 200, caretLine: null,
+    })
+    expect(centre.x).toBeCloseTo(0.5, 4)
+    expect(centre.y).toBeCloseTo(1, 4)
   })
 })
