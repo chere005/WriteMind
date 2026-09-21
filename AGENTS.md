@@ -182,6 +182,18 @@ CoreMind's `bin/report-status.sh`.
   whenever it is not `cursor`, because a pane that swallows every click and
   comes up that way after a launch needs somewhere on screen that says why.
   `penActive` is a question about the mode now and is stored nowhere.
+- **A MARK IS AN ICON; A SHAPE IS A DRAWING.** Sean, 2026-09-21: "the
+  marks shouldn't be like shapes or drawings.. these are simple click to
+  insert icons.. just place it and allow resizing". So the Marks popover
+  calls `NoteStore.addShape` and the mark is on the page before the
+  popover has closed, picked up, with its handles — no arming, no second
+  gesture. `CanvasPlacement` is still how a chart's shapes and the lines
+  go down, and that is the difference: a rectangle is drawn at a size
+  and in a place, a tick is just put there. A LINE OR AN ARROW runs from
+  the press to the release and nowhere else; a press that never moved
+  now puts down NOTHING and leaves the tool armed, where it used to put
+  down a short horizontal line centred on the click — a different line
+  from the one asked for, in a different place.
 - **A group is a shared id, and every rule about it is in `CanvasGroups`.**
   Sean, 2026-09-20: "toggle grouping with the button on the screen or
   ctrl+g". `group: UUID?` sits on `Stroke`, `ImageItem` and `ShapeItem`

@@ -51,7 +51,18 @@ struct MarkMenu: View {
             LazyVGrid(columns: Array(repeating: GridItem(.fixed(64), spacing: 6), count: 3), spacing: 6) {
                 ForEach(marks) { kind in
                     PaletteButton(title: kind.title, symbol: kind.symbol) {
-                        appState.placing = .shape(kind)
+                        // CLICK TO INSERT. A mark is an icon, not a
+                        // drawing: picking one puts it on the page there
+                        // and then, at its own size, picked up and ready
+                        // to be moved or resized by its handles (Sean,
+                        // 2026-09-21: "these are simple click to insert
+                        // icons.. just place it and allow resizing").
+                        // Arming the pane and waiting for a drag is what
+                        // the shapes of a chart do, and it made putting a
+                        // tick on a page a two-handed job.
+                        appState.canvasMode = .cursor
+                        store.addShape(kind, colorHex: appState.penColorHex,
+                                       lineWidth: appState.penWidth)
                         isPresented = false
                     }
                 }
@@ -59,7 +70,7 @@ struct MarkMenu: View {
                 line("Both Ways", symbol: "arrow.left.and.right", start: .arrow, end: .arrow)
                 line("Line", symbol: "minus", start: .none, end: .none)
             }
-            Text("Pick one, then drag on the page: it starts where the drag starts and ends where it ends. A plain click puts it down at its own size. Each is an object in the pen's colour, with handles to move, size and turn it.")
+            Text("A mark goes on the page as soon as you pick it — move it, size it and turn it by its handles. A line or an arrow is drawn instead: press where it starts and let go where it ends.")
                 .font(.caption)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)

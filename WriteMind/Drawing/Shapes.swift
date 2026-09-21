@@ -97,15 +97,31 @@ struct ShapeItem: Codable, Equatable, Identifiable {
                 return [[CGPoint(x: 0.5, y: 0), CGPoint(x: 1, y: 1), CGPoint(x: 0, y: 1)]]
             case .parallelogram:
                 return [[CGPoint(x: 0.2, y: 0), CGPoint(x: 1, y: 0), CGPoint(x: 0.8, y: 1), CGPoint(x: 0, y: 1)]]
+
+            // The three MARKS are drawn to look like the thing, not like
+            // a polyline that happens to be near it (Sean, 2026-09-21:
+            // "all the assets look like shit, fix them"). Each is inset
+            // from the unit square so a round cap does not hang out of
+            // the box the handles are drawn round.
             case .check:
-                return [[CGPoint(x: 0.08, y: 0.55), CGPoint(x: 0.38, y: 0.86), CGPoint(x: 0.92, y: 0.14)]]
+                // A tick's short arm is about two fifths of its long one
+                // and the two meet low and left of centre. The old one
+                // came off a corner at 0.08 and knocked its knee into the
+                // bottom edge at 0.86.
+                return [[CGPoint(x: 0.12, y: 0.52), CGPoint(x: 0.40, y: 0.80), CGPoint(x: 0.88, y: 0.16)]]
             case .cross:
-                return [[CGPoint(x: 0.12, y: 0.12), CGPoint(x: 0.88, y: 0.88)],
-                        [CGPoint(x: 0.88, y: 0.12), CGPoint(x: 0.12, y: 0.88)]]
+                // Square and centred, inset enough for the caps.
+                return [[CGPoint(x: 0.16, y: 0.16), CGPoint(x: 0.84, y: 0.84)],
+                        [CGPoint(x: 0.84, y: 0.16), CGPoint(x: 0.16, y: 0.84)]]
             case .star:
+                // A five-pointed star's inner radius is the outer one
+                // over phi squared — 0.382 — and anything much under it
+                // is a spider, which is what 0.2 gave. Inset to 0.46 so
+                // the points do not sit on the edge of the box.
+                let outer = 0.45, inner = outer * 0.382
                 return [(0..<10).map { step in
                     let angle = -Double.pi / 2 + Double(step) * .pi / 5
-                    let radius = step.isMultiple(of: 2) ? 0.5 : 0.2
+                    let radius = step.isMultiple(of: 2) ? outer : inner
                     return CGPoint(x: 0.5 + radius * cos(angle), y: 0.5 + radius * sin(angle))
                 }]
             }

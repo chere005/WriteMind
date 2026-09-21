@@ -166,3 +166,53 @@ final class SymbolTests: XCTestCase {
         }
     }
 }
+
+/// The three marks are icons, and they have to look like the thing.
+final class MarkArtworkTests: XCTestCase {
+    private func box(_ kind: ShapeItem.Kind) -> CGRect {
+        let points = kind.unitPolylines.flatMap { $0 }
+        let xs = points.map(\.x), ys = points.map(\.y)
+        return CGRect(x: xs.min()!, y: ys.min()!,
+                      width: xs.max()! - xs.min()!, height: ys.max()! - ys.min()!)
+    }
+
+    func testEveryMarkIsInsetSoARoundCapStaysInItsBox() {
+        // A cap is half the stroke wide and hangs off the end of the
+        // line; on the edge of the unit square it hangs out of the box
+        // the handles are drawn round.
+        for kind in [ShapeItem.Kind.check, .cross, .star] {
+            let box = box(kind)
+            XCTAssertGreaterThanOrEqual(box.minX, 0.04, "\(kind) touches the left edge")
+            XCTAssertGreaterThanOrEqual(box.minY, 0.04, "\(kind) touches the top edge")
+            XCTAssertLessThanOrEqual(box.maxX, 0.96, "\(kind) touches the right edge")
+            XCTAssertLessThanOrEqual(box.maxY, 0.96, "\(kind) touches the bottom edge")
+        }
+    }
+
+    func testTheCrossIsSquareAndCentred() {
+        let box = box(.cross)
+        XCTAssertEqual(box.width, box.height, accuracy: 0.001)
+        XCTAssertEqual(box.midX, 0.5, accuracy: 0.001)
+        XCTAssertEqual(box.midY, 0.5, accuracy: 0.001)
+    }
+
+    func testTheTicksShortArmIsAboutTwoFifthsOfItsLong() {
+        let tick = ShapeItem.Kind.check.unitPolylines[0]
+        XCTAssertEqual(tick.count, 3)
+        func length(_ a: CGPoint, _ b: CGPoint) -> CGFloat { hypot(b.x - a.x, b.y - a.y) }
+        let short = length(tick[0], tick[1]), long = length(tick[1], tick[2])
+        XCTAssertEqual(short / long, 0.4, accuracy: 0.12, "a tick, not a wide V")
+        XCTAssertLessThan(tick[1].x, 0.5, "the knee is left of centre")
+        XCTAssertGreaterThan(tick[1].y, tick[0].y, "and below where it starts")
+    }
+
+    func testTheStarIsAFivePointedStarAndNotASpider() {
+        let star = ShapeItem.Kind.star.unitPolylines[0]
+        XCTAssertEqual(star.count, 10)
+        let centre = CGPoint(x: 0.5, y: 0.5)
+        func radius(_ point: CGPoint) -> CGFloat { hypot(point.x - centre.x, point.y - centre.y) }
+        let outer = radius(star[0]), inner = radius(star[1])
+        // The classic proportion is the outer radius over phi squared.
+        XCTAssertEqual(inner / outer, 0.382, accuracy: 0.02)
+    }
+}

@@ -73,14 +73,27 @@ final class CanvasPlacementTests: XCTestCase {
         XCTAssertNil(line.startNode, "a line from the palette is attached to nothing")
     }
 
-    func testClickingWithALineArmedPutsDownAShortHorizontalOne() throws {
-        let line = try XCTUnwrap(CanvasPlacement.connector(from: CGPoint(x: 400, y: 300),
-                                                           to: CGPoint(x: 401, y: 300), in: pane,
-                                                           startHead: .none, endHead: .none,
+    func testALineRunsFromThePressToTheReleaseAndNowhereElse() throws {
+        // Sean, 2026-09-21: "click starts the beginning, release is the
+        // end of the arrow".
+        let line = try XCTUnwrap(CanvasPlacement.connector(from: CGPoint(x: 200, y: 150),
+                                                           to: CGPoint(x: 600, y: 450), in: pane,
+                                                           startHead: .none, endHead: .arrow,
                                                            colorHex: "#000000", lineWidth: 3))
-        XCTAssertEqual(line.start.y, line.end.y, accuracy: 0.0001, "level")
-        XCTAssertEqual((line.start.x + line.end.x) / 2, 0.5, accuracy: 0.0001, "centred on the click")
-        XCTAssertGreaterThan(line.end.x - line.start.x, 0.05)
+        XCTAssertEqual(line.start.x, 0.25, accuracy: 0.0001)
+        XCTAssertEqual(line.start.y, 0.25, accuracy: 0.0001)
+        XCTAssertEqual(line.end.x, 0.75, accuracy: 0.0001)
+        XCTAssertEqual(line.end.y, 0.75, accuracy: 0.0001)
+    }
+
+    func testAPressThatNeverMovedPutsDownNoLineAtAll() {
+        // It used to put down a short horizontal one, centred on the
+        // click: a different line from the one asked for, in a different
+        // place. Nothing, and the tool stays armed for the next try.
+        XCTAssertNil(CanvasPlacement.connector(from: CGPoint(x: 400, y: 300),
+                                               to: CGPoint(x: 401, y: 300), in: pane,
+                                               startHead: .none, endHead: .none,
+                                               colorHex: "#000000", lineWidth: 3))
     }
 
     func testTheArmedObjectComesBackAsACanvasItem() throws {

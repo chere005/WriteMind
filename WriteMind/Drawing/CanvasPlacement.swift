@@ -63,17 +63,22 @@ enum CanvasPlacement: Equatable {
                          colorHex: colorHex, lineWidth: stroke)
     }
 
-    /// The line a drag makes. A click puts down a short horizontal one.
+    /// The line a drag makes: it starts where the press went down and
+    /// ends where it came up (Sean, 2026-09-21: "when drawing an arrow or
+    /// line or something, click starts the beginning, release is the end
+    /// of the arrow").
+    ///
+    /// A press that never moved used to put down a short horizontal line
+    /// instead, centred on the click. That is a different line from the
+    /// one that was asked for, in a different place, and it is the answer
+    /// to a question nobody asks — so a press with no drag now puts down
+    /// nothing at all and the tool stays armed for the next try.
     static func connector(from: CGPoint, to: CGPoint, in size: CGSize,
                           startHead: ConnectorItem.Head, endHead: ConnectorItem.Head,
                           colorHex: String, lineWidth: Double) -> ConnectorItem? {
         guard size.width > 1, size.height > 1 else { return nil }
-        var a = from, b = to
-        if !isDrag(from: from, to: to) {
-            let reach = 0.08 * size.width
-            a = CGPoint(x: from.x - reach, y: from.y)
-            b = CGPoint(x: from.x + reach, y: from.y)
-        }
+        guard isDrag(from: from, to: to) else { return nil }
+        let a = from, b = to
         return ConnectorItem(start: CGPoint(x: a.x / size.width, y: a.y / size.height),
                              end: CGPoint(x: b.x / size.width, y: b.y / size.height),
                              startHead: startHead, endHead: endHead,
