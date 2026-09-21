@@ -1155,9 +1155,20 @@ class PasteAwareTextView: NSTextView {
     }
 
     override func mouseMoved(with event: NSEvent) {
-        super.mouseMoved(with: event)
         if let cursorOverride { return cursorOverride.set() }
-        seamCursor(at: convert(event.locationInWindow, from: nil))?.set()
+        // ASK FIRST, and do not call super when the answer is ours.
+        // NSTextView's own mouseMoved sets the I-beam, so calling it
+        // before setting the bar's cursor set TWO cursors per event —
+        // upright, then horizontal — and at the rate a moving pointer
+        // generates events the first of them is on screen long enough to
+        // see. It is not an edge case and does not depend on where the
+        // pointer is in the seam, which is why it survived pixel-aligning
+        // the edges and the stickiness: Sean, 2026-09-21, "even side to
+        // side it flickers".
+        if let cursor = seamCursor(at: convert(event.locationInWindow, from: nil)) {
+            return cursor.set()
+        }
+        super.mouseMoved(with: event)
     }
 
     /// NSTextView answers a mouseEntered with the I-beam as well, and
@@ -1165,9 +1176,11 @@ class PasteAwareTextView: NSTextView {
     /// under a pointer that never moved — so the bar was left with an
     /// upright cursor on it until it was nudged.
     override func mouseEntered(with event: NSEvent) {
-        super.mouseEntered(with: event)
         if let cursorOverride { return cursorOverride.set() }
-        seamCursor(at: convert(event.locationInWindow, from: nil))?.set()
+        if let cursor = seamCursor(at: convert(event.locationInWindow, from: nil)) {
+            return cursor.set()
+        }
+        super.mouseEntered(with: event)
     }
 
     /// Paste stays ENABLED when the pasteboard holds a picture. A plain-text

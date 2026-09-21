@@ -911,6 +911,18 @@ tools/                    build.sh run.sh test.sh (both source signing.sh)
   seam it is already being shown in keeps it until it is two points
   clear. Sticky for the CURSOR only — a click still asks the exact
   `seam(at:)`, because arming the wrong seam is worse than a flicker.
+  A SEVENTH, and the one that was actually left: TWO CURSORS PER
+  EVENT. `PasteAwareTextView.mouseMoved` called `super` first and then
+  set the bar's cursor — and NSTextView's own `mouseMoved` sets the
+  I-beam, so every single move event put an upright cursor up and then
+  a horizontal one over it. At the rate a moving pointer generates
+  events the first of them is on screen long enough to see, which is
+  why it looked like a flicker and why it did not depend on where in
+  the seam the pointer was: Sean, 2026-09-21, "even side to side it
+  flickers". ASK FIRST, and do not call super at all when the answer is
+  ours — for `mouseMoved` and for `mouseEntered` both. Nothing is lost:
+  over a seam there is no text for NSTextView's handler to do anything
+  with.
   On the rendered page there was a fifth with the same face: the seam
   handed the cursor back by looking at what was on screen
   (`current == .iBeamCursorForVerticalLayout`), and the seam the pointer
