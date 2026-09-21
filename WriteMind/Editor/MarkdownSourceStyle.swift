@@ -362,6 +362,8 @@ enum MarkdownSourceStyle {
     private static func monospace(_ range: NSRange, of storage: NSTextStorage) {
         storage.enumerateAttribute(.font, in: range) { value, subrange, _ in
             let size = ((value as? NSFont) ?? NSFont.systemFont(ofSize: NSFont.systemFontSize)).pointSize
+            // The 0.95 is `MarkdownTextView.codeSize`'s, for the body font;
+            // a heading with code in it keeps its own size.
             storage.addAttribute(.font, value: NSFont.monospacedSystemFont(ofSize: size * 0.95, weight: .regular),
                                  range: subrange)
         }

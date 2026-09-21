@@ -118,3 +118,42 @@ final class CellSpacingTests: XCTestCase {
         XCTAssertEqual(places[3]!.top - places[2]!.bottom, MarkdownPreview.gapHeight, accuracy: 0.001)
     }
 }
+
+/// A code cell is the same height on both sides of the app (the open list:
+/// "the two panes are close to the same height, not exactly").
+final class CodeCellHeightTests: XCTestCase {
+    /// What the SOURCE pane gives a fenced cell: the ``` line, the body,
+    /// the closing ```, all at one source line each.
+    private func source(bodyLines: Int) -> CGFloat {
+        CGFloat(bodyLines + 2) * MarkdownTextView.lineHeight
+    }
+
+    /// What the RENDERED page gives it: the body at the same size and the
+    /// same spacing, with the padding standing in for the two fences.
+    private func rendered(bodyLines: Int) -> CGFloat {
+        CGFloat(bodyLines) * MarkdownTextView.lineHeight + 2 * MarkdownPreview.codePadding
+    }
+
+    func testTheTwoPanesGiveACodeCellTheSameHeight() {
+        for lines in [1, 2, 5, 20] {
+            XCTAssertEqual(source(bodyLines: lines), rendered(bodyLines: lines), accuracy: 0.001,
+                           "\(lines) lines of code")
+        }
+    }
+
+    func testThePaddingIsOneSourceLine() {
+        // Which is what the ``` line it stands in for takes over there.
+        XCTAssertEqual(MarkdownPreview.codePadding, MarkdownTextView.lineHeight)
+    }
+
+    func testTheRenderedPageSetsCodeAtTheSizeTheSourceDoes() {
+        XCTAssertEqual(MarkdownTextView.codeSize, MarkdownTextView.font.pointSize * 0.95)
+    }
+
+    func testASourceLineIsTheFontsLineHeightPlusItsSpacing() {
+        XCTAssertEqual(MarkdownTextView.lineHeight,
+                       NSLayoutManager().defaultLineHeight(for: MarkdownTextView.font)
+                           + MarkdownTextView.paragraphStyle.lineSpacing)
+        XCTAssertGreaterThan(MarkdownTextView.lineHeight, 15, "a sane line for a 15-point font")
+    }
+}

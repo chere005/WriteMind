@@ -378,6 +378,17 @@ struct MarkdownTextView: NSViewRepresentable {
         return style
     }()
 
+    /// How tall one line of the source pane is: the font's own line
+    /// height plus the space between lines. The rendered page matches a
+    /// code cell against this — see `MarkdownPreview.codePadding`.
+    static let lineHeight: CGFloat = {
+        NSLayoutManager().defaultLineHeight(for: font) + paragraphStyle.lineSpacing
+    }()
+
+    /// The size the source pane sets code at: a little under the body, so
+    /// a monospace line is not visibly bigger than the prose round it.
+    static let codeSize: CGFloat = font.pointSize * 0.95
+
     /// Four spaces of the editor's own font.
     static let tabWidth: CGFloat = {
         let space = ("    " as NSString).size(withAttributes: [.font: MarkdownTextView.font]).width

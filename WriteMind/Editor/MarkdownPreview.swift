@@ -138,6 +138,12 @@ struct MarkdownPreview: View {
     /// than its cell, and the error piled up down the page (Sean,
     /// 2026-09-19: "notebook bar placement bugs").
     static let gapHeight: CGFloat = 8
+
+    /// The air above and below a rendered code block. It is ONE SOURCE
+    /// LINE, because that is what the ``` line it stands in for takes in
+    /// the other pane — the two sides then lay a code cell out to the
+    /// same height instead of drifting a few points a block.
+    static var codePadding: CGFloat { MarkdownTextView.lineHeight }
     /// The air under the last cell. All of it is the tail seam now — the
     /// gap, the strip the page used to offer a click on, and the margin
     /// that was under them — because everything below the last cell is
@@ -1337,8 +1343,20 @@ struct MarkdownPreview: View {
             case .code(let language, let body):
                 // Coloured when the fence names a language this app knows,
                 // plain monospace otherwise (Sean, 2026-09-19).
-                Text(CodeColours.attributed(body, language: CodeLanguage.from(fence: language) ?? .plain))
-                    .padding(12)
+                // The same size and the same spacing the source pane sets
+                // code at, and one source line of padding above and below
+                // — which is exactly what the two ``` lines take over
+                // there. A code cell is then the same height on both
+                // sides, which it was not: the source showed two fence
+                // lines (about 44 points) where the page showed 24 points
+                // of padding, and a note full of code drifted a block at a
+                // time (the open list).
+                Text(CodeColours.attributed(body,
+                                            language: CodeLanguage.from(fence: language) ?? .plain,
+                                            size: MarkdownTextView.codeSize))
+                    .lineSpacing(MarkdownTextView.paragraphStyle.lineSpacing)
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, MarkdownPreview.codePadding)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .background(CodeColours.background, in: RoundedRectangle(cornerRadius: 6))
             case .blank(let lines):

@@ -20,9 +20,3 @@ had to say it. Verification is the job, not an item.
   its parsing, the grid you typed in, the toolbar button and ⌃⌘T, and
   reading a ruled table off a photograph, which existed only to write one.
   `git show` the removal commit for the old one when the new one is wanted.
-- **The two panes are close to the same height, not exactly.** The blank
-  line between cells and a fence's own lines are drawn at the rendered
-  page's gap, and the heading ladder already matches — but a code block's
-  twelve points of padding and a quote's bar are the rendered page's
-  alone, so a note with many of those still differs by a few points a
-  block.
