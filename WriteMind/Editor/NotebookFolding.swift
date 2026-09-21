@@ -233,15 +233,18 @@ final class NotebookGutter: NSView {
             onToggle?(bracket.key)
             return
         }
+        // A section's bracket stands for the cells under it, never for
+        // itself: everything below reaches, extends and toggles those.
+        let held = CellSelection.cells(of: bracket.range, in: cellRanges)
         let modifiers = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
         if modifiers.contains(.shift) {
-            onSelectCells?(CellSelection.between(reachFrom ?? picked.first ?? bracket.range,
-                                                 bracket.range, in: cellRanges))
+            let from = reachFrom ?? picked.first ?? held.first ?? bracket.range
+            onSelectCells?(CellSelection.between(from, held.last ?? bracket.range, in: cellRanges))
             return
         }
         if modifiers.contains(.command) {
-            anchor = bracket.range
-            onSelectCells?(CellSelection.toggling(bracket.range, in: picked))
+            anchor = held.first
+            onSelectCells?(held.reduce(picked) { CellSelection.toggling($1, in: $0) })
             return
         }
         // HELD, not lit: the caret's own cell is drawn heavy too, and
@@ -254,9 +257,16 @@ final class NotebookGutter: NSView {
         // not "the last bracket clicked plainly", and the range it would
         // leave behind means nothing the moment the move rewrites the
         // note round it.
-        anchor = bracket.range
-        gesture = .picking(anchor: bracket.range, cells: [bracket.range])
-        onSelect?(bracket.range)
+        anchor = held.first
+        gesture = .picking(anchor: held.first ?? bracket.range, cells: held)
+        // One cell goes through `onSelect`, which is what opens it for
+        // typing on the rendered page; a section goes through the many,
+        // because there is nothing there to open.
+        if held.count == 1, NSEqualRanges(held[0], bracket.range) {
+            onSelect?(bracket.range)
+        } else {
+            onSelectCells?(held)
+        }
     }
 
     /// The drag that selects, reported as it goes rather than at the end:

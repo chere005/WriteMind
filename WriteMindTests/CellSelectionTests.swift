@@ -20,6 +20,53 @@ final class CellSelectionTests: XCTestCase {
          (top: 76, bottom: 96, range: cells[2])]
     }
 
+    // MARK: - An outer bracket holds the cells inside it
+
+    /// A note with a heading and two cells under it.
+    private var sectioned: String { "# Head\n\nOne\n\nTwo\n\n# Next\n\nThree" }
+    private var sectionedCells: [NSRange] { MarkdownParser.positioned(from: sectioned).map(\.range) }
+    private var firstSection: NSRange {
+        let sections = NotebookOutline.sections(in: sectioned)
+        return sections[0].range
+    }
+
+    func testASectionsBracketStandsForEveryCellUnderIt() {
+        // Sean, 2026-09-21: "an outer selection isn't always grabbing
+        // inner elements". The heading and the two cells below it.
+        let held = CellSelection.cells(of: firstSection, in: sectionedCells)
+        XCTAssertEqual(held.count, 3, "got \(held)")
+        XCTAssertEqual(held.first, sectionedCells.first)
+    }
+
+    func testACellsOwnBracketStandsForItselfAndNothingElse() {
+        let one = sectionedCells[1]
+        XCTAssertEqual(CellSelection.cells(of: one, in: sectionedCells), [one])
+    }
+
+    func testABracketThatHoldsNoWholeCellAnswersWithItself() {
+        // Half a cell is not a cell, and answering with nothing would make
+        // a click do nothing at all.
+        let half = NSRange(location: 1, length: 2)
+        XCTAssertEqual(CellSelection.cells(of: half, in: sectionedCells), [half])
+    }
+
+    func testHoldingASectionLightsEveryBracketInsideIt() {
+        let held = CellSelection.cells(of: firstSection, in: sectionedCells)
+        for cell in held {
+            XCTAssertTrue(CellSelection.covers(cell, held), "\(cell) should be lit")
+        }
+        // …and nothing in the section after it.
+        XCTAssertFalse(CellSelection.covers(sectionedCells.last!, held))
+    }
+
+    func testANestedSectionComesWithItsParent() {
+        let note = "# Outer\n\nOne\n\n## Inner\n\nTwo"
+        let cells = MarkdownParser.positioned(from: note).map(\.range)
+        let outer = NotebookOutline.sections(in: note).first { $0.depth == 0 }!
+        let held = CellSelection.cells(of: outer.range, in: cells)
+        XCTAssertEqual(held.count, cells.count, "the outer bracket holds the lot")
+    }
+
     // MARK: - Dragging a bar up or down
 
     func testADragDownABarStartsOnTheCellBelowIt() {

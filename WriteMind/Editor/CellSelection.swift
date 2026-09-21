@@ -34,6 +34,23 @@ enum CellSelection {
         cells.filter { covers($0, selection) }
     }
 
+    /// The cells a bracket holds. A plain cell's bracket holds itself; a
+    /// SECTION's holds every cell under its heading, which is what an
+    /// outer bracket is for (Sean, 2026-09-21: "an outer selection isn't
+    /// always grabbing inner elements").
+    ///
+    /// Both panes ask this rather than passing the section's own range
+    /// around as if it were a cell. It is not one: the rendered page has
+    /// no text view to select a span of characters in, so a section range
+    /// handed to it opened the whole section as ONE block to type in and
+    /// held nothing at all, and in the source pane a section range used as
+    /// a drag's anchor collapsed to whichever cell it happened to overlap
+    /// first.
+    static func cells(of bracket: NSRange, in cells: [NSRange]) -> [NSRange] {
+        let inside = cells.filter { NSIntersectionRange(bracket, $0).length == $0.length }
+        return inside.isEmpty ? [bracket] : inside
+    }
+
     /// Every cell from one bracket to the other, both ends included —
     /// what a shift-click extends over, and what a drag has passed.
     /// Either way round: a drag upwards reaches the same cells.

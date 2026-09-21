@@ -188,23 +188,33 @@ struct CellBrackets: View {
     /// plain one picks the cell up on its own.
     private func click(at point: CGPoint) {
         guard let bracket = Self.bracket(at: point, in: brackets, width: Self.width) else { return }
+        // A section's bracket stands for the cells under it, never for
+        // itself — there is no text view on this side, so its own range
+        // opened the whole section as ONE block to type in and held
+        // nothing (Sean, 2026-09-21: "an outer selection isn't always
+        // grabbing inner elements").
+        let held = CellSelection.cells(of: bracket.range, in: cellRanges)
         let modifiers = NSApp.currentEvent?.modifierFlags.intersection(.deviceIndependentFlagsMask) ?? []
         if modifiers.contains(.shift) {
-            onSelectCells?(CellSelection.between(reachFrom ?? picked.first ?? bracket.range,
-                                                 bracket.range, in: cellRanges))
+            let from = reachFrom ?? picked.first ?? held.first ?? bracket.range
+            onSelectCells?(CellSelection.between(from, held.last ?? bracket.range, in: cellRanges))
             return
         }
         if modifiers.contains(.command) {
-            anchor = bracket.range
-            onSelectCells?(CellSelection.toggling(bracket.range, in: picked))
+            anchor = held.first
+            onSelectCells?(held.reduce(picked) { CellSelection.toggling($1, in: $0) })
             return
         }
         if (NSApp.currentEvent?.clickCount ?? 1) >= 2, bracket.foldable {
             onToggle?(bracket.key)
             return
         }
-        anchor = bracket.range
-        onSelect?(bracket.range)
+        anchor = held.first
+        if held.count == 1, NSEqualRanges(held[0], bracket.range) {
+            onSelect?(bracket.range)
+        } else {
+            onSelectCells?(held)
+        }
     }
 
     /// The cells' brackets, down the page. A section's is not one of them:
