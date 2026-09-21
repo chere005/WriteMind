@@ -10,8 +10,12 @@
  * port is not something to point at somebody's real notes on its first run.
  */
 
-import { app, BrowserWindow, dialog, ipcMain, net, protocol, shell } from "electron"
-import { watch, type FSWatcher } from "node:fs"
+import {
+  app, BrowserWindow, dialog, ipcMain, net, protocol, session, shell, systemPreferences,
+} from "electron"
+import { execFile } from "node:child_process"
+import { promisify } from "node:util"
+import { accessSync, constants, watch, type FSWatcher } from "node:fs"
 import { promises as fs } from "node:fs"
 import os from "node:os"
 import path from "node:path"
@@ -31,6 +35,28 @@ protocol.registerSchemesAsPrivileged([
   { scheme: "wm", privileges: { standard: true, secure: true, supportFetchAPI: true } },
 ])
 const DEV = process.env.WRITEMIND_DEV === "1"
+
+const run = promisify(execFile)
+
+/**
+ * THE MAC'S EXTRA FEATURES ARE A BINARY BEING THERE. `tools/build-vision.sh`
+ * compiles it on macOS and does nothing anywhere else, so the capability is
+ * simply whether it exists — no platform check at the point of use, and a
+ * Windows build offers nothing it cannot do.
+ */
+const visionHelper = (): string | null => {
+  if (process.platform !== "darwin") return null
+  const where = path.join(here, "../helpers/wm-vision")
+  try {
+    // `require` does not exist in this bundle — it is ESM — and reaching
+    // for it here quietly turned the capability off, which showed up as
+    // the Mac's own feature simply not being offered.
+    accessSync(where, constants.X_OK)
+    return where
+  } catch {
+    return null
+  }
+}
 
 const notesRoot = (): string =>
   process.env.WRITEMIND_NOTES ?? path.join(os.homedir(), "Documents", "WriteMindCross")
@@ -85,11 +111,37 @@ app.whenReady().then(async () => {
     return net.fetch(`file://${file}`)
   })
 
-  ipcMain.handle("app:capabilities", () => ({
-    ...capabilitiesFor(process.platform),
-    platform: process.platform,
-    root: notesRoot(),
-  }))
+  // THE CAMERA IS ASKED FOR, ONCE, AND ONLY WHEN THE PANE OPENS. macOS
+  // will not hand a page a camera until the APP has been granted one, and
+  // a page asking with no grant behind it simply gets nothing — a black
+  // rectangle with no explanation, which is exactly the failure this
+  // handler exists to avoid. Nothing but the camera is ever allowed.
+  session.defaultSession.setPermissionRequestHandler((_contents, permission, callback) => {
+    callback(permission === "media")
+  })
+  ipcMain.handle("camera:ask", async () => {
+    if (process.platform !== "darwin") return true
+    if (systemPreferences.getMediaAccessStatus("camera") === "granted") return true
+    return systemPreferences.askForMediaAccess("camera")
+  })
+
+  ipcMain.handle("app:capabilities", () => {
+    const helper = visionHelper()
+    return {
+      ...capabilitiesFor(process.platform),
+      // What the helper can actually do, rather than what the platform
+      // could in principle: a Mac with no helper built is a Mac without
+      // OCR, and it says so by not offering it.
+      handwritingOCR: helper !== null,
+      // Not yet: the page quad is found, but nothing warps the frame
+      // through it — see docs/TODO.md. Until it does, the box is dragged
+      // by hand on both platforms, which is the one absence the camera
+      // pane mentions out loud.
+      findsThePage: false,
+      platform: process.platform,
+      root: notesRoot(),
+    }
+  })
   ipcMain.handle("notes:tree", () => tree(notesRoot()))
   ipcMain.handle("note:read", (_event, file: string) => readNote(file))
   ipcMain.handle("note:write", (_event, file: string, text: string) => writeNote(file, text))
@@ -106,6 +158,14 @@ app.whenReady().then(async () => {
   ipcMain.handle("notes:reveal", () => shell.openPath(notesRoot()))
   ipcMain.handle("media:save", (_event, bytes: Uint8Array, extension: string) =>
     saveMedia(notesRoot(), bytes, extension))
+  /** The words in a picture, by Vision, on the platform that has it. */
+  ipcMain.handle("vision:read", async (_event, file: string) => {
+    const helper = visionHelper()
+    if (!helper) return { lines: [] }
+    const { stdout } = await run(helper, ["text", mediaPath(notesRoot(), file)])
+    return JSON.parse(stdout) as { lines: { text: string; confidence: number }[] }
+  })
+
   ipcMain.handle("media:choose", async () => {
     if (!window) return null
     const chosen = await dialog.showOpenDialog(window, {

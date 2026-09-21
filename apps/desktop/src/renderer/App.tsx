@@ -9,10 +9,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import type { EditorView } from "@codemirror/view"
 import {
-  emptyDrawing, newID, noTransform, placedCentre, readDrawing, writeDrawing,
+  emptyDrawing, insertBlock, newID, noTransform, placedCentre, readDrawing, writeDrawing,
   type Drawing, type Note, type Placement,
 } from "@writemind/core"
 import { Canvas, type CanvasMode } from "./Canvas"
+import { CameraPane, type Capture } from "./CameraPane"
 import { Notebook } from "./Notebook"
 import { Sidebar } from "./Sidebar"
 import { TopBar } from "./TopBar"
@@ -34,6 +35,10 @@ export function App() {
   const [stale, setStale] = useState(false)
   const [view, setView] = useState<EditorView | null>(null)
   const [showSidebar, setShowSidebar] = useState(true)
+  // The camera is not opened until it is asked for: a writing app that
+  // comes up with a camera dialog is the wrong first impression, and on
+  // the web the permission prompt IS that dialog.
+  const [showCamera, setShowCamera] = useState(false)
   // The drawing is a SIDECAR, not part of the note: it lives in its own
   // file beside the markdown and nothing on it ever edits the text.
   const [drawing, setDrawing] = useState<Drawing>(emptyDrawing())
@@ -183,6 +188,45 @@ export function App() {
     })
   }, [changeDrawing, drawing.items, view])
 
+  /** A capture off the camera, landing where it was on the page. */
+  const addCapture = useCallback(async (capture: Capture) => {
+    const bytes = new Uint8Array(await capture.blob.arrayBuffer())
+    const saved = await window.wm.saveMedia(bytes,
+      capture.blob.type.includes("png") ? ".png" : ".jpg")
+    changeDrawing({
+      items: [...drawing.items, {
+        kind: "image",
+        image: {
+          id: newID(), file: saved.file, center: capture.center, width: capture.width,
+          aspect: capture.aspect, transform: noTransform(), hidden: false, group: null,
+        },
+      }],
+    })
+  }, [changeDrawing, drawing.items])
+
+  /**
+   * The words out of a picture, into the note as a cell of its own — and
+   * the picture is PUT AWAY rather than thrown away, so nothing is lost
+   * if the reading was wrong.
+   */
+  const readPicture = useCallback(async (file: string, id: string) => {
+    const out = await window.wm.readPicture(file)
+    const words = out.lines.filter((line) => line.confidence >= 0.3).map((line) => line.text)
+    if (words.length === 0) return
+    const editor = view
+    const at = editor ? editor.state.selection.main.head : text.length
+    const opened = insertBlock(text, at)
+    const written = opened.markdown.slice(0, opened.caret) + words.join("\n")
+      + opened.markdown.slice(opened.caret)
+    change(written)
+    changeDrawing({
+      items: drawing.items.map((item) =>
+        item.kind === "image" && item.image.id === id
+          ? { kind: "image", image: { ...item.image, hidden: true } }
+          : item),
+    })
+  }, [change, changeDrawing, drawing.items, text, view])
+
   /** Insert ▸ Image: the third way in, landing where the other two do. */
   const choosePicture = useCallback(async () => {
     const chosen = await window.wm.choosePicture()
@@ -252,6 +296,11 @@ export function App() {
               <button className="icon-button" title="Open the notes folder"
                       onClick={() => { void window.wm.revealNotes() }}>⤢</button>
               <div className="spacer" />
+              {/* A PANE'S SWITCH LIVES ON A DIFFERENT PANE, once — a switch
+                  on the pane it hides cannot bring it back. */}
+              <button className={`icon-button${showCamera ? " on" : ""}`}
+                      title={showCamera ? "Put the camera away" : "Show the camera"}
+                      onClick={() => setShowCamera((was) => !was)}>◉</button>
             </div>
           )}
         />
@@ -292,7 +341,10 @@ export function App() {
               <Canvas drawing={drawing} onChange={changeDrawing} mode={mode}
                       colorHex={penColour} penWidth={penWidth}
                       placing={placing} onPlaced={() => setPlacing(null)}
-                      scroller={view ? view.scrollDOM : null} />
+                      scroller={view ? view.scrollDOM : null}
+                      onReadPicture={platform?.handwritingOCR
+                        ? (file, id) => { void readPicture(file, id) }
+                        : undefined} />
             </div>
             <div className="footer">
               <span>{title}</span>
@@ -321,6 +373,17 @@ export function App() {
           </div>
         )}
       </div>
+      {showCamera && (
+        <CameraPane
+          platform={platform}
+          penColour={penColour}
+          pane={view
+            ? { width: view.scrollDOM.clientWidth, height: view.scrollDOM.clientHeight }
+            : { width: 800, height: 600 }}
+          onCapture={(capture) => { void addCapture(capture) }}
+          onHide={() => setShowCamera(false)}
+        />
+      )}
     </div>
   )
 }

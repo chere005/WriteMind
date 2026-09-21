@@ -47,6 +47,12 @@ interface Props {
   /** The scroller the objects follow, so they stay beside the words. */
   scroller: HTMLElement | null
   onSelectionChanged?(count: number): void
+  /**
+   * Reading the words out of a picture — macOS only, so the handle is
+   * there only when the platform says it can, and nothing anywhere says
+   * what the other one cannot do.
+   */
+  onReadPicture?(file: string, id: string): void
 }
 
 type Gesture =
@@ -87,6 +93,7 @@ function picture(file: string, onLoad: () => void): HTMLImageElement | null {
 
 export function Canvas({
   drawing, onChange, mode, colorHex, penWidth, placing, onPlaced, scroller, onSelectionChanged,
+  onReadPicture,
 }: Props) {
   const host = useRef<HTMLDivElement | null>(null)
   const canvas = useRef<HTMLCanvasElement | null>(null)
@@ -209,6 +216,12 @@ export function Canvas({
 
   const begin = useCallback((event: PointerEvent) => {
     if (event.button !== 0) return
+    // THE HANDLES ARE NOT THE PAGE. This listener is on the PARENT and in
+    // the capture phase, so it hears a press on a handle BEFORE the
+    // handle does — and a press beside the picture hits nothing, clears
+    // the selection, and unmounts the very button that was being pressed.
+    // Every handle's own press then never ran at all.
+    if (event.target instanceof Element && event.target.closest(".wm-handle")) return
     const point = doc(event)
     const { drawing: held, placing: armed, mode: now } = latest.current
 
@@ -414,6 +427,18 @@ export function Canvas({
                 change(removing(drawing, selection))
                 setSelection(new Set())
               }}>✕</button>
+      {onReadPicture && selection.size === 1 && (() => {
+        const only = drawing.items.find((item) => itemId(item) === [...selection][0])
+        if (!only || only.kind !== "image") return null
+        return (
+          <button className="wm-handle wm-handle-wide" style={at(box.x - HANDLE, box.y + box.height / 2, scroll)}
+                  title="Read the words out of this picture"
+                  onPointerDown={(event) => {
+                    event.preventDefault(); event.stopPropagation()
+                    onReadPicture(only.image.file, only.image.id)
+                  }}>Aa</button>
+        )
+      })()}
       {selection.size > 1 && (
         <button className="wm-handle wm-handle-wide" style={at(box.x - HANDLE, box.y + box.height, scroll)}
                 title="Hold these together (⌃G)"

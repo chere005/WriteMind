@@ -21,12 +21,15 @@ capability table. 157 transcribed tests.
   a hole for), the connector ROUTING (`ConnectorRouting`, so a line
   attached to two nodes turns right angles), a node's label, and undo
   through the app's own menu rather than ⌥⌘Z on the layer.
-- **The camera.** Frames through `getUserMedia`, the box dragged by hand,
-  and then the pure pipeline: `Homography`, `PageShape`, the local-mean
-  threshold, connected components, and `ShapeInk` + `FlowGrouping` +
-  `FlowChartReading` — 2k lines that turn a sketch of boxes and arrows into
-  real nodes and connectors, and none of it needs Apple's ML. Page-finding
-  and handwriting OCR are macOS-only (a small native Vision helper).
+- **The camera, the rest of it.** The viewfinder, the box, Writing and
+  Page, the ink lifted off the paper and the capture landing where it was
+  on the page all work, and so does reading the words out of a picture on
+  macOS. Still missing: WARPING the frame through the page quad (the
+  helper finds it; nothing undoes the perspective yet, so the box is
+  dragged by hand on both platforms), and the flow-chart reader —
+  `ShapeInk` + `FlowGrouping` + `FlowChartReading`, 2k pure lines that
+  turn a sketch of boxes and arrows into real nodes and connectors, which
+  needs no Apple ML and is the best thing the camera does.
 - **The rendered page.** The markdown/preview toggle: the second editor,
   block by block, with the same seams and brackets.
 - **Folding.** `NotebookOutline.hiddenRanges` is ported; wiring it to

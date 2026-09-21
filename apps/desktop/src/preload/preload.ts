@@ -23,6 +23,8 @@ const api = {
   saveMedia: (bytes: Uint8Array, extension: string) =>
     ipcRenderer.invoke("media:save", bytes, extension),
   choosePicture: () => ipcRenderer.invoke("media:choose"),
+  readPicture: (file: string) => ipcRenderer.invoke("vision:read", file),
+  askForCamera: () => ipcRenderer.invoke("camera:ask"),
   exportPDF: (suggested: string) => ipcRenderer.invoke("export:pdf", suggested),
   onNotesChanged: (listener: () => void) => {
     const wrapped = () => listener()

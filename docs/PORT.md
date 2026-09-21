@@ -61,9 +61,15 @@ this. Nothing else asks `process.platform`.
 |---|---|---|
 | The notebook, the drawing layer, the files | yes | yes |
 | Export ▸ PDF | yes | yes (Chromium prints the page) |
-| A camera | yes | yes |
-| Finding the page in the frame | Vision's segmentation | the box is dragged by hand |
-| Reading handwriting into markdown | Vision | no |
+| The camera, the box, and the ink lifted off the paper | yes | yes |
+| Reading handwriting into markdown | yes — `tools/vision/wm-vision.swift` | no |
+| Finding the page in the frame by itself | not yet (the helper answers, nothing warps the frame through it) | no |
+
+**The Mac's extra feature is a BINARY BEING THERE.** `tools/build-vision.sh`
+compiles `wm-vision` on macOS and does nothing anywhere else, and the
+capability is whether that file exists and is executable. Nothing asks
+`process.platform` at the point of use, a Mac with no helper built is a Mac
+without OCR, and the Windows build shows no button for it at all.
 
 **The rule for the side that cannot do it: say nothing and show nothing.** A
 button that is there but dead, or a dialog explaining what this build cannot

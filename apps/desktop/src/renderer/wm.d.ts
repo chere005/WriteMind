@@ -31,6 +31,8 @@ declare global {
       revealNotes(): Promise<string>
       saveMedia(bytes: Uint8Array, extension: string): Promise<{ file: string }>
       choosePicture(): Promise<{ bytes: Uint8Array; extension: string } | null>
+      readPicture(file: string): Promise<{ lines: { text: string; confidence: number }[] }>
+      askForCamera(): Promise<boolean>
       exportPDF(suggested: string): Promise<string | null>
       onNotesChanged(listener: () => void): () => void
     }

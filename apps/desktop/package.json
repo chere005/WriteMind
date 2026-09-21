@@ -6,7 +6,7 @@
   "main": "out/main/main.mjs",
   "scripts": {
     "build:app": "node scripts/build.mjs",
-    "build": "vite build && node scripts/build.mjs",
+    "build": "vite build && node scripts/build.mjs && sh ../../tools/build-vision.sh",
     "start": "electron .",
     "dev": "node scripts/dev.mjs"
   },

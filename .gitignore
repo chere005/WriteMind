@@ -20,3 +20,6 @@ node_modules/
 out/
 .vite/
 *.tsbuildinfo
+
+# The compiled macOS helper: built by tools/build-vision.sh, never committed
+apps/desktop/out/
