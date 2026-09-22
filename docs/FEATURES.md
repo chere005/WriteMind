@@ -175,10 +175,13 @@ is how the code is put together.
   piling another one up. A line in square brackets is the app talking
   (`[no output]`, `[exit 1]`, `[stderr]`); every other line came out of
   the program. The cell and its answer are drawn as ONE GROUP — a bracket
-  in the gutter round the pair — and the cursor is left as the horizontal
-  bar under the answer, ready for the next thing. Nothing runs by itself —
-  not on opening a note, not on saving — and a plain code cell never runs
-  at all.
+  in the gutter standing round the pair, with each of the two inside it —
+  and the cursor is left as the horizontal bar under the answer, ready for
+  the next thing; the page scrolls to it, however long the answer was. Any
+  cell with an `out` cell under it is a pair, including the ones written
+  before evaluation cells had a fence of their own. Nothing runs by itself
+  — not on opening a note, not on saving — a plain code cell never runs at
+  all, and neither does a cell whose closing ``` has not been typed yet.
 - **Code blocks, in five languages.** The `</>` button (⌘8) fences the
   selection or opens an empty block; its chevron tags the fence C, C++,
   Wolfram, Python or TypeScript, and the block is coloured — in the editor

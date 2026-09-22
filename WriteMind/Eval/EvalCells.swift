@@ -20,13 +20,28 @@ enum EvalCells {
     }
 
     /// The Out cell belonging to this one, if it has one already.
+    ///
+    /// The blank cells in between are stepped over. A run of three or more
+    /// empty lines is a `.blank` block — the note's own spacing, not the
+    /// editor's — so pressing Return twice in the gap under a cell used to
+    /// hide its answer from it: a re-run piled a SECOND answer on instead
+    /// of replacing the first, and the pair stopped being a pair.
     static func out(after cell: NSRange, in text: String) -> PositionedBlock? {
         let blocks = MarkdownParser.positioned(from: text)
         guard let index = blocks.firstIndex(where: { $0.range.location == cell.location }),
-              index + 1 < blocks.count
+              let answer = answer(after: index, in: blocks)
         else { return nil }
-        let next = blocks[index + 1]
-        return EvalOutput.isOut(next.block) ? next : nil
+        return blocks[answer]
+    }
+
+    /// Where the answer to `blocks[index]` is, over blocks already parsed.
+    /// The one reader of "what counts as the block below this one", so the
+    /// answer, the re-run and the bracket cannot drift apart.
+    private static func answer(after index: Int, in blocks: [PositionedBlock]) -> Int? {
+        var next = index + 1
+        while next < blocks.count, case .blank = blocks[next].block { next += 1 }
+        guard next < blocks.count, EvalOutput.isOut(blocks[next].block) else { return nil }
+        return next
     }
 
     /// The edit that puts a result under a cell: over the Out cell that is
@@ -84,25 +99,73 @@ enum EvalCells {
         }
     }
 
+    /// AN OUT CELL IS AN ANSWER, WHATEVER RAN: the pair is a fenced cell
+    /// with an `out` cell under it, and the fence above is not asked what
+    /// it says.
+    ///
+    /// The tag is the whole test because nothing but `EvalOutput.cell(for:)`
+    /// ever writes an `out` fence — so a cell with one under it HAS been
+    /// run, whatever this version of the app would make of its language
+    /// today. Asking `Evaluator.isEvaluation` as well split the file in
+    /// two: `out(after:)` would replace that block on a re-run, calling it
+    /// the cell's answer, while the gutter refused to bracket the two
+    /// together (Sean, 2026-09-22: "input and output cells still don't
+    /// appear to be grouped"). Every pair written before the `eval ` fence
+    /// existed — when a plain ```python cell was the thing that ran — is
+    /// in Sean's notes still, and every one of them is a pair.
     static func groups(in text: String) -> [Group] {
         let blocks = MarkdownParser.positioned(from: text)
         var out: [Group] = []
         for (index, block) in blocks.enumerated() {
-            guard case .code(let language, _) = block.block,
-                  Evaluator.isEvaluation(fence: language),
-                  index + 1 < blocks.count,
-                  EvalOutput.isOut(blocks[index + 1].block)
+            guard case .code = block.block, !EvalOutput.isOut(block.block),
+                  let found = answer(after: index, in: blocks)
             else { continue }
-            out.append(Group(input: block.range, output: blocks[index + 1].range,
+            out.append(Group(input: block.range, output: blocks[found].range,
                              key: "eval:\(block.range.location)"))
         }
         return out
     }
 
     /// Whether a cell is inside a group — which is what pushes its own
-    /// bracket one step in, so the group's sits outside it.
+    /// bracket one step in, so the group's sits outside it. Containment,
+    /// not the two ends: a blank cell standing between the code and its
+    /// answer is inside the bracket the group draws and has to be drawn
+    /// inside it too.
     static func isGrouped(_ cell: NSRange, in groups: [Group]) -> Bool {
-        groups.contains { NSEqualRanges($0.input, cell) || NSEqualRanges($0.output, cell) }
+        groups.contains {
+            cell.location >= $0.range.location && NSMaxRange(cell) <= NSMaxRange($0.range)
+        }
+    }
+
+    /// WHICH OF SEVERAL IDENTICAL CELLS WAS THE ONE THAT RAN.
+    ///
+    /// A cell is found again by its own text when the answer comes back,
+    /// because a run takes time and the note is editable throughout it —
+    /// but ⌘D makes two cells with identical text in one keystroke, and
+    /// first-wins then put the answer under the copy ABOVE the one that
+    /// was run, taking its bracket and its bar with it. Where the run
+    /// started from is the tie break; nothing else in the note can speak
+    /// for it, and it is still right after an edit has moved the cell.
+    static func landing(of opening: String, in text: String, startedAt: Int) -> PositionedBlock? {
+        let ns = text as NSString
+        return MarkdownParser.positioned(from: text)
+            .filter { ns.substring(with: $0.range) == opening }
+            .min { abs($0.range.location - startedAt) < abs($1.range.location - startedAt) }
+    }
+
+    /// WHERE THE CARET GOES when the bar is armed under an answer: the
+    /// blank line the bar is drawn in, which is where a CLICK in that
+    /// seam would have put it.
+    ///
+    /// It matters that it is the separator and not the start of the cell
+    /// below. The source pane arms from the caret
+    /// (`CellSeams.arm`, through `textViewDidChangeSelection`), and every
+    /// other reader of "the caret is in that cell" is asked on the way
+    /// past — so a caret parked in the next cell armed the right bar and
+    /// still revealed that cell's `## ` as it went by.
+    static func caret(under cell: NSRange, in text: String) -> Int {
+        let end = (text as NSString).length
+        return min(NSMaxRange(cell) + 1, seam(after: cell, in: text), end)
     }
 
     /// WHERE THE BAR GOES WHEN A CELL HAS FINISHED: the start of the

@@ -738,7 +738,8 @@ struct MarkdownTextView: NSViewRepresentable {
             let blocks = MarkdownParser.positioned(from: tv.string)
             let cellRanges = blocks.map(\.range)
 
-            func bracket(key: String, depth: Int, range: NSRange, foldable: Bool) -> NotebookGutter.Bracket? {
+            func bracket(key: String, depth: Int, range: NSRange, foldable: Bool,
+                         group: Bool = false) -> NotebookGutter.Bracket? {
                 let clipped = NSIntersectionRange(range, NSRange(location: 0, length: text.length))
                 guard clipped.length > 0 else { return nil }
                 let glyphs = layout.glyphRange(forCharacterRange: clipped, actualCharacterRange: nil)
@@ -754,7 +755,8 @@ struct MarkdownTextView: NSViewRepresentable {
                 return NotebookGutter.Bracket(key: key, depth: depth,
                                               top: box.minY + origin.y, bottom: box.maxY + origin.y,
                                               collapsed: collapsed.contains(key), selected: picked,
-                                              held: held, range: clipped, foldable: foldable)
+                                              held: held, range: clipped, foldable: foldable,
+                                              group: group)
             }
 
             var brackets = sections.compactMap { section -> NotebookGutter.Bracket? in
@@ -772,7 +774,7 @@ struct MarkdownTextView: NSViewRepresentable {
             for group in groups {
                 let depth = NotebookOutline.cellDepth(at: group.input.location, in: sections)
                 if let embrace = bracket(key: group.key, depth: depth,
-                                         range: group.range, foldable: false) {
+                                         range: group.range, foldable: false, group: true) {
                     brackets.append(embrace)
                 }
             }
@@ -799,7 +801,7 @@ struct MarkdownTextView: NSViewRepresentable {
                 // a drag down a bar picks up exactly what a drag down the
                 // brackets does.
                 insertions.cellSpans = brackets
-                    .filter { !$0.foldable }
+                    .filter(\.isCell)
                     .map { (top: $0.top, bottom: $0.bottom, range: $0.range) }
             }
         }

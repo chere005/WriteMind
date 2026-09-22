@@ -179,6 +179,15 @@ struct MarkdownPreview: View {
     /// The armed seam holds the keyboard, because the bar IS the cursor
     /// and there is no text view to hold it on this side.
     @FocusState private var focusedSeam: SeamID?
+    /// A seam the page has to bring into view — the one under an answer a
+    /// run has just written, so the bar is somewhere the eye can find.
+    @State private var bringIntoView: SeamRow?
+
+    /// What a seam is called when the page is scrolled to it. The rows
+    /// are identified by their own offsets, which a seam has no unique
+    /// one of — two seams can share an offset, and the tail seam's is the
+    /// note's length.
+    private struct SeamRow: Hashable { var index: Int }
     /// And the bracket column holds it while cells are held, for the same
     /// reason: typing over a selection has to reach somewhere.
     @FocusState private var focusedBrackets: Bool
@@ -265,6 +274,7 @@ struct MarkdownPreview: View {
                 let cells = items
                 ForEach(Array(cells.enumerated()), id: \.element.id) { index, item in
                     seamView(index < seams.count ? seams[index] : nil, index: index)
+                        .id(SeamRow(index: index))
                     row(item)
                         .id(item.id)
                         .background {
@@ -280,6 +290,7 @@ struct MarkdownPreview: View {
                         .padding(.horizontal, Self.sideInset)
                 }
                 seamView(cells.count < seams.count ? seams[cells.count] : nil, index: cells.count)
+                    .id(SeamRow(index: cells.count))
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             // No padding above or below either: the air at the two ends
@@ -344,6 +355,29 @@ struct MarkdownPreview: View {
             // Whatever else takes the keyboard takes it from the bar.
             if armedSeam != nil, focused != armedSeam { armedSeam = nil }
         }
+        // The page catching up with a bar that was armed from outside it.
+        // `onChange` runs after the rows have been rebuilt, which is the
+        // first moment the answer's own row is on the page to scroll to.
+        .onChange(of: bringIntoView) { _, wanted in
+            guard let wanted else { return }
+            // AFTER THE ROWS ARE ON THE PAGE, AND AFTER THEY ARE LAID
+            // OUT. `onChange` is the first of those and is why the
+            // scroll is asked for here rather than in `armSeam` — an
+            // answer is written into `markdown` a moment before, and a
+            // proxy asked then scrolls to a row that does not exist yet.
+            // The second is why there is a beat after it: a screenful of
+            // output has to be measured before the page knows where its
+            // seam went.
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.12) {
+                // THE SEAM, CENTRED — not the answer above it. A row
+                // taller than the window cannot be scrolled to its
+                // BOTTOM (SwiftUI clamps to keeping its top in view, so
+                // nothing moved at all), and the seam is the thing the
+                // bar is drawn in.
+                page.scrollTo(wanted, anchor: .center)
+                bringIntoView = nil
+            }
+        }
         .onAppear {
             // Open where the markdown pane was left, on the same cell.
             if topCell > 0,
@@ -388,7 +422,9 @@ struct MarkdownPreview: View {
             // else edits this note from outside the caret, which is why
             // nothing else has had to do this.
             // The bar under a cell that has just finished running.
-            bridge.armBarInDocument = { cell in armSeam(beside: cell, below: true) }
+            bridge.armBarInDocument = { cell in
+                armSeam(beside: cell, below: true, bringingIntoView: true)
+            }
             bridge.writeInDocument = { edit in
                 let ns = markdown as NSString
                 guard NSMaxRange(edit.range) <= ns.length else { return }
@@ -400,8 +436,20 @@ struct MarkdownPreview: View {
                 }
                 selectedCells = selectedCells.map { EvalCells.shifted($0, by: edit) }
                 if let seam = armedSeam {
-                    armedSeam = SeamID(index: seam.index,
-                                       offset: EvalCells.shifted(seam.offset, by: edit))
+                    // THE INDEX MOVES TOO. A `SeamID` is index AND
+                    // offset, and an answer written above an armed bar
+                    // adds a whole cell — so the seam that was fifth is
+                    // now sixth. Shifting only the offset left an id
+                    // matching no drawn seam, `focusedSeam` stopped
+                    // equalling `armedSeam`, and the watcher above read
+                    // that as "something else took the keyboard" and
+                    // put the bar out.
+                    let moved = EvalCells.shifted(seam.offset, by: edit)
+                    let found = seams.indices.filter { seams[$0].offset == moved }
+                    let index = found.min { abs($0 - seam.index) < abs($1 - seam.index) } ?? seam.index
+                    let id = SeamID(index: index, offset: moved)
+                    armedSeam = id
+                    focusedSeam = id
                 }
             }
         }
@@ -509,7 +557,8 @@ struct MarkdownPreview: View {
                                             depth: NotebookOutline.cellDepth(at: group.input.location,
                                                                              in: sections),
                                             top: top, bottom: bottom,
-                                            selected: held, held: held, range: group.range))
+                                            selected: held, held: held, group: true,
+                                            range: group.range))
         }
 
         for item in shown {
@@ -1222,7 +1271,7 @@ struct MarkdownPreview: View {
     /// a key says so"). ↓ off the last cell used to run `insertBlock` at
     /// the end of the note, so an arrow key wrote two newlines into the
     /// file and left an empty cell behind every time it was pressed.
-    private func armSeam(beside cell: NSRange, below: Bool) {
+    private func armSeam(beside cell: NSRange, below: Bool, bringingIntoView: Bool = false) {
         editingRange = nil
         let cells = items
         let all = seams
@@ -1230,6 +1279,18 @@ struct MarkdownPreview: View {
         let wanted = below ? index + 1 : index
         guard wanted >= 0, wanted < all.count else { return }
         arm(SeamID(index: wanted, offset: all[wanted].offset))
+        // A BAR OFF THE BOTTOM OF THE WINDOW IS NO CURSOR AT ALL. An
+        // answer is written whole and can be a screenful of it, so the
+        // bar under a cell that has just run is routinely below the
+        // fold — and the page does not move for an arm no pointer made.
+        // The markdown pane has always scrolled
+        // (`EditorBridge.armBar`); this one is asked through the state
+        // below, because `armSeam` is outside `body` and the row it
+        // wants does not EXIST yet: the answer was written into
+        // `markdown` a moment ago and SwiftUI has not rebuilt the page,
+        // so a proxy asked here scrolls to an id that is not on it and
+        // does nothing at all (measured, 2026-09-22).
+        if bringingIntoView { bringIntoView = SeamRow(index: wanted) }
     }
 
     /// The cell that key opens, put on the page: the note as `opened` made

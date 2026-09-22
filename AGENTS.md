@@ -628,9 +628,20 @@ CoreMind's `bin/report-status.sh`.
   **A CELL AND ITS ANSWER ARE ONE GROUP, AND THE GROUP IS DERIVED.**
   Sean, 2026-09-21: "input and output cells are grouped together".
   `EvalCells.groups(in:)` reads the pairs back off the blocks every
-  time — an evaluation fence with an `out` fence directly under it —
-  so nothing is written into the note for it and nothing can go
-  stale. Both panes draw a bracket at the pair's own depth over
+  time — a fenced cell with an `out` cell under it — so nothing is
+  written into the note for it and nothing can go stale.
+  **THE FENCE ABOVE IS NOT ASKED WHAT IT SAYS**, and one `answer(after:)`
+  is the only reader of "the block below this one" so that the bracket,
+  the re-run and `out(after:)` cannot drift apart. Only
+  `EvalOutput.cell(for:)` writes an `out` fence anywhere in this app, so
+  a cell with one under it HAS been run — and every pair in Sean's notes
+  from before the `eval ` fence existed is written ```python, so asking
+  `Evaluator.isEvaluation` as well meant the pairs he was looking at were
+  not pairs (Sean, 2026-09-22: "input and output cells still don't appear
+  to be grouped"). It steps over the blank cells in the gap, too: three
+  empty lines are a `.blank` block of the note's own, and Return pressed
+  twice under a cell used to hide its answer from it — a re-run then
+  piled a SECOND answer on instead of replacing the first. Both panes draw a bracket at the pair's own depth over
   `group.range` and push each member cell to `depth + 1`
   (`EvalCells.isGrouped`); it is not a section, it folds nothing and
   it nests nothing. And the run ENDS WITH THE BAR under the answer
@@ -640,9 +651,43 @@ CoreMind's `bin/report-status.sh`.
   evaluation makes that DOES take the caret, against `writeCell`,
   which must never steal focus because it can land while somebody is
   typing somewhere else. In the source pane the selection is set
-  BEFORE `armedSeam`, or `textViewDidChangeSelection` undoes the arm
-  on its way past; the rendered page arms its own seam through
-  `armBarInDocument`.
+  BEFORE `armedSeam` — and the caret goes on the BLANK LINE under the
+  answer (`EvalCells.caret(under:in:)`), where a click would have put
+  it, not at the start of the cell below: `CellSeams.arm` reads the
+  caret, so that is the one writer, and a caret parked in the next cell
+  armed the right bar while every other reader of "the caret is in that
+  cell" answered for the wrong one — `updateHiddenMarkers` is asked on
+  the way past and brought a heading's `## ` back every time a cell
+  finished. The rendered page arms its own seam through
+  `armBarInDocument`, and that one SCROLLS: a bar no gesture put there
+  is wherever the answer ended, and an answer is written whole. Two
+  things make it harder than it sounds, both measured 2026-09-22 —
+  the row does not exist yet when the answer is written, so a
+  `ScrollViewProxy` asked in `armSeam` scrolls to nothing at all
+  (`bringIntoView` waits for `onChange` and a beat after it); and a row
+  TALLER THAN THE WINDOW cannot be scrolled to its `.bottom`, which
+  clamps to keeping its top in view and does not move. The seams carry
+  their own ids and the page is scrolled to the seam, centred.
+  **A BRACKET IS ONE OF THREE THINGS**, and `!foldable` is not how to
+  ask which. `Bracket.isCell` is — a section folds, a cell is a block,
+  a group embraces an In/Out pair — because `cellSpans`, `cellRanges`
+  and `picked` in BOTH gutters read "is this a cell" and counted the
+  pair's own bracket as one. A group also has to LOOK like one: its top
+  and bottom are exactly its members', so at the same length it read as
+  a doubled hairline rather than as something round them, and it is
+  drawn `overhang` proud at each end and at a section's weight. The
+  drawn depth is CLAMPED to the column (`deepest`): six heading levels
+  plus a group is more nesting than 22 points of gutter can hold, and a
+  bracket past the left edge is not drawn at all.
+  **THE NEAREST CELL, NOT THE FIRST.** `EvalCells.landing(of:in:startedAt:)`
+  re-finds the cell that ran by its own text — the note is editable
+  while it runs — and breaks a tie with the offset the run started
+  from, because ⌘D makes two cells with identical text in one keystroke
+  and first-wins put the answer under the copy ABOVE the one that ran.
+  And an UNCLOSED fence is refused: `MarkdownFormatting.fenced` hands
+  back an empty `close` rather than nil for one, the parser runs such a
+  block to the end of the note, and the answer pasted after it closed
+  the cell it was meant to sit under.
 
 ## How it is wired
 

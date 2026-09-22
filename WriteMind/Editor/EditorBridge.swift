@@ -53,14 +53,31 @@ final class EditorBridge {
     /// the run, not an interruption of somebody else's typing.
     func armBar(after cell: NSRange, in text: String) {
         if let armBarInDocument { armBarInDocument(cell); return }
-        guard let tv = textView as? PasteAwareTextView else { return }
-        let offset = min(EvalCells.seam(after: cell, in: text), (tv.string as NSString).length)
+        // A CELL OPEN ON THE RENDERED PAGE IS A TEXT VIEW TOO, and this
+        // is not the pane it belongs to: `BlockTextView` is a
+        // `PasteAwareTextView`, so without this the bar would be armed
+        // inside one rendered block — blanking the caret of whatever
+        // somebody was typing in, and opening a cell inside that block
+        // at the next character.
+        guard let tv = textView as? PasteAwareTextView, !(tv is BlockTextView) else { return }
+        let ns = tv.string as NSString
+        let offset = min(EvalCells.seam(after: cell, in: text), ns.length)
         tv.window?.makeFirstResponder(tv)
-        // The selection first: `textViewDidChangeSelection` reads the
-        // caret to decide what is armed, so arming before it would be
-        // undone by the move.
-        tv.setSelectedRange(NSRange(location: offset, length: 0))
-        tv.armedSeam = offset
+        // THE CARET GOES WHERE A CLICK WOULD PUT IT: on the blank line
+        // under the answer, which is what `CellSeams.arm` reads to arm
+        // the bar — one writer, through
+        // `textViewDidChangeSelection`, exactly as every other bar in
+        // this pane is armed. Parking it at the START of the cell below
+        // armed the same seam and then left every other reader of "the
+        // caret is in that cell" answering for the wrong one:
+        // `updateHiddenMarkers` is asked BEFORE the arm is set, so a
+        // heading under the answer showed its `## ` the moment a cell
+        // finished running.
+        tv.setSelectedRange(NSRange(location: EvalCells.caret(under: cell, in: text), length: 0))
+        // And said out loud for the one place a blank line cannot speak
+        // for: an answer at the very end of the note has no separator
+        // under it, so there is no caret position `arm` would take.
+        if tv.armedSeam != offset { tv.armedSeam = offset }
         tv.scrollRangeToVisible(NSRange(location: offset, length: 0))
     }
 

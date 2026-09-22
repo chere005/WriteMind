@@ -95,11 +95,26 @@ final class NotebookGutter: NSView {
         /// A group — a heading and everything under it — which a
         /// double-click folds away. A plain cell is not foldable.
         var foldable = false
+        /// An evaluation cell and its answer, embraced by one bracket.
+        ///
+        /// NOT A CELL AND NOT A SECTION, and it needs saying out loud
+        /// because `!foldable` was being read as "is a cell" in four
+        /// places — so the pair's own bracket joined the list a drag
+        /// walks down, anchored gestures on the merged range and
+        /// shadowed the two cells inside it.
+        var group = false
+
+        /// A cell of the note, rather than furniture round some. The one
+        /// reader of it, so a third kind of bracket cannot be counted as
+        /// a cell again by whichever gesture is written next.
+        var isCell: Bool { !foldable && !group }
     }
 
     static let width: CGFloat = 22
     private static let step: CGFloat = 5
     private static let tick: CGFloat = 5
+    /// How far a group's bracket reaches past the cells it holds.
+    static let overhang: CGFloat = 3
 
     /// Whether a bracket is drawn heavy: one of the selected ranges covers
     /// the whole of what it holds, or — for a cell, and only the caret's
@@ -159,9 +174,17 @@ final class NotebookGutter: NSView {
     override var isFlipped: Bool { true }
 
     /// The line a bracket is drawn on, measured from the view's right edge.
+    ///
+    /// CLAMPED TO THE COLUMN: nesting is five points a level and the
+    /// column is 22 wide, so a cell deep enough — three headings and the
+    /// group inside them — was drawn past the left edge of the gutter and
+    /// simply was not there. Levels beyond the last one share it.
     private func x(for depth: Int) -> CGFloat {
-        bounds.maxX - 6 - CGFloat(depth) * Self.step
+        bounds.maxX - 6 - CGFloat(min(depth, Self.deepest)) * Self.step
     }
+
+    /// How many levels fit, ticks and all.
+    static let deepest = Int((width - 6 - tick) / step)
 
     override func draw(_ dirtyRect: NSRect) {
         for bracket in brackets {
@@ -173,13 +196,20 @@ final class NotebookGutter: NSView {
             let path = NSBezierPath()
             // A group's bracket is heavier than a plain cell's, so the
             // nesting reads at a glance.
-            let base: CGFloat = bracket.foldable ? 1.5 : 1.1
+            let base: CGFloat = bracket.foldable || bracket.group ? 1.5 : 1.1
             path.lineWidth = bracket.selected ? base + 1.2 : (bracket.key == hovered ? base + 0.6 : base)
             path.lineCapStyle = .round
-            path.move(to: CGPoint(x: line - Self.tick, y: bracket.top))
-            path.line(to: CGPoint(x: line, y: bracket.top))
-            path.line(to: CGPoint(x: line, y: bracket.bottom))
-            path.line(to: CGPoint(x: line - Self.tick, y: bracket.bottom))
+            // AN IN/OUT PAIR'S BRACKET STANDS PROUD OF THE TWO INSIDE IT.
+            // Its top and bottom are theirs exactly, so drawn at the same
+            // length it was a second hairline five points over and the
+            // pair read as a thicker line rather than as a group (Sean,
+            // 2026-09-22: "input and output cells still don't appear to
+            // be grouped").
+            let over = bracket.group ? Self.overhang : 0
+            path.move(to: CGPoint(x: line - Self.tick, y: bracket.top - over))
+            path.line(to: CGPoint(x: line, y: bracket.top - over))
+            path.line(to: CGPoint(x: line, y: bracket.bottom + over))
+            path.line(to: CGPoint(x: line - Self.tick, y: bracket.bottom + over))
             path.stroke()
 
             // A closed section carries a small solid triangle on its
@@ -321,20 +351,20 @@ final class NotebookGutter: NSView {
     /// a drag reaches cells, and the section round them lights up by
     /// itself once they are all in.
     private var cellSpans: [CellSelection.Span] {
-        brackets.filter { !$0.foldable }
+        brackets.filter { $0.isCell }
             .sorted { $0.top < $1.top }
             .map { CellSelection.Span(top: $0.top, bottom: $0.bottom, range: $0.range) }
     }
 
     private var cellRanges: [NSRange] {
-        brackets.filter { !$0.foldable }.map(\.range).sorted { $0.location < $1.location }
+        brackets.filter(\.isCell).map(\.range).sorted { $0.location < $1.location }
     }
 
     /// What is picked right now, as the brackets themselves say. This view
     /// is drawn FROM the pane's selection, so it keeps no second copy of it
     /// to go stale between a click and the next one.
     private var picked: [NSRange] {
-        brackets.filter { !$0.foldable && $0.held }
+        brackets.filter { $0.isCell && $0.held }
             .map(\.range)
             .sorted { $0.location < $1.location }
     }

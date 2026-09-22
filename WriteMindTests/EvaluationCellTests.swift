@@ -245,9 +245,37 @@ final class EvaluationCellTests: XCTestCase {
 
     func testACellWithNoAnswerYetIsNotAGroup() {
         XCTAssertTrue(EvalCells.groups(in: "```eval python\nx\n```").isEmpty)
-        // And a CODE cell with an out block under it is not one either —
-        // a code cell never ran, so that answer is not its.
-        XCTAssertTrue(EvalCells.groups(in: "```python\nx\n```\n\n```out\n1\n```").isEmpty)
+        XCTAssertTrue(EvalCells.groups(in: "# Notes\n\nWords.").isEmpty)
+        // An OUT cell is not an input, so two of them in a row are not a
+        // pair — otherwise a second answer would bracket the first.
+        XCTAssertTrue(EvalCells.groups(in: "```out\n1\n```\n\n```out\n2\n```").isEmpty)
+    }
+
+    /// The fence above the answer is NOT asked what it says (Sean,
+    /// 2026-09-22: "input and output cells still don't appear to be
+    /// grouped"). An `out` cell is only ever written by a run, so a cell
+    /// with one under it has been run — and every pair in Sean's notes
+    /// from before the `eval ` fence existed is written ```python.
+    func testAPlainCodeCellWithAnAnswerIsStillAPair() {
+        let older = "```python\nprint(1+2)\n```\n\n```out\n3\n```"
+        let groups = EvalCells.groups(in: older)
+        XCTAssertEqual(groups.count, 1)
+        XCTAssertEqual(groups.first?.input, cell(older, at: 0))
+        XCTAssertEqual(groups.first?.output, cell(older, at: 1))
+    }
+
+    /// Three blank lines in the gap are a `.blank` cell of the note's
+    /// own, and the answer below them is still the answer — it was hidden
+    /// from its cell, so a re-run piled a SECOND one on and the bracket
+    /// went away.
+    func testABlankCellInTheGapDoesNotUnpairThem() {
+        let spaced = "```eval python\nx\n```\n\n\n\n```out\n1\n```"
+        let groups = EvalCells.groups(in: spaced)
+        XCTAssertEqual(groups.count, 1, "a gap is not a separation")
+        XCTAssertNotNil(EvalCells.out(after: cell(spaced, at: 0), in: spaced))
+        // And the blank cell between them is inside the bracket, so its
+        // own is drawn inside it too.
+        XCTAssertTrue(EvalCells.isGrouped(cell(spaced, at: 1), in: groups))
     }
 
     func testEveryPairInANoteIsItsOwnGroup() {
@@ -270,6 +298,62 @@ final class EvaluationCellTests: XCTestCase {
         // read as "the seam under this one".
         XCTAssertEqual(bar, cell(answered, at: 2).location)
         XCTAssertEqual((answered as NSString).substring(from: bar), "After it.")
+    }
+
+    /// The caret goes in the blank line the bar is drawn in — where a
+    /// click in that seam would have put it — and NOT at the start of
+    /// the cell below, which armed the same bar and left every other
+    /// reader of "the caret is in that cell" answering for the wrong one.
+    func testTheCaretGoesInTheSeamAndNotInTheCellBelowIt() {
+        let answered = "```eval python\nx\n```\n\n```out\n1\n```\n\nAfter it."
+        let out = cell(answered, at: 1)
+        let caret = EvalCells.caret(under: out, in: answered)
+        let bar = EvalCells.seam(after: out, in: answered)
+        XCTAssertLessThan(caret, bar, "the caret is behind the bar, in the gap")
+        XCTAssertEqual(caret, NSMaxRange(out) + 1)
+        let line = (answered as NSString).lineRange(for: NSRange(location: caret, length: 0))
+        XCTAssertTrue((answered as NSString).substring(with: line)
+            .trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+                      "a blank line, which is the only thing CellSeams.arm will arm from")
+    }
+
+    /// An answer at the very end of the note has no separator under it,
+    /// so there is nowhere behind the bar for the caret to go.
+    func testTheCaretAtTheEndOfTheNoteIsTheEndOfTheNote() {
+        let answered = "```eval python\nx\n```\n\n```out\n1\n```"
+        XCTAssertEqual(EvalCells.caret(under: cell(answered, at: 1), in: answered),
+                       (answered as NSString).length)
+    }
+
+    // MARK: - Which cell the answer belongs to
+
+    /// ⌘D makes two cells with identical text in one keystroke, and the
+    /// answer has to go under the one that ran.
+    func testTheAnswerLandsOnTheCopyThatWasRunAndNotTheFirstOne() {
+        let twice = "```eval python\nx\n```\n\nWords.\n\n```eval python\nx\n```"
+        let first = cell(twice, at: 0)
+        let second = cell(twice, at: 2)
+        XCTAssertNotEqual(first.location, second.location)
+        let opening = (twice as NSString).substring(with: second)
+        XCTAssertEqual(EvalCells.landing(of: opening, in: twice, startedAt: second.location)?.range,
+                       second)
+        XCTAssertEqual(EvalCells.landing(of: opening, in: twice, startedAt: first.location)?.range,
+                       first, "and the upper one when that is the one that ran")
+    }
+
+    func testACellThatIsGoneTakesItsAnswerWithIt() {
+        XCTAssertNil(EvalCells.landing(of: "```eval python\nx\n```", in: "# Nothing here",
+                                       startedAt: 0))
+    }
+
+    /// An unclosed fence parses as a block that runs to the END of the
+    /// note, so pasting an answer after it put the ```out line inside the
+    /// cell and closed it. `MarkdownFormatting.fenced` reports that by
+    /// handing back an EMPTY close rather than nil, which is why the run
+    /// has to ask.
+    func testAnUnclosedFenceIsReportedByAnEmptyClose() {
+        XCTAssertEqual(MarkdownFormatting.fenced("```eval python\nx\n```")?.close, "```")
+        XCTAssertEqual(MarkdownFormatting.fenced("```eval python\nx")?.close, "")
     }
 
     func testTheBarUnderTheLastCellIsTheEndOfTheNote() {

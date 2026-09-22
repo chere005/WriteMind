@@ -20,8 +20,16 @@ struct CellBrackets: View {
         var held = false
         /// A heading's group: a double-click folds it.
         var foldable = false
+        /// An evaluation cell and its answer, embraced by one bracket —
+        /// not a cell and not a section. `!foldable` was read as "is a
+        /// cell" in three places here, so the pair's own bracket joined
+        /// the list a drag walks down and shadowed the two inside it.
+        var group = false
         /// What a click selects, in the markdown.
         var range: NSRange
+
+        /// A cell of the note, rather than furniture round some.
+        var isCell: Bool { !foldable && !group }
 
         var id: String { key }
     }
@@ -29,6 +37,13 @@ struct CellBrackets: View {
     static let width: CGFloat = 22
     private static let step: CGFloat = 5
     private static let tick: CGFloat = 5
+    /// How far a group's bracket reaches past the cells it holds, so an
+    /// In/Out pair reads as embraced rather than as a doubled hairline.
+    static let overhang: CGFloat = 3
+    /// How many levels of nesting fit in the column, ticks and all.
+    /// Anything deeper shares the last one rather than being drawn off
+    /// the edge and not drawn at all.
+    static let deepest = Int((width - 6 - tick) / step)
     /// A margin under the last bracket, so the strip still covers the gap
     /// a block added at the bottom will need before the page re-measures.
     static let tail: CGFloat = 120
@@ -73,7 +88,7 @@ struct CellBrackets: View {
 
     /// The line a bracket is drawn on, from the right-hand edge.
     static func x(for depth: Int, in width: CGFloat) -> CGFloat {
-        width - 6 - CGFloat(depth) * step
+        width - 6 - CGFloat(min(depth, deepest)) * step
     }
 
     /// Which bracket a point lands on: the NEAREST one, not the first.
@@ -93,17 +108,22 @@ struct CellBrackets: View {
         Canvas { context, size in
             for bracket in brackets {
                 let line = Self.x(for: bracket.depth, in: size.width)
-                let base: CGFloat = bracket.foldable ? 1.5 : 1.1
+                let base: CGFloat = bracket.foldable || bracket.group ? 1.5 : 1.1
                 let weight = bracket.selected ? base + 1.2 : (bracket.key == hovered ? base + 0.6 : base)
                 let colour: Color = bracket.selected || bracket.key == hovered
                     ? .accentColor
                     : Color.secondary.opacity(0.45)
 
+                // A pair's bracket stands proud of the two cells inside
+                // it: its ends are theirs exactly, so drawn at the same
+                // length it read as a second hairline rather than as a
+                // group.
+                let over = bracket.group ? Self.overhang : 0
                 var path = Path()
-                path.move(to: CGPoint(x: line - Self.tick, y: bracket.top))
-                path.addLine(to: CGPoint(x: line, y: bracket.top))
-                path.addLine(to: CGPoint(x: line, y: bracket.bottom))
-                path.addLine(to: CGPoint(x: line - Self.tick, y: bracket.bottom))
+                path.move(to: CGPoint(x: line - Self.tick, y: bracket.top - over))
+                path.addLine(to: CGPoint(x: line, y: bracket.top - over))
+                path.addLine(to: CGPoint(x: line, y: bracket.bottom + over))
+                path.addLine(to: CGPoint(x: line - Self.tick, y: bracket.bottom + over))
                 context.stroke(path, with: .color(colour),
                                style: StrokeStyle(lineWidth: weight, lineCap: .round, lineJoin: .round))
 
@@ -221,19 +241,19 @@ struct CellBrackets: View {
     /// a drag reaches cells, and the section round them lights up by itself
     /// once they are all in.
     private var cellSpans: [CellSelection.Span] {
-        brackets.filter { !$0.foldable }
+        brackets.filter(\.isCell)
             .sorted { $0.top < $1.top }
             .map { CellSelection.Span(top: $0.top, bottom: $0.bottom, range: $0.range) }
     }
 
     private var cellRanges: [NSRange] {
-        brackets.filter { !$0.foldable }.map(\.range).sorted { $0.location < $1.location }
+        brackets.filter(\.isCell).map(\.range).sorted { $0.location < $1.location }
     }
 
     /// What is picked right now, as the brackets themselves say: this view
     /// is drawn FROM the page's selection and keeps no second copy of it.
     private var picked: [NSRange] {
-        brackets.filter { !$0.foldable && $0.held }
+        brackets.filter { $0.isCell && $0.held }
             .map(\.range)
             .sorted { $0.location < $1.location }
     }

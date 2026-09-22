@@ -20,6 +20,15 @@ extension NoteStore {
             notice(Evaluator.Refusal.notAnEvaluationCell.message)
             return
         }
+        // AN UNCLOSED FENCE IS NOT A CELL YET. `MarkdownFormatting.fenced`
+        // hands back an empty `close` for one rather than nil, and the
+        // parser runs such a block to the END OF THE NOTE — so the answer
+        // was pasted at that end, its own ```out line closed the cell it
+        // was meant to sit under, and the result was swallowed as code.
+        guard !parts.close.isEmpty else {
+            notice("That cell has no closing ``` yet, so there is nothing to run.")
+            return
+        }
         let evaluator: Evaluator
         switch Evaluator.resolve(fence: MarkdownFormatting.fenceLanguage(parts.open)) {
         case .success(let found): evaluator = found
@@ -28,10 +37,11 @@ extension NoteStore {
 
         let source = parts.body
         let opening = ns.substring(with: cell)
-        runningCell = cell.location
+        let from = cell.location
+        runningCell = from
         Task.detached { [weak self] in
             let outcome = await CellRunner.run(source, as: evaluator)
-            await MainActor.run { self?.landed(outcome, of: evaluator, cell: opening) }
+            await MainActor.run { self?.landed(outcome, of: evaluator, cell: opening, from: from) }
         }
     }
 
@@ -58,7 +68,7 @@ extension NoteStore {
     }
 
     private func landed(_ outcome: Result<EvalResult, CellRunner.Failure>,
-                        of evaluator: Evaluator, cell opening: String) {
+                        of evaluator: Evaluator, cell opening: String, from: Int) {
         runningCell = nil
         let result: EvalResult
         switch outcome {
@@ -73,10 +83,7 @@ extension NoteStore {
         case .failure(.couldNotStart(let why)):
             result = EvalResult(status: nil, note: "could not start \(evaluator.title): \(why)")
         }
-        let ns = text as NSString
-        guard let landing = MarkdownParser.positioned(from: text)
-            .first(where: { ns.substring(with: $0.range) == opening })
-        else {
+        guard let landing = EvalCells.landing(of: opening, in: text, startedAt: from) else {
             notice("The cell that was running is not there any more, so its answer was dropped.")
             return
         }

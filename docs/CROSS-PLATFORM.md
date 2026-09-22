@@ -247,6 +247,65 @@ with an `out` fence directly under it. That keeps it true with no state to
 get stale: delete the answer and the group is gone; run the cell and it is
 back. (Sean, 2026-09-21: "input and output cells are grouped together.")
 
+### An out cell is an answer, whatever ran
+The pair is a fenced cell with an `out` cell under it, and the fence above it
+is NOT asked what it says. Nothing but a run ever writes an `out` fence, so a
+cell with one under it has been run — whatever that version of the app would
+make of its language today. Asking a second question ("is this an evaluation
+cell?") split one model in two: the re-run replaced that block, calling it the
+cell's answer, while the gutter refused to bracket the two together, and every
+pair written before the `eval ` fence existed stopped looking like a pair. And
+the blank cells in the gap are stepped over: three empty lines are a block of
+the note's own, and pressing Return twice under a cell must not hide its
+answer from it. (Sean, 2026-09-22: "input and output cells still don't appear
+to be grouped.")
+
+### A bracket in the gutter is one of three things
+A section folds, a cell is a block of the note, and a group embraces an In/Out
+pair. Every gesture in the column — the drag that takes cells, what a
+shift-click reaches between, what counts as already picked, the spans an
+insertion bar is dragged across — needs "is this a cell", and `not foldable`
+is not that question once a third kind exists: the pair's own bracket joined
+the list a drag walks down, anchored on the merged range and shadowed the two
+cells inside it. Give the bracket the kind and ask ONE reader for it.
+
+And a group has to LOOK like one: its top and bottom are exactly its members',
+so drawn at the same length it reads as a second hairline five points over,
+not as something round them. It stands a few points proud at each end. Nesting
+also runs out of column — levels are a few points apart in a fixed strip — so
+the drawn depth is clamped, and anything deeper shares the last line rather
+than being drawn off the edge and not drawn at all.
+
+### A cursor written into the page has to be scrolled to
+A bar armed by a gesture is under the pointer; a bar armed because a cell
+finished running is wherever the answer ended, and an answer is written whole
+— a screenful of it is ordinary. So the pane that arms it scrolls to it, the
+same as the one that has always done so. Two things make that harder than it
+sounds, both measured (2026-09-22): the row it wants DOES NOT EXIST at the
+moment the answer is written, so a scroll asked for there silently does
+nothing and it has to wait for the page to be rebuilt AND laid out; and a row
+taller than the window cannot be scrolled to its BOTTOM — that clamps to
+keeping its top in view, which is to say it does not move at all. Scroll to
+the SEAM, centred, and give the seams their own ids to be scrolled to.
+
+### The caret goes in the seam, not in the cell below it
+Where the bar is armed and where the caret is parked are two different
+offsets: the bar is the next cell's start, the caret is the blank line above
+it. Putting both at the cell's start armed the right bar and left every other
+reader of "the caret is in that cell" answering for the wrong one — the
+markers a heading hides came back the moment a cell finished running, because
+that reader is asked on the way past, before the arm is set.
+
+### Two identical cells, and the answer belongs to one of them
+A cell is found again by its own text when the answer comes back, because a
+run takes time and the note is editable throughout it. But one keystroke
+duplicates a cell, and first-wins then puts the answer under the copy ABOVE
+the one that ran — with its bracket and its cursor. Keep where the run started
+and take the nearest match. And refuse a cell whose closing fence has not been
+typed yet: such a block parses to the end of the note, so the answer is pasted
+past the end and its own opening line closes the cell it was meant to sit
+under.
+
 ## Done there
 
 Nothing yet.
