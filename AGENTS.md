@@ -701,7 +701,16 @@ CoreMind's `bin/report-status.sh`.
   (`bringIntoView` waits for `onChange` and a beat after it); and a row
   TALLER THAN THE WINDOW cannot be scrolled to its `.bottom`, which
   clamps to keeping its top in view and does not move. The seams carry
-  their own ids and the page is scrolled to the seam, centred.
+  their own ids and the page is scrolled to the SEAM. **And only when it
+  has to** (Sean, 2026-09-22: "make the cursor behavior after evaluating
+  a cell elegant"): `PreviewLayout.onScreen` is asked first, with a
+  margin off each edge, because the answer to `2 + 2` is one line and
+  jerking the note under somebody already looking at the right place is
+  the opposite of what the scroll is for — the source pane has had this
+  for nothing all along, since `scrollRangeToVisible` moves by the least
+  it can. When it does move it is carried and not jumped: a short
+  `easeOut`, landing the seam 0.8 down the page rather than centred,
+  because what has just been made is above it.
   **A HOVER IN THE GUTTER PROMISES WHAT A CLICK WOULD TAKE.** Sean,
   2026-09-22: "hovering over sections on the right side should faintly
   indicate what would be selected if clicked". Both gutters report

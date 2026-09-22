@@ -186,6 +186,9 @@ struct MarkdownPreview: View {
     /// A seam the page has to bring into view — the one under an answer a
     /// run has just written, so the bar is somewhere the eye can find.
     @State private var bringIntoView: SeamRow?
+    /// How far the page has been scrolled, in the document's own
+    /// coordinates — the same number the drawing layer works in.
+    @State private var scrolled: CGFloat = 0
 
     /// What a seam is called when the page is scrolled to it. The rows
     /// are identified by their own offsets, which a seam has no unique
@@ -367,6 +370,10 @@ struct MarkdownPreview: View {
         }
         .onPreferenceChange(PreviewScrollKey.self) { offset in
             onScroll?(offset)
+            // Kept, because the page has to know whether a bar armed
+            // from outside it is already on screen before it moves for
+            // one (`bringIntoView`).
+            if scrolled != offset { scrolled = offset }
             // Which cell the fold is on, for the other mode to open at.
             let places = PreviewLayout.positions(rows: items.map { ($0.id, rowHeights[$0.id] ?? 0) },
                                                  spacing: Self.blockGap,
@@ -395,13 +402,31 @@ struct MarkdownPreview: View {
             // output has to be measured before the page knows where its
             // seam went.
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.12) {
-                // THE SEAM, CENTRED — not the answer above it. A row
-                // taller than the window cannot be scrolled to its
-                // BOTTOM (SwiftUI clamps to keeping its top in view, so
-                // nothing moved at all), and the seam is the thing the
-                // bar is drawn in.
-                page.scrollTo(wanted, anchor: .center)
-                bringIntoView = nil
+                defer { bringIntoView = nil }
+                // A PAGE THAT DOES NOT MOVE WHEN IT DOES NOT HAVE TO.
+                // The answer to `2 + 2` is one line, and jerking the
+                // note under the reader for a bar already in front of
+                // them is the opposite of what the scroll is for (Sean,
+                // 2026-09-22: "make the cursor behavior after evaluating
+                // a cell elegant"). The source pane has always been like
+                // this — `scrollRangeToVisible` moves by the least it
+                // can and not at all when the range is already on screen
+                // — and this is that rule, said out loud because SwiftUI
+                // has no equivalent.
+                guard let line = seams.indices.contains(wanted.index)
+                        ? seams[wanted.index].line : nil,
+                      !PreviewLayout.onScreen(line, scroll: scrolled, height: pageHeight)
+                else { return }
+                // And when it does move: THE SEAM, low on the page,
+                // carried rather than jumped. Low because what you have
+                // just made is above it and worth seeing; the seam and
+                // not the answer above it because a row taller than the
+                // window cannot be scrolled to its BOTTOM at all —
+                // SwiftUI clamps that to keeping its top in view, which
+                // is to say it does not move (measured, 2026-09-22).
+                withAnimation(.easeOut(duration: 0.22)) {
+                    page.scrollTo(wanted, anchor: UnitPoint(x: 0, y: 0.8))
+                }
             }
         }
         .onAppear {

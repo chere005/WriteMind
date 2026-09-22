@@ -7,6 +7,34 @@ final class CellBracketTests: XCTestCase {
         heights.enumerated().map { ($0.offset, $0.element) }
     }
 
+    // MARK: - Moving the page only when it has to move
+
+    /// A bar armed from outside the page — the one under an answer a run
+    /// has just written — moves the page only when it is not already in
+    /// front of the reader (Sean, 2026-09-22: "make the cursor behavior
+    /// after evaluating a cell elegant").
+    func testAPlaceAlreadyInFrontOfTheReaderIsNotScrolledTo() {
+        XCTAssertTrue(PreviewLayout.onScreen(400, scroll: 0, height: 800))
+        XCTAssertTrue(PreviewLayout.onScreen(900, scroll: 600, height: 800))
+        XCTAssertFalse(PreviewLayout.onScreen(900, scroll: 0, height: 800), "below the fold")
+        XCTAssertFalse(PreviewLayout.onScreen(100, scroll: 600, height: 800), "above it")
+    }
+
+    /// A bar a point inside the fold is on screen by arithmetic and not
+    /// by eye, so the edges do not count.
+    func testTheVeryEDGESOfTheWindowDoNotCount() {
+        XCTAssertFalse(PreviewLayout.onScreen(1, scroll: 0, height: 800))
+        XCTAssertFalse(PreviewLayout.onScreen(799, scroll: 0, height: 800))
+        XCTAssertTrue(PreviewLayout.onScreen(24, scroll: 0, height: 800))
+        XCTAssertTrue(PreviewLayout.onScreen(776, scroll: 0, height: 800))
+    }
+
+    /// A window nobody has measured yet holds nothing, so the page moves.
+    func testAWindowWithNoHeightShowsNothing() {
+        XCTAssertFalse(PreviewLayout.onScreen(10, scroll: 0, height: 0))
+        XCTAssertFalse(PreviewLayout.onScreen(10, scroll: 0, height: 30))
+    }
+
     func testEveryCellGetsItsPlaceInOrder() {
         let places = PreviewLayout.positions(rows: rows([20, 30, 10]), spacing: 4, top: 10)
         XCTAssertEqual(places[0]?.top, 10)

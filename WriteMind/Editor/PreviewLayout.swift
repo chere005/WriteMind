@@ -25,6 +25,25 @@ enum PreviewLayout {
         return ordered.last { $0.value.top <= fold }?.key ?? first.key
     }
 
+    /// Whether a place on the page is in front of the reader right now.
+    ///
+    /// Asked before the page is moved for a cursor that was armed from
+    /// OUTSIDE it — the bar under an answer a run has just written — so
+    /// that a one-line answer does not jerk the note under somebody who
+    /// can already see where their cursor went (Sean, 2026-09-22: "make
+    /// the cursor behavior after evaluating a cell elegant"). The source
+    /// pane has always had this for nothing: `scrollRangeToVisible`
+    /// moves by the least it can and not at all when the range is
+    /// already on screen.
+    ///
+    /// A `margin` off each edge, because a bar a point inside the fold is
+    /// on screen by arithmetic and not by eye.
+    static func onScreen(_ y: CGFloat, scroll: CGFloat, height: CGFloat,
+                         margin: CGFloat = 24) -> Bool {
+        guard height > margin * 2 else { return false }
+        return y >= scroll + margin && y <= scroll + height - margin
+    }
+
     /// Where every block ends up, in the scroll content's own coordinates —
     /// what the cell brackets are drawn from.
     static func positions(rows: [(id: Int, height: CGFloat)], spacing: CGFloat,

@@ -405,6 +405,22 @@ pointing hand, the way the + on the insertion bar already does. (Sean,
 2026-09-22: "the mouse cursor behavior should be the same in wysiwyg and
 markdown mode".)
 
+### A page that does not move when it does not have to
+Carrying the view to a cursor that was armed from outside it — the bar under
+an answer a run has just written — is only kind when the cursor is somewhere
+the reader cannot see. The answer to `2 + 2` is one line; jerking the note
+under somebody who is already looking at the right place is the opposite of
+what the scroll is for. Ask first, with a margin off each edge, because a bar
+a point inside the fold is on screen by arithmetic and not by eye. A native
+text view has this for nothing — scroll-range-to-visible moves by the least it
+can, and not at all when the range is already up — so it only has to be said
+out loud on the side that stacks its own views.
+
+And when it does move: carried, not jumped. A short animation, landing the
+seam low on the page rather than centred, because what you have just made is
+above it and worth seeing. (Sean, 2026-09-22: "make the cursor behavior after
+evaluating a cell elegant".)
+
 ## Done there
 
 Nothing yet.
