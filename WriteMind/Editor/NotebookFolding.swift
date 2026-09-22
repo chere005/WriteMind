@@ -240,8 +240,14 @@ final class NotebookGutter: NSView {
     override func updateTrackingAreas() {
         super.updateTrackingAreas()
         if let tracking { removeTrackingArea(tracking) }
+        // `.cursorUpdate` as well as the moves: a cursor RECT is torn
+        // down and rebuilt on every relayout and there is no rect of
+        // ours under the pointer in between, which is how the hand over
+        // a bracket kept dropping back to the text view's I-beam. A
+        // tracking area is not rebuilt, so it owns the column.
         let area = NSTrackingArea(rect: bounds,
-                                  options: [.mouseMoved, .mouseEnteredAndExited, .activeInKeyWindow],
+                                  options: [.mouseMoved, .mouseEnteredAndExited,
+                                            .cursorUpdate, .activeInKeyWindow],
                                   owner: self)
         addTrackingArea(area)
         tracking = area
@@ -255,7 +261,21 @@ final class NotebookGutter: NSView {
             needsDisplay = true
             onHoverCells?(over.map { CellSelection.cells(of: $0.range, in: cellRanges) } ?? [])
         }
-        (over == nil ? NSCursor.arrow : NSCursor.pointingHand).set()
+        cursor(at: point).set()
+    }
+
+    override func cursorUpdate(with event: NSEvent) {
+        cursor(at: convert(event.locationInWindow, from: nil)).set()
+    }
+
+    override func mouseEntered(with event: NSEvent) {
+        cursor(at: convert(event.locationInWindow, from: nil)).set()
+    }
+
+    /// The hand over a bracket, the arrow beside one — one reader, so the
+    /// three ways this view is asked cannot answer differently.
+    private func cursor(at point: NSPoint) -> NSCursor {
+        bracket(at: point) == nil ? .arrow : .pointingHand
     }
 
     override func mouseExited(with event: NSEvent) {

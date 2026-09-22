@@ -56,6 +56,10 @@ struct EvaluatorBadge: View {
             .fixedSize()
             .help(evaluator.map { "Runs as \($0.title) — ⇧↩ to run it, or pick another here" }
                     ?? "No language: pick what this cell runs as")
+            // A MENU IS A BUTTON, so it takes the hand: the cell's own
+            // I-beam ran over it, and a text cursor on a thing that pops
+            // a menu says the wrong thing about what a click will do.
+            .pointingHand()
 
             if isRunning {
                 ProgressView().controlSize(.small).frame(width: Self.width, height: Self.height)

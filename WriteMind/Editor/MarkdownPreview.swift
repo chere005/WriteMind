@@ -301,7 +301,11 @@ struct MarkdownPreview: View {
                 ForEach(Array(cells.enumerated()), id: \.element.id) { index, item in
                     seamView(index < seams.count ? seams[index] : nil, index: index)
                         .id(SeamRow(index: index))
-                    row(item)
+                    // The page's margin is INSIDE the cell — `cell(_:)`
+                    // applies it — so a seam is the full width of the
+                    // page and so is the row above it, and there is no
+                    // strip down either side that answers nothing.
+                    cell(item)
                         .id(item.id)
                         .background {
                             GeometryReader { proxy in
@@ -309,11 +313,6 @@ struct MarkdownPreview: View {
                                                        value: [item.id: proxy.size.height])
                             }
                         }
-                        // The page's margin is on the CELLS, not on the
-                        // stack: a seam is the full width of the page,
-                        // and a margin round the stack would have left a
-                        // strip down each side that answered nothing.
-                        .padding(.horizontal, Self.sideInset)
                 }
                 seamView(cells.count < seams.count ? seams[cells.count] : nil, index: cells.count)
                     .id(SeamRow(index: cells.count))
@@ -693,48 +692,74 @@ struct MarkdownPreview: View {
                     }
                 }
                 .padding(.vertical, -2)
-                .contentShape(Rectangle())
-                // A CHECKLIST'S ITEMS OWN THEIR OWN CLICKS, so a click on
-                // a reminder opens that reminder and not the whole cell
-                // (Sean, 2026-09-21). The bracket in the gutter is still
-                // how the whole list is opened, which is how a list's
-                // kind is changed and how a reminder is unmade.
-                .onTapGesture { if !Self.isChecklist(block) { beginEditing(item.range) } }
-                // AN I-BEAM OVER THE WORDS (Sean, 2026-09-21: "in wysiwyg
-                // mode as i hover over text and such it should be a text
-                // edit cursor"). A rendered block is SwiftUI `Text` with
-                // no cursor rects of its own, so the pointer over the
-                // whole page was the arrow — a page you can click into
-                // and type in, saying nothing of the sort.
-                //
-                // Set on every move rather than pushed, and handed back
-                // on the way out, for the reasons the seams are: a pushed
-                // cursor loses to cursorUpdate, and `NSCursor.set()` is
-                // global and sticks until something else sets one. The
-                // "was it me" question is `hovered`, so the seam the
-                // pointer has just arrived at does not have its cursor
-                // taken back by the cell it left.
-                .onContinuousHover(coordinateSpace: .local) { phase in
-                    switch phase {
-                    case .active:
-                        // Not while the pen, the arrow tool or a
-                        // placement owns the pane: the pointer there is
-                        // the layer's, and two answers to one pointer is
-                        // the flicker that cost seven rounds.
-                        guard editable, seamsEnabled else { return }
-                        if hovered != .cell(item.id) { hovered = .cell(item.id) }
-                        let put = Self.textCursor
-                        put.set()
-                        if seamCursor !== put { seamCursor = put }
-                    case .ended:
-                        let ours = hovered == .cell(item.id)
-                        if ours { hovered = nil }
-                        let back = Self.cursor(hovering: false, ours: ours, put: seamCursor)
-                        if ours { seamCursor = nil }
-                        back?.set()
-                    }
-                }
         }
+    }
+
+    /// THE WHOLE ROW IS THE CELL, margins and all — the pointer and the
+    /// click both.
+    ///
+    /// AN I-BEAM OVER THE WORDS (Sean, 2026-09-21: "in wysiwyg mode as i
+    /// hover over text and such it should be a text edit cursor"): a
+    /// rendered block is SwiftUI `Text` with no cursor rects of its own,
+    /// so the pointer over the page was the arrow — a page you can click
+    /// into and type in, saying nothing of the sort.
+    ///
+    /// AND OVER THE MARGINS TOO (Sean, 2026-09-22: "the mouse cursor
+    /// behavior should be the same in wysiwyg and markdown mode"). The
+    /// page's 28-point side inset used to be applied from OUTSIDE the
+    /// row, so the hover and the tap were sized to the text column and
+    /// the two strips down the sides answered nothing at all: sliding
+    /// sideways off the words flipped the pointer to an arrow an inch
+    /// before the pane edge, where the other pane — whose margin is the
+    /// text container's own inset — is an I-beam right out to it. The
+    /// same inset, applied INSIDE, keeps the words exactly where they
+    /// were and hands the margin to the cell it belongs to.
+    ///
+    /// It covers the OPEN cell as well, which had no cursor of its own
+    /// outside its text view at all: the ring of padding inside its
+    /// highlighted box, and the strip under the badge, were arrow.
+    ///
+    /// Set on every move rather than pushed, and handed back on the way
+    /// out, for the reasons the seams are: a pushed cursor loses to
+    /// cursorUpdate, and `NSCursor.set()` is global and sticks until
+    /// something else sets one. The "was it me" question is `hovered`,
+    /// so the seam the pointer has just arrived at does not have its
+    /// cursor taken back by the cell it left.
+    @ViewBuilder
+    private func cell(_ item: Item) -> some View {
+        row(item)
+            .padding(.horizontal, Self.sideInset)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .contentShape(Rectangle())
+            // A CHECKLIST'S ITEMS OWN THEIR OWN CLICKS, so a click on a
+            // reminder opens that reminder and not the whole cell (Sean,
+            // 2026-09-21). The bracket in the gutter is still how the
+            // whole list is opened, which is how a list's kind is changed
+            // and how a reminder is unmade.
+            .onTapGesture {
+                guard !item.isEditing, let block = item.block, !Self.isChecklist(block) else { return }
+                beginEditing(item.range)
+            }
+            .onContinuousHover(coordinateSpace: .local) { phase in
+                switch phase {
+                case .active:
+                    // Not while the pen, the arrow tool or a placement
+                    // owns the pane: the pointer there is the layer's,
+                    // and two answers to one pointer is the flicker that
+                    // cost seven rounds.
+                    guard editable, seamsEnabled else { return }
+                    if hovered != .cell(item.id) { hovered = .cell(item.id) }
+                    let put = Self.textCursor
+                    put.set()
+                    if seamCursor !== put { seamCursor = put }
+                case .ended:
+                    let ours = hovered == .cell(item.id)
+                    if ours { hovered = nil }
+                    let back = Self.cursor(hovering: false, ours: ours, put: seamCursor)
+                    if ours { seamCursor = nil }
+                    back?.set()
+                }
+            }
     }
 
     /// THE OPEN CELL'S OWN BADGE: its fence, when the cell being typed
@@ -1825,6 +1850,11 @@ struct MarkdownPreview: View {
                             .buttonStyle(.plain)
                             .disabled(onToggleTodo == nil)
                             .help(item.done ? "Done — click to undo it" : "Click when it is done")
+                            // A BOX IS A BUTTON, so it takes the hand —
+                            // the app's own rule for the + on the bar and
+                            // for the brackets, and the cell's I-beam was
+                            // running straight over it.
+                            .pointingHand(enabled: onToggleTodo != nil)
                             words(of: item, at: index)
                         }
                     }

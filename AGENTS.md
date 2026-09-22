@@ -1146,6 +1146,28 @@ tools/                    build.sh run.sh test.sh (both source signing.sh)
   that arrives later answers for nobody and the horizontal I-beam left
   with the pointer. Which view's `cursorUpdate` wins at runtime is not
   unit-testable; the geometry under all of it is, and is.
+- **ONE OWNER AND ONE ANSWER FOR EVERY REGION, AND THE TWO PANES GIVE THE
+  SAME ONE.** Sean, 2026-09-22: "the mouse cursor behavior should be the
+  same in wysiwyg and markdown mode". Three were wrong, all the same
+  shape. **The rendered page's side margins belonged to nothing**: the
+  28-point inset was applied from OUTSIDE the row, so its hover and its
+  tap were sized to the text column and the strips either side answered
+  neither — `MarkdownPreview.cell(_:)` applies the inset INSIDE now, the
+  words do not move, and that covers the OPEN editor too, which had no
+  cursor of its own outside its text view. **The bracket column had
+  two**: `PasteAwareTextView.resetCursorRects` laid a full-width I-beam
+  under it, so the hand showed while the pointer moved and the I-beam
+  whenever it stopped or the rects were rebuilt. Both are clipped to
+  `bounds.width - NotebookGutter.width` now, `inGutter` makes
+  `cursorUpdate`/`mouseMoved`/`mouseEntered` return without calling
+  super there, and `NotebookGutter` carries `.cursorUpdate` in its
+  tracking area with ONE reader (`cursor(at:)`) for hand-over-a-bracket
+  and arrow-beside-one. Measured through `DebugLog` with the pointer
+  driven across the column: the text view goes silent and the gutter
+  answers once. **And a control inside a cell keeps the cell's I-beam
+  unless it says otherwise** — a checklist's box and the evaluator badge
+  are buttons, so `.pointingHand()` (which puts the cell's own cursor
+  back on the way out, never the arrow, or it flashes between the two).
 - **The + on the bar is a button, so it takes the pointing hand** — the
   same cursor the notebook brackets in the gutter use, so the app says
   "this does something" the one way (Sean, 2026-09-20: "it should be a

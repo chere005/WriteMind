@@ -1089,6 +1089,13 @@ class PasteAwareTextView: NSTextView {
         return seamLayer.cursor(at: convert(point, to: seamLayer))
     }
 
+    /// The bracket column, which this view draws no text in and answers
+    /// no cursor for — `NotebookGutter` is the only thing that should,
+    /// and it says hand over a bracket and arrow beside one.
+    private func inGutter(_ point: NSPoint) -> Bool {
+        point.x >= max(0, bounds.width - NotebookGutter.width)
+    }
+
     /// Shown over the text instead of the I-beam while set (the pen's pencil).
     var cursorOverride: NSCursor? {
         didSet {
@@ -1161,7 +1168,18 @@ class PasteAwareTextView: NSTextView {
         for band in CellSeams.bands(seams: seams, pageTop: bounds.minY, pageBottom: bounds.maxY) {
             let height = band.bottom - band.top
             guard band.horizontal else {
-                addCursorRect(NSRect(x: bounds.minX, y: band.top, width: bounds.width, height: height),
+                // THE GUTTER IS NOT THE TEXT VIEW'S TO ANSWER FOR. This
+                // rect used to run the full width, straight under the
+                // bracket column — so the pointer over a bracket got the
+                // hand from `NotebookGutter.mouseMoved` while it was
+                // moving and this I-beam whenever it stopped, scrolled or
+                // the note reflowed and the rects were rebuilt. Two
+                // mechanisms over one point, which is the trap this file
+                // already knows by name (Sean, 2026-09-22: "the mouse
+                // cursor behavior should be the same in wysiwyg and
+                // markdown mode" — the rendered page has one answer
+                // there and always did).
+                addCursorRect(NSRect(x: bounds.minX, y: band.top, width: page, height: height),
                               cursor: .iBeam)
                 continue
             }
@@ -1171,10 +1189,6 @@ class PasteAwareTextView: NSTextView {
             }
             let onPlus = plus.intersection(strip)
             if !onPlus.isNull, !onPlus.isEmpty { addCursorRect(onPlus, cursor: .pointingHand) }
-            if page < bounds.width {
-                addCursorRect(NSRect(x: bounds.minX + page, y: band.top,
-                                     width: bounds.width - page, height: height), cursor: .iBeam)
-            }
         }
     }
 
@@ -1194,7 +1208,9 @@ class PasteAwareTextView: NSTextView {
     /// thing.
     override func cursorUpdate(with event: NSEvent) {
         if let cursorOverride { return cursorOverride.set() }
-        guard let cursor = seamCursor(at: convert(event.locationInWindow, from: nil)) else {
+        let point = convert(event.locationInWindow, from: nil)
+        if inGutter(point) { return }
+        guard let cursor = seamCursor(at: point) else {
             return super.cursorUpdate(with: event)
         }
         cursor.set()
@@ -1211,7 +1227,9 @@ class PasteAwareTextView: NSTextView {
         // pointer is in the seam, which is why it survived pixel-aligning
         // the edges and the stickiness: Sean, 2026-09-21, "even side to
         // side it flickers".
-        if let cursor = seamCursor(at: convert(event.locationInWindow, from: nil)) {
+        let point = convert(event.locationInWindow, from: nil)
+        if inGutter(point) { return }
+        if let cursor = seamCursor(at: point) {
             return cursor.set()
         }
         super.mouseMoved(with: event)
@@ -1223,7 +1241,9 @@ class PasteAwareTextView: NSTextView {
     /// upright cursor on it until it was nudged.
     override func mouseEntered(with event: NSEvent) {
         if let cursorOverride { return cursorOverride.set() }
-        if let cursor = seamCursor(at: convert(event.locationInWindow, from: nil)) {
+        let point = convert(event.locationInWindow, from: nil)
+        if inGutter(point) { return }
+        if let cursor = seamCursor(at: point) {
             return cursor.set()
         }
         super.mouseEntered(with: event)

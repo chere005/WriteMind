@@ -375,6 +375,36 @@ and lifts it back when you click out. (Sean, 2026-09-22: "make the spacing
 more uniform.. it's ok on markdown mode but in rendered mode things get
 scrunched together".)
 
+### The two panes answer for the same places with the same pointer
+A rendered page and a source pane are built out of completely different
+machinery, so every region of the window has to be gone through one at a time
+and given ONE owner and ONE answer. Three that were wrong here, all of the
+same shape: a region nobody answered for, or two mechanisms answering for one.
+
+The page's side margins belonged to nothing. The inset was applied from
+OUTSIDE the row, so the hover and the click were sized to the text column and
+the strips down the sides did neither — sliding sideways off the words flipped
+the pointer to an arrow an inch before the pane edge, where the source pane,
+whose margin is its text container's own inset, stays a text cursor out to the
+edge. Apply the inset INSIDE the row: the words do not move and the margin
+belongs to the cell it is beside, pointer and click alike. That covers the
+open editor too, which had no cursor of its own outside its text view at all.
+
+The bracket column had two owners. The source pane's text view laid a
+full-width I-beam rect straight under the column, so the hand appeared while
+the pointer moved and the I-beam whenever it stopped, scrolled, or the note
+reflowed and the rects were rebuilt. Cursor rects are torn down and rebuilt; a
+tracking area is not. Stop at the column's edge in the text view (rects AND the
+cursorUpdate/mouseMoved/mouseEntered paths, which must not fall through to the
+superclass there), and give the column's own view a `.cursorUpdate` tracking
+area with one reader for "hand over a bracket, arrow beside one".
+
+And a control inside a cell keeps the cell's cursor unless it says otherwise:
+a checklist's box and an evaluation cell's badge are buttons and take the
+pointing hand, the way the + on the insertion bar already does. (Sean,
+2026-09-22: "the mouse cursor behavior should be the same in wysiwyg and
+markdown mode".)
+
 ## Done there
 
 Nothing yet.
