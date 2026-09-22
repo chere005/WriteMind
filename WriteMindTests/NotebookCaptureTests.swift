@@ -112,6 +112,23 @@ final class NotebookCaptureTests: XCTestCase {
         XCTAssertNotNil(DrawingStore.loadImage(imported.file, in: folder))
     }
 
+    /// Sean, 2026-09-22: "the drawing and image when selected from the
+    /// camera are too small.. they should be the size you can see in the
+    /// output viewer". A page fills the pane the way the viewfinder fills
+    /// it, less a margin — not the two-fifths it used to take.
+    func testAPageLandsAtTheSizeTheViewfinderShowsIt() {
+        let page = CGSize(width: 1200, height: 1600), pane = CGSize(width: 900, height: 600)
+        let whole = NotebookCapture.placement(frame: CGRect(origin: .zero, size: page),
+                                              pageSize: page, pane: pane, nudge: 0)
+        // Its HEIGHT is what fills the pane: a portrait page in a pane
+        // wider than it is tall is held by the short way.
+        let height = whole.width * pane.width * 1600 / 1200
+        XCTAssertEqual(height / pane.height, 0.9, accuracy: 0.001)
+        XCTAssertGreaterThan(NotebookCapture.pageFraction, 0.8, "it used to be two fifths")
+        XCTAssertLessThan(NotebookCapture.pageFraction, 1,
+                          "and it keeps its handles off the edges")
+    }
+
     func testTheWritingIsPlacedWhereItWasOnThePageAtThePagesScale() {
         let page = CGSize(width: 1200, height: 1600), pane = CGSize(width: 900, height: 600)
         // The page itself: its share of the pane's height tall, in the middle.

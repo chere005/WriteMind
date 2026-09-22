@@ -480,6 +480,22 @@ to name it. And any sentence that says "that is not one of X, Y or Z" must be
 GENERATED from the list, or it goes stale the first time the list changes and
 tells the reader something false. (Sean, 2026-09-22: "add C and Rust evals".)
 
+### A capture lands the size the viewfinder showed it
+A photograph of a notebook page, and the writing traced off one, should come
+onto the page at the size you were just looking at in the camera pane — not a
+thumbnail of it. The old fraction was set when a picture still pushed the text
+about and a big one covered the note; once captures float free of the text
+(nothing on the drawing layer moves the text), there is no reason left to
+shrink a page you have just taken a photograph of.
+
+Keep it ONE number for every capture. Matching the viewfinder exactly — the
+page's real share of the video frame — would make every capture a different
+size depending on how far away the camera was, which is the thing the
+remembered page shape exists to prevent: two photographs of the same notebook
+have to come out the same size on the page. (Sean, 2026-09-22: "the drawing
+and image when selected from the camera are too small.. they should be the
+size you can see in the output viewer".)
+
 ## Done there
 
 Nothing yet.

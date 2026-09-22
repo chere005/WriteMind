@@ -140,8 +140,18 @@ CoreMind's `bin/report-status.sh`.
   within 12% of it are resampled to exactly that shape, further off
   re-learns (a different notebook, or the page sideways). A frame with no
   page found is never remembered. The picture then lands at the page's
-  scale: `NotebookCapture.placement` fits a whole page into 60% of the pane
-  and puts the writing where it was on that page, so captures line up.
+  scale: `NotebookCapture.placement` fits a whole page into
+  `pageFraction` of the pane and puts the writing where it was on that
+  page, so captures line up. **That fraction is 0.9 — the size the
+  viewfinder showed it** (Sean, 2026-09-22: "the drawing and image when
+  selected from the camera are too small.. they should be the size you
+  can see in the output viewer"), a reversal of "make the selection
+  smaller" from 2026-09-18 and written down as one: what changed
+  underneath is that a capture no longer pushes the text about at all,
+  so a big picture costs the note nothing. It stays ONE number for
+  every capture — matching the viewfinder exactly, by the page's real
+  share of the video frame, would make every capture a different size,
+  which is what `notebookPageShape` exists to prevent.
 - **Every NSTextView gets its OWN undo manager.** Left to itself an
   NSTextView registers its undo actions on the window's undo manager, and
   both editors here are torn down routinely — a `BlockEditor` whenever its

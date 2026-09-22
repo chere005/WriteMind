@@ -89,9 +89,27 @@ enum NotebookCapture {
         var width: Double
     }
 
-    /// A page takes this much of the pane's shorter way (Sean, 2026-09-18:
-    /// "make the selection smaller" — 60% covered the note).
-    static let pageFraction = 0.42
+    /// A PAGE LANDS THE SIZE THE VIEWFINDER SHOWS IT — filling the pane,
+    /// give or take the margin that keeps its handles off the edges
+    /// (Sean, 2026-09-22: "the drawing and image when selected from the
+    /// camera are too small.. they should be the size you can see in the
+    /// output viewer").
+    ///
+    /// It was 0.42, from "make the selection smaller" (Sean, 2026-09-18)
+    /// when 60% covered the note — so this is a reversal and is written
+    /// down as one. What changed underneath it: a capture no longer
+    /// pushes the text about at all (nothing on the drawing layer moves
+    /// the text, 2026-09-20), so a big picture costs the note nothing
+    /// and there is no reason left to shrink a page you have just taken
+    /// a photograph of.
+    ///
+    /// Still ONE number for every capture, which is the whole point of
+    /// the placement maths: two photographs of the same notebook come
+    /// out the same size on the pane whether they were taken from a foot
+    /// away or three. Matching the viewfinder EXACTLY — the page's real
+    /// share of the video frame — would make every capture a different
+    /// size, which is the thing `notebookPageShape` exists to prevent.
+    static let pageFraction = 0.9
 
     static func placement(frame: CGRect, pageSize: CGSize, pane: CGSize, nudge: Double) -> Placement {
         let pageWidth = min(pane.width * pageFraction,
