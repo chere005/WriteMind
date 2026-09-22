@@ -195,7 +195,7 @@ enum NotebookCapture {
             return Result(image: picture, pageSize: size, frame: window, shape: shape, pageFound: quad != nil)
         case .ink:
             guard let (gray, width, height) = grayscale(normalised, maxWidth: size.width) else { return nil }
-            let mask = inkMask(gray: gray, width: width, height: height)
+            let mask = thinned(inkMask(gray: gray, width: width, height: height))
             guard let box = inkBox(of: mask, within: region == nil ? nil : window),
                   let picture = image(from: mask, colour: colour, box: box) else { return nil }
             return Result(image: picture, pageSize: size,
@@ -461,6 +461,81 @@ enum NotebookCapture {
         return Mask(width: width, height: height,
                     ink: keepingMarks(ink, width: width, height: height,
                                       minimumSize: minimumSize, minimumArea: minimumArea))
+    }
+
+    /// HOW MUCH OF ITS OWN WIDTH A TRACED STROKE KEEPS.
+    ///
+    /// Sean, 2026-09-22: "the scale is correct, but the thickness of the
+    /// writing is too thick". A capture lands at more than twice the size
+    /// it used to, and the trace is faithful — so the pen's real stroke
+    /// arrives twice as heavy beside the note's text as it did, which is
+    /// what he is looking at. Half is the size that puts the WEIGHT back
+    /// where it was while leaving the writing where the scale now puts
+    /// it.
+    static let strokeKeep = 0.5
+
+    /// And how thin a stroke is ever allowed to get, in mask pixels.
+    /// Under about this a pencil line comes apart into dots, and a
+    /// capture with holes in it is worse than a heavy one — so a stroke
+    /// already at the floor is left exactly as it was.
+    static let strokeFloor = 2.5
+
+    /// THE INK'S MEAN STROKE WIDTH, in mask pixels: twice the area over
+    /// the boundary.
+    ///
+    /// For anything long and thin that IS its width, whatever shape it is
+    /// — a straight pen stroke, a loop, a page of handwriting — because a
+    /// long run of pixels has two long sides and two short ends, so the
+    /// ends fall out of the ratio. Measured rather than assumed, because
+    /// a fine pencil and a marker are four times apart and one number
+    /// eroded off both would break the first and barely touch the second.
+    static func strokeWidth(of mask: Mask) -> Double {
+        func inked(_ x: Int, _ y: Int) -> Bool {
+            guard x >= 0, y >= 0, x < mask.width, y < mask.height else { return false }
+            return mask.ink[y * mask.width + x]
+        }
+        var area = 0, boundary = 0
+        for y in 0..<mask.height {
+            for x in 0..<mask.width where mask.ink[y * mask.width + x] {
+                area += 1
+                if !inked(x - 1, y) { boundary += 1 }
+                if !inked(x + 1, y) { boundary += 1 }
+                if !inked(x, y - 1) { boundary += 1 }
+                if !inked(x, y + 1) { boundary += 1 }
+            }
+        }
+        guard boundary > 0 else { return 0 }
+        return 2 * Double(area) / Double(boundary)
+    }
+
+    /// The ink, thinned to `keep` of its measured width — one pixel off
+    /// every side per pass, so a stroke loses two of its width each time.
+    ///
+    /// Nothing is thinned past `floor`, and a stroke already at or under
+    /// it is returned untouched rather than eroded to nothing.
+    static func thinned(_ mask: Mask, to keep: Double = strokeKeep,
+                        floor: Double = strokeFloor) -> Mask {
+        let width = strokeWidth(of: mask)
+        let target = max(floor, width * keep)
+        let passes = Int(((width - target) / 2).rounded())
+        guard passes > 0 else { return mask }
+        var ink = mask.ink
+        for _ in 0..<passes {
+            let before = ink
+            func inked(_ x: Int, _ y: Int) -> Bool {
+                guard x >= 0, y >= 0, x < mask.width, y < mask.height else { return false }
+                return before[y * mask.width + x]
+            }
+            for y in 0..<mask.height {
+                for x in 0..<mask.width where before[y * mask.width + x] {
+                    if !inked(x - 1, y) || !inked(x + 1, y)
+                        || !inked(x, y - 1) || !inked(x, y + 1) {
+                        ink[y * mask.width + x] = false
+                    }
+                }
+            }
+        }
+        return Mask(width: mask.width, height: mask.height, ink: ink)
     }
 
     /// Every pixel darker than the paper round it by `threshold` levels —

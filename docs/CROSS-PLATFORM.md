@@ -496,6 +496,21 @@ have to come out the same size on the page. (Sean, 2026-09-22: "the drawing
 and image when selected from the camera are too small.. they should be the
 size you can see in the output viewer".)
 
+### Traced writing is thinned to a measured fraction of its own stroke
+A trace is faithful, so when a capture lands at twice the size it used to, the
+pen arrives twice as heavy beside the note's text. Thin it — but not by a fixed
+number of pixels, because a fine pencil and a marker are four times apart and
+one erosion would break the first and barely touch the second.
+
+Measure the stroke: twice the ink's area over its boundary. For anything long
+and thin that IS its width, whatever shape it is, because the two ends fall
+out of the ratio (it reads a little under the truth by however much the ends
+are of the whole boundary, which is the right bias for handwriting). Then
+erode to a fraction of that, one pixel off every side per pass, and never past
+a floor — a stroke already at the floor comes through untouched, since a
+capture with holes in it is worse than a heavy one. (Sean, 2026-09-22: "the
+scale is correct, but the thickness of the writing is too thick".)
+
 ## Done there
 
 Nothing yet.

@@ -151,7 +151,18 @@ CoreMind's `bin/report-status.sh`.
   so a big picture costs the note nothing. It stays ONE number for
   every capture — matching the viewfinder exactly, by the page's real
   share of the video frame, would make every capture a different size,
-  which is what `notebookPageShape` exists to prevent.
+  which is what `notebookPageShape` exists to prevent. **AND THE INK IS
+  THINNED TO HALF ITS OWN MEASURED WIDTH** (Sean, same day: "the scale
+  is correct, but the thickness of the writing is too thick") — a trace
+  is faithful, so twice the size is twice the weight beside the note's
+  text. `NotebookCapture.strokeWidth` is twice the ink's area over its
+  boundary, which is the width of anything long and thin whatever shape
+  it is; `thinned` erodes one pixel off every side per pass and never
+  past `strokeFloor`, so a pencil line already that fine comes through
+  untouched — a capture with holes in it is worse than a heavy one. Not
+  a fixed number of pixels: a fine pencil and a marker are four times
+  apart and one erosion would break the first and barely touch the
+  second.
 - **Every NSTextView gets its OWN undo manager.** Left to itself an
   NSTextView registers its undo actions on the window's undo manager, and
   both editors here are torn down routinely — a `BlockEditor` whenever its
