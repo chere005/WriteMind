@@ -29,9 +29,13 @@ every text view in the app. Colour the body for its language anyway: the
 distinction is about what the cell DOES, not what it looks like.
 
 ### Cells that run, and everything that must refuse to
-A fenced code cell runs on a key and on a ▶ in its own left margin, beside
-a badge that says which environment it is and changes the fence when you
-pick another. The answer is written into the document as another fenced
+An evaluation cell runs on a key and on nothing else. At its left is ONE
+control, a badge saying which environment it is that changes the fence when
+you pick another — and it never goes away, not while the cell is open for
+typing, which is the moment you are most likely to want to know. There is no
+run button beside it: a button for a thing the keyboard already does is one
+control too many, and the badge is then the only thing in that margin, which
+is what makes it readable at a glance down a page of cells. The answer is written into the document as another fenced
 block tagged `out`, directly under the cell; running again replaces that
 block and nothing else. Found by POSITION, vetoed by the TAG — the block
 below, and only if it is tagged — so a re-run can never overwrite something
@@ -324,6 +328,15 @@ It is not a container in the file — a section is a heading and the blocks
 after it — so the wash covers the heading too, and so does the selection. That
 falls out of asking one function; it is worth knowing before someone "fixes"
 the heading out of the list.
+
+### The badge stays while the cell is being typed in
+A cell open for editing is a different view from the cell rendered, so
+anything drawn beside the rendered one disappears the moment it is clicked
+into — and what a cell RUNS AS is exactly what you want on screen while you
+are writing it. Build that badge once, outside both, and let the block and
+the open editor put the same one in the same place. (Sean, 2026-09-22: "the
+indicator for WL/Python/C++ never goes away, and get rid of the play
+button.")
 
 ## Done there
 

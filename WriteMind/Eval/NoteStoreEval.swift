@@ -2,8 +2,10 @@ import Foundation
 
 extension NoteStore {
     /// RUN A CELL AND PUT THE ANSWER UNDER IT. The only thing in this app
-    /// that starts a process, and it starts one only from a press — ⌘9,
-    /// or the ▶ in the cell's own left margin.
+    /// that starts a process, and it starts one only from a press — ⇧↩ in
+    /// the cell, and nothing else. There is no run control on screen: a
+    /// button for a thing the keyboard already does is what the ▶ was
+    /// (Sean, 2026-09-22: "get rid of the play button").
     ///
     /// Every refusal is a sentence in the footer, where the camera's
     /// notices go, and none of them spawns anything or writes a cell.
@@ -88,8 +90,8 @@ extension NoteStore {
             return
         }
         writeCell?(EvalCells.write(result, under: landing.range, in: text))
-        // AND THE BAR GOES UNDER THE ANSWER. The run started with ⇧↩ or
-        // the ▶ on the cell; leaving the cursor below what came back is
+        // AND THE BAR GOES UNDER THE ANSWER. The run started with ⇧↩;
+        // leaving the cursor below what came back is
         // the other half of that gesture, and it is where the next thing
         // gets typed.
         guard let answered = EvalCells.out(after: landing.range, in: text) else { return }

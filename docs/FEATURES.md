@@ -172,9 +172,10 @@ is how the code is put together.
 - **Evaluation cells, which are not code cells.** A code cell is code you
   are writing about; an evaluation cell is code the note runs, and the file
   says which: ```eval python, ```eval c++, ```eval wl. ⌘9 makes one, or
-  turns the cell the caret is in into one — the code is kept. ⇧↩ runs it.
-  At its far left is a badge saying which environment it is; click it to
-  pick another and the fence is rewritten. The answer lands in an ```out
+  turns the cell the caret is in into one — the code is kept. ⇧↩ runs it,
+  and nothing else does. At its far left is a badge saying which
+  environment it is; click it to pick another and the fence is rewritten.
+  The badge stays put while the cell is open for typing. The answer lands in an ```out
   cell underneath, and running again replaces that answer rather than
   piling another one up. A line in square brackets is the app talking
   (`[no output]`, `[exit 1]`, `[stderr]`); every other line came out of

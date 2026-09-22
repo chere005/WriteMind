@@ -589,8 +589,12 @@ CoreMind's `bin/report-status.sh`.
   cells", and "evaluation cells are completely different from code
   cells". An evaluation cell is ```eval python, ```eval c++ or
   ```eval wl — ⌘9 makes one or turns the caret's cell into one, ⇧↩
-  runs it, the badge at its left picks the environment, and the answer
-  goes under it in an ```out cell. A PLAIN CODE CELL NEVER RUNS: that
+  runs it AND NOTHING ELSE DOES, the badge at its left picks the
+  environment, and the answer goes under it in an ```out cell. ONE
+  control in that margin: `EvaluatorBadge`, built outside both the
+  rendered block and the open editor so that clicking into a cell to
+  type does not take it away (Sean, 2026-09-22: "the indicator for
+  WL/Python/C++ never goes away, and get rid of the play button"). A PLAIN CODE CELL NEVER RUNS: that
   distinction is the feature, and it is in the file so that another
   editor can see it too. ⇧↩ arrives as `insertNewline:`, not
   `insertLineBreak:` (macOS gives that one to ⌃↩), so the shift is

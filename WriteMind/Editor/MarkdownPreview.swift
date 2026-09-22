@@ -48,9 +48,10 @@ struct MarkdownPreview: View {
     /// pointer is never horizontal and no seam can be armed. The same
     /// switch the markdown pane has, off the same expression.
     var seamsEnabled: Bool = true
-    /// Running a cell, from the ▶ in its own left margin. Nil on paper.
-    var onRunCell: ((NSRange) -> Void)?
-    /// What a cell runs as, picked from the badge beside the ▶.
+    /// What a cell runs as, picked from the badge at its left. There is
+    /// no run control here: ⇧↩ runs the cell the caret is in, and a
+    /// button for a thing the keyboard already does was the ▶ Sean asked
+    /// to be rid of (2026-09-22).
     var onPickEvaluator: ((Evaluator, NSRange) -> Void)?
     /// Which cell is running, by the offset it starts at.
     var runningCell: Int?
@@ -630,6 +631,21 @@ struct MarkdownPreview: View {
                                          : AnyShapeStyle(CodeColours.background),
                             in: RoundedRectangle(cornerRadius: 6))
                 .overlay(RoundedRectangle(cornerRadius: 6).strokeBorder(Color.accentColor.opacity(0.35)))
+                // AND THE BADGE STAYS. Opening the cell swaps the
+                // rendered block for a text view, and the badge went
+                // with it — at the very moment you are most likely to
+                // want to know what the cell runs as (Sean, 2026-09-22:
+                // "the indicator for WL/Python/C++ never goes away").
+                // Beside it rather than inside it, in the margin the
+                // page already leaves, so the words do not move for it.
+                .padding(.leading, openBadge == nil ? 0 : EvaluatorBadge.width + 6)
+                .overlay(alignment: .topLeading) {
+                    if let openBadge {
+                        EvaluatorBadge(fence: openBadge,
+                                       isRunning: runningCell == item.range.location,
+                                       onPick: { onPickEvaluator?($0, item.range) })
+                    }
+                }
         } else if let block = item.block {
             // NO .textSelection here. A selectable Text takes the click
             // itself, so tapping the WORDS of a block did nothing and only
@@ -699,14 +715,22 @@ struct MarkdownPreview: View {
         }
     }
 
-    /// What a code cell's own left margin can do. Nil while the page is
-    /// read-only, and nil when nothing has wired a runner up.
+    /// THE OPEN CELL'S OWN BADGE: its fence, when the cell being typed
+    /// in is an evaluation cell and this page has an environment menu to
+    /// offer. Nil for prose, for a plain code cell, and on paper.
+    private var openBadge: String? {
+        guard editable, onPickEvaluator != nil, let fence else { return nil }
+        let language = MarkdownFormatting.fenceLanguage(fence.open)
+        return Evaluator.isEvaluation(fence: language) ? language : nil
+    }
+
+    /// What a code cell's own left margin says. Nil while the page is
+    /// read-only — the PDF carries no controls — and nil when nothing has
+    /// wired the environment menu up.
     private func evaluation(of cell: NSRange) -> BlockView.Evaluation? {
-        guard editable, let onRunCell else { return nil }
-        return BlockView.Evaluation(
-            isRunning: runningCell == cell.location,
-            onPick: { onPickEvaluator?($0, cell) },
-            onRun: { onRunCell(cell) })
+        guard editable, onPickEvaluator != nil else { return nil }
+        return BlockView.Evaluation(isRunning: runningCell == cell.location,
+                                    onPick: { onPickEvaluator?($0, cell) })
     }
 
     static func isChecklist(_ block: MarkdownBlock?) -> Bool {
@@ -1694,7 +1718,6 @@ struct MarkdownPreview: View {
         struct Evaluation {
             var isRunning: Bool
             var onPick: (Evaluator) -> Void
-            var onRun: () -> Void
         }
 
         /// What a CHECKLIST needs to let one of its items be typed in.
@@ -1858,50 +1881,12 @@ struct MarkdownPreview: View {
                 .background(CodeColours.background, in: RoundedRectangle(cornerRadius: 6))
         }
 
-        /// The badge that says which environment this cell is, and the ▶
-        /// that runs it. Two controls, because "what is this" and "do it"
-        /// are two questions — and the badge is a menu so the answer to
-        /// the first can be changed without typing in the fence.
+        /// The badge that says which environment this cell is — one
+        /// control, and the same one the open editor puts beside itself.
         @ViewBuilder
         private func gutter(_ language: String?, _ evaluation: Evaluation) -> some View {
-            let evaluator = Evaluator.from(fence: language)
-            VStack(spacing: 4) {
-                Menu {
-                    ForEach(Evaluator.allCases) { choice in
-                        Button { evaluation.onPick(choice) } label: {
-                            HStack {
-                                Text(choice.title)
-                                if evaluator == choice { Image(systemName: "checkmark") }
-                            }
-                        }
-                    }
-                } label: {
-                    Text(evaluator?.badge ?? "—")
-                        .font(.system(size: 9, weight: .bold, design: .monospaced))
-                        .frame(width: 26, height: 18)
-                }
-                .menuStyle(.borderlessButton)
-                .menuIndicator(.hidden)
-                .fixedSize()
-                .help(evaluator.map { "Runs as \($0.title) — pick another" }
-                        ?? "No language: pick what this cell runs as")
-
-                if evaluation.isRunning {
-                    ProgressView().controlSize(.small).frame(width: 26, height: 18)
-                } else {
-                    Button { evaluation.onRun() } label: {
-                        Image(systemName: "play.fill")
-                            .font(.system(size: 9))
-                            .frame(width: 26, height: 18)
-                    }
-                    .buttonStyle(.plain)
-                    .foregroundStyle(evaluator == nil ? AnyShapeStyle(.tertiary) : AnyShapeStyle(.secondary))
-                    .disabled(evaluator == nil)
-                    .help("Run this cell (⌘9)")
-                }
-            }
-            .padding(.top, MarkdownPreview.codePadding)
-
+            EvaluatorBadge(fence: language, isRunning: evaluation.isRunning,
+                           onPick: evaluation.onPick)
         }
 
         /// ONE REMINDER'S WORDS: the rendered text, with the editor drawn
