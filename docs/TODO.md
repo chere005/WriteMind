@@ -10,6 +10,16 @@ had to say it. Verification is the job, not an item.
 
 ## Open
 
+- **Docking a floating picture into the note.** Sean, 2026-09-22: "add a
+  button for floating elements to dock them to a cell wherever the input
+  cursor is.. or drag that button to get an interactive mouse cursor that
+  puts the image wherever i release the mouse button.. text can not
+  overlap with an image". Planned in full in
+  [PLAN-docking.md](PLAN-docking.md), including the one decision that is
+  Sean's — docking writes `![](.drawings/media/…)` into the .md, which is
+  what makes the picture a cell and so makes everything else fall out of
+  what is already built. The button is one build, the drag is another
+  (neither pane publishes its seams, and the drawing layer is above both).
 - **The evaluation cell's margin, four things.** Sean, 2026-09-22, in one
   message; C and Rust landed from it, these did not.
   - **A new evaluation cell is Wolfram** ("default to wolfram"). ⌘9 writes

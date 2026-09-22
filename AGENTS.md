@@ -508,7 +508,11 @@ CoreMind's `bin/report-status.sh`.
   push other cells around"). `PreviewLayout.positions` is a pure stack —
   cell, `gapHeight`, cell — and the text container's `exclusionPaths` is
   never set. Anything that "needs" a band back is reading the model wrong;
-  `docs/PLAN-cells-and-floating.md` is the model. **The source editor is
+  `docs/PLAN-cells-and-floating.md` is the model. DOCKING is the other
+  state and is not built: `docs/PLAN-docking.md` is that plan, and it
+  turns on one decision — a docked picture is written into the .md as an
+  image line, so it becomes a CELL and the text is above and below it
+  because that is what a cell is. **The source editor is
   still TextKit 1**, but not for that reason any more: `MarkerHiding` and
   `BulletGlyphs` are `NSLayoutManagerDelegate` glyph substitution — the
   faded `#` and the `- ` drawn as a bullet — which TextKit 2 has no
