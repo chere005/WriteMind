@@ -134,6 +134,35 @@ enum NotebookOutline {
         }
     }
 
+    /// WHAT ⌘; FOLDS: the sections nested inside the ones these cells are
+    /// in, innermost first, with no key twice.
+    ///
+    /// Sean, 2026-09-21: "collapse current cell's subsections (or
+    /// highlighted cells) is cmd+;". The cell's OWN section is left alone
+    /// — folding that would take the cell you are standing in off the
+    /// screen, which is the one thing a fold must never do. A cell before
+    /// the first heading has no section and so nothing under it.
+    static func subsections(of cells: [NSRange], in text: String) -> [String] {
+        let sections = self.sections(in: text)
+        var keys: [String] = []
+        for cell in cells {
+            guard let here = section(containing: cell.location, in: sections) else { continue }
+            for section in sections where section.key != here.key
+                && section.range.location > here.range.location
+                && NSMaxRange(section.range) <= NSMaxRange(here.range) {
+                if !keys.contains(section.key) { keys.append(section.key) }
+            }
+        }
+        return keys
+    }
+
+    /// One key both ways, because there is no second one to open them
+    /// with any more (the caret's own fold keys went the same day). Any
+    /// of them still open means fold; all of them closed means open.
+    static func folding(_ keys: [String], collapsed: Set<String>) -> Bool {
+        keys.contains { !collapsed.contains($0) }
+    }
+
     static func parent(of section: Section, in sections: [Section]) -> Section? {
         sections.first {
             $0.depth == section.depth - 1 && $0.range.location < section.range.location

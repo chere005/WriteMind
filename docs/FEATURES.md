@@ -13,7 +13,7 @@ is how the code is put together.
   you drag rows into is remembered.
 - **A markdown editor, and a preview of it.** The bar sits over the editor
   pane; the button on its right lights up while the preview is showing
-  (⇧⌘P). Bold, italic, underline, bullets and quote are on the left
+  (⌘T). Bold, italic, underline, bullets and quote are on the left
   (⌘B ⌘I ⌘U ⇧⌘L ⌃⌘Q); they wrap or unwrap the selection, and undo knows
   about it.
 - **Six heading levels, named the way you'd say them.** Title, Chapter,
@@ -40,7 +40,7 @@ is how the code is put together.
   is never cut in half, and a heading will not swallow the cell under it.
 - **A cell is a thing you can hold.** Click its bracket and the whole
   cell is picked up, not a run of characters: type and it is replaced,
-  ⌃⌫ takes it away and the stack closes behind it, ⌃⇧D puts a copy under
+  ⌫ takes it away and the stack closes behind it, ⌃⇧D puts a copy under
   it, ⌃⇧↑ and ⌃⇧↓ move it, and dragging its bracket up or down moves it
   too. The same on both sides of the app, the way a Mathematica notebook
   behaves (Sean, 2026-09-20).
@@ -49,7 +49,7 @@ is how the code is put together.
   clicked to the one under the pointer; cmd-click puts a cell in or takes
   it out, so a selection can have a hole in it. Everything a single cell
   answers to, a handful answers to together: type and all of them are
-  replaced by what you typed, ⌃⌫ takes exactly them and closes the stack,
+  replaced by what you typed, ⌫ takes exactly them and closes the stack,
   ⌃⇧D copies the run, and ⌃⇧↑/⌃⇧↓ walk the whole run up or down the page
   and leave it held, so pressing again moves the same run again. A drag
   that starts on a bracket that is ALREADY HELD moves the run instead —
@@ -218,12 +218,23 @@ is how the code is put together.
 - **Font, size and colour** for the selected text, from the T button. It
   writes a `<span style="…">`, so other markdown apps still read the note.
 - **⌘D, as in Sublime Text.** The word under the cursor, then one more
-  occurrence per press, all editable at once. ⌃⌘G takes every one.
+  occurrence per press, all editable at once. ⇧⌘D takes every one.
 - **It opens side by side.** Every launch shows the notes and the video
   together, whatever was put away last time.
+- **A checklist edits one line at a time.** Click a reminder's words and
+  just those words open for typing: the boxes stay boxes and stay tickable,
+  including the one beside the line being typed in. Return makes the next
+  reminder, ⌫ in an empty one takes it away, ⌫ at the start of a full one
+  joins it to the line above, ↑ and ↓ walk the list. The whole list still
+  opens as markdown from its bracket in the gutter.
 - **Collapse what you're not using.** The notes list and the video from the
-  sidebar's header; the notes pane from the corner of the video. ⌃⌘S, ⌃⌘E,
-  ⌃⌘C.
+  sidebar's header; the notes pane from the corner of the video. ⌘K, ⌘Y.
+- **The five keys you reach for.** ⌘S saves what has not reached disk yet
+  (it saves itself half a second after you stop typing anyway), ⌘P puts the
+  pen up and down, ⌘E exports (PDF, or the project), ⌘T turns the markdown into
+  the page and back, ⌘Y shows and hides the video. Every key the app binds
+  is in one list (`Shortcut`) and a test says no two commands want the same
+  one — ⌃⌘S was quietly on two of them until 2026-09-21.
 - **Two modes over one page, and one button between them.** The drawing
   layer is there in the markdown and on the rendered page alike — the
   drawing belongs to the note, not to one way of looking at it — and the

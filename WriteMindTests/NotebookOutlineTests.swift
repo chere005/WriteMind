@@ -368,4 +368,70 @@ final class BracketHierarchyTests: XCTestCase {
         XCTAssertEqual(NotebookOutline.cellDepth(at: (skipped as NSString).range(of: "Words").location,
                                                  in: list), 2)
     }
+    // MARK: - ⌘; — what is UNDER the cell you are in
+
+    /// Sean, 2026-09-21: "collapse current cell's subsections (or
+    /// highlighted cells) is cmd+;". The caret's own section is never
+    /// folded: that would take the line you are standing on off screen.
+    private let nested = """
+    # Top
+
+    words under top
+
+    ## First
+
+    words under first
+
+    ### Deeper
+
+    more words
+
+    ## Second
+
+    words under second
+    """
+
+    private func offset(of needle: String, in text: String) -> Int {
+        (text as NSString).range(of: needle).location
+    }
+
+    func testTheCellsOwnSectionIsLeftOpenAndEverythingUnderItIsFolded() {
+        let caret = offset(of: "words under top", in: nested)
+        let keys = NotebookOutline.subsections(of: [NSRange(location: caret, length: 0)], in: nested)
+        XCTAssertEqual(keys.sorted(), ["Deeper", "First", "Second"])
+        XCTAssertFalse(keys.contains("Top"), "the section the cell is in stays open")
+    }
+
+    func testDeeperInTheTreeOnlyWhatIsUnderThatSectionFolds() {
+        let caret = offset(of: "words under first", in: nested)
+        XCTAssertEqual(NotebookOutline.subsections(of: [NSRange(location: caret, length: 0)],
+                                                   in: nested), ["Deeper"])
+        // And a section with nothing under it folds nothing at all.
+        let leaf = offset(of: "words under second", in: nested)
+        XCTAssertTrue(NotebookOutline.subsections(of: [NSRange(location: leaf, length: 0)],
+                                                  in: nested).isEmpty)
+    }
+
+    func testSeveralHeldCellsAskTogetherAndNoKeyIsNamedTwice() {
+        let cells = [NSRange(location: offset(of: "words under top", in: nested), length: 0),
+                     NSRange(location: offset(of: "words under first", in: nested), length: 0)]
+        let keys = NotebookOutline.subsections(of: cells, in: nested)
+        XCTAssertEqual(Set(keys).count, keys.count)
+        XCTAssertEqual(keys.sorted(), ["Deeper", "First", "Second"])
+    }
+
+    func testACellBeforeTheFirstHeadingHasNothingUnderIt() {
+        let note = "loose words\n\n# Later\n\nunder it"
+        XCTAssertTrue(NotebookOutline.subsections(of: [NSRange(location: 0, length: 0)],
+                                                  in: note).isEmpty)
+    }
+
+    /// One key both ways: any still open means fold, all closed means open.
+    func testTheOneKeyGoesBothWays() {
+        XCTAssertTrue(NotebookOutline.folding(["A", "B"], collapsed: []))
+        XCTAssertTrue(NotebookOutline.folding(["A", "B"], collapsed: ["A"]))
+        XCTAssertFalse(NotebookOutline.folding(["A", "B"], collapsed: ["A", "B"]))
+        XCTAssertFalse(NotebookOutline.folding([], collapsed: []))
+    }
+
 }

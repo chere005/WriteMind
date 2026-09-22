@@ -288,8 +288,8 @@ struct TopBar: View {
                           isOn: appState.canvasMode == .pen, bare: true) {
                     // A second press puts it down rather than doing
                     // nothing, which is what a pen button has always done
-                    // here (Sean, 2026-09-18).
-                    appState.canvasMode = appState.penActive ? .cursor : .pen
+                    // here (Sean, 2026-09-18). The same one writer ⌘P uses.
+                    appState.togglePen()
                 }
             } chevron: {
                 Button { showPenMenu.toggle() } label: { BarChevron() }

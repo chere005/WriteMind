@@ -30,19 +30,38 @@ struct WriteMindApp: App {
         .commands {
             CommandGroup(replacing: .newItem) {
                 Button("New Note") { store.createNote() }
-                    .keyboardShortcut("n", modifiers: .command)
+                    .shortcut(.newNote)
                 Divider()
                 Button("Close Tab") {
                     if let selection = store.selection { store.closeTab(selection) }
                 }
-                .keyboardShortcut("w", modifiers: .command)
+                .shortcut(.closeTab)
                 .disabled(store.selection == nil)
                 Divider()
                 Button("Open Notes Folder") { store.revealFolderInFinder() }
-                    .keyboardShortcut("o", modifiers: [.command, .shift])
+                    .shortcut(.openNotesFolder)
             }
 
-            ExportMenu(store: store)
+            // ⌘S, THE KEY EVERY MAC APP HAS (Sean, 2026-09-21: "cmd s
+            // for save"). The note is saved half a second after the last
+            // keystroke and there was nothing to press; a person who has
+            // typed something important presses ⌘S anyway, and an app
+            // that answers nothing at all has not earned their trust.
+            // It flushes what is pending — the note AND the drawing —
+            // and `NoteStore.saveNow` still asks `NoteWriting.mayWrite`
+            // first, so this cannot clobber another writer either.
+            // AFTER that group, not replacing it: SwiftUI's `.saveItem`
+            // group is where Close and Close All live, and replacing it
+            // took both off the File menu (2026-09-21, spotted by
+            // listing the menu after the fact — ⌘W still closed a tab,
+            // so nothing looked wrong).
+            CommandGroup(after: .saveItem) {
+                Button("Save") { store.flushPendingSave() }
+                    .shortcut(.save)
+                    .disabled(store.selection == nil)
+            }
+
+            ExportMenu(store: store, projects: projects)
 
             ProjectMenu(store: store, projects: projects, cacheSession: cacheSession)
 
@@ -50,49 +69,66 @@ struct WriteMindApp: App {
                 Button(appState.showSidebar ? "Hide Notes Sidebar" : "Show Notes Sidebar") {
                     appState.toggleSidebar()
                 }
-                .keyboardShortcut("s", modifiers: [.command, .control])
+                .shortcut(.toggleSidebar)
 
+                // ⌘T, ⌘Y and ⌘P — the three the eye goes to (Sean,
+                // 2026-09-21: "cmd t should be toggling markdown mode,
+                // and cmd y should toggle video", after a first pass at
+                // ⌘R and ⌘T). MOVED rather than added: ⇧⌘P and ⌃⌘C did
+                // these two, and two keys for one action is two things to
+                // remember and one of them always the wrong one.
+                //
+                // ⌘T is New Tab in most Mac apps, and this one has tabs —
+                // but a new tab here IS a new note and ⌘N already makes
+                // one (the + on the tab bar says so: "New note (⌘N)"), so
+                // there is no second command for the key to shadow.
                 Button(appState.mode == .editor ? "Show Markdown Preview" : "Show Markdown Editor") {
                     appState.toggleMode()
                 }
-                .keyboardShortcut("p", modifiers: [.command, .shift])
+                .shortcut(.toggleMode)
 
-                // ⌃⌘C was promised by the buttons' help and registered
-                // nowhere, so the video pane could only be brought back from
-                // the sidebar — which can itself be put away (Sean,
-                // 2026-09-19: "what happened to the right pane with the
-                // camera view?").
+                // The video pane could once only be brought back from the
+                // sidebar, which can itself be put away (Sean, 2026-09-19:
+                // "what happened to the right pane with the camera view?").
+                // ⌃⌘C did it from 2026-09-19; ⌘Y does it now.
                 Button(appState.showCamera ? "Hide Video" : "Show Video") {
                     appState.toggleCameraPane()
                 }
-                .keyboardShortcut("c", modifiers: [.command, .control])
+                .shortcut(.toggleVideo)
 
+                // The pen, which had no shortcut at all: the button on the
+                // bar was the only way in and out of drawing.
+                Button(appState.penActive ? "Stop Drawing" : "Draw") { appState.togglePen() }
+                    .shortcut(.togglePen)
+
+                // NO KEY on these two (Sean, 2026-09-21: "get rid of
+                // ^cmd+e and opt+cmd+m"). The commands stay — the notes
+                // pane comes back from the corner of the video, and the
+                // markers are a setting somebody may want — but neither
+                // is worth a chord.
                 Button(appState.showEditor ? "Hide Notes Pane" : "Show Notes Pane") {
                     appState.toggleEditorPane()
                 }
-                .keyboardShortcut("e", modifiers: [.command, .control])
 
                 Button(appState.showMarkers ? "Hide Markdown Markers" : "Show Markdown Markers") {
                     appState.showMarkers.toggle()
                 }
-                .keyboardShortcut("m", modifiers: [.command, .option])
 
                 Divider()
 
-                // Folding a notebook section, from the keyboard as well as
-                // from its bracket in the gutter.
-                Button("Fold Section") {
-                    if let key = appState.editor.caretSection() { store.setSection(key, collapsed: true) }
-                }
-                .keyboardShortcut(.leftArrow, modifiers: [.command, .option])
-                Button("Unfold Section") {
-                    if let key = appState.editor.caretSection() { store.setSection(key, collapsed: false) }
-                }
-                .keyboardShortcut(.rightArrow, modifiers: [.command, .option])
+                // FOLDING WHAT IS UNDER THE CELL YOU ARE IN, and not the
+                // cell you are in (Sean, 2026-09-21: "collapse current
+                // cell's subsections (or highlighted cells) is cmd+;").
+                // ⌥⌘← and ⌥⌘→ folded the caret's OWN section, which takes
+                // the line you are standing on off the screen; they are
+                // gone, and this one key goes both ways because there is
+                // no second key left to open them with.
+                Button("Collapse Subsections") { collapseSubsections() }
+                    .shortcut(.collapseSubsections)
                 Button("Fold All Sections") { store.foldAllSections() }
-                    .keyboardShortcut(.leftArrow, modifiers: [.command, .option, .shift])
+                    .shortcut(.foldAllSections)
                 Button("Unfold All Sections") { store.unfoldAllSections() }
-                    .keyboardShortcut(.rightArrow, modifiers: [.command, .option, .shift])
+                    .shortcut(.unfoldAllSections)
             }
 
             // ⌘Z ITSELF, not a monitor underneath it. The Edit menu's own
@@ -107,22 +143,25 @@ struct WriteMindApp: App {
                     if appState.drawingOwnsUndo, store.undoDrawing() { return }
                     NSApp.sendAction(Selector(("undo:")), to: nil, from: nil)
                 }
-                .keyboardShortcut("z", modifiers: .command)
+                .shortcut(.undo)
 
                 Button("Redo") {
                     if appState.drawingOwnsUndo, store.redoDrawing() { return }
                     NSApp.sendAction(Selector(("redo:")), to: nil, from: nil)
                 }
-                .keyboardShortcut("z", modifiers: [.command, .shift])
-            }
+                .shortcut(.redo)
 
-            // And the drawing's own pair, whatever has the keyboard.
-            CommandGroup(after: .undoRedo) {
+                Divider()
+
+                // And the drawing's own pair, whatever has the keyboard.
+                // In the SAME group as the other two, not a group of its
+                // own after them: `.commands` is a builder and takes ten
+                // children, and ⌘S made an eleventh (2026-09-21).
                 Button("Undo Drawing") { store.undoDrawing() }
-                    .keyboardShortcut("z", modifiers: [.command, .option])
+                    .shortcut(.undoDrawing)
                     .disabled(!store.canUndoDrawing)
                 Button("Redo Drawing") { store.redoDrawing() }
-                    .keyboardShortcut("z", modifiers: [.command, .option, .shift])
+                    .shortcut(.redoDrawing)
                     .disabled(!store.canRedoDrawing)
             }
 
@@ -130,11 +169,11 @@ struct WriteMindApp: App {
                 Divider()
                 // ⌘. as in a notebook: the selection grows a step at a time.
                 Button("Expand Selection") { appState.editor.expandSelection() }
-                    .keyboardShortcut(".", modifiers: .command)
+                    .shortcut(.expandSelection)
                 Button("Select Next Occurrence") { appState.editor.selectNextOccurrence() }
-                    .keyboardShortcut("d", modifiers: .command)
+                    .shortcut(.selectNextOccurrence)
                 Button("Select All Occurrences") { appState.editor.selectAllOccurrences() }
-                    .keyboardShortcut("g", modifiers: [.command, .control])
+                    .shortcut(.selectAllOccurrences)
             }
 
             // Every formatting shortcut lives HERE, not on a toolbar button
@@ -152,6 +191,21 @@ struct WriteMindApp: App {
 }
 
 extension WriteMindApp {
+    /// ⌘; — fold away what is under the cells in play, and open them
+    /// again when they are all already folded.
+    ///
+    /// The cells are whichever are held, or the one the caret is in; on
+    /// the rendered page that comes through `EditorBridge`'s document
+    /// hooks, so it is the same command in both panes.
+    private func collapseSubsections() {
+        var cells = appState.editor.selectedCells()
+        if cells.isEmpty, let caret = appState.editor.caretCell() { cells = [caret] }
+        let keys = NotebookOutline.subsections(of: cells, in: store.text)
+        guard !keys.isEmpty else { return }
+        let folding = NotebookOutline.folding(keys, collapsed: store.collapsedHere)
+        for key in keys { store.setSection(key, collapsed: folding) }
+    }
+
     /// Come back to the project that was open, the notes that were open in
     /// it, and the one that was in front — plus any text that had not reached
     /// disk. Sublime Text's hot exit, and the reason closing an unsaved
@@ -212,53 +266,58 @@ struct FormatMenu: Commands {
             // ⌘1 title, ⌘2 chapter, ⌘3 author, ⌘4–⌘6 sections, ⌘7 body.
             ForEach(MarkdownFormatting.Heading.ladder) { level in
                 Button(level.name) { editor.heading(level) }
-                    .keyboardShortcut(KeyEquivalent(level.key), modifiers: .command)
+                    .shortcut(.heading(level))
             }
             Divider()
-            Button("Bold") { editor.bold() }.keyboardShortcut("b", modifiers: .command)
-            Button("Italic") { editor.italic() }.keyboardShortcut("i", modifiers: .command)
-            Button("Underline") { editor.underline() }.keyboardShortcut("u", modifiers: .command)
+            Button("Bold") { editor.bold() }.shortcut(.bold)
+            Button("Italic") { editor.italic() }.shortcut(.italic)
+            Button("Underline") { editor.underline() }.shortcut(.underline)
             Button("Strikethrough") { editor.strikethrough() }
-                .keyboardShortcut("x", modifiers: [.command, .shift])
+                .shortcut(.strikethrough)
             Divider()
             Button("\(appState.bulletStyle.title) List") { editor.list(appState.bulletStyle) }
-                .keyboardShortcut("l", modifiers: [.command, .shift])
-            Button("Quote") { editor.quote() }.keyboardShortcut("q", modifiers: [.command, .control])
+                .shortcut(.list)
+            Button("Quote") { editor.quote() }.shortcut(.quote)
             Divider()
-            Button("Decrease Indentation") { editor.outdent() }.keyboardShortcut("[", modifiers: .command)
-            Button("Increase Indentation") { editor.indent() }.keyboardShortcut("]", modifiers: .command)
+            Button("Decrease Indentation") { editor.outdent() }.shortcut(.outdent)
+            Button("Increase Indentation") { editor.indent() }.shortcut(.indent)
             Divider()
             // The notebook's own two commands. ⌃D and ⌃M, not ⌘D and ⌘M:
             // ⌘D was already Select Next Occurrence (Sean, 2026-09-19:
             // "cmd d was already multi text selection... change make ctrl d
             // and ctrl m divide and merge"), and ⌘M is Minimise.
             Button("Split Cell") { editor.splitCell() }
-                .keyboardShortcut("d", modifiers: .control)
+                .shortcut(.splitCell)
                 .disabled(store.selectedNote == nil)
             Button("Merge Cells") { editor.mergeCells() }
-                .keyboardShortcut("m", modifiers: .control)
+                .shortcut(.mergeCells)
                 .disabled(store.selectedNote == nil)
             Divider()
             // A cell is a thing you can hold, the way a notebook's is
             // (Sean, 2026-09-20). ⌘D is Sublime's multi-cursor and stays
             // that way, so the cell commands take ⌃ keys.
             Button("Duplicate Cell") { editor.duplicateCell() }
-                .keyboardShortcut("d", modifiers: [.control, .shift])
+                .shortcut(.duplicateCell)
                 .disabled(store.selectedNote == nil)
+            // NO KEY (Sean, 2026-09-21: "backspace is enough to delete
+            // the selected cell so no need for ^+backspace"). ⌫ over a
+            // held cell already takes it — `MarkdownPreview.cellKey` on
+            // the rendered page, the text view's own delete in the
+            // source — so ⌃⌫ was a second way to do what the obvious key
+            // already did.
             Button("Delete Cell") { editor.deleteCell() }
-                .keyboardShortcut(.delete, modifiers: [.control])
                 .disabled(store.selectedNote == nil)
             Button("Move Cell Up") { editor.moveCell(up: true) }
-                .keyboardShortcut(.upArrow, modifiers: [.control, .shift])
+                .shortcut(.moveCellUp)
                 .disabled(store.selectedNote == nil)
             Button("Move Cell Down") { editor.moveCell(up: false) }
-                .keyboardShortcut(.downArrow, modifiers: [.control, .shift])
+                .shortcut(.moveCellDown)
                 .disabled(store.selectedNote == nil)
             Divider()
             Button("Move Section Up") { editor.moveSection(up: true) }
-                .keyboardShortcut(.upArrow, modifiers: [.command, .control])
+                .shortcut(.moveSectionUp)
             Button("Move Section Down") { editor.moveSection(up: false) }
-                .keyboardShortcut(.downArrow, modifiers: [.command, .control])
+                .shortcut(.moveSectionDown)
         }
     }
 }
@@ -277,7 +336,7 @@ struct InsertMenu: Commands {
                 appState.canvasMode = .cursor
                 store.chooseImage()
             }
-            .keyboardShortcut("i", modifiers: [.command, .shift])
+            .shortcut(.insertImage)
             .disabled(store.selectedNote == nil)
 
             Button("Text Box") {
@@ -291,7 +350,7 @@ struct InsertMenu: Commands {
             Button("\(appState.codeLanguage == .plain ? "Code Block" : appState.codeLanguage.title + " Block")") {
                 appState.editor.codeBlock(language: appState.codeLanguage.fence)
             }
-            .keyboardShortcut("8", modifiers: .command)
+            .shortcut(.codeBlock)
             .disabled(store.selectedNote == nil)
         }
     }
@@ -316,7 +375,7 @@ struct ProjectMenu: Commands {
                 projects.addFolder(folder)
                 store.setFolders(projects.folders, excluding: projects.excluded)
             }
-            .keyboardShortcut("a", modifiers: [.command, .shift])
+            .shortcut(.addFolderToProject)
 
             Menu("Remove Folder") {
                 ForEach(store.folders, id: \.path) { folder in
@@ -330,8 +389,14 @@ struct ProjectMenu: Commands {
 
             Divider()
 
+            // ⇧⌘S, not ⌃⌘S: that one was registered TWICE — here and on
+            // "Hide Notes Sidebar" in the View menu — and a key equivalent
+            // claimed twice goes to whichever menu comes first in the bar,
+            // so View won and this item could not be pressed from the
+            // keyboard at all (found 2026-09-21 while checking what ⌘S
+            // would collide with).
             Button("Save Project") { projects.save() }
-                .keyboardShortcut("s", modifiers: [.command, .control])
+                .shortcut(.saveProject)
             Button("Save Project As…") { projects.saveAs() }
 
             Divider()
@@ -376,7 +441,7 @@ struct InputDevicesMenu: Commands {
                 .disabled(camera.selectedDeviceID == nil)
 
             Button("Refresh Device List") { camera.refreshDevices() }
-                .keyboardShortcut("r", modifiers: [.command, .option])
+                .shortcut(.refreshDevices)
         }
     }
 }

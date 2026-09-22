@@ -144,6 +144,12 @@ final class AppState: ObservableObject {
     /// The pen, which is a question about the mode and not a flag of its
     /// own any more — everything that used to ask still asks.
     var penActive: Bool { canvasMode == .pen }
+
+    /// ONE WRITER for "the pen goes up or comes down", so the button on
+    /// the bar and ⌘P cannot drift apart (Sean, 2026-09-21: "cmd p for
+    /// toggling draw mode"). A second press puts it down rather than
+    /// doing nothing, which is what the pen button has always done here.
+    func togglePen() { canvasMode = penActive ? .cursor : .pen }
     /// The arrow tool (Sean, 2026-09-18): drag from node to node. One tool
     /// at a time — picking it up puts the pen down, and the other way round.
     @Published var connectActive: Bool = false {
