@@ -414,8 +414,9 @@ struct SidebarView: View {
     }
 
     /// How tall the two icons on the add row are — one number, so they
-    /// cannot be different heights.
-    private static let addIconHeight: CGFloat = 13
+    /// cannot be different heights. Not private: the test that holds
+    /// them to it reads this and nothing else.
+    static let addIconHeight: CGFloat = 13
 
     /// One half of that box.
     private func addHalf(_ section: NoteSection, makesSection: Bool) -> some View {
@@ -429,28 +430,43 @@ struct SidebarView: View {
             }
         } label: {
             HStack(spacing: 4) {
-                if makesSection {
-                    // THE SAME HEIGHT AS THE PAGE BESIDE IT (Sean,
-                    // 2026-09-21: "make the new note and new section
-                    // icons the same height"). A symbol sized by its
-                    // FONT is as tall as that font's glyph, which is
-                    // not the height of the shape drawn next to it;
-                    // resizable and fitted to a frame is.
-                    Image(systemName: "folder.badge.plus")
-                        .resizable()
-                        .scaledToFit()
-                        .frame(height: Self.addIconHeight)
-                } else {
-                    // A page with a + in it, drawn rather than named: no
-                    // SF Symbol is a blank page, and "doc.badge.plus"
-                    // has lines of writing on it.
-                    ZStack {
+                // A FOLDER AND A PAGE, THE SAME HEIGHT, EACH WITH THE
+                // SAME + IN IT (Sean, 2026-09-21, twice: "make the new
+                // note and new section icons the same height").
+                //
+                // The badge is what was wrong, and it is why the first
+                // answer — fitting `folder.badge.plus` into a frame of
+                // this height — did not fix it. A symbol made
+                // `resizable` is as tall as its own LAYOUT BOX, and in
+                // that symbol the box is the folder PLUS the badge that
+                // hangs off the top-right of it, so the folder inside
+                // came out about a tenth shorter than the page beside
+                // it however the frame was set. `folder` on its own is
+                // all folder, so the frame is the folder; the + that
+                // the badge was carrying is the very same + the page
+                // has, moved down into the body of the folder where
+                // there is room for it.
+                ZStack {
+                    if makesSection {
+                        Image(systemName: "folder")
+                            .resizable()
+                            .scaledToFit()
+                            .frame(height: Self.addIconHeight)
+                        // Below the fold, not in the middle of the icon:
+                        // the folder's own inner line is up there.
+                        Image(systemName: "plus").font(.system(size: 6.5, weight: .bold))
+                            .offset(y: Self.addIconHeight * 0.12)
+                    } else {
+                        // A page with a + in it: no SF Symbol is a blank
+                        // page, and `doc.badge.plus` has lines of
+                        // writing on it — and a badge of its own.
                         RoundedRectangle(cornerRadius: 2)
                             .strokeBorder(style: StrokeStyle(lineWidth: 1, dash: [2.5, 2]))
                             .frame(width: Self.addIconHeight * 0.8, height: Self.addIconHeight)
                         Image(systemName: "plus").font(.system(size: 6.5, weight: .bold))
                     }
                 }
+                .frame(height: Self.addIconHeight)
                 Text(makesSection ? "New section" : "New note")
                     .font(.system(size: 11))
                     .lineLimit(1)
@@ -779,3 +795,5 @@ private struct RowButton: View {
         .help(help)
     }
 }
+
+
