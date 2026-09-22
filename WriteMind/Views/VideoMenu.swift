@@ -53,7 +53,6 @@ struct VideoMenu: View {
                  help: appState.showEditor
                      ? "Put the notes away and give the window to the video"
                      : "The notes and the video side by side again",
-                 keys: ["⌃", "⌘", "E"],
                  wide: true, enabled: appState.showCamera) {
                 appState.toggleEditorPane()
                 // The bar this panel hangs off goes with the notes pane.

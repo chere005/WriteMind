@@ -15,6 +15,22 @@ nothing is deleted: this file is the ledger of the two apps agreeing.
 
 ## Open
 
+### The viewfinder has a shape, and it is one number
+An aspect-ratio control on the camera: Free plus the usual ratios in both
+orientations, on the same dropdown that picks the input, since it is the
+same question — what am I pointing this at. Implement it as the SHAPE OF
+THE VIEWFINDER, not a crop of the camera's frame and not a device setting:
+lay the whole camera view out in the largest rectangle of that shape the
+pane holds, and let everything already measured in pane points — the
+selection box, the zoom, what a capture brings in — be measured against
+that rectangle instead. Nothing else has to learn about it. Offer both
+orientations as separate entries rather than a ratio plus a flip: a page is
+photographed upright and a whiteboard sideways, and which you want is not a
+modifier of the other. A pane too small to hold anything hands back what it
+was given — every coordinate downstream divides by those numbers. Remember
+the choice: the shape you photograph pages in belongs to your notebook, not
+to this launch. (Sean, 2026-09-21.)
+
 ### Double-click the viewfinder to make the window the viewfinder
 And double-click again, or press a faint × drawn over its top-left corner,
 to come back. Two ways out, because a window that is nothing but a picture

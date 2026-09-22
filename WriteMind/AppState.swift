@@ -84,6 +84,13 @@ final class AppState: ObservableObject {
     /// Quarter turns of the video pane, kept because a camera that is mounted
     /// sideways stays mounted sideways.
     @Published var cameraRotation: Int { didSet { defaults.set(cameraRotation, forKey: Keys.cameraRotation) } }
+    /// What shape the viewfinder is (Sean, 2026-09-21: "add aspect ratio
+    /// control"). Remembered, like the turn and the zoom beside it: the
+    /// shape you photograph pages in is a property of your notebook, not
+    /// of this launch.
+    @Published var cameraAspect: CameraAspect {
+        didSet { defaults.set(cameraAspect.rawValue, forKey: Keys.cameraAspect) }
+    }
     @Published var penColorHex: String { didSet { defaults.set(penColorHex, forKey: Keys.penColorHex) } }
     /// The part of the video the pane is zoomed into, in pane fractions of
     /// the unzoomed picture (Sean, 2026-09-19: "drag a square to resize
@@ -219,6 +226,7 @@ final class AppState: ObservableObject {
         static let penColorHex = "penColorHex"
         static let canvasMode = "canvasMode"
         static let cameraZoom = "cameraZoom"
+        static let cameraAspect = "cameraAspect"
         static let bulletStyle = "bulletStyle"
         static let codeLanguage = "codeLanguage"
         static let collapsedToolGroups = "collapsedToolGroups"
@@ -243,6 +251,7 @@ final class AppState: ObservableObject {
         showCamera = true
         penWidth = defaults.object(forKey: Keys.penWidth) as? Double ?? 3
         cameraRotation = defaults.object(forKey: Keys.cameraRotation) as? Int ?? 0
+        cameraAspect = CameraAspect(rawValue: defaults.string(forKey: Keys.cameraAspect) ?? "") ?? .free
         penColorHex = defaults.string(forKey: Keys.penColorHex) ?? Self.presetColors[0]
         // A launch comes up in whichever mode it was left in, and the
         // footer says which one that is — a pane that swallows clicks

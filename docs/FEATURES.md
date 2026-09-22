@@ -219,6 +219,12 @@ is how the code is put together.
   writes a `<span style="…">`, so other markdown apps still read the note.
 - **⌘D, as in Sublime Text.** The word under the cursor, then one more
   occurrence per press, all editable at once. ⇧⌘D takes every one.
+- **The viewfinder is whatever shape you want it.** Input Devices ▸ Aspect
+  Ratio: Free, 1:1, 4:3, 3:2, 16:9 and the three upright ones. The picture
+  is laid out in the largest rectangle of that shape the pane holds, and
+  everything that already worked on the picture — the box you drag, the
+  zoom, what the capture brings in — works inside it unchanged. Remembered,
+  like the turn and the zoom.
 - **Double-click the picture and the window IS the picture.** The notes,
   the list and the divider go; the page you are holding up to the camera
   gets the whole screen. Double-click again to come back, or press the

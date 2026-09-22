@@ -30,37 +30,54 @@ struct CameraPane: View {
                 .allowsHitTesting(false)
             switch camera.status {
             case .running:
-                GeometryReader { geo in
+                GeometryReader { outer in
+                    // THE VIEWFINDER IS THE SHAPE THAT WAS ASKED FOR, and
+                    // the pane is whatever the divider makes it (Sean,
+                    // 2026-09-21: "add aspect ratio control"). Everything
+                    // below is measured against `size` and not against the
+                    // pane, so the box you drag, the zoom and what the
+                    // capture brings in all go on meaning what they meant
+                    // — inside the rectangle instead of inside the pane.
+                    // `free` hands the pane straight back, which is what
+                    // this was before there was a choice.
+                    let size = appState.cameraAspect.fit(in: outer.size)
                     ZStack(alignment: .topLeading) {
                         // Turned inside the pane, not with it: at a quarter
                         // turn the preview is given the pane's height as its
                         // width, so the picture still fits after it comes round.
                         CameraPreview(session: camera.session)
-                            .frame(width: appState.cameraIsTurned ? geo.size.height : geo.size.width,
-                                   height: appState.cameraIsTurned ? geo.size.width : geo.size.height)
+                            .frame(width: appState.cameraIsTurned ? size.height : size.width,
+                                   height: appState.cameraIsTurned ? size.width : size.height)
                             .rotationEffect(.degrees(Double(appState.cameraRotation)))
-                            .position(x: geo.size.width / 2, y: geo.size.height / 2)
+                            .position(x: size.width / 2, y: size.height / 2)
                             // Zoomed by moving the whole picture, not by
                             // touching the camera: the box the pane is
                             // showing is blown up to fill it.
-                            .scaleEffect(zoomScale(in: geo.size))
-                            .offset(zoomOffset(in: geo.size))
+                            .scaleEffect(zoomScale(in: size))
+                            .offset(zoomOffset(in: size))
                             .clipped()
-                        SectionBox(section: $section, size: geo.size,
+                        SectionBox(section: $section, size: size,
                                    busy: store.isCapturing,
-                                   onWholePicture: { section = wholePictureBox(pane: geo.size) },
+                                   onWholePicture: { section = wholePictureBox(pane: size) },
                                    onFullWindow: { appState.toggleCameraFullWindow() },
-                                   onInsert: { mode in insertSection(mode, pane: geo.size) },
-                                   onRead: { readSection(pane: geo.size) })
+                                   onInsert: { mode in insertSection(mode, pane: size) },
+                                   onRead: { readSection(pane: size) })
                             .disabled(store.selectedNote == nil)
                         if appState.cameraZooming {
                             BoxDragger(hint: "Drag a box — the pane shows that much") { box in
                                 appState.cameraZoom = CameraZoom.compose(box, over: appState.cameraZoom,
-                                                                         in: geo.size)
+                                                                         in: size)
                                 appState.cameraZooming = false
                             }
                         }
                     }
+                    // Centred in the pane, with the pane's own black
+                    // round it — the same black the letterbox bars of a
+                    // wide picture in a tall pane have always been, so a
+                    // chosen shape looks like the picture and not like a
+                    // window with a hole in it.
+                    .frame(width: size.width, height: size.height)
+                    .position(x: outer.size.width / 2, y: outer.size.height / 2)
                 }
             case .starting:
                 ProgressView().controlSize(.large).tint(.white)

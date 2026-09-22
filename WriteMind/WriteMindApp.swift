@@ -185,7 +185,7 @@ struct WriteMindApp: App {
             FormatMenu(appState: appState, store: store)
             InsertMenu(appState: appState, store: store)
 
-            InputDevicesMenu(camera: camera)
+            InputDevicesMenu(camera: camera, appState: appState)
         }
     }
 }
@@ -414,9 +414,17 @@ struct ProjectMenu: Commands {
     }
 }
 
-/// The "Input Devices" menu bar item: every camera the Mac can see, plus an off switch.
+/// The "Input Devices" menu bar item: every camera the Mac can see, an off
+/// switch, and what SHAPE the picture is shown at.
+///
+/// The shape lives here rather than in the Picture panel on the bar (Sean,
+/// 2026-09-21: "aspect ratio control should be in the video input
+/// dropdown"). It is a property of what you are pointing the camera at —
+/// a page, a whiteboard, a screen — which is the same question this menu
+/// already asks.
 struct InputDevicesMenu: Commands {
     @ObservedObject var camera: CameraController
+    @ObservedObject var appState: AppState
 
     var body: some Commands {
         CommandMenu("Input Devices") {
@@ -439,6 +447,24 @@ struct InputDevicesMenu: Commands {
 
             Button("Turn Camera Off") { camera.turnOff() }
                 .disabled(camera.selectedDeviceID == nil)
+
+            Divider()
+
+            // The viewfinder's shape. Ticked the way the cameras above
+            // are, because it is the same kind of choice: one of a list,
+            // and the one it is now.
+            Menu("Aspect Ratio") {
+                ForEach(CameraAspect.allCases) { choice in
+                    Button {
+                        appState.cameraAspect = choice
+                    } label: {
+                        HStack {
+                            Text(choice == .free ? "Free — as the camera sends it" : choice.title)
+                            if appState.cameraAspect == choice { Image(systemName: "checkmark") }
+                        }
+                    }
+                }
+            }
 
             Button("Refresh Device List") { camera.refreshDevices() }
                 .shortcut(.refreshDevices)
