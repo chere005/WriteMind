@@ -129,7 +129,14 @@ struct DrawingCanvas: View {
                         hover(phase, in: geo.size)
                     }
 
-                if !penActive, let box = drawing.bounds(of: handleIDs, in: geo.size) {
+                // NOT WHILE A TOOL IS ARMED. The handles are real views
+                // over the canvas, so the one round the mark just placed
+                // would swallow the next click — which with ⌘ held is the
+                // next mark, landing beside it (Sean, 2026-09-21: "if i
+                // hold cmd, stay in adding that marker mode"). The pane
+                // belongs to the tool until the tool is handed back, and
+                // Escape is how it is handed back.
+                if !penActive, placing == nil, let box = drawing.bounds(of: handleIDs, in: geo.size) {
                     handles(box: box, in: geo.size)
                 }
 
@@ -734,9 +741,14 @@ struct DrawingCanvas: View {
                 case .marquee(let start, _):
                     marquee = CanvasGeometry.rect(from: start, to: doc(value.location))
                 case .connecting(let start, _):
-                    connectPreview = (start, doc(value.location))
+                    // ⇧ holds an arrow to an axis while it is dragged, and
+                    // the ghost has to show the line that will really be
+                    // put down (Sean, 2026-09-21).
+                    connectPreview = (start, Self.dragEnd(doc(value.location), from: start))
                 case .placing(let start):
-                    placePreview = (start, doc(value.location))
+                    placePreview = (start, placing?.end(doc(value.location), from: start,
+                                                        modifiers: NSEvent.modifierFlags)
+                                        ?? doc(value.location))
                 default:
                     break
                 }
@@ -748,7 +760,7 @@ struct DrawingCanvas: View {
                     current = nil
                 case .connecting(let start, let fromNode):
                     connectPreview = nil
-                    let end = doc(value.location)
+                    let end = Self.dragEnd(doc(value.location), from: start)
                     let hit = drawing.attachable(at: end, in: size)
                     let toNode = hit == fromNode ? nil : hit
                     // A click is not an arrow; a drag is, and so is a click
@@ -775,7 +787,11 @@ struct DrawingCanvas: View {
                         beginLabel(id)
                     }
                 case .placing(let start):
-                    place(from: start, to: doc(value.location), in: size)
+                    let modifiers = NSEvent.modifierFlags
+                    place(from: start,
+                          to: placing?.end(doc(value.location), from: start, modifiers: modifiers)
+                              ?? doc(value.location),
+                          in: size, modifiers: modifiers)
                 case .marquee(let start, let additive):
                     let rect = CanvasGeometry.rect(from: start, to: doc(value.location))
                     let touched = CanvasGroups.whole(drawing.ids(touching: rect, in: size),
@@ -1020,10 +1036,21 @@ struct DrawingCanvas: View {
 
     // MARK: - Pointer
 
-    /// The armed object, where the drag put it.
-    private func place(from: CGPoint, to: CGPoint, in size: CGSize) {
+    /// The armed object, where the drag put it — and whether the tool is
+    /// handed back afterwards.
+    ///
+    /// NOTHING PUT DOWN LEAVES THE TOOL ARMED. A press that never moved is
+    /// no line at all (`CanvasPlacement.connector`), and disarming there
+    /// sent the pointer back to the palette for a gesture that produced
+    /// nothing — the comment there had said so since it was written while
+    /// the `defer` disarmed on every path, this one included.
+    /// ⌘ HELD leaves it armed even when something DID go down, so a row of
+    /// ticks is one trip to the palette (Sean, 2026-09-21: "when placing a
+    /// marker, if i hold cmd, stay in adding that marker mode"). Escape is
+    /// the way out of either, as it always was.
+    private func place(from: CGPoint, to: CGPoint, in size: CGSize,
+                       modifiers: NSEvent.ModifierFlags) {
         placePreview = nil
-        defer { onPlaced?() }
         guard let placing,
               let item = placing.item(from: from, to: to, in: size,
                                       colorHex: color.hexString, lineWidth: width)
@@ -1033,6 +1060,16 @@ struct DrawingCanvas: View {
         selection = [item.id]
         // A text box is put down to be typed in.
         if case .shape(let shape) = item, shape.kind == .text { beginLabel(item.id) }
+        if !CanvasPlacement.staysArmed(modifiers) { onPlaced?() }
+    }
+
+    /// Where a connector's far end is, ⇧ taken into account. The arrow tool
+    /// and an ⌥-drag off a node both build their line by hand rather than
+    /// through `CanvasPlacement`, and all three have to hold the same axis
+    /// or the key means one thing on one of them.
+    static func dragEnd(_ to: CGPoint, from: CGPoint,
+                        modifiers: NSEvent.ModifierFlags = NSEvent.modifierFlags) -> CGPoint {
+        CanvasGeometry.onAxis(to, from: from, locked: modifiers.contains(.shift))
     }
 
     /// Whether ⌘Z is the layer's to take.

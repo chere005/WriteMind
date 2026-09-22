@@ -213,6 +213,24 @@ enum CanvasGeometry {
         hypot(a.x - b.x, a.y - b.y)
     }
 
+    /// A drag held to an axis: the far end put back onto the horizontal or
+    /// the vertical through the near one, whichever of the two the drag was
+    /// already closer to (Sean, 2026-09-21: "if i hold shift, the direction
+    /// elements become fixed to horizontal or vertical axes").
+    ///
+    /// Distance along the axis is kept and the other component thrown away,
+    /// rather than the length being kept and the angle rounded: a line
+    /// snapping to the axis should not also change how long it is, and the
+    /// end has to stay under the pointer along the direction that is left.
+    /// A drag exactly on the diagonal goes horizontal, which is arbitrary
+    /// and has to be SOME answer; the next point of movement settles it.
+    static func onAxis(_ to: CGPoint, from: CGPoint, locked: Bool = true) -> CGPoint {
+        guard locked else { return to }
+        return abs(to.x - from.x) >= abs(to.y - from.y)
+            ? CGPoint(x: to.x, y: from.y)
+            : CGPoint(x: from.x, y: to.y)
+    }
+
     /// Distance from a point to a line segment.
     static func distance(_ point: CGPoint, from a: CGPoint, to b: CGPoint) -> CGFloat {
         let dx = b.x - a.x, dy = b.y - a.y

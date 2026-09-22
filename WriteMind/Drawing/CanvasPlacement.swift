@@ -1,3 +1,4 @@
+import AppKit
 import CoreGraphics
 import Foundation
 
@@ -21,6 +22,37 @@ enum CanvasPlacement: Equatable {
         case .line(.arrow, .arrow): return "Double-headed Arrow"
         case .line: return "Arrow"
         }
+    }
+
+    /// A LINE OR AN ARROW HAS A DIRECTION, and ⇧ holds it to an axis
+    /// (Sean, 2026-09-21: "if i hold shift, the direction elements become
+    /// fixed to horizontal or vertical axes"). A shape has no direction —
+    /// a mark is square already and a node is dragged to whatever box it
+    /// is wanted in — so the key means nothing over one of those, and
+    /// answering "no" here is what keeps it meaning nothing.
+    var hasDirection: Bool {
+        if case .line = self { return true }
+        return false
+    }
+
+    /// Where the far end of this gesture really is: on the axis while ⇧ is
+    /// held, and only for something that has a direction.
+    func end(_ to: CGPoint, from: CGPoint, modifiers: NSEvent.ModifierFlags) -> CGPoint {
+        CanvasGeometry.onAxis(to, from: from,
+                              locked: hasDirection && modifiers.contains(.shift))
+    }
+
+    /// ⌘ HELD KEEPS THE TOOL, so a row of ticks is one trip to the palette
+    /// (Sean, 2026-09-21: "when placing a marker, if i hold cmd, stay in
+    /// adding that marker mode"). It is read at the moment the thing goes
+    /// down, not when it was picked, so the choice is made per mark.
+    ///
+    /// ⌘ is the selector everywhere else on this pane, and that is not a
+    /// clash: an armed placement takes the press before any mode or
+    /// modifier is asked (`DrawingCanvas.begin`), so while a tool is armed
+    /// there is no marquee for it to collide with.
+    static func staysArmed(_ modifiers: NSEvent.ModifierFlags) -> Bool {
+        modifiers.contains(.command)
     }
 
     /// Under this, the drag was a click.
