@@ -625,6 +625,24 @@ CoreMind's `bin/report-status.sh`.
   say. Both measured, 2026-09-21. Its stdin is the null device so
   that an unactivated engine asking for a Wolfram ID gets EOF and
   exits instead of hanging; the app never types into that prompt.
+  **A CELL AND ITS ANSWER ARE ONE GROUP, AND THE GROUP IS DERIVED.**
+  Sean, 2026-09-21: "input and output cells are grouped together".
+  `EvalCells.groups(in:)` reads the pairs back off the blocks every
+  time — an evaluation fence with an `out` fence directly under it —
+  so nothing is written into the note for it and nothing can go
+  stale. Both panes draw a bracket at the pair's own depth over
+  `group.range` and push each member cell to `depth + 1`
+  (`EvalCells.isGrouped`); it is not a section, it folds nothing and
+  it nests nothing. And the run ENDS WITH THE BAR under the answer
+  (Sean, same day: "after evaluating a cell, the text cursor should
+  become a horizontal bar after the output") —
+  `EditorBridge.armBar(after:in:)`, which is the one write an
+  evaluation makes that DOES take the caret, against `writeCell`,
+  which must never steal focus because it can land while somebody is
+  typing somewhere else. In the source pane the selection is set
+  BEFORE `armedSeam`, or `textViewDidChangeSelection` undoes the arm
+  on its way past; the rendered page arms its own seam through
+  `armBarInDocument`.
 
 ## How it is wired
 

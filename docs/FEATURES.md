@@ -174,8 +174,11 @@ is how the code is put together.
   cell underneath, and running again replaces that answer rather than
   piling another one up. A line in square brackets is the app talking
   (`[no output]`, `[exit 1]`, `[stderr]`); every other line came out of
-  the program. Nothing runs by itself — not on opening a note, not on
-  saving — and a plain code cell never runs at all.
+  the program. The cell and its answer are drawn as ONE GROUP — a bracket
+  in the gutter round the pair — and the cursor is left as the horizontal
+  bar under the answer, ready for the next thing. Nothing runs by itself —
+  not on opening a note, not on saving — and a plain code cell never runs
+  at all.
 - **Code blocks, in five languages.** The `</>` button (⌘8) fences the
   selection or opens an empty block; its chevron tags the fence C, C++,
   Wolfram, Python or TypeScript, and the block is coloured — in the editor

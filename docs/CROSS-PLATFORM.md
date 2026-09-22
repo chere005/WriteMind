@@ -226,6 +226,27 @@ whose art includes a badge is as tall as art-plus-badge, so the shape inside
 it comes out short — here `folder.badge.plus` drew an 11.9 pt folder beside a
 13 pt page. Use the plain folder and put the + inside it. (2026-09-21.)
 
+### An answer leaves the cursor under it
+Evaluating a cell ends with the insertion bar on the seam BELOW the output,
+not back in the code — a notebook's ⇧↩ is "run this and let me carry on", and
+carrying on happens after the answer. This is the one write an evaluation
+makes that DOES take the caret: every other one (the output cell itself)
+goes in without stealing focus, because it may land while somebody is typing
+somewhere else, and the two must not be confused. Where the bar goes is the
+start of the block after the output, which is the offset both panes already
+read as "the seam under this one"; the end of the document when there is
+nothing after it. (Sean, 2026-09-21: "after evaluating a cell, the text
+cursor should become a horizontal bar after the output.")
+
+### An evaluation cell and its answer are one group
+The gutter draws one bracket round the In/Out pair, and each of the two
+cells keeps its own bracket one step further in. It is NOT a section: it
+folds nothing, it nests nothing in the document, and it is not written into
+the file — it is read back off the blocks every time, an evaluation fence
+with an `out` fence directly under it. That keeps it true with no state to
+get stale: delete the answer and the group is gone; run the cell and it is
+back. (Sean, 2026-09-21: "input and output cells are grouped together.")
+
 ## Done there
 
 Nothing yet.

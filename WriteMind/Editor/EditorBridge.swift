@@ -39,6 +39,31 @@ final class EditorBridge {
     /// Whether the caret is in an evaluation cell right now.
     var evaluatesHere: (() -> Bool)?
 
+    /// Putting the bar under a cell, on the RENDERED page, which keeps
+    /// its armed state itself.
+    var armBarInDocument: ((NSRange) -> Void)?
+
+    /// THE CURSOR A NOTEBOOK LEAVES YOU WITH when a cell has finished:
+    /// the horizontal bar under its output, ready for the next thing
+    /// (Sean, 2026-09-21: "after evaluating a cell, the text cursor
+    /// should become a horizontal bar after the output").
+    ///
+    /// This one DOES take the caret, unlike every other write an
+    /// evaluation makes — it is the second half of the ⇧↩ that started
+    /// the run, not an interruption of somebody else's typing.
+    func armBar(after cell: NSRange, in text: String) {
+        if let armBarInDocument { armBarInDocument(cell); return }
+        guard let tv = textView as? PasteAwareTextView else { return }
+        let offset = min(EvalCells.seam(after: cell, in: text), (tv.string as NSString).length)
+        tv.window?.makeFirstResponder(tv)
+        // The selection first: `textViewDidChangeSelection` reads the
+        // caret to decide what is armed, so arming before it would be
+        // undone by the move.
+        tv.setSelectedRange(NSRange(location: offset, length: 0))
+        tv.armedSeam = offset
+        tv.scrollRangeToVisible(NSRange(location: offset, length: 0))
+    }
+
     /// WRITING INTO THE NOTE FROM OUTSIDE THE CARET — the one thing an
     /// evaluation does that nothing else here does. The rendered page
     /// installs this; the source pane has none and goes through its text

@@ -387,6 +387,8 @@ struct MarkdownPreview: View {
             // offset further down it moves by the same amount. Nothing
             // else edits this note from outside the caret, which is why
             // nothing else has had to do this.
+            // The bar under a cell that has just finished running.
+            bridge.armBarInDocument = { cell in armSeam(beside: cell, below: true) }
             bridge.writeInDocument = { edit in
                 let ns = markdown as NSString
                 guard NSMaxRange(edit.range) <= ns.length else { return }
@@ -414,6 +416,7 @@ struct MarkdownPreview: View {
             bridge.armedBar = nil
             bridge.barIsUp = nil
             bridge.writeInDocument = nil
+            bridge.armBarInDocument = nil
         }
         .environment(\.openURL, OpenURLAction { url in
             let destination = url.absoluteString
@@ -488,9 +491,31 @@ struct MarkdownPreview: View {
         let sections = NotebookOutline.sections(in: markdown)
         var out: [CellBrackets.Bracket] = []
 
+        // An evaluation cell and its answer are ONE GROUP, with a
+        // bracket round the pair (Sean, 2026-09-21: "input and output
+        // cells are grouped together").
+        let groups = EvalCells.groups(in: markdown)
+        for group in groups {
+            let inside = shown.filter {
+                NSEqualRanges($0.range, group.input) || NSEqualRanges($0.range, group.output)
+            }
+            let boxes = inside.compactMap { places[$0.id] }
+            guard boxes.count == 2, let top = boxes.map(\.top).min(),
+                  let bottom = boxes.map(\.bottom).max(), bottom - top > 1
+            else { continue }
+            let held = CellSelection.holds(group.range, cells: inside.map(\.range),
+                                           selection: selectedCells)
+            out.append(CellBrackets.Bracket(key: group.key,
+                                            depth: NotebookOutline.cellDepth(at: group.input.location,
+                                                                             in: sections),
+                                            top: top, bottom: bottom,
+                                            selected: held, held: held, range: group.range))
+        }
+
         for item in shown {
             guard let place = places[item.id], place.bottom - place.top > 1 else { continue }
-            let depth = NotebookOutline.cellDepth(at: item.range.location, in: sections)
+            var depth = NotebookOutline.cellDepth(at: item.range.location, in: sections)
+            if EvalCells.isGrouped(item.range, in: groups) { depth += 1 }
             // Lit and HELD are not the same thing: the cell open for
             // typing is drawn heavy with nothing picked up, and the
             // gestures may not read that as a cell being held

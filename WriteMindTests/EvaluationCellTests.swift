@@ -225,6 +225,59 @@ final class EvaluationCellTests: XCTestCase {
         XCTAssertNil(EvalCells.setEnvironment(.python, of: cell(note, at: 0), in: note))
     }
 
+    // MARK: - In and Out are one group
+
+    /// Sean, 2026-09-21: "input and output cells are grouped together".
+    func testAnEvaluationCellAndItsAnswerAreOneGroup() {
+        let note = "# Notes\n\n```eval python\nx\n```\n\n```out\n1\n```\n\nAfter it."
+        let groups = EvalCells.groups(in: note)
+        XCTAssertEqual(groups.count, 1)
+        XCTAssertEqual(groups.first?.input, cell(note, at: 1))
+        XCTAssertEqual(groups.first?.output, cell(note, at: 2))
+        // The bracket embraces both and nothing else.
+        XCTAssertEqual((note as NSString).substring(with: groups[0].range),
+                       "```eval python\nx\n```\n\n```out\n1\n```")
+        XCTAssertTrue(EvalCells.isGrouped(cell(note, at: 1), in: groups))
+        XCTAssertTrue(EvalCells.isGrouped(cell(note, at: 2), in: groups))
+        XCTAssertFalse(EvalCells.isGrouped(cell(note, at: 0), in: groups), "the heading is not in it")
+        XCTAssertFalse(EvalCells.isGrouped(cell(note, at: 3), in: groups))
+    }
+
+    func testACellWithNoAnswerYetIsNotAGroup() {
+        XCTAssertTrue(EvalCells.groups(in: "```eval python\nx\n```").isEmpty)
+        // And a CODE cell with an out block under it is not one either —
+        // a code cell never ran, so that answer is not its.
+        XCTAssertTrue(EvalCells.groups(in: "```python\nx\n```\n\n```out\n1\n```").isEmpty)
+    }
+
+    func testEveryPairInANoteIsItsOwnGroup() {
+        let two = "```eval python\na\n```\n\n```out\nA\n```\n\n```eval wl\nb\n```\n\n```out\nB\n```"
+        let groups = EvalCells.groups(in: two)
+        XCTAssertEqual(groups.count, 2)
+        XCTAssertEqual(Set(groups.map(\.key)).count, 2, "two groups, two keys")
+    }
+
+    // MARK: - Where the cursor is left
+
+    /// Sean, 2026-09-21: "after evaluating a cell, the text cursor should
+    /// become a horizontal bar after the output" — the cursor a notebook
+    /// leaves you with, ready for the next thing.
+    func testTheBarGoesUnderTheAnswerAndNotInsideIt() {
+        let answered = "```eval python\nx\n```\n\n```out\n1\n```\n\nAfter it."
+        let out = cell(answered, at: 1)
+        let bar = EvalCells.seam(after: out, in: answered)
+        // The start of the cell below, which is the offset both panes
+        // read as "the seam under this one".
+        XCTAssertEqual(bar, cell(answered, at: 2).location)
+        XCTAssertEqual((answered as NSString).substring(from: bar), "After it.")
+    }
+
+    func testTheBarUnderTheLastCellIsTheEndOfTheNote() {
+        let answered = "```eval python\nx\n```\n\n```out\n1\n```"
+        XCTAssertEqual(EvalCells.seam(after: cell(answered, at: 1), in: answered),
+                       (answered as NSString).length)
+    }
+
     // MARK: - ⇧↩ runs it, and nothing else does
 
     /// macOS binds `insertLineBreak:` to ⌃↩ and says nothing about ⇧↩,

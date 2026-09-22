@@ -81,5 +81,11 @@ extension NoteStore {
             return
         }
         writeCell?(EvalCells.write(result, under: landing.range, in: text))
+        // AND THE BAR GOES UNDER THE ANSWER. The run started with ⇧↩ or
+        // the ▶ on the cell; leaving the cursor below what came back is
+        // the other half of that gesture, and it is where the next thing
+        // gets typed.
+        guard let answered = EvalCells.out(after: landing.range, in: text) else { return }
+        writeBar?(answered.range)
     }
 }

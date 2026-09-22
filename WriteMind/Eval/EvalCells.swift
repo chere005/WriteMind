@@ -66,6 +66,59 @@ enum EvalCells {
         return offset + change
     }
 
+    /// AN EVALUATION CELL AND ITS ANSWER ARE ONE GROUP — the In/Out pair
+    /// a notebook draws one bracket round (Sean, 2026-09-21: "input and
+    /// output cells are grouped together").
+    ///
+    /// It is not a section: nothing is folded and nothing is nested by
+    /// it in the note. It is two adjacent cells the gutter embraces, so
+    /// that the answer visibly belongs to the code above it and moving
+    /// your eye down the margin tells you which is which.
+    struct Group: Equatable {
+        var input: NSRange
+        var output: NSRange
+        var key: String
+        /// The two of them, end to end.
+        var range: NSRange {
+            NSRange(location: input.location, length: NSMaxRange(output) - input.location)
+        }
+    }
+
+    static func groups(in text: String) -> [Group] {
+        let blocks = MarkdownParser.positioned(from: text)
+        var out: [Group] = []
+        for (index, block) in blocks.enumerated() {
+            guard case .code(let language, _) = block.block,
+                  Evaluator.isEvaluation(fence: language),
+                  index + 1 < blocks.count,
+                  EvalOutput.isOut(blocks[index + 1].block)
+            else { continue }
+            out.append(Group(input: block.range, output: blocks[index + 1].range,
+                             key: "eval:\(block.range.location)"))
+        }
+        return out
+    }
+
+    /// Whether a cell is inside a group — which is what pushes its own
+    /// bracket one step in, so the group's sits outside it.
+    static func isGrouped(_ cell: NSRange, in groups: [Group]) -> Bool {
+        groups.contains { NSEqualRanges($0.input, cell) || NSEqualRanges($0.output, cell) }
+    }
+
+    /// WHERE THE BAR GOES WHEN A CELL HAS FINISHED: the start of the
+    /// next cell, which is the offset both panes already read as "the
+    /// seam under this one" (arming parks the caret at the separator and
+    /// `NotebookCells.block(containing:)` reads that as the cell below).
+    /// The end of the note when there is nothing after it.
+    static func seam(after cell: NSRange, in text: String) -> Int {
+        let blocks = MarkdownParser.positioned(from: text)
+        if let index = blocks.firstIndex(where: { $0.range.location == cell.location }),
+           index + 1 < blocks.count {
+            return blocks[index + 1].range.location
+        }
+        return (text as NSString).length
+    }
+
     /// Changing a cell's environment rewrites its fence and nothing else
     /// — the body is untouched, and so is any Out cell under it. This is
     /// also what TURNS A CELL INTO AN EVALUATION CELL (⌘9 over a fenced

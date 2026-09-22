@@ -765,10 +765,24 @@ struct MarkdownTextView: NSViewRepresentable {
                                range: NSRange(location: start, length: end - start), foldable: true)
             }
 
+            // An evaluation cell and its answer are ONE GROUP, with a
+            // bracket round the pair (Sean, 2026-09-21: "input and
+            // output cells are grouped together").
+            let groups = EvalCells.groups(in: tv.string)
+            for group in groups {
+                let depth = NotebookOutline.cellDepth(at: group.input.location, in: sections)
+                if let embrace = bracket(key: group.key, depth: depth,
+                                         range: group.range, foldable: false) {
+                    brackets.append(embrace)
+                }
+            }
+
             // The cells themselves: one per block, drawn inside whichever
-            // section holds them.
+            // section holds them — and one step further in when a group
+            // holds them too.
             for block in blocks {
-                let depth = NotebookOutline.cellDepth(at: block.range.location, in: sections)
+                var depth = NotebookOutline.cellDepth(at: block.range.location, in: sections)
+                if EvalCells.isGrouped(block.range, in: groups) { depth += 1 }
                 if let cell = bracket(key: "cell:\(block.range.location)", depth: depth,
                                       range: block.range, foldable: false) {
                     brackets.append(cell)

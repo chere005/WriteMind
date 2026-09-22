@@ -672,6 +672,8 @@ final class NoteStore: ObservableObject {
     /// editor bridge's own write, which does not take the keyboard and
     /// does not move the caret.
     var writeCell: ((MarkdownFormatting.Edit) -> Void)?
+    /// And where the bar goes once the answer is in.
+    var writeBar: ((NSRange) -> Void)?
 
     func notice(_ text: String) {
         captureNotice = text

@@ -113,6 +113,7 @@ struct EditorPane: View {
                     // bridge's own write, which takes no keyboard and
                     // moves no caret.
                     store.writeCell = { appState.editor.write($0) }
+                    store.writeBar = { appState.editor.armBar(after: $0, in: store.text) }
                     // ⇧↩ runs the cell the caret is in, and only when
                     // that cell is an evaluation cell.
                     appState.editor.evaluatesHere = {
