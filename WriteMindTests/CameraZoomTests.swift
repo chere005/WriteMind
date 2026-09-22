@@ -78,25 +78,37 @@ final class CameraZoomTests: XCTestCase {
 /// one arrives (Sean, 2026-09-19: "clicking to exit after selecting a
 /// section of the page is slow").
 final class SectionBoxGestureTests: XCTestCase {
-    func testARealDragLeavesItsBoxAlone() {
-        XCTAssertEqual(SectionBox.action(translation: CGSize(width: 40, height: 3), clicks: 1), .keep)
-        XCTAssertEqual(SectionBox.action(translation: CGSize(width: 0, height: -30), clicks: 1), .keep)
+    func testADragLeavesItsBoxAlone() {
+        XCTAssertEqual(SectionBox.action(translation: CGSize(width: 40, height: 3),
+                                         clicks: 1, hasBox: true), .keep)
+        XCTAssertEqual(SectionBox.action(translation: CGSize(width: 0, height: -30),
+                                         clicks: 1, hasBox: false), .keep)
     }
 
-    func testAClickClearsAndTwoTakeTheWholePicture() {
-        XCTAssertEqual(SectionBox.action(translation: .zero, clicks: 1), .clear)
-        XCTAssertEqual(SectionBox.action(translation: CGSize(width: 2, height: 2), clicks: 1), .clear,
-                       "a shaky hand is still a click")
-        XCTAssertEqual(SectionBox.action(translation: .zero, clicks: 2), .whole)
-        XCTAssertEqual(SectionBox.action(translation: .zero, clicks: 3), .whole)
+    func testOneClickClearsTheBoxAndWithNoBoxTakesTheWholePicture() {
+        XCTAssertEqual(SectionBox.action(translation: .zero, clicks: 1, hasBox: true), .clear)
+        XCTAssertEqual(SectionBox.action(translation: CGSize(width: 2, height: 2),
+                                         clicks: 1, hasBox: true), .clear,
+                       "two points of wobble is still a click")
+        // The gesture the double-click used to be: the three capture
+        // buttons only appear once something is boxed, so without this
+        // the whole frame could only be had by dragging a box round it.
+        XCTAssertEqual(SectionBox.action(translation: .zero, clicks: 1, hasBox: false), .whole)
     }
 
-    func testTheSlackIsFourPoints() {
+    /// Sean, 2026-09-21: "doubleclick the camera to make the whole window
+    /// the camera.. double click again to exit".
+    func testTwoClicksFillTheWindowWhateverIsBoxed() {
+        XCTAssertEqual(SectionBox.action(translation: .zero, clicks: 2, hasBox: false), .fullWindow)
+        XCTAssertEqual(SectionBox.action(translation: .zero, clicks: 2, hasBox: true), .fullWindow)
+        XCTAssertEqual(SectionBox.action(translation: .zero, clicks: 3, hasBox: false), .fullWindow)
+    }
+
+    func testFourPointsOfSlackSoAClickStaysAClick() {
         XCTAssertFalse(SectionBox.isDrag(CGSize(width: 3.9, height: 3.9)))
         XCTAssertTrue(SectionBox.isDrag(CGSize(width: 4, height: 0)))
-    }
-
-    func testADoubleClickIsNotReadAsADragEvenIfTheHandMoves() {
-        XCTAssertEqual(SectionBox.action(translation: CGSize(width: 3, height: 1), clicks: 2), .whole)
+        // A double-click that wobbled three points is still a double-click.
+        XCTAssertEqual(SectionBox.action(translation: CGSize(width: 3, height: 1),
+                                         clicks: 2, hasBox: true), .fullWindow)
     }
 }

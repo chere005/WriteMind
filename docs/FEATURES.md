@@ -219,6 +219,12 @@ is how the code is put together.
   writes a `<span style="…">`, so other markdown apps still read the note.
 - **⌘D, as in Sublime Text.** The word under the cursor, then one more
   occurrence per press, all editable at once. ⇧⌘D takes every one.
+- **Double-click the picture and the window IS the picture.** The notes,
+  the list and the divider go; the page you are holding up to the camera
+  gets the whole screen. Double-click again to come back, or press the
+  faint × over the top-left corner. With nothing boxed, a single click
+  boxes the whole picture — that was the double-click's job until the
+  double-click got a better one.
 - **It opens side by side.** Every launch shows the notes and the video
   together, whatever was put away last time.
 - **A checklist edits one line at a time.** Click a reminder's words and

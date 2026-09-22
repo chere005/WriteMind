@@ -4,6 +4,41 @@ struct ContentView: View {
     @EnvironmentObject private var appState: AppState
 
     var body: some View {
+        if appState.cameraFullWindow {
+            // THE WHOLE WINDOW IS THE PICTURE (Sean, 2026-09-21). Not a
+            // pane at its widest — the sidebar, the notes and the divider
+            // are all out, so a page held up to the camera is as big as
+            // the screen can make it.
+            CameraPane()
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .overlay(alignment: .topLeading) { wayOut }
+                .transition(.opacity)
+        } else {
+            panes
+        }
+    }
+
+    /// The transparent × he asked for, over the top-left corner of the
+    /// picture. It is drawn ON the video rather than on a bar above it,
+    /// because there is no bar: the window is the picture. Below the
+    /// title bar's own buttons, which are the window's and not this
+    /// view's to crowd.
+    private var wayOut: some View {
+        Button { appState.toggleCameraFullWindow() } label: {
+            Image(systemName: "xmark")
+                .font(.system(size: 12, weight: .semibold))
+                .foregroundStyle(.white.opacity(0.9))
+                .frame(width: 28, height: 28)
+                .background(.black.opacity(0.35), in: Circle())
+                .overlay(Circle().strokeBorder(.white.opacity(0.3)))
+        }
+        .buttonStyle(.plain)
+        .padding(14)
+        .help("Back to the notes — double-clicking the picture does it too")
+        .accessibilityLabel("Leave Full-Window Video")
+    }
+
+    private var panes: some View {
         HStack(spacing: 0) {
             if appState.showSidebar {
                 SidebarView()

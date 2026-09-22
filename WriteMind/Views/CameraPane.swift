@@ -49,6 +49,7 @@ struct CameraPane: View {
                         SectionBox(section: $section, size: geo.size,
                                    busy: store.isCapturing,
                                    onWholePicture: { section = wholePictureBox(pane: geo.size) },
+                                   onFullWindow: { appState.toggleCameraFullWindow() },
                                    onInsert: { mode in insertSection(mode, pane: geo.size) },
                                    onRead: { readSection(pane: geo.size) })
                             .disabled(store.selectedNote == nil)
@@ -291,20 +292,31 @@ private struct BoxDragger: View {
 struct SectionBox: View {
 
     /// What the end of a gesture means.
-    enum Action: Equatable { case keep, clear, whole }
+    enum Action: Equatable { case keep, clear, whole, fullWindow }
 
     /// Four points of slack, so a click stays a click.
     static func isDrag(_ translation: CGSize) -> Bool {
         max(abs(translation.width), abs(translation.height)) >= 4
     }
 
-    /// A drag leaves its box alone; one click clears it; two take the whole
-    /// picture. The second click of a double arrives as its own event, so
-    /// the first has already cleared by then — which is what makes the
-    /// clearing instant.
-    static func action(translation: CGSize, clicks: Int) -> Action {
+    /// A drag leaves its box alone. TWO CLICKS FILL THE WINDOW WITH THE
+    /// PICTURE and two more put it back (Sean, 2026-09-21: "doubleclick
+    /// the camera to make the whole window the camera.. double click again
+    /// to exit"). One click clears a box, and — with no box to clear —
+    /// takes the whole picture, which is the gesture the double-click used
+    /// to be: the three capture buttons only appear once something is
+    /// boxed, so without it the only way to photograph the whole frame
+    /// was to drag a box round all of it by hand.
+    ///
+    /// The second click of a double arrives as its own event, so the first
+    /// has already done its half by then — which is what makes the
+    /// clearing instant and is why these are one gesture and not two
+    /// `onTapGesture`s waiting on each other (Sean, 2026-09-19: "clicking
+    /// to exit after selecting a section of the page is slow").
+    static func action(translation: CGSize, clicks: Int, hasBox: Bool) -> Action {
         if isDrag(translation) { return .keep }
-        return clicks >= 2 ? .whole : .clear
+        if clicks >= 2 { return .fullWindow }
+        return hasBox ? .clear : .whole
     }
 
     @Binding var section: CGRect?
@@ -313,6 +325,8 @@ struct SectionBox: View {
     var busy = false
     /// Put the box round the whole picture, without dragging one.
     let onWholePicture: () -> Void
+    /// The picture on its own, filling the window — and back again.
+    var onFullWindow: (() -> Void)?
     /// The box as a picture, or as ink.
     var onInsert: ((NotebookCapture.Mode) -> Void)?
     /// The box read into the note as words.
@@ -343,10 +357,12 @@ struct SectionBox: View {
                     }
                     .onEnded { value in
                         switch SectionBox.action(translation: value.translation,
-                                                 clicks: NSApp.currentEvent?.clickCount ?? 1) {
+                                                 clicks: NSApp.currentEvent?.clickCount ?? 1,
+                                                 hasBox: section != nil) {
                         case .keep: break
                         case .clear: section = nil
                         case .whole: onWholePicture()
+                        case .fullWindow: onFullWindow?()
                         }
                     }
             )

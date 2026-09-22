@@ -312,13 +312,37 @@ final class AppState: ObservableObject {
     /// back, since the buttons that bring a pane back live on the panes.
     func toggleCameraPane() {
         withAnimation(.easeInOut(duration: 0.18)) {
-            if showCamera { showCamera = false; showEditor = true } else { showCamera = true }
+            if showCamera { showCamera = false; showEditor = true; cameraFullWindow = false }
+            else { showCamera = true }
         }
     }
 
     func toggleEditorPane() {
         withAnimation(.easeInOut(duration: 0.18)) {
             if showEditor { showEditor = false; showCamera = true } else { showEditor = true }
+        }
+    }
+
+    /// THE PICTURE ON ITS OWN, filling the window (Sean, 2026-09-21:
+    /// "doubleclick the camera to make the whole window the camera..
+    /// double click again to exit and have a transparent x in the top
+    /// left"). Two ways back, because a window that is nothing but a
+    /// picture has to say how to leave it: the same double-click, and the
+    /// × drawn over the top-left corner.
+    ///
+    /// NOT REMEMBERED ACROSS A LAUNCH, and that is the same rule the two
+    /// panes follow ("BOTH PANES, EVERY LAUNCH"): coming up as nothing
+    /// but a viewfinder is a window whose notes have vanished, and the
+    /// answer being drawn on the picture is not good enough for the first
+    /// second of a launch.
+    @Published var cameraFullWindow = false
+
+    func toggleCameraFullWindow() {
+        withAnimation(.easeInOut(duration: 0.18)) {
+            cameraFullWindow.toggle()
+            // Filling the window with a pane that has been put away is a
+            // black rectangle and no way out.
+            if cameraFullWindow { showCamera = true }
         }
     }
 

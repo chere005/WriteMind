@@ -15,6 +15,18 @@ nothing is deleted: this file is the ledger of the two apps agreeing.
 
 ## Open
 
+### Double-click the viewfinder to make the window the viewfinder
+And double-click again, or press a faint × drawn over its top-left corner,
+to come back. Two ways out, because a window that is nothing but a picture
+has to say how to leave it, and one of them has to be visible. Do NOT
+remember the state across a launch: coming up as nothing but a viewfinder
+is a window whose documents have vanished, and an answer drawn on the
+picture is not good enough for the first second of a launch. Filling the
+window also has to turn the pane back on if it had been put away, or it is
+a black rectangle with no way out. Watch what the double-click displaces:
+here it took "box the whole picture", which moved onto the single click
+that until then did nothing when there was no box. (Sean, 2026-09-21.)
+
 ### The README's key table is generated-checked, not hand-kept
 List every shortcut in the README, and have a test read that table back and
 hold it against the binding table: every chord bound must appear, and the
