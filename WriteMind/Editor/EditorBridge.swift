@@ -425,6 +425,22 @@ final class EditorBridge {
         lines(MarkdownFormatting.toggleBullets)
     }
 
+    /// ⌘9 AT A BAR MAKES THE CELL THERE, ready to be typed into (Sean,
+    /// 2026-09-22: "make sure if the input cursor is horizontal, hitting
+    /// cmd+9 puts a new evaluation cell at that position"). Returns true
+    /// when that was the whole of the command.
+    ///
+    /// It is the same rule every other command that NAMES A KIND follows
+    /// — the list, the ladder, the quote, the fenced block — and ⌘9 was
+    /// the one that did not: it asked for `caretCell()`, and the caret at
+    /// a bar is parked against the cell BELOW it, so the key turned that
+    /// cell into an evaluation cell instead of making one where the bar
+    /// was.
+    @discardableResult
+    func evaluationCellAtBar(_ evaluator: Evaluator) -> Bool {
+        atArmedBar(.evaluation(evaluator))
+    }
+
     /// The language goes with the fence the Insert menu writes, and not
     /// with a bar: the + offers one Code Block and so does ⌘8 at a bar.
     func codeBlock(language: String = "") {

@@ -314,6 +314,9 @@ struct FormatMenu: Commands {
             // which belongs to the cell and not to this menu — a menu
             // key equivalent would swallow shift-return everywhere.
             Button("Evaluation Cell") {
+                // At a bar the cell is MADE THERE and that is the whole
+                // of it; anywhere else the caret's own cell becomes one.
+                guard !editor.evaluationCellAtBar(appState.evaluator) else { return }
                 store.makeEvaluationCell(appState.evaluator, at: editor.caretCell())
             }
             .shortcut(.evaluationCell)

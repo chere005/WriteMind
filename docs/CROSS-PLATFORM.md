@@ -338,6 +338,19 @@ the open editor put the same one in the same place. (Sean, 2026-09-22: "the
 indicator for WL/Python/C++ never goes away, and get rid of the play
 button.")
 
+### The key that makes a kind of cell works at the bar too
+Every command that NAMES a kind of cell has to make that cell where the
+insertion bar is, not act on whatever cell the caret happens to be parked
+against — the bar is in no cell, and the caret at one is against the cell
+BELOW it. The heading ladder, the lists, the quote and the fenced block all
+went through that rule; the evaluation key did not, because it asked for "the
+caret's cell" directly, so pressing it at a bar turned the NEXT cell into an
+evaluation cell instead of making one. An evaluation cell is a fenced block
+with `eval ` on its info string and nothing else, so it joins that list as one
+more kind rather than as a second block builder. (Sean, 2026-09-22: "make sure
+if the input cursor is horizontal, hitting cmd+9 puts a new evaluation cell at
+that position etc".)
+
 ## Done there
 
 Nothing yet.

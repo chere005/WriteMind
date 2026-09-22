@@ -98,6 +98,35 @@ final class CellTypeOpeningTests: XCTestCase {
         XCTAssertEqual(typed(.code), "First cell\n\n```\nx\n```\n\nSecond cell")
     }
 
+    /// ⌘9 AT A BAR MAKES THE CELL THERE (Sean, 2026-09-22: "make sure if
+    /// the input cursor is horizontal, hitting cmd+9 puts a new
+    /// evaluation cell at that position"). It is a fenced block like the
+    /// Insert menu's, with the info string that makes the note run it.
+    func testAnEvaluationCellIsMadeAtTheBarWithItsOwnFence() {
+        XCTAssertEqual(typed(.evaluation(.python)),
+                       "First cell\n\n```eval python\nx\n```\n\nSecond cell")
+        XCTAssertEqual(typed(.evaluation(.wolfram)),
+                       "First cell\n\n```eval wl\nx\n```\n\nSecond cell")
+        for evaluator in Evaluator.allCases {
+            let opened = CellTypes.open(.evaluation(evaluator), writing: "x", in: note, at: 12)
+            let made = MarkdownParser.positioned(from: opened.markdown)[1]
+            guard case .code(let language, _) = made.block else {
+                return XCTFail("\(evaluator.title) did not make a fenced cell")
+            }
+            XCTAssertTrue(Evaluator.isEvaluation(fence: language),
+                          "\(evaluator.title) made a cell the note will not run")
+            XCTAssertEqual(Evaluator.from(fence: language), evaluator)
+            XCTAssertEqual(made.range, opened.cell, "and it is the cell the caret is in")
+        }
+    }
+
+    /// The + on the bar offers what it always did: an evaluation cell is
+    /// made by its key, not from that list, so the three environments do
+    /// not triple the menu.
+    func testTheEvaluationKindIsNotOnThePlusMenu() {
+        XCTAssertFalse(CellTypes.all.contains { if case .evaluation = $0 { return true } else { return false } })
+    }
+
     func testTheCellIsReallyOfThatKindAndTheNeighboursAreUntouched() {
         let wanted: [CellTypes.Kind: MarkdownBlock] = [
             .heading(.section): .heading(level: 3, text: "x"),

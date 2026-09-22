@@ -40,6 +40,13 @@ enum CellTypes {
         case list(MarkdownFormatting.ListStyle)
         case quote
         case code
+        /// A cell the note RUNS, in one of the environments the badge
+        /// offers (Sean, 2026-09-22: "make sure if the input cursor is
+        /// horizontal, hitting cmd+9 puts a new evaluation cell at that
+        /// position"). It is a fenced block like any other here — the
+        /// `eval ` prefix on its info string is the whole difference —
+        /// so it needs no second block builder, only its own fence.
+        case evaluation(Evaluator)
 
         /// A rung of the ladder as a kind — Body Text being the plain
         /// paragraph every bar starts out as rather than a seventh rung.
@@ -58,6 +65,7 @@ enum CellTypes {
             case .list(let style): return "\(style.title) List"
             case .quote: return "Quote"
             case .code: return "Code Block"
+            case .evaluation(let evaluator): return "\(evaluator.title) Evaluation Cell"
             }
         }
     }
@@ -98,6 +106,12 @@ enum CellTypes {
             return MarkdownFormatting.toggleQuote(text: markdown, selection: selection)
         case .code:
             return MarkdownFormatting.codeBlock(text: markdown, selection: selection)
+        case .evaluation(let evaluator):
+            // The same fenced block the Insert menu writes, with the info
+            // string that makes it one the note runs. Nothing else about
+            // it differs, which is the point of the `eval ` prefix.
+            return MarkdownFormatting.codeBlock(text: markdown, selection: selection,
+                                                language: evaluator.fence)
         }
     }
 

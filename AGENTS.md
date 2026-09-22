@@ -308,7 +308,11 @@ CoreMind's `bin/report-status.sh`.
   bullet list, or a quoted section, etc.. it should create a cell at the
   position of the bar ready for that type of input"). The bar is in no
   cell, so `EditorBridge.atArmedBar` makes one: a command that NAMES a
-  kind — the ladder, the three lists, the quote, the fenced block —
+  kind — the ladder, the three lists, the quote, the fenced block, and
+  ⌘9's evaluation cell (`CellTypes.Kind.evaluation`, which is that same
+  fenced block with `eval ` on its info string; it is deliberately NOT
+  on the + menu, since three environments would triple a list for a
+  cell its own key already makes) —
   opens the cell with that marker already in it and is finished, and
   anything else — bold, the text style, maths — opens a PLAIN cell and
   then runs in it. `perform(opensACell:)` tells those from the third
@@ -588,7 +592,10 @@ CoreMind's `bin/report-status.sh`.
   refused by default.** Sean, 2026-09-21: "finish the work on evaluation
   cells", and "evaluation cells are completely different from code
   cells". An evaluation cell is ```eval python, ```eval c++ or
-  ```eval wl — ⌘9 makes one or turns the caret's cell into one, ⇧↩
+  ```eval wl — ⌘9 makes one, turns the caret's cell into one, or at an
+  ARMED BAR makes one there (the same rule every other kind-naming
+  command follows; it used to ask `caretCell()` and so restyled the
+  cell BELOW the bar), ⇧↩
   runs it AND NOTHING ELSE DOES, the badge at its left picks the
   environment, and the answer goes under it in an ```out cell. ONE
   control in that margin: `EvaluatorBadge`, built outside both the
