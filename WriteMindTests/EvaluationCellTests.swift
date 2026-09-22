@@ -5,52 +5,62 @@ import XCTest
 /// looks like in the note.
 final class EvaluationCellTests: XCTestCase {
 
-    // MARK: - What runs, and what does not
+    // MARK: - An evaluation cell is not a code cell
 
-    func testTheFourEnvironmentsResolveFromTheirOwnFences() {
-        XCTAssertEqual(Evaluator.from(fence: "python"), .python)
-        XCTAssertEqual(Evaluator.from(fence: "py"), .python)
-        XCTAssertEqual(Evaluator.from(fence: "c"), .c)
-        XCTAssertEqual(Evaluator.from(fence: "cpp"), .cpp)
-        XCTAssertEqual(Evaluator.from(fence: "c++"), .cpp)
-        XCTAssertEqual(Evaluator.from(fence: "wls"), .wolfram)
-        XCTAssertEqual(Evaluator.from(fence: "mathematica"), .wolfram)
+    func testAnEvaluationCellIsItsOwnFenceAndACodeCellIsNotOne() {
+        XCTAssertEqual(Evaluator.from(fence: "eval python"), .python)
+        XCTAssertEqual(Evaluator.from(fence: "eval c++"), .cpp)
+        XCTAssertEqual(Evaluator.from(fence: "eval wl"), .wolfram)
+        // A CODE cell of the same language is not an evaluation cell and
+        // never runs — that is the whole distinction.
+        for code in ["python", "cpp", "c++", "wl", "wls", "mathematica"] {
+            XCTAssertNil(Evaluator.from(fence: code), code)
+            XCTAssertFalse(Evaluator.isEvaluation(fence: code), code)
+            XCTAssertEqual(Evaluator.resolve(fence: code), .failure(.notAnEvaluationCell), code)
+        }
     }
 
-    /// `wl` IS MATHS AND IS NEVER RUN. It is this app's maths fence, and
-    /// Wolfram code has had its own fences all along.
-    func testTheMathsFenceIsNotAnEnvironment() {
-        XCTAssertNil(Evaluator.from(fence: "wl"))
-        XCTAssertEqual(Evaluator.resolve(fence: "wl"), .failure(.maths))
-        XCTAssertEqual(Evaluator.resolve(fence: "WL"), .failure(.maths))
-        // And the Wolfram environment writes wls, never wl.
-        XCTAssertEqual(Evaluator.wolfram.language.fence, "wolfram")
-        XCTAssertNotEqual(Evaluator.wolfram.language.fence, MathMarkup.fence)
+    func testWhatSomebodyMightTypeByHandStillResolves() {
+        XCTAssertEqual(Evaluator.from(fence: "eval py"), .python)
+        XCTAssertEqual(Evaluator.from(fence: "eval cpp"), .cpp)
+        XCTAssertEqual(Evaluator.from(fence: "eval mathematica"), .wolfram)
+        XCTAssertEqual(Evaluator.from(fence: "EVAL Python"), .python)
     }
 
-    func testWhatIsRefusedAndWhySaysSomethingActionable() {
-        XCTAssertEqual(Evaluator.resolve(fence: nil), .failure(.noLanguage))
-        XCTAssertEqual(Evaluator.resolve(fence: ""), .failure(.noLanguage))
-        XCTAssertEqual(Evaluator.resolve(fence: "bash"), .failure(.shell("Bash")))
-        XCTAssertEqual(Evaluator.resolve(fence: "zsh"), .failure(.shell("Zsh")))
-        XCTAssertEqual(Evaluator.resolve(fence: "rust"), .failure(.notRunnable("Rust")))
-        XCTAssertEqual(Evaluator.resolve(fence: "nonsense"), .failure(.notRunnable("nonsense")))
-        for refusal: Evaluator.Refusal in [.maths, .noLanguage, .notRunnable("Rust"),
-                                           .shell("Bash"), .missingTool(.python)] {
+    /// `wl` STAYS MATHS. The maths fence is the whole info string "wl",
+    /// and an evaluation cell's is "eval wl" — different strings, and
+    /// the maths cell is untouched.
+    func testTheMathsFenceIsNotAnEvaluationCell() {
+        XCTAssertTrue(MathMarkup.isMathFence("wl"))
+        XCTAssertFalse(MathMarkup.isMathFence(Evaluator.wolfram.fence))
+        XCTAssertFalse(Evaluator.isEvaluation(fence: "wl"))
+        XCTAssertNil(CodeLanguage.from(fence: "wl"))
+    }
+
+    func testAnEvaluationCellIsStillColouredForItsLanguage() {
+        XCTAssertEqual(CodeLanguage.colouring(fence: "eval python"), .python)
+        XCTAssertEqual(CodeLanguage.colouring(fence: "eval c++"), .cpp)
+        XCTAssertEqual(CodeLanguage.colouring(fence: "eval wl"), .wolfram)
+        // A code cell is coloured as it always was.
+        XCTAssertEqual(CodeLanguage.colouring(fence: "python"), .python)
+        // And an evaluation cell naming something unknown is not guessed at.
+        XCTAssertEqual(CodeLanguage.colouring(fence: "eval fortran"), .plain)
+    }
+
+    func testAnUnknownEnvironmentSaysSoRatherThanRunning() {
+        XCTAssertEqual(Evaluator.resolve(fence: "eval fortran"),
+                       .failure(.unknownEnvironment("fortran")))
+        XCTAssertTrue(Evaluator.Refusal.unknownEnvironment("fortran").message.contains("fortran"))
+        for refusal: Evaluator.Refusal in [.notAnEvaluationCell, .unknownEnvironment("x"),
+                                           .missingTool(.python)] {
             XCTAssertFalse(refusal.message.isEmpty)
-            XCTAssertTrue(refusal.message.hasSuffix(".") || refusal.message.hasSuffix("cell."),
-                          refusal.message)
         }
     }
 
-    /// A shell cell is refused on purpose and permanently, not because it
-    /// is hard: the text of a fence is not evidence Sean typed it.
-    func testAShellCellIsNeverRun() {
-        for fence in ["bash", "sh", "zsh", "shell"] {
-            if case .success(let evaluator) = Evaluator.resolve(fence: fence) {
-                XCTFail("\(fence) resolved to \(evaluator)")
-            }
-        }
+    func testThereAreThreeEnvironmentsAndTheyAreTheOnesHeNamed() {
+        XCTAssertEqual(Evaluator.allCases.map(\.badge), ["PY", "C++", "WL"])
+        XCTAssertEqual(Evaluator.allCases.map(\.fence),
+                       ["eval python", "eval c++", "eval wl"])
     }
 
     func testTheToolsAreLookedForByAbsolutePathAndNeverJustOne() {
@@ -92,8 +102,6 @@ final class EvaluationCellTests: XCTestCase {
             status: 255)
         XCTAssertTrue(CellRunner.wolframNote(noKernel, evaluator: .wolfram)?
             .contains("kernel was not found") ?? false)
-        // A run that worked is not given a note, and no other environment
-        // is given one at all.
         XCTAssertNil(CellRunner.wolframNote(EvalResult(status: 0), evaluator: .wolfram))
         XCTAssertNil(CellRunner.wolframNote(notActivated, evaluator: .python))
     }
@@ -108,7 +116,7 @@ final class EvaluationCellTests: XCTestCase {
         XCTAssertNil(CodeLanguage.from(fence: EvalOutput.fence))
         XCTAssertFalse(MathMarkup.isMathFence(EvalOutput.fence))
         XCTAssertTrue(EvalOutput.isOut(.code(language: "out", body: "4")))
-        XCTAssertFalse(EvalOutput.isOut(.code(language: "python", body: "print(4)")))
+        XCTAssertFalse(EvalOutput.isOut(.code(language: "eval python", body: "print(4)")))
         XCTAssertFalse(EvalOutput.isOut(.paragraph("out")))
     }
 
@@ -139,7 +147,7 @@ final class EvaluationCellTests: XCTestCase {
     func testOutputThatPrintsAFenceCannotEndItsOwnCell() {
         let result = EvalResult(stdout: "before\n```\n   ```swift\nafter", status: 0)
         let cell = EvalOutput.cell(for: result)
-        let blocks = MarkdownParser.positioned(from: "```python\nx\n```\n\n" + cell)
+        let blocks = MarkdownParser.positioned(from: "```eval python\nx\n```\n\n" + cell)
         XCTAssertEqual(blocks.count, 2, "the answer split the note: \(cell)")
         guard case .code(let language, let body)? = blocks.last?.block else {
             return XCTFail("the answer is not one code block")
@@ -150,7 +158,7 @@ final class EvaluationCellTests: XCTestCase {
 
     // MARK: - Where the answer goes
 
-    private let note = "# Notes\n\n```python\nprint(2 + 2)\n```\n\nAfter it."
+    private let note = "# Notes\n\n```eval python\nprint(2 + 2)\n```\n\nAfter it."
 
     private func cell(_ text: String, at index: Int) -> NSRange {
         MarkdownParser.positioned(from: text)[index].range
@@ -160,7 +168,7 @@ final class EvaluationCellTests: XCTestCase {
         let code = cell(note, at: 1)
         let edit = EvalCells.write(EvalResult(stdout: "4", status: 0), under: code, in: note)
         let after = (note as NSString).replacingCharacters(in: edit.range, with: edit.replacement)
-        XCTAssertEqual(after, "# Notes\n\n```python\nprint(2 + 2)\n```\n\n```out\n4\n```\n\nAfter it.")
+        XCTAssertEqual(after, "# Notes\n\n```eval python\nprint(2 + 2)\n```\n\n```out\n4\n```\n\nAfter it.")
         XCTAssertEqual(MarkdownParser.positioned(from: after).count, 4)
     }
 
@@ -172,7 +180,7 @@ final class EvaluationCellTests: XCTestCase {
         let again = EvalCells.write(EvalResult(stdout: "5", status: 0),
                                     under: cell(once, at: 1), in: once)
         let twice = (once as NSString).replacingCharacters(in: again.range, with: again.replacement)
-        XCTAssertEqual(twice, "# Notes\n\n```python\nprint(2 + 2)\n```\n\n```out\n5\n```\n\nAfter it.")
+        XCTAssertEqual(twice, "# Notes\n\n```eval python\nprint(2 + 2)\n```\n\n```out\n5\n```\n\nAfter it.")
         XCTAssertEqual(MarkdownParser.positioned(from: twice).count, 4, "one answer, not two")
         // And the words under it are untouched.
         XCTAssertTrue(twice.hasSuffix("After it."))
@@ -181,7 +189,7 @@ final class EvaluationCellTests: XCTestCase {
     /// The tag is the veto: a bare code block a person wrote under their
     /// own code is not an answer and is never overwritten.
     func testAPlainBlockUnderTheCodeIsNotMistakenForAnAnswer() {
-        let hand = "```python\nprint(1)\n```\n\n```\nmine\n```"
+        let hand = "```eval python\nprint(1)\n```\n\n```\nmine\n```"
         XCTAssertNil(EvalCells.out(after: cell(hand, at: 0), in: hand))
         let edit = EvalCells.write(EvalResult(stdout: "1", status: 0), under: cell(hand, at: 0), in: hand)
         let after = (hand as NSString).replacingCharacters(in: edit.range, with: edit.replacement)
@@ -190,7 +198,7 @@ final class EvaluationCellTests: XCTestCase {
     }
 
     func testAnAnswerOnlyBelongsToTheCellDirectlyAboveIt() {
-        let two = "```python\na\n```\n\n```out\nA\n```\n\n```python\nb\n```"
+        let two = "```eval python\na\n```\n\n```out\nA\n```\n\n```eval python\nb\n```"
         XCTAssertNotNil(EvalCells.out(after: cell(two, at: 0), in: two))
         XCTAssertNil(EvalCells.out(after: cell(two, at: 2), in: two), "the last cell has no answer yet")
     }
@@ -208,13 +216,63 @@ final class EvaluationCellTests: XCTestCase {
             return XCTFail("no edit")
         }
         let after = (note as NSString).replacingCharacters(in: edit.range, with: edit.replacement)
-        XCTAssertEqual(after, "# Notes\n\n```cpp\nprint(2 + 2)\n```\n\nAfter it.")
+        XCTAssertEqual(after, "# Notes\n\n```eval c++\nprint(2 + 2)\n```\n\nAfter it.")
         // Picking the one it already is changes nothing at all.
         XCTAssertNil(EvalCells.setEnvironment(.python, of: cell(note, at: 1), in: note))
     }
 
     func testPickingAnEnvironmentOnSomethingThatIsNotAFenceDoesNothing() {
         XCTAssertNil(EvalCells.setEnvironment(.python, of: cell(note, at: 0), in: note))
+    }
+
+    // MARK: - ⇧↩ runs it, and nothing else does
+
+    /// macOS binds `insertLineBreak:` to ⌃↩ and says nothing about ⇧↩,
+    /// so Return with shift arrives as an ordinary newline and the shift
+    /// has to be read off the event. Getting this wrong is silent: the
+    /// key simply does nothing.
+    func testOnlyShiftReturnRuns() {
+        XCTAssertTrue(EvaluationKeys.isRun(.shift))
+        XCTAssertFalse(EvaluationKeys.isRun([]), "plain Return is a newline")
+        XCTAssertFalse(EvaluationKeys.isRun([.shift, .command]))
+        XCTAssertFalse(EvaluationKeys.isRun([.shift, .option]))
+        XCTAssertFalse(EvaluationKeys.isRun(.control), "⌃↩ is still a line break")
+    }
+
+    // MARK: - ⌘9 makes the cell
+
+    func testTurningACodeCellIntoAnEvaluationCellKeepsTheCode() {
+        let code = "# Notes\n\n```python\nprint(1)\n```\n\nAfter it."
+        let edit = EvalCells.makeEvaluation(.python, at: cell(code, at: 1), in: code)
+        let after = (code as NSString).replacingCharacters(in: edit.range, with: edit.replacement)
+        XCTAssertEqual(after, "# Notes\n\n```eval python\nprint(1)\n```\n\nAfter it.")
+        XCTAssertEqual(MarkdownParser.positioned(from: after).count, 3, "no cell was added")
+    }
+
+    func testMakingOneAnywhereElsePutsANewEmptyCellAfterIt() {
+        let prose = "# Notes\n\nJust words."
+        let edit = EvalCells.makeEvaluation(.wolfram, at: cell(prose, at: 1), in: prose)
+        let after = (prose as NSString).replacingCharacters(in: edit.range, with: edit.replacement)
+        XCTAssertEqual(after, "# Notes\n\nJust words.\n\n```eval wl\n\n```")
+        XCTAssertEqual(Evaluator.from(fence: "eval wl"), .wolfram)
+    }
+
+    func testMakingOneWithNothingOpenAppendsIt() {
+        let edit = EvalCells.makeEvaluation(.cpp, at: nil, in: "")
+        XCTAssertEqual(edit.replacement, "```eval c++\n\n```")
+        let onto = EvalCells.makeEvaluation(.cpp, at: nil, in: "Words.")
+        XCTAssertEqual(("Words." as NSString).replacingCharacters(in: onto.range,
+                                                                 with: onto.replacement),
+                       "Words.\n\n```eval c++\n\n```")
+    }
+
+    func testPressingItOnOneThatIsAlreadyOneChangesNothing() {
+        let already = "```eval python\nx\n```"
+        let edit = EvalCells.makeEvaluation(.python, at: cell(already, at: 0), in: already)
+        // Nothing to convert and nothing to add: the fence is already
+        // right, so the edit is the empty one `paste` makes after it.
+        let after = (already as NSString).replacingCharacters(in: edit.range, with: edit.replacement)
+        XCTAssertTrue(after.hasPrefix("```eval python\nx\n```"), after)
     }
 
     // MARK: - What moves when an answer lands

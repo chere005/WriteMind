@@ -35,6 +35,23 @@ enum CodeLanguage: String, CaseIterable, Identifiable {
         }
     }
 
+    /// WHAT A FENCE'S BODY IS COLOURED AS, whichever kind of cell it is.
+    ///
+    /// An evaluation cell's fence is `eval python`, which names no code
+    /// language on its own — but the code inside one is still Python and
+    /// still wants colouring (Sean, 2026-09-21: "evaluation cells are
+    /// completely different from code cells", which is about what they
+    /// DO, not about what they look like). One reader, so the source
+    /// pane, the rendered page and the cell editor cannot disagree.
+    static func colouring(fence: String?) -> CodeLanguage? {
+        if let evaluator = Evaluator.from(fence: fence) { return evaluator.language }
+        // An `eval` fence naming an environment this app does not know is
+        // still not a code cell, and guessing a highlighter for it would
+        // make it look like one.
+        if Evaluator.isEvaluation(fence: fence) { return .plain }
+        return from(fence: fence)
+    }
+
     /// The language a fence tag names, or nil when it names something else.
     /// `wl` is NOT here: that is this app's maths fence, and maths is set,
     /// not coloured.

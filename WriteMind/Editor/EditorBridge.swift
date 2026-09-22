@@ -31,6 +31,14 @@ final class EditorBridge {
     var cellRangeInDocument: (() -> NSRange?)?
     var cellEditInDocument: ((@escaping (NSRange, String) -> MarkdownFormatting.Edit?) -> Void)?
 
+    /// ⇧↩ in an evaluation cell. Set by `EditorPane`; nil everywhere the
+    /// note cannot be run from, and the text views ask
+    /// `evaluatesHere` first so the key keeps its ordinary meaning in
+    /// every other cell.
+    var runCell: (() -> Void)?
+    /// Whether the caret is in an evaluation cell right now.
+    var evaluatesHere: (() -> Bool)?
+
     /// WRITING INTO THE NOTE FROM OUTSIDE THE CARET — the one thing an
     /// evaluation does that nothing else here does. The rendered page
     /// installs this; the source pane has none and goes through its text

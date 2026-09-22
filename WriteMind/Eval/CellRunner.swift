@@ -47,7 +47,7 @@ enum CellRunner {
             switch evaluator {
             case .python, .wolfram:
                 return .success(try await interpret(source, with: tool, as: evaluator))
-            case .c, .cpp:
+            case .cpp:
                 return .success(try await compileAndRun(source, with: tool, as: evaluator))
             }
         } catch let failure as Failure {
@@ -63,25 +63,54 @@ enum CellRunner {
                                   as evaluator: Evaluator) async throws -> EvalResult {
         let directory = try scratch()
         defer { try? FileManager.default.removeItem(at: directory) }
-        let file = directory.appending(path: evaluator == .wolfram ? "cell.wls" : "cell.py")
-        try source.write(to: file, atomically: true, encoding: .utf8)
-        var result = try await spawn(tool, [file.path], in: directory, environment: evaluator.environment)
+
+        // WOLFRAM TAKES ITS SOURCE AS AN ARGUMENT, and the flag matters.
+        // `wolframscript <path>` opens an INTERACTIVE session and prints
+        // a banner; `-file` runs the file but shows no value; `-code`
+        // shows the value of the last expression, which is what an Out
+        // cell is for. Measured all three on 2026-09-21.
+        let arguments: [String]
+        if evaluator == .wolfram {
+            arguments = ["-code", source]
+        } else {
+            let file = directory.appending(path: "cell.py")
+            try source.write(to: file, atomically: true, encoding: .utf8)
+            arguments = [file.path]
+        }
+        var result = try await spawn(tool, arguments, in: directory,
+                                     environment: evaluator.environment)
+        if evaluator == .wolfram { result.stdout = withoutTrailingNull(result.stdout) }
         result.note = wolframNote(result, evaluator: evaluator)
         return result
     }
 
-    /// C and C++ are not interpreters: two processes, two exit codes and
+    /// `-code` prints the value of the last expression, and a cell whose
+    /// last expression was a `Print` has the value `Null`. That is
+    /// Wolfram saying "nothing more", not an answer, so it is not one
+    /// here either — and a cell that printed nothing at all still gets
+    /// `[no output]` rather than the word Null.
+    static func withoutTrailingNull(_ out: String) -> String {
+        var lines = out.components(separatedBy: "\n")
+        while let last = lines.last, last.trimmingCharacters(in: .whitespaces).isEmpty {
+            lines.removeLast()
+        }
+        guard lines.last?.trimmingCharacters(in: .whitespaces) == "Null" else { return out }
+        lines.removeLast()
+        return lines.joined(separator: "\n")
+    }
+
+    /// C++ is not an interpreter: two processes, two exit codes and
     /// two stderrs that mean different things. A compile that fails is the
     /// answer — there is nothing to run and the diagnostics ARE the output.
     private static func compileAndRun(_ source: String, with tool: String,
                                       as evaluator: Evaluator) async throws -> EvalResult {
         let directory = try scratch()
         defer { try? FileManager.default.removeItem(at: directory) }
-        let file = directory.appending(path: evaluator == .c ? "cell.c" : "cell.cpp")
+        let file = directory.appending(path: "cell.cpp")
         let binary = directory.appending(path: "cell.out")
         try source.write(to: file, atomically: true, encoding: .utf8)
 
-        let standard = evaluator == .c ? "-std=c17" : "-std=c++20"
+        let standard = "-std=c++20"
         let build = try await spawn(tool, [standard, "-o", binary.path, file.path],
                                     in: directory, environment: evaluator.environment)
         guard build.status == 0, !build.timedOut else {

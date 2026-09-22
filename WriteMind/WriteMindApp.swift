@@ -307,11 +307,17 @@ struct FormatMenu: Commands {
             // already did.
             Divider()
 
-            // ⌘9 — RUN THIS CELL. The only thing in this app that starts
-            // a process, and it starts one only from a press.
-            Button("Run Cell") { store.runCell(editor.caretCell()) }
-                .shortcut(.runCell)
-                .disabled(store.selectedNote == nil || store.runningCell != nil)
+            // ⌘9 — AN EVALUATION CELL HERE: the cell the caret is in
+            // becomes one, or a new one goes in after it (Sean,
+            // 2026-09-21: "cmd+9 should start a new cell or turn the
+            // existing cell to an evaluation cell"). Running one is ⇧↩,
+            // which belongs to the cell and not to this menu — a menu
+            // key equivalent would swallow shift-return everywhere.
+            Button("Evaluation Cell") {
+                store.makeEvaluationCell(appState.evaluator, at: editor.caretCell())
+            }
+            .shortcut(.evaluationCell)
+            .disabled(store.selectedNote == nil)
 
             Button("Delete Cell") { editor.deleteCell() }
                 .disabled(store.selectedNote == nil)

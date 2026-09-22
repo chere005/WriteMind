@@ -932,7 +932,17 @@ struct MarkdownTextView: NSViewRepresentable {
                 // through to the ordinary delete.
                 if parent.bridge.deleteHeldCells() { return true }
                 return parent.bridge.outdentForBackspace()
-            case #selector(NSResponder.insertNewline(_:)):
+            case #selector(NSResponder.insertNewline(_:)),
+                 #selector(NSResponder.insertLineBreak(_:)),
+                 #selector(NSResponder.insertNewlineIgnoringFieldEditor(_:)):
+                // ⇧↩ RUNS AN EVALUATION CELL, and means exactly what it
+                // always meant anywhere else — which is why both
+                // questions are asked before the key is taken.
+                if EvaluationKeys.isRunNow, parent.bridge.evaluatesHere?() == true {
+                    parent.bridge.runCell?()
+                    return true
+                }
+                guard selector == #selector(NSResponder.insertNewline(_:)) else { return false }
                 // Return on a list item carries the list on (Sean, 2026-09-18).
                 return parent.bridge.continueList()
             default:

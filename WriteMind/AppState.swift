@@ -88,6 +88,11 @@ final class AppState: ObservableObject {
     /// control"). Remembered, like the turn and the zoom beside it: the
     /// shape you photograph pages in is a property of your notebook, not
     /// of this launch.
+    /// What ⌘9 makes: the environment the last evaluation cell was, so a
+    /// notebook of Python cells takes one press each.
+    @Published var evaluator: Evaluator {
+        didSet { defaults.set(evaluator.rawValue, forKey: Keys.evaluator) }
+    }
     @Published var cameraAspect: CameraAspect {
         didSet { defaults.set(cameraAspect.rawValue, forKey: Keys.cameraAspect) }
     }
@@ -227,6 +232,7 @@ final class AppState: ObservableObject {
         static let canvasMode = "canvasMode"
         static let cameraZoom = "cameraZoom"
         static let cameraAspect = "cameraAspect"
+        static let evaluator = "evaluator"
         static let bulletStyle = "bulletStyle"
         static let codeLanguage = "codeLanguage"
         static let collapsedToolGroups = "collapsedToolGroups"
@@ -252,6 +258,7 @@ final class AppState: ObservableObject {
         penWidth = defaults.object(forKey: Keys.penWidth) as? Double ?? 3
         cameraRotation = defaults.object(forKey: Keys.cameraRotation) as? Int ?? 0
         cameraAspect = CameraAspect(rawValue: defaults.string(forKey: Keys.cameraAspect) ?? "") ?? .free
+        evaluator = Evaluator(rawValue: defaults.string(forKey: Keys.evaluator) ?? "") ?? .python
         penColorHex = defaults.string(forKey: Keys.penColorHex) ?? Self.presetColors[0]
         // A launch comes up in whichever mode it was left in, and the
         // footer says which one that is — a pane that swallows clicks

@@ -15,6 +15,19 @@ nothing is deleted: this file is the ledger of the two apps agreeing.
 
 ## Open
 
+### An evaluation cell is not a code cell
+Two different things that look alike: code you are writing ABOUT, and code
+the document RUNS. Put the difference in the file — `eval python` against
+`python` — so another editor, and a reader, can see it too, and so a code
+block can never run by being looked at the right way. One key makes an
+evaluation cell or converts the cell you are in (keeping its code); a
+different key runs it. On macOS that run key is ⇧↩, and it arrives as an
+ordinary newline: the system binds the line-break selector to ⌃↩ and says
+nothing about ⇧↩, so read the shift off the event being handled. Do not
+make it a menu shortcut — a menu key equivalent takes that chord away from
+every text view in the app. Colour the body for its language anyway: the
+distinction is about what the cell DOES, not what it looks like.
+
 ### Cells that run, and everything that must refuse to
 A fenced code cell runs on a key and on a ▶ in its own left margin, beside
 a badge that says which environment it is and changes the fence when you

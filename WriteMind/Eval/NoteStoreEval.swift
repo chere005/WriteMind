@@ -17,7 +17,7 @@ extension NoteStore {
         guard NSMaxRange(cell) <= ns.length,
               let parts = MarkdownFormatting.fenced(ns.substring(with: cell))
         else {
-            notice("Only a code cell runs. Put the caret in one, or make one with ⌘8.")
+            notice(Evaluator.Refusal.notAnEvaluationCell.message)
             return
         }
         let evaluator: Evaluator
@@ -33,6 +33,21 @@ extension NoteStore {
             let outcome = await CellRunner.run(source, as: evaluator)
             await MainActor.run { self?.landed(outcome, of: evaluator, cell: opening) }
         }
+    }
+
+    /// ⌘9 — an evaluation cell here. The cell the caret is in becomes
+    /// one if it is a fenced block; otherwise a new one goes in after it.
+    func makeEvaluationCell(_ evaluator: Evaluator, at cell: NSRange?) {
+        writeCell?(EvalCells.makeEvaluation(evaluator, at: cell, in: text))
+    }
+
+    /// Whether ⇧↩ means "run" where the caret is. Asked by the text
+    /// views, which must not swallow the key anywhere else.
+    func isEvaluationCell(_ cell: NSRange?) -> Bool {
+        guard let cell, NSMaxRange(cell) <= (text as NSString).length,
+              let parts = MarkdownFormatting.fenced((text as NSString).substring(with: cell))
+        else { return false }
+        return Evaluator.isEvaluation(fence: MarkdownFormatting.fenceLanguage(parts.open))
     }
 
     /// Change what a cell runs as: its fence is rewritten and nothing

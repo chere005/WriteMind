@@ -258,10 +258,22 @@ struct BlockEditor: NSViewRepresentable {
 
             switch selector {
             case #selector(NSResponder.insertNewline(_:)):
+                // ⇧↩ RUNS AN EVALUATION CELL — and it arrives here, as
+                // an ordinary newline with shift on the event, because
+                // macOS binds `insertLineBreak:` to ⌃↩ and leaves ⇧↩
+                // alone.
+                if EvaluationKeys.isRunNow, parent.bridge.evaluatesHere?() == true {
+                    parent.bridge.runCell?()
+                    return true
+                }
                 return newline(in: view, text: text, caret: caret)
 
             case #selector(NSResponder.insertLineBreak(_:)),
                  #selector(NSResponder.insertNewlineIgnoringFieldEditor(_:)):
+                if EvaluationKeys.isRunNow, parent.bridge.evaluatesHere?() == true {
+                    parent.bridge.runCell?()
+                    return true
+                }
                 view.insertText("\n", replacementRange: caret)
                 return true
 

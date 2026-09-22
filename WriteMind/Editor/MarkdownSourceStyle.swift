@@ -83,7 +83,7 @@ enum MarkdownSourceStyle {
                 if fence == nil {
                     let language = String(trimmedLine.dropFirst(3)).trimmingCharacters(in: .whitespaces)
                     fence = MathMarkup.isMathFence(language) ? .math : .code
-                    fenceLanguage = MathMarkup.isMathFence(language) ? nil : CodeLanguage.from(fence: language)
+                    fenceLanguage = MathMarkup.isMathFence(language) ? nil : CodeLanguage.colouring(fence: language)
                     fenceBodyStart = offset
                 } else {
                     closeFence(bodyEnd: max(fenceBodyStart, start - 1))

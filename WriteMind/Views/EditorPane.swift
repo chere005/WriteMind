@@ -113,6 +113,14 @@ struct EditorPane: View {
                     // bridge's own write, which takes no keyboard and
                     // moves no caret.
                     store.writeCell = { appState.editor.write($0) }
+                    // ⇧↩ runs the cell the caret is in, and only when
+                    // that cell is an evaluation cell.
+                    appState.editor.evaluatesHere = {
+                        store.isEvaluationCell(appState.editor.caretCell())
+                    }
+                    appState.editor.runCell = {
+                        store.runCell(appState.editor.caretCell())
+                    }
                     // Pictures land under the caret while the source editor
                     // is up; the preview's blocks have their own text views.
                     store.caretAnchor = { appState.mode == .editor ? appState.editor.caretLineFrame() : nil }

@@ -63,7 +63,7 @@ struct MarkdownPreview: View {
     struct Fence: Equatable {
         var open: String
         var close: String
-        var language: CodeLanguage { CodeLanguage.from(fence: MarkdownFormatting.fenceLanguage(open)) ?? .plain }
+        var language: CodeLanguage { CodeLanguage.colouring(fence: MarkdownFormatting.fenceLanguage(open)) ?? .plain }
     }
 
     /// WHERE THE CARET IS ON THIS PAGE, and there is only one of it.
@@ -1713,7 +1713,7 @@ struct MarkdownPreview: View {
                 // choice and there is no second place for it to disagree
                 // with. Not on an Out cell: an answer is not run.
                 HStack(alignment: .top, spacing: 6) {
-                    if let evaluation, !EvalOutput.isOut(block) {
+                    if let evaluation, Evaluator.isEvaluation(fence: language) {
                         gutter(language, evaluation)
                     }
                     codeBody(language, body)
@@ -1746,7 +1746,7 @@ struct MarkdownPreview: View {
         @ViewBuilder
         private func codeBody(_ language: String?, _ body: String) -> some View {
             Text(CodeColours.attributed(body,
-                                        language: CodeLanguage.from(fence: language) ?? .plain,
+                                        language: CodeLanguage.colouring(fence: language) ?? .plain,
                                         size: MarkdownTextView.codeSize))
                 .lineSpacing(MarkdownTextView.paragraphStyle.lineSpacing)
                 .padding(.horizontal, 12)

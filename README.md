@@ -49,7 +49,7 @@ fails if the two disagree.
 | ⇧⌘L | List, in whichever style the bar is set to |
 | ⌃⌘Q | Quote |
 | ⌘8 | Code block |
-| ⌘9 | Run this cell — Python, C, C++ or Wolfram — and put the answer under it |
+| ⌘9 | An evaluation cell here — or turn this cell into one |
 | ⌘] ⌘[ | Indent, outdent |
 | ⇧⌘I | Insert a picture |
 
@@ -79,6 +79,10 @@ fails if the two disagree.
 | ⇧⌘S | Save the project |
 | ⇧⌘A | Add a folder to the project |
 | ⌥⌘R | Look for cameras again |
+
+Inside an evaluation cell, **⇧↩** runs it and the answer goes in an
+`out` cell underneath. That one belongs to the cell rather than to a menu:
+a menu would take ⇧↩ away from every other piece of text in the app.
 
 Held down rather than pressed: **⌘** pulls a selection rectangle over the
 page in either mode, and keeps a mark or an arrow armed after one has been

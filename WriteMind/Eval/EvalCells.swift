@@ -66,12 +66,15 @@ enum EvalCells {
         return offset + change
     }
 
-    /// Changing a cell's environment rewrites its fence and nothing else —
-    /// the body is untouched, and so is any Out cell under it.
+    /// Changing a cell's environment rewrites its fence and nothing else
+    /// — the body is untouched, and so is any Out cell under it. This is
+    /// also what TURNS A CELL INTO AN EVALUATION CELL (⌘9 over a fenced
+    /// block): the fence goes from `python` to `eval python`, and a code
+    /// cell becomes a cell the note runs.
     ///
     /// The open line is replaced whole rather than patched, because an
-    /// info string is one opaque string to the parser and picking it apart
-    /// is how a second reader of it gets invented.
+    /// info string is one opaque string to the parser and picking it
+    /// apart is how a second reader of it gets invented.
     static func setEnvironment(_ evaluator: Evaluator, of cell: NSRange,
                                in text: String) -> MarkdownFormatting.Edit? {
         let ns = text as NSString
@@ -79,11 +82,34 @@ enum EvalCells {
         let open = ns.lineRange(for: NSRange(location: cell.location, length: 0))
         let line = ns.substring(with: open).trimmingCharacters(in: .newlines)
         guard line.trimmingCharacters(in: .whitespaces).hasPrefix("```") else { return nil }
-        let replacement = "```" + evaluator.language.fence
+        let replacement = "```" + evaluator.fence
         guard replacement != line else { return nil }
         return MarkdownFormatting.Edit(
             range: NSRange(location: open.location, length: (line as NSString).length),
             replacement: replacement,
             selection: NSRange(location: open.location + (replacement as NSString).length, length: 0))
+    }
+
+    /// ⌘9 — an evaluation cell here. An existing fenced block becomes
+    /// one; anything else gets a new one after it.
+    ///
+    /// Nothing is thrown away: a Python code cell keeps its code and its
+    /// colouring and simply starts running, which is what "turn this into
+    /// an evaluation cell" has to mean for it to be worth a key.
+    static func makeEvaluation(_ evaluator: Evaluator, at cell: NSRange?,
+                               in text: String) -> MarkdownFormatting.Edit {
+        if let cell, NSMaxRange(cell) <= (text as NSString).length,
+           MarkdownFormatting.fenced((text as NSString).substring(with: cell)) != nil,
+           let converted = setEnvironment(evaluator, of: cell, in: text) {
+            return converted
+        }
+        let fresh = "```\(evaluator.fence)\n\n```"
+        guard let cell else {
+            let end = (text as NSString).length
+            return MarkdownFormatting.Edit(range: NSRange(location: end, length: 0),
+                                           replacement: (text.isEmpty ? "" : "\n\n") + fresh,
+                                           selection: NSRange(location: end, length: 0))
+        }
+        return CellCommands.paste(fresh, after: cell, in: text)
     }
 }

@@ -586,8 +586,17 @@ CoreMind's `bin/report-status.sh`.
 
 - **RUNNING A CELL IS THE MOST DANGEROUS THING THIS APP DOES, and it is
   refused by default.** Sean, 2026-09-21: "finish the work on evaluation
-  cells". A ```python, ```c, ```cpp or ```wls cell runs on ⌘9 or on the ▶
-  in its own left margin, and the answer goes under it in an ```out cell.
+  cells", and "evaluation cells are completely different from code
+  cells". An evaluation cell is ```eval python, ```eval c++ or
+  ```eval wl — ⌘9 makes one or turns the caret's cell into one, ⇧↩
+  runs it, the badge at its left picks the environment, and the answer
+  goes under it in an ```out cell. A PLAIN CODE CELL NEVER RUNS: that
+  distinction is the feature, and it is in the file so that another
+  editor can see it too. ⇧↩ arrives as `insertNewline:`, not
+  `insertLineBreak:` (macOS gives that one to ⌃↩), so the shift is
+  read off `NSApp.currentEvent`; and it is NOT a menu shortcut,
+  because a menu key equivalent would take ⇧↩ from every text view in
+  the app.
   The app is unsandboxed with the hardened runtime off, so a child runs
   with his full privileges and inherits WriteMind's TCC identity — a
   Python cell that opens ~/Documents raises a prompt with the notes app's
@@ -607,10 +616,15 @@ CoreMind's `bin/report-status.sh`.
   `wl` STAYS MATHS: Wolfram code is ```wls, which was already a code
   fence, and nothing may ever be appended to a `wl` fence because
   `MathMarkup.isMathFence` compares the whole info string.
-  Wolfram Engine here is installed and NOT activated; it asks for a
-  Wolfram ID on stdin, which is why the child's stdin is the null device
-  — it gets EOF and exits instead of hanging. The app says what happened
-  and never tries to activate anything.
+  Wolfram needs `-code` and it needs HOME. `wolframscript <path>` opens
+  an INTERACTIVE session and prints a banner; `-file` runs the file
+  and shows no value; `-code` shows the value of the last expression,
+  which is what an Out cell is for. And under a replaced environment
+  with no HOME it prints NOTHING and exits 0 — the worst failure
+  there is, because it looks like a cell that ran and had nothing to
+  say. Both measured, 2026-09-21. Its stdin is the null device so
+  that an unactivated engine asking for a Wolfram ID gets EOF and
+  exits instead of hanging; the app never types into that prompt.
 
 ## How it is wired
 

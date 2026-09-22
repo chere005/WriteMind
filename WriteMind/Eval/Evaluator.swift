@@ -1,61 +1,112 @@
+import AppKit
 import Foundation
 
-/// WHAT CAN RUN A CELL, and what it says when it cannot.
+/// AN EVALUATION CELL IS NOT A CODE CELL. Sean, 2026-09-21: "evaluation
+/// cells are completely different from code cells".
 ///
-/// Sean, 2026-09-21: "finish the work on evaluation cells… this type of
-/// cell has a drop down icon on the far left picking the evaluator
-/// environment". The environment is the fence's own language, so picking
-/// one on a cell rewrites its fence and the note carries the choice — no
-/// second place to keep it and nothing to get out of step.
+/// A code cell is code you are writing ABOUT — coloured, and that is all.
+/// An evaluation cell is code the note RUNS, and it says so in the file:
+/// its fence is `eval` and then which environment, so the two kinds are
+/// never confused by this app, by another markdown editor, or by anyone
+/// reading the file.
 ///
-/// THE APP HAS NEVER SPAWNED A PROCESS BEFORE THIS. Everything here is
-/// written to be refused by default: an environment that is not on this
-/// list does not run, a tool that is not on disk does not run, and a
-/// refusal is a sentence rather than a silence.
+///     ```eval python          ```eval c++          ```eval wl
+///
+/// ⌘9 makes one, or turns the cell the caret is in into one. ⇧↩ runs it.
+/// The badge at its left says which environment it is and changes it.
+///
+/// `wl` inside the fence is safe: `MathMarkup.isMathFence` compares the
+/// WHOLE info string to "wl", and "eval wl" is not that. Maths is
+/// untouched, and the maths cell keeps its own fence to itself.
+/// ⇧↩ RUNS AN EVALUATION CELL (Sean, 2026-09-21: "to evaluate this kind
+/// of cell, it's shift+enter").
+///
+/// It arrives as `insertNewline:` and NOT as `insertLineBreak:`. macOS's
+/// standard key bindings give `insertLineBreak:` to ⌃↩ and say nothing
+/// about ⇧↩, so Return with shift held comes through as an ordinary
+/// newline — which is why the shift is read off the event being handled
+/// rather than inferred from the selector. `NSApp.currentEvent` is that
+/// event; the global `NSEvent.modifierFlags` is a different question.
+enum EvaluationKeys {
+    static func isRun(_ modifiers: NSEvent.ModifierFlags) -> Bool {
+        modifiers.contains(.shift)
+            && !modifiers.contains(.command)
+            && !modifiers.contains(.option)
+            && !modifiers.contains(.control)
+    }
+
+    static var isRunNow: Bool { isRun(NSApp.currentEvent?.modifierFlags ?? []) }
+}
+
 enum Evaluator: String, CaseIterable, Identifiable, Equatable {
     case python
-    case c
     case cpp
     case wolfram
 
     var id: String { rawValue }
 
-    /// The fence this environment is written with — the one the language
-    /// chooser and the highlighter already know.
-    ///
-    /// WOLFRAM IS `wls`, NEVER `wl`. `wl` is this app's MATHS fence
-    /// (`MathMarkup.fence`), typeset rather than run, and
-    /// `CodeLanguage.from(fence:)` leaves it out on purpose with a test
-    /// pinning it. `wls`, `wolfram` and `mathematica` were already
-    /// Wolfram CODE fences before any of this, so nothing had to be
-    /// invented and nothing about maths moves.
+    /// What follows `eval` in the fence.
+    var tag: String {
+        switch self {
+        case .python: return "python"
+        case .cpp: return "c++"
+        case .wolfram: return "wl"
+        }
+    }
+
+    /// The whole info string an evaluation cell carries.
+    var fence: String { "\(Self.fencePrefix) \(tag)" }
+    static let fencePrefix = "eval"
+
+    /// What the body is COLOURED as. An evaluation cell is still code to
+    /// look at, so it gets the highlighter the code cell of that language
+    /// would get.
     var language: CodeLanguage {
         switch self {
         case .python: return .python
-        case .c: return .c
         case .cpp: return .cpp
         case .wolfram: return .wolfram
         }
     }
 
-    /// What the dropdown on the cell's left shows. Short, because it is
+    /// What the dropdown on the cell's left shows — short, because it is
     /// drawn in the margin beside the code.
     var badge: String {
         switch self {
         case .python: return "PY"
-        case .c: return "C"
         case .cpp: return "C++"
         case .wolfram: return "WL"
         }
     }
 
-    var title: String { language.title }
+    var title: String {
+        switch self {
+        case .python: return "Python"
+        case .cpp: return "C++"
+        case .wolfram: return "Wolfram"
+        }
+    }
 
-    /// The environment a fence names, or nil when that fence is not one
-    /// this app runs.
+    /// The environment an info string names, or nil when the block is not
+    /// an evaluation cell at all. A CODE cell — `python`, `cpp`, `wl` on
+    /// their own — is not one, and never runs.
     static func from(fence: String?) -> Evaluator? {
-        guard let language = CodeLanguage.from(fence: fence) else { return nil }
-        return allCases.first { $0.language == language }
+        let words = (fence ?? "").trimmingCharacters(in: .whitespaces)
+            .lowercased().split(separator: " ", omittingEmptySubsequences: true)
+        guard words.first == Substring(fencePrefix) else { return nil }
+        guard words.count > 1 else { return nil }
+        let tag = String(words[1])
+        return allCases.first { $0.tag == tag }
+            // `cpp`, `py` and `mathematica` are what somebody types by
+            // hand; the app always writes the canonical tag back.
+            ?? allCases.first { $0.language == CodeLanguage.from(fence: tag) }
+    }
+
+    /// Whether this block is an evaluation cell, whatever environment it
+    /// names — including one this app does not know.
+    static func isEvaluation(fence: String?) -> Bool {
+        (fence ?? "").trimmingCharacters(in: .whitespaces)
+            .lowercased().split(separator: " ").first == Substring(fencePrefix)
     }
 
     // MARK: - The tools
@@ -71,7 +122,7 @@ enum Evaluator: String, CaseIterable, Identifiable, Equatable {
     var candidates: [String] {
         switch self {
         case .python: return ["/usr/bin/python3", "/opt/homebrew/bin/python3", "/usr/local/bin/python3"]
-        case .c, .cpp: return ["/usr/bin/clang++", "/usr/bin/clang"]
+        case .cpp: return ["/usr/bin/clang++", "/opt/homebrew/bin/clang++"]
         case .wolfram: return ["/opt/homebrew/bin/wolframscript", "/usr/local/bin/wolframscript"]
         }
     }
@@ -92,8 +143,18 @@ enum Evaluator: String, CaseIterable, Identifiable, Equatable {
     /// an otherwise replaced environment.
     static let wolframKernel = "/Applications/Wolfram Engine.app/Contents/MacOS/WolframKernel"
 
+    /// REPLACED, not inherited — but not empty either.
+    ///
+    /// `HOME` has to be here. Under `env -i` with only PATH and the
+    /// kernel path, `wolframscript` prints NOTHING and exits 0: the
+    /// worst failure there is, because it looks like a cell that ran and
+    /// had nothing to say. It needs a home directory to find its own
+    /// licence and configuration. Measured, both ways, on 2026-09-21.
     var environment: [String: String] {
-        var env = ["PATH": "/usr/bin:/bin:/usr/sbin:/sbin", "LC_ALL": "en_US.UTF-8"]
+        var env = ["PATH": "/usr/bin:/bin:/usr/sbin:/sbin",
+                   "LC_ALL": "en_US.UTF-8",
+                   "HOME": FileManager.default.homeDirectoryForCurrentUser.path]
+        if let tmp = ProcessInfo.processInfo.environment["TMPDIR"] { env["TMPDIR"] = tmp }
         if self == .wolfram { env["WolframKernel"] = Self.wolframKernel }
         return env
     }
@@ -104,24 +165,18 @@ enum Evaluator: String, CaseIterable, Identifiable, Equatable {
     /// can act on; none of them spawns anything, and none of them writes
     /// an output cell.
     enum Refusal: Error, Equatable {
-        case maths
-        case noLanguage
-        case notRunnable(String)
-        case shell(String)
+        case notAnEvaluationCell
+        case unknownEnvironment(String)
         case missingTool(Evaluator)
 
         var message: String {
             switch self {
-            case .maths:
-                return "That is a maths cell — it is typeset, not run. "
-                    + "Wolfram code goes in a ```wls cell."
-            case .noLanguage:
-                return "This block has no language. Pick one from the menu on its left."
-            case .notRunnable(let name):
-                return "\(name) is coloured here, not run. Python, C, C++ and Wolfram run."
-            case .shell(let name):
-                return "\(name) is not run: a note is a file anything can write, "
-                    + "and a shell cell is a command it would be running as you."
+            case .notAnEvaluationCell:
+                return "That is not an evaluation cell. ⌘9 makes one, "
+                    + "or turns the cell the caret is in into one."
+            case .unknownEnvironment(let tag):
+                return "This cell says it runs as “\(tag)”, which is not "
+                    + "Python, C++ or Wolfram. Pick one from the badge on its left."
             case .missingTool(let evaluator):
                 return "\(evaluator.title) is not installed where WriteMind looks "
                     + "(\(evaluator.candidates.joined(separator: ", ")))."
@@ -129,20 +184,13 @@ enum Evaluator: String, CaseIterable, Identifiable, Equatable {
         }
     }
 
-    /// What a fenced cell's info string means for running it: an
-    /// environment, or the reason there is not one.
+    /// What a cell's info string means for running it: an environment, or
+    /// the reason there is not one.
     static func resolve(fence: String?) -> Result<Evaluator, Refusal> {
-        if MathMarkup.isMathFence(fence) { return .failure(.maths) }
-        guard let language = CodeLanguage.from(fence: fence) else {
-            return .failure(.notRunnable(fence?.trimmingCharacters(in: .whitespaces) ?? "This block"))
-        }
-        switch language {
-        case .plain: return .failure(.noLanguage)
-        case .bash, .zsh: return .failure(.shell(language.title))
-        default: break
-        }
-        guard let evaluator = allCases.first(where: { $0.language == language }) else {
-            return .failure(.notRunnable(language.title))
+        guard isEvaluation(fence: fence) else { return .failure(.notAnEvaluationCell) }
+        guard let evaluator = from(fence: fence) else {
+            let words = (fence ?? "").trimmingCharacters(in: .whitespaces).split(separator: " ")
+            return .failure(.unknownEnvironment(words.count > 1 ? String(words[1]) : ""))
         }
         return .success(evaluator)
     }
