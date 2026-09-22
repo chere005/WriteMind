@@ -36,4 +36,20 @@ enum TestHost {
     /// Where such a run keeps its notes instead of `~/Documents/WriteMind`.
     static let notesDirectory = FileManager.default.temporaryDirectory
         .appending(path: "WriteMind-test-host", directoryHint: .isDirectory)
+
+    /// And where it keeps its SESSION, instead of Application Support.
+    ///
+    /// THE SCRATCH NOTES FOLDER ALONE DOES NOT MAKE SUCH A RUN SAFE.
+    /// `notesDirectory` only changes where a store with no folders of its
+    /// own looks — and a restored session HAS folders of its own, named by
+    /// absolute path, along with the notes that were open and any text that
+    /// had not reached disk. So the smoke came up on `~/Documents/WriteMind`
+    /// anyway, opened Sean's note, and was then sent the SIGTERM that made
+    /// it flush a save: the 2026-09-20 loss of two cells, by the route the
+    /// scratch folder was believed to have closed (found again 2026-09-21,
+    /// with a scratch run showing his notes on screen). Moving the session's
+    /// base directory is what closes it — a run that restores nothing comes
+    /// up on `notesDirectory`, which is the whole point.
+    static let supportDirectory = FileManager.default.temporaryDirectory
+        .appending(path: "WriteMind-test-support", directoryHint: .isDirectory)
 }

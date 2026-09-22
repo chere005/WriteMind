@@ -21,8 +21,15 @@ final class ProjectStore: ObservableObject {
     var excluded: [URL] { project.excludedURLs }
 
     /// The project last open, so a launch comes back to it.
+    ///
+    /// Not for a test host or a smoke run: the defaults are the app's own
+    /// and such a run shares them, so this one key — which names a folder
+    /// of Sean's — is not read there. `NoteStore` guards the notes
+    /// directory the same way, and the session the same way again
+    /// (`TestHost.supportDirectory`).
     static func lastProjectPath() -> String? {
-        UserDefaults.standard.string(forKey: lastProjectKey)
+        guard !TestHost.isActive else { return nil }
+        return UserDefaults.standard.string(forKey: lastProjectKey)
     }
 
     func adopt(folders: [URL], excluded: [URL] = []) {

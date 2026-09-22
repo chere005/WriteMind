@@ -74,6 +74,34 @@ final class ProjectTests: XCTestCase {
         XCTAssertEqual(url.pathExtension, "json")
     }
 
+    /// THE SESSION IS THE OTHER WAY INTO SEAN'S NOTES, and the scratch
+    /// notes folder does not close it: a session names its folders and its
+    /// open notes by absolute path, so a smoke run that restored one came
+    /// up on `~/Documents/WriteMind` however `TestHost` had redirected the
+    /// default (2026-09-21 — a scratch copy of the app was watched opening
+    /// his real note). This test runs INSIDE the test host, so if the base
+    /// directory is ever put back it fails here.
+    func testATestHostKeepsItsSessionOutOfApplicationSupport() throws {
+        XCTAssertTrue(TestHost.isActive, "the unit suite is a test host")
+        let url = try XCTUnwrap(ProjectSession.url(forProjectAt: nil))
+        XCTAssertTrue(url.path.hasPrefix(TestHost.supportDirectory.path),
+                      "the session went to \(url.path)")
+        let real = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
+        if let real {
+            XCTAssertFalse(url.path.hasPrefix(real.appending(path: "WriteMind").path),
+                           "a check that can reach the real thing is not a check")
+        }
+    }
+
+    /// And the same for the one default that names a folder of his.
+    @MainActor
+    func testATestHostDoesNotReopenTheLastProject() {
+        UserDefaults.standard.set("/Users/s/Documents/WriteMind/Real.writemind-project",
+                                  forKey: "lastProjectPath")
+        defer { UserDefaults.standard.removeObject(forKey: "lastProjectPath") }
+        XCTAssertNil(ProjectStore.lastProjectPath())
+    }
+
     func testSessionRoundTrip() throws {
         var session = ProjectSession()
         session.projectPath = dir.appending(path: "P.writemind-project").path

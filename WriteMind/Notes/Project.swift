@@ -89,7 +89,15 @@ struct ProjectSession: Codable, Equatable {
     /// One file per project, plus one for "no project open yet", in Application
     /// Support — never beside the notes, which stay a folder of markdown.
     static func url(forProjectAt path: String?) -> URL? {
-        let base = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
+        // A TEST HOST OR A SMOKE RUN KEEPS ITS SESSION SOMEWHERE ELSE, and
+        // that is not a nicety: the session names its folders and its open
+        // notes by ABSOLUTE PATH, so restoring one took a run that had been
+        // sent to a scratch notes folder straight back into
+        // ~/Documents/WriteMind — and `restoreSession` writes the cached
+        // buffers over the files it finds there. See `TestHost.supportDirectory`.
+        let base = TestHost.isActive
+            ? TestHost.supportDirectory
+            : FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
         guard let base else { return nil }
         let folder = base.appending(path: "WriteMind/Sessions", directoryHint: .isDirectory)
         try? FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
