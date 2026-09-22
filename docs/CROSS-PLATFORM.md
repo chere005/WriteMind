@@ -306,6 +306,25 @@ typed yet: such a block parses to the end of the note, so the answer is pasted
 past the end and its own opening line closes the cell it was meant to sit
 under.
 
+### A hover in the gutter promises what a click would take
+The bracket under the pointer lights, and the cells it would select are washed
+faintly at the same time (Sean, 2026-09-22: "hovering over sections on the
+right side should faintly indicate what would be selected if clicked"). The
+point of it is the brackets that stand for something other than themselves — a
+section stands for the cells under it, an In/Out pair for the two in it — where
+the bracket alone says how FAR the selection reaches but not what it takes.
+Ask the same function the press asks, so the promise and the press cannot
+disagree; paint it over the words rather than in the column, because the
+column is twenty-odd points wide and the answer is the width of the page; and
+draw it UNDER the insertion bar, which is a cursor and has to keep reading as
+one.
+
+### A section's heading is one of the cells it takes
+It is not a container in the file — a section is a heading and the blocks
+after it — so the wash covers the heading too, and so does the selection. That
+falls out of asking one function; it is worth knowing before someone "fixes"
+the heading out of the list.
+
 ## Done there
 
 Nothing yet.

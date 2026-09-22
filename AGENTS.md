@@ -668,6 +668,17 @@ CoreMind's `bin/report-status.sh`.
   TALLER THAN THE WINDOW cannot be scrolled to its `.bottom`, which
   clamps to keeping its top in view and does not move. The seams carry
   their own ids and the page is scrolled to the seam, centred.
+  **A HOVER IN THE GUTTER PROMISES WHAT A CLICK WOULD TAKE.** Sean,
+  2026-09-22: "hovering over sections on the right side should faintly
+  indicate what would be selected if clicked". Both gutters report
+  `CellSelection.cells(of:in:)` for the bracket under the pointer —
+  `onHoverCells`, the SAME call `mouseDown`/`click` makes, so the
+  promise and the press cannot disagree — and the cells are washed at
+  `controlAccentColor` 0.12. It is painted over the WORDS and not in the
+  column: `CellInsertions.wash` in the source pane (that layer already
+  has the cells' boxes, and it draws under the bars, which are cursors
+  and must keep reading as such), an overlay on the row in the rendered
+  page.
   **A BRACKET IS ONE OF THREE THINGS**, and `!foldable` is not how to
   ask which. `Bracket.isCell` is — a section folds, a cell is a block,
   a group embraces an In/Out pair — because `cellSpans`, `cellRanges`

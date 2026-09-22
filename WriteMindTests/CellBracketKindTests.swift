@@ -48,6 +48,37 @@ final class CellBracketKindTests: XCTestCase {
                           "deeper is further from the margin")
     }
 
+    /// WHAT A HOVER PROMISES IS WHAT A CLICK TAKES (Sean, 2026-09-22:
+    /// "hovering over sections on the right side should faintly indicate
+    /// what would be selected if clicked"). Both gutters ask
+    /// `CellSelection.cells(of:in:)` over the brackets they call cells —
+    /// so a section promises the cells under it, a pair promises the two
+    /// in it, and neither promises its own merged range.
+    func testAHoverPromisesTheCellsAClickWouldTake() {
+        let input = NSRange(location: 10, length: 20)
+        let output = NSRange(location: 32, length: 12)
+        let after = NSRange(location: 46, length: 8)
+        let brackets = [
+            CellBrackets.Bracket(key: "Notes", depth: 0, top: 0, bottom: 90,
+                                 foldable: true, range: NSRange(location: 0, length: 54)),
+            CellBrackets.Bracket(key: "eval:10", depth: 1, top: 10, bottom: 60,
+                                 group: true, range: NSRange(location: 10, length: 34)),
+            CellBrackets.Bracket(key: "cell:10", depth: 2, top: 10, bottom: 34, range: input),
+            CellBrackets.Bracket(key: "cell:32", depth: 2, top: 36, bottom: 60, range: output),
+            CellBrackets.Bracket(key: "cell:46", depth: 1, top: 62, bottom: 90, range: after),
+        ]
+        let cells = brackets.filter(\.isCell).map(\.range)
+        XCTAssertEqual(cells, [input, output, after], "the pair's own bracket is not a cell")
+
+        func promise(_ key: String) -> [NSRange] {
+            let bracket = brackets.first { $0.key == key }!
+            return CellSelection.cells(of: bracket.range, in: cells)
+        }
+        XCTAssertEqual(promise("eval:10"), [input, output], "a pair promises the two in it")
+        XCTAssertEqual(promise("Notes"), [input, output, after])
+        XCTAssertEqual(promise("cell:32"), [output], "a cell promises itself and nothing else")
+    }
+
     /// A pair's bracket has exactly the top and bottom of the two cells
     /// inside it, so drawn at the same length it read as a second
     /// hairline five points over rather than as a group.

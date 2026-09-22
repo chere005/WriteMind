@@ -134,6 +134,9 @@ struct MarkdownPreview: View {
     /// and the rendered page has no text view to keep the second in the way
     /// the markdown pane keeps it in `tv.selectedRanges`.
     @State private var selectedCells: [NSRange] = []
+    /// The cells a click on the bracket under the pointer would take,
+    /// washed faintly while it is there.
+    @State private var promisedCells: [NSRange] = []
     @State private var draft = ""
     /// The words of the one reminder open for typing.
     @State private var itemDraft = ""
@@ -303,6 +306,7 @@ struct MarkdownPreview: View {
                              onSelect: { beginEditing($0) },
                              onSelectCells: { selectCells($0) },
                              onToggle: { onToggleSection?($0) },
+                             onHoverCells: { promisedCells = $0 },
                              onMoveCell: { range, up in
                                  // Through `moving`, which moves the SPANS:
                                  // the closure this used to hand `cellEdit`
@@ -638,6 +642,19 @@ struct MarkdownPreview: View {
                       evaluation: evaluation(of: item.range),
                       editing: checklistEditing(in: item.range, block: block))
                 .frame(maxWidth: .infinity, alignment: .leading)
+                // The faint promise a hover over the gutter makes. An
+                // overlay of colour rather than a background, so a code
+                // cell's own dark fill still shows through it and the
+                // page does not move by a point for it.
+                .padding(.vertical, 2)
+                .overlay {
+                    if promisedCells.contains(where: { NSEqualRanges($0, item.range) }) {
+                        RoundedRectangle(cornerRadius: 4)
+                            .fill(Color.accentColor.opacity(0.12))
+                            .allowsHitTesting(false)
+                    }
+                }
+                .padding(.vertical, -2)
                 .contentShape(Rectangle())
                 // A CHECKLIST'S ITEMS OWN THEIR OWN CLICKS, so a click on
                 // a reminder opens that reminder and not the whole cell

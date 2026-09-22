@@ -165,6 +165,10 @@ is how the code is put together.
   item starts the next one; Return on an empty item ends the list. The
   chevron beside the list button picks dots, dashes or numbers — `- `, `* `
   and `1. ` on disk, a round bullet, a dash and a number on the page.
+- **The gutter says what it would take.** Hovering a bracket washes the
+  cells a click on it would select, faintly — which matters for the ones
+  that stand for more than themselves: a section's bracket takes every
+  cell under it, an evaluation pair's takes the code and its answer.
 - **Evaluation cells, which are not code cells.** A code cell is code you
   are writing about; an evaluation cell is code the note runs, and the file
   says which: ```eval python, ```eval c++, ```eval wl. ⌘9 makes one, or

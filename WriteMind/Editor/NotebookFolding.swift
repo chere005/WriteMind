@@ -144,6 +144,16 @@ final class NotebookGutter: NSView {
     /// at once (Sean, 2026-09-20: "fix selecting multiple cells by clicking
     /// and dragging, shift clicking, or cmd clicking").
     var onSelectCells: (([NSRange]) -> Void)?
+    /// WHAT A CLICK ON THE BRACKET UNDER THE POINTER WOULD TAKE (Sean,
+    /// 2026-09-22: "hovering over sections on the right side should
+    /// faintly indicate what would be selected if clicked").
+    ///
+    /// The cells, never the bracket's own range: a section's bracket
+    /// stands for the cells under it and a pair's for the two in it, so
+    /// this is the SAME list `mouseDown` acts on — asked of the same
+    /// `CellSelection.cells(of:in:)`, so the promise and the press
+    /// cannot disagree.
+    var onHoverCells: (([NSRange]) -> Void)?
     /// A click landed on the gutter, so the drawing layer lets go of
     /// whatever it was holding — see `CellInsertions.onClick`.
     var onClick: (() -> Void)?
@@ -239,13 +249,20 @@ final class NotebookGutter: NSView {
 
     override func mouseMoved(with event: NSEvent) {
         let point = convert(event.locationInWindow, from: nil)
-        let key = bracket(at: point)?.key
-        if key != hovered { hovered = key; needsDisplay = true }
-        (key == nil ? NSCursor.arrow : NSCursor.pointingHand).set()
+        let over = bracket(at: point)
+        if over?.key != hovered {
+            hovered = over?.key
+            needsDisplay = true
+            onHoverCells?(over.map { CellSelection.cells(of: $0.range, in: cellRanges) } ?? [])
+        }
+        (over == nil ? NSCursor.arrow : NSCursor.pointingHand).set()
     }
 
     override func mouseExited(with event: NSEvent) {
-        if hovered != nil { hovered = nil; needsDisplay = true }
+        guard hovered != nil else { return }
+        hovered = nil
+        needsDisplay = true
+        onHoverCells?([])
     }
 
     /// One click picks the cell up, two fold it away — Wolfram's own

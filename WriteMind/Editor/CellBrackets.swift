@@ -60,6 +60,13 @@ struct CellBrackets: View {
     /// and dragging, shift clicking, or cmd clicking").
     var onSelectCells: (([NSRange]) -> Void)?
     var onToggle: ((String) -> Void)?
+    /// WHAT A CLICK ON THE BRACKET UNDER THE POINTER WOULD TAKE (Sean,
+    /// 2026-09-22: "hovering over sections on the right side should
+    /// faintly indicate what would be selected if clicked"). The cells,
+    /// never the bracket's own range, and asked of the same
+    /// `CellSelection.cells(of:in:)` the press asks — so the promise and
+    /// the press cannot disagree.
+    var onHoverCells: (([NSRange]) -> Void)?
     /// Dragged up or down: the cell changes places with its neighbour.
     var onMoveCell: ((NSRange, Bool) -> Void)?
     /// How far it has to go before it is a move and not a click.
@@ -143,11 +150,15 @@ struct CellBrackets: View {
         .onContinuousHover(coordinateSpace: .local) { phase in
             switch phase {
             case .active(let point):
-                let key = Self.bracket(at: point, in: brackets, width: Self.width)?.key
-                if key != hovered { hovered = key }
-                (key == nil ? NSCursor.arrow : NSCursor.pointingHand).set()
+                let over = Self.bracket(at: point, in: brackets, width: Self.width)
+                if over?.key != hovered {
+                    hovered = over?.key
+                    onHoverCells?(over.map { CellSelection.cells(of: $0.range, in: cellRanges) } ?? [])
+                }
+                (over == nil ? NSCursor.arrow : NSCursor.pointingHand).set()
             case .ended:
                 hovered = nil
+                onHoverCells?([])
             }
         }
         // One gesture, because a tap pair would make the single click wait

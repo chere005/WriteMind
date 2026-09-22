@@ -105,7 +105,19 @@ final class CellInsertions: NSView {
     var onSelectCells: (([NSRange]) -> Void)?
     /// Where every cell is, for that drag to read. The pane hands these
     /// in beside the seams — they are measured off the same layout.
-    var cellSpans: [CellSelection.Span] = []
+    var cellSpans: [CellSelection.Span] = [] { didSet { if !hoveredCells.isEmpty { needsDisplay = true } } }
+    /// THE CELLS A CLICK IN THE GUTTER WOULD TAKE, washed faintly while
+    /// the pointer is on their bracket (Sean, 2026-09-22: "hovering over
+    /// sections on the right side should faintly indicate what would be
+    /// selected if clicked").
+    ///
+    /// Here rather than in the gutter because the gutter is 22 points
+    /// wide and the answer is the width of the page — and this layer
+    /// already has the cells' boxes, measured off the same layout the
+    /// brackets are.
+    var hoveredCells: [NSRange] = [] {
+        didSet { if hoveredCells != oldValue { needsDisplay = true } }
+    }
     /// How far a press has to travel before it is a drag and not a click
     /// that wandered. The same distance a bracket asks for.
     static let dragThreshold: CGFloat = 10
@@ -163,9 +175,29 @@ final class CellInsertions: NSView {
         // the pointer, so the page always says where a click would put
         // the cursor next. Only one of them was drawn before, and with a
         // bar up the page stopped answering that question.
+        wash()
         if let armed { bar(armed, faint: false) }
         if let hovered, hovered.offset != armed?.offset { bar(hovered, faint: true) }
     }
+
+    /// The faint promise: what the bracket under the pointer would take.
+    ///
+    /// Under the bars, because a bar drawn over a washed cell is still
+    /// the cursor and has to read as one.
+    private func wash() {
+        guard !hoveredCells.isEmpty else { return }
+        NSColor.controlAccentColor.withAlphaComponent(0.12).setFill()
+        for span in cellSpans where hoveredCells.contains(where: { NSEqualRanges($0, span.range) }) {
+            let box = NSRect(x: Self.washInset, y: span.top - 2,
+                             width: max(0, bounds.width - Self.washInset - NotebookGutter.width),
+                             height: max(0, span.bottom - span.top + 4))
+            NSBezierPath(roundedRect: box, xRadius: 4, yRadius: 4).fill()
+        }
+    }
+
+    /// Where the wash starts: inside the page's left margin, so it lines
+    /// up with the words rather than running to the window's edge.
+    private static let washInset: CGFloat = 14
 
     /// One bar: the line across the page, and the + at the end of it
     /// where one is drawn.

@@ -147,6 +147,9 @@ struct MarkdownTextView: NSViewRepresentable {
         insertions.autoresizingMask = [.width, .height]
         insertions.onClick = { onClick?() }
         gutter.onClick = { onClick?() }
+        // The promise a hover makes, painted over the words by the layer
+        // that already knows where they are.
+        gutter.onHoverCells = { [weak insertions] cells in insertions?.hoveredCells = cells }
         insertions.onArm = { [weak tv] offset in
             guard let tv = tv as? PasteAwareTextView else { return }
             tv.armedSeam = offset
