@@ -351,6 +351,30 @@ more kind rather than as a second block builder. (Sean, 2026-09-22: "make sure
 if the input cursor is horizontal, hitting cmd+9 puts a new evaluation cell at
 that position etc".)
 
+### The rendered page's rhythm is the source pane's, and it is one constant
+A WYSIWYG page stacks its blocks some fixed distance apart; the source pane
+puts a BLANK LINE OF THE NOTE between two cells. Those are different numbers,
+and if the page's is the smaller one the whole note reads as scrunched next to
+the same note in the other mode. Derive it: a blank line plus the line spacing
+that goes round it, so the two cannot drift.
+
+The trap is that the same constant was doing two jobs — the air between two
+cells AND the FLOOR under a seam ("enough to put the pointer in"). Raising the
+one number moved the floor, the source pane's own paragraph spacing and the
+landing place of every pasted picture with it, which is why the two panes had
+never been squared up. Two constants.
+
+And then the page has to be uniform, which means no block carrying air of its
+own: the line spacing belongs on every kind of block and not on paragraphs
+alone (a bullet or a quote that wraps was four points a line tighter than the
+paragraph beside it); a rule's clickable body is its own HEIGHT, not padding
+that leaks into the gaps either side; a cell of blank lines is as tall as
+those lines really are; and a cell opened for typing keeps the height it had
+rendered, or clicking into a code cell drops everything below it twenty points
+and lifts it back when you click out. (Sean, 2026-09-22: "make the spacing
+more uniform.. it's ok on markdown mode but in rendered mode things get
+scrunched together".)
+
 ## Done there
 
 Nothing yet.

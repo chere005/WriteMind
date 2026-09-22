@@ -58,7 +58,7 @@ enum NoteExport {
             // gap apart, and nothing on the drawing layer in it.
             let places = PreviewLayout.positions(
                 rows: zip(blocks, heights).map { (id: $0.range.location, height: $1) },
-                spacing: MarkdownPreview.gapHeight,
+                spacing: MarkdownPreview.blockGap,
                 top: MarkdownPreview.topInset + MarkdownPreview.gapHeight)
 
             for (index, block) in blocks.enumerated() {

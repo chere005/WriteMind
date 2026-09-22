@@ -34,18 +34,23 @@ final class PreviewSeamTests: XCTestCase {
 
     func testTheSeamBetweenTwoCellsIsTheWholeSpaceBetweenThem() {
         let seams = MarkdownPreview.seams(rows: page, noteLength: 44, pageHeight: 600)
-        let places = PreviewLayout.positions(rows: page, spacing: MarkdownPreview.gapHeight,
+        let places = PreviewLayout.positions(rows: page, spacing: MarkdownPreview.blockGap,
                                              top: MarkdownPreview.topInset + MarkdownPreview.gapHeight)
         XCTAssertEqual(seams[1].top, places[0]!.bottom)
         XCTAssertEqual(seams[1].bottom, places[12]!.top)
-        XCTAssertEqual(seams[1].bottom - seams[1].top, MarkdownPreview.gapHeight, accuracy: 0.001)
+        // The air between two cells is the OTHER pane's rhythm — a
+        // blank line of the note and the spacing round it — and not the
+        // eight points a pointer needs to fit in a seam.
+        XCTAssertEqual(seams[1].bottom - seams[1].top, MarkdownPreview.blockGap, accuracy: 0.001)
+        XCTAssertGreaterThan(MarkdownPreview.blockGap, MarkdownPreview.gapHeight,
+                             "a seam's floor is not the page's rhythm")
     }
 
     func testTheTailRunsToTheBottomOfThePage() {
         // Everything under the last cell is one seam — not the eighty-point
         // strip the page used to offer, and not the margin under it either.
         let seams = MarkdownPreview.seams(rows: page, noteLength: 44, pageHeight: 600)
-        let places = PreviewLayout.positions(rows: page, spacing: MarkdownPreview.gapHeight,
+        let places = PreviewLayout.positions(rows: page, spacing: MarkdownPreview.blockGap,
                                              top: MarkdownPreview.topInset + MarkdownPreview.gapHeight)
         XCTAssertEqual(seams.last?.top, places[30]!.bottom)
         XCTAssertEqual(seams.last?.bottom, 600, "down to the bottom of the window")
@@ -70,7 +75,7 @@ final class PreviewSeamTests: XCTestCase {
 
     func testNoPointInsideACellIsInsideASeam() {
         let seams = MarkdownPreview.seams(rows: page, noteLength: 44, pageHeight: 600)
-        let places = PreviewLayout.positions(rows: page, spacing: MarkdownPreview.gapHeight,
+        let places = PreviewLayout.positions(rows: page, spacing: MarkdownPreview.blockGap,
                                              top: MarkdownPreview.topInset + MarkdownPreview.gapHeight)
         for place in places.values {
             for y in stride(from: place.top + 0.5, to: place.bottom, by: 0.5) {

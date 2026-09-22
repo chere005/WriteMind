@@ -237,6 +237,28 @@ struct MarkdownPreview: View {
     /// 2026-09-19: "notebook bar placement bugs").
     static let gapHeight: CGFloat = 8
 
+    /// THE AIR BETWEEN TWO CELLS ON THE PAGE, which is the other pane's
+    /// rhythm and not this one's own number.
+    ///
+    /// Sean, 2026-09-22: "make the spacing more uniform.. it's ok on
+    /// markdown mode but in rendered mode things get scrunched
+    /// together". The source pane puts a BLANK LINE OF THE NOTE between
+    /// two cells and the spacing that goes either side of it; this page
+    /// was stacking them `gapHeight` apart — 8 points against 26 — so
+    /// every boundary on it was a third of the rhythm of the same note
+    /// in the other mode, and a page of short cells read as one grey
+    /// block.
+    ///
+    /// It is a SECOND constant because `gapHeight` was doing two jobs:
+    /// the air between cells AND the floor under a seam
+    /// (`CellSeams.seams(minimum:)`), which is only "enough to put the
+    /// pointer in". Raising the one number moved the floor, the source
+    /// pane's own paragraph spacing and the landing place of every
+    /// pasted picture with it, which is why the two panes had never been
+    /// squared up.
+    static let blockGap: CGFloat = MarkdownTextView.lineHeight
+        + MarkdownTextView.paragraphStyle.lineSpacing
+
     /// The air above and below a rendered code block. It is ONE SOURCE
     /// LINE, because that is what the ``` line it stands in for takes in
     /// the other pane — the two sides then lay a code cell out to the
@@ -348,7 +370,7 @@ struct MarkdownPreview: View {
             onScroll?(offset)
             // Which cell the fold is on, for the other mode to open at.
             let places = PreviewLayout.positions(rows: items.map { ($0.id, rowHeights[$0.id] ?? 0) },
-                                                 spacing: Self.gapHeight,
+                                                 spacing: Self.blockGap,
                                                  top: Self.topInset + Self.gapHeight)
             if let top = PreviewLayout.topRow(positions: places, scroll: offset) { onTopCell?(top) }
         }
@@ -540,7 +562,7 @@ struct MarkdownPreview: View {
         let shown = items
         guard !shown.isEmpty else { return [] }
         let places = PreviewLayout.positions(rows: shown.map { ($0.id, rowHeights[$0.id] ?? 0) },
-                                             spacing: Self.gapHeight, top: Self.topInset + Self.gapHeight)
+                                             spacing: Self.blockGap, top: Self.topInset + Self.gapHeight)
         let sections = NotebookOutline.sections(in: markdown)
         var out: [CellBrackets.Bracket] = []
 
@@ -624,7 +646,7 @@ struct MarkdownPreview: View {
                 // opening a cell moves no text (Sean, 2026-09-19: "gaps
                 // should just be a small fixed padding").
                 .padding(.horizontal, fence == nil ? 0 : 12)
-                .padding(.vertical, fence == nil ? 0 : 12)
+                .padding(.vertical, fence == nil ? 0 : MarkdownPreview.codePadding)
                 // A code block being typed in keeps looking like a code
                 // block, so nothing jumps when it is clicked.
                 .background(fence == nil ? AnyShapeStyle(Color.accentColor.opacity(0.07))
@@ -994,7 +1016,7 @@ struct MarkdownPreview: View {
     /// everything below the last cell is seam.
     static func seams(rows: [(id: Int, height: CGFloat)], noteLength: Int,
                       pageHeight: CGFloat) -> [CellSeams.Seam] {
-        let places = PreviewLayout.positions(rows: rows, spacing: gapHeight,
+        let places = PreviewLayout.positions(rows: rows, spacing: blockGap,
                                              top: topInset + gapHeight)
         let cells: [CellSeams.Box] = rows.compactMap { row in
             guard let place = places[row.id] else { return nil }
@@ -1521,7 +1543,7 @@ struct MarkdownPreview: View {
     /// Where each cell sits on the rendered page, measured.
     private var places: [Int: (top: CGFloat, bottom: CGFloat)] {
         PreviewLayout.positions(rows: items.map { ($0.id, rowHeights[$0.id] ?? 0) },
-                                spacing: Self.gapHeight, top: Self.topInset + Self.gapHeight)
+                                spacing: Self.blockGap, top: Self.topInset + Self.gapHeight)
     }
 
     /// A whole-cell edit — delete, duplicate, move — over the note: every
@@ -1754,6 +1776,19 @@ struct MarkdownPreview: View {
         }
 
         var body: some View {
+            // ONE LINE SPACING FOR THE WHOLE NOTE, not one for
+            // paragraphs alone. The source pane sets it on its paragraph
+            // style, which every line of the note is laid out with; here
+            // it was on `.paragraph` and nowhere else, so a bullet, a
+            // quote or a heading that wrapped came out four points a
+            // line tighter than the same words in the other mode — and
+            // tighter than the paragraph beside it, which is what made
+            // the page read as scrunched even where the gaps were right.
+            content.lineSpacing(MarkdownTextView.paragraphStyle.lineSpacing)
+        }
+
+        @ViewBuilder
+        private var content: some View {
             switch block {
             case .heading(let level, let text):
                 Text(MarkdownInline.attributed(text, baseSize: Self.headingSize(level), paper: paper))
@@ -1763,7 +1798,6 @@ struct MarkdownPreview: View {
             case .paragraph(let text):
                 Text(MarkdownInline.attributed(text, paper: paper))
                     .font(.system(size: 15))
-                    .lineSpacing(4)
             case .bullets(let items):
                 VStack(alignment: .leading, spacing: 4) {
                     ForEach(Array(items.enumerated()), id: \.offset) { _, item in
@@ -1848,7 +1882,7 @@ struct MarkdownPreview: View {
                 // A cell of empty lines: as tall as those lines, and
                 // clickable, so it can be typed into (Sean, 2026-09-20).
                 Color.clear
-                    .frame(height: CGFloat(lines) * 20)
+                    .frame(height: CGFloat(lines) * MarkdownTextView.lineHeight)
                     .frame(maxWidth: .infinity, alignment: .leading)
             case .rule:
                 // The only padding left on the page, and it is the rule's
@@ -1857,7 +1891,7 @@ struct MarkdownPreview: View {
                 // a bracket nor a seam can hold — the seams either side
                 // would be widened to the 8 pt minimum straight through
                 // it, and there would be nowhere left to click the rule.
-                Divider().padding(.vertical, 4)
+                Divider().frame(height: 9)
             }
         }
 

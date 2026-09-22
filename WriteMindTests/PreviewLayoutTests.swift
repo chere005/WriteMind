@@ -107,15 +107,27 @@ final class CellSpacingTests: XCTestCase {
     func testTheGapBetweenCellsIsSmallAndFixed() {
         XCTAssertLessThanOrEqual(MarkdownPreview.gapHeight, 10)
         XCTAssertGreaterThan(MarkdownPreview.gapHeight, 0, "the pointer still has to fit in it")
+
+        // AND THE PAGE'S OWN RHYTHM IS THE OTHER PANE'S (Sean,
+        // 2026-09-22: "make the spacing more uniform.. in rendered mode
+        // things get scrunched together"). A blank line of the note plus
+        // the spacing that goes round it, which is what separates two
+        // cells in the source — not the floor a seam is allowed to
+        // shrink to, which is all `gapHeight` ever was.
+        XCTAssertEqual(MarkdownPreview.blockGap,
+                       MarkdownTextView.lineHeight
+                           + MarkdownTextView.paragraphStyle.lineSpacing, accuracy: 0.001)
+        XCTAssertGreaterThan(MarkdownPreview.blockGap, MarkdownPreview.gapHeight * 2,
+                             "the page was stacking cells a third of a line apart")
     }
 
     func testEverySeamIsThatSameGap() {
         let rows = [(id: 1, height: CGFloat(40)), (id: 2, height: CGFloat(120)),
                     (id: 3, height: CGFloat(18))]
-        let places = PreviewLayout.positions(rows: rows, spacing: MarkdownPreview.gapHeight,
+        let places = PreviewLayout.positions(rows: rows, spacing: MarkdownPreview.blockGap,
                                              top: MarkdownPreview.topInset)
-        XCTAssertEqual(places[2]!.top - places[1]!.bottom, MarkdownPreview.gapHeight, accuracy: 0.001)
-        XCTAssertEqual(places[3]!.top - places[2]!.bottom, MarkdownPreview.gapHeight, accuracy: 0.001)
+        XCTAssertEqual(places[2]!.top - places[1]!.bottom, MarkdownPreview.blockGap, accuracy: 0.001)
+        XCTAssertEqual(places[3]!.top - places[2]!.bottom, MarkdownPreview.blockGap, accuracy: 0.001)
     }
 }
 

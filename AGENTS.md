@@ -439,6 +439,29 @@ CoreMind's `bin/report-status.sh`.
   apart. Nothing is typed into the note and nothing is pushed aside; the
   picture floats over the words. Shapes and text boxes still land in the
   middle of what is on screen.
+- **THE RENDERED PAGE'S RHYTHM IS THE SOURCE PANE'S, AND IT IS NOT
+  `gapHeight`.** Sean, 2026-09-22: "make the spacing more uniform.. it's
+  ok on markdown mode but in rendered mode things get scrunched
+  together". `MarkdownPreview.blockGap` is the air between two cells —
+  `MarkdownTextView.lineHeight` plus the paragraph style's `lineSpacing`,
+  which is the blank line the other pane puts there and the spacing round
+  it — and it is what `PreviewLayout.positions` stacks with, in the page,
+  the seams and the PDF alike. `gapHeight` is 8 and stays 8: it is the
+  FLOOR under a seam (`CellSeams.seams(minimum:)`), enough to put the
+  pointer in, and it is also the source pane's own `paragraphSpacing` and
+  where a pasted picture lands. One constant for two jobs is why the
+  panes were never squared up — the page stacked cells 8 points apart
+  where the source put 26, and raising the number moved the floor with
+  it. A WIDER GAP IS A WIDER SEAM, and so a wider band for the
+  horizontal pointer and a bigger target for the +, all for free.
+  Uniform also means NO BLOCK CARRIES AIR OF ITS OWN: `lineSpacing` is on
+  `BlockView.body` rather than on `.paragraph` alone (a wrapped bullet or
+  quote was four points a line tighter than the paragraph beside it), a
+  rule's clickable body is a `frame(height:)` and not padding that leaks
+  into the gaps, `.blank` is `lines * MarkdownTextView.lineHeight`, and a
+  cell OPEN for typing pads by `codePadding` like the rendered one — with
+  12 there, clicking into a code cell dropped everything below it twenty
+  points and lifted it back on the way out.
 - **Nothing on the drawing layer moves the text.** Objects float: no
   exclusion band, no per-block push, no anchor, no re-homing, no bracket
   (Sean, 2026-09-20: "all drawing, captured or drawn with the pen tool,
