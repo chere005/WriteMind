@@ -10,6 +10,27 @@ had to say it. Verification is the job, not an item.
 
 ## Open
 
+- **The evaluation cell's margin, four things.** Sean, 2026-09-22, in one
+  message; C and Rust landed from it, these did not.
+  - **A new evaluation cell is Wolfram** ("default to wolfram"). ⌘9 writes
+    whatever `AppState.evaluator` holds, which starts as Python.
+  - **And then it is whichever was used last** ("remember last used cell
+    type when inserting"). The choice would have to be remembered in the
+    defaults the way the pen's size and colour are, and written whenever a
+    cell is made or its environment picked.
+  - **The marks sit further left, and the cells do not move**
+    ("align further to the left but keep the cell start the same").
+    `CellMark` is a 44-point column in front of the cell, so moving the
+    marks left moves the code with them. The cells' left edge has to stay
+    where it is, which means the mark goes in the page's own margin — an
+    overlay rather than a row in the stack — and that margin
+    (`MarkdownPreview.sideInset`, 28) is narrower than `Out[10]`.
+  - **The environment is an icon, not two letters** ("use icons for WL,
+    CPP, Python"). `Evaluator.badge` is `WL` / `PY` / `C` / `C++` / `RS`
+    today. There is no SF Symbol for a language, so this means art —
+    and `SymbolTests` exists because a missing symbol name draws
+    NOTHING on this macOS, so whatever is used has to be checked the
+    same way.
 - **Flow charts, further.** Six shapes come off a sketch now. A tick, a
   cross and a star are read by the classifier and deliberately left as
   ink: they are marks in a note rather than objects, and the app already
