@@ -264,6 +264,36 @@ final class PreviewSeamIdentityTests: XCTestCase {
                                              current: .pointingHand) === NSCursor.arrow)
     }
 
+    func testTheWordsOfACellPutAnUprightIBeamUpAndTheSeamsAreOnTheirSide() {
+        // The rendered blocks are SwiftUI `Text` with no cursor rects, so
+        // the pointer over the whole page used to be the arrow — a page
+        // you click into and type in, saying nothing of the sort (Sean,
+        // 2026-09-21: "in wysiwyg mode as i hover over text and such it
+        // should be a text edit cursor").
+        XCTAssertTrue(MarkdownPreview.textCursor === NSCursor.iBeam)
+        XCTAssertFalse(MarkdownPreview.textCursor === NSCursor.iBeamCursorForVerticalLayout,
+                       "upright over the words, on its side between two cells")
+        // And it is handed back the same way a seam's is.
+        XCTAssertTrue(MarkdownPreview.cursor(hovering: false, ours: true,
+                                             put: .iBeam, current: .iBeam) === NSCursor.arrow)
+        XCTAssertNil(MarkdownPreview.cursor(hovering: false, ours: false,
+                                            put: .iBeam, current: .iBeam),
+                     "the seam the pointer moved onto was told first and put its own up")
+        XCTAssertNil(MarkdownPreview.cursor(hovering: false, ours: true,
+                                            put: .iBeam, current: .iBeamCursorForVerticalLayout),
+                     "a seam has the pointer now; that is not ours to take back")
+    }
+
+    /// One reader for "where is the pointer", so a cell and a seam cannot
+    /// both believe they have it.
+    func testASeamAndACellAreDifferentSpots() {
+        let seam = MarkdownPreview.SeamID(index: 1, offset: 12)
+        XCTAssertEqual(MarkdownPreview.Spot.seam(seam), MarkdownPreview.Spot.seam(seam))
+        XCTAssertNotEqual(MarkdownPreview.Spot.seam(seam), MarkdownPreview.Spot.cell(12),
+                          "the seam above a cell carries that cell's offset")
+        XCTAssertNotEqual(MarkdownPreview.Spot.cell(12), MarkdownPreview.Spot.cell(30))
+    }
+
     func testACursorSomebodyElseSetIsLeftAlone() {
         // Taking one back that was never ours is the same bug the other
         // way round: the pen's pencil, the split divider's resize cursor

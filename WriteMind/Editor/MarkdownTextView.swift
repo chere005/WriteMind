@@ -926,6 +926,11 @@ struct MarkdownTextView: NSViewRepresentable {
                 parent.bridge.outdent()
                 return true
             case #selector(NSResponder.deleteBackward(_:)):
+                // Whole cells held: the key takes them and closes the
+                // stack behind them, which is what ⌃⌫ was for. A run of
+                // characters inside one cell is not that and falls
+                // through to the ordinary delete.
+                if parent.bridge.deleteHeldCells() { return true }
                 return parent.bridge.outdentForBackspace()
             case #selector(NSResponder.insertNewline(_:)):
                 // Return on a list item carries the list on (Sean, 2026-09-18).
@@ -984,10 +989,16 @@ class PasteAwareTextView: NSTextView {
     /// insertion that opens the cell is not read as a second arming.
     @discardableResult
     private func openArmedSeam() -> Bool {
+        // The kind is read before the bar goes out: letting go of the seam
+        // is what puts it back to plain text.
+        openArmedSeam(as: armedType)
+    }
+
+    /// The same, for a KIND named by the thing that asked — a button on the
+    /// bar, a Format command — rather than by the + on the seam.
+    @discardableResult
+    func openArmedSeam(as type: CellTypes.Kind) -> Bool {
         guard let offset = armedSeam else { return false }
-        // Both are read before the bar goes out: letting go of the seam is
-        // what puts the kind back to plain text.
-        let type = armedType
         armedSeam = nil
         MarkdownTextView.openSeam(at: offset, as: type, in: self)
         return true

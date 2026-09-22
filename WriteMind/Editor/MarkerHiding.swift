@@ -18,6 +18,18 @@ final class MarkerHiding: NSObject, NSLayoutManagerDelegate {
     /// Every marker character in the note, the revealed paragraph aside.
     private(set) var hiddenCharacters = IndexSet()
     private var allMarkers = IndexSet()
+    /// FURNITURE: what stays out of sight, or is drawn as something else,
+    /// whatever the caret is doing — and where the caret may not go.
+    ///
+    /// The ordinary hiding shows a paragraph's markers back to you when the
+    /// caret arrives, because in the SOURCE pane they are the thing being
+    /// typed. On the RENDERED page they are not, and `CellFurniture` is
+    /// what decides which is which. This object only carries the answer:
+    /// the characters that vanish, the ones drawn as a different glyph, and
+    /// the ranges `outside(_:of:)` keeps the caret out of.
+    private var furniture = IndexSet()
+    private var substitutions: [Int: UniChar] = [:]
+    private(set) var furnitureRanges: [NSRange] = []
     private(set) var revealed: NSRange?
 
     // MARK: - what is hidden
@@ -42,6 +54,52 @@ final class MarkerHiding: NSObject, NSLayoutManagerDelegate {
         }
     }
 
+    /// Where the caret really goes when it is put at `range`: out of any
+    /// piece of furniture, and out of the FRONT of it — a prefix has
+    /// nothing to its left but the start of the line, so there is only one
+    /// way out. A real selection is left exactly as it was made.
+    ///
+    /// PAST ALL OF IT, not past the first piece found. The pieces overlap
+    /// on purpose: a reminder's `- ` is furniture because it is a list
+    /// marker AND the whole `- [ ] ` is furniture because it is a box, and
+    /// each of those is true on its own. Taking the first match put the
+    /// caret two characters in, between the dash and the bracket — inside
+    /// the very thing it was being moved out of.
+    static func outside(_ range: NSRange, of furniture: [NSRange]) -> NSRange {
+        guard range.length == 0 else { return range }
+        var location = range.location
+        // Each turn moves strictly forward, and a piece can only be used
+        // once, so this cannot spin.
+        for _ in 0...furniture.count {
+            let ends = furniture.filter {
+                $0.length > 0 && location >= $0.location && location < NSMaxRange($0)
+            }
+            guard let furthest = ends.map({ NSMaxRange($0) }).max() else { break }
+            location = furthest
+        }
+        return NSRange(location: location, length: 0)
+    }
+
+    /// A backspace with the caret just behind a piece of furniture takes
+    /// the WHOLE piece: the cell stops being a heading, which is what the
+    /// key looks like it is doing. Left alone it ate the space out of
+    /// `## `, and the heading quietly became a paragraph beginning `##`.
+    static func furnitureBehind(_ caret: Int, in furniture: [NSRange]) -> NSRange? {
+        furniture.first { $0.length > 0 && NSMaxRange($0) == caret }
+    }
+
+    /// What the cell's furniture is, as `CellFurniture` read it.
+    func setFurniture(_ reading: CellFurniture.Reading) {
+        furnitureRanges = reading.reserved.filter { $0.length > 0 }
+        var set = IndexSet()
+        for range in reading.hidden where range.length > 0 {
+            set.insert(integersIn: range.location..<NSMaxRange(range))
+        }
+        furniture = set
+        substitutions = reading.glyphs
+        rebuild()
+    }
+
     /// Call after every re-scan of the markdown.
     func setMarkers(_ markers: [NSRange]) {
         var set = IndexSet()
@@ -64,9 +122,11 @@ final class MarkerHiding: NSObject, NSLayoutManagerDelegate {
     }
 
     private func rebuild() {
-        guard let revealed else { hiddenCharacters = allMarkers; return }
         var set = allMarkers
-        set.remove(integersIn: revealed.location..<NSMaxRange(revealed))
+        if let revealed { set.remove(integersIn: revealed.location..<NSMaxRange(revealed)) }
+        // The furniture goes back in AFTER the reveal has taken its
+        // paragraph out, which is the whole point of it.
+        set.formUnion(furniture)
         hiddenCharacters = set
     }
 
@@ -106,6 +166,17 @@ final class MarkerHiding: NSObject, NSLayoutManagerDelegate {
                     newProperties = Array(UnsafeBufferPointer(start: properties, count: glyphRange.length))
                 }
                 newProperties?[index].insert(.controlCharacter)
+            } else if let stands = substitutions[character],
+                      case let substitute = BulletGlyphs.glyph(for: stands, in: font),
+                      substitute != 0 {
+                // Drawn as something else — the box a reminder's `[`
+                // becomes. A font with no glyph for it answers 0, which
+                // would draw as nothing at all, so the bracket is left
+                // alone rather than losing the box altogether.
+                if newGlyphs == nil {
+                    newGlyphs = Array(UnsafeBufferPointer(start: glyphs, count: glyphRange.length))
+                }
+                newGlyphs?[index] = substitute
             } else if let bullet = BulletGlyphs.markerGlyph(at: character, in: text, font: font) {
                 if newGlyphs == nil {
                     newGlyphs = Array(UnsafeBufferPointer(start: glyphs, count: glyphRange.length))

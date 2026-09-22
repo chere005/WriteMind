@@ -36,6 +36,69 @@ final class MarkerHidingTests: XCTestCase {
         XCTAssertTrue(hideable("> a quote").isEmpty)
     }
 
+    // MARK: - Furniture: hidden even on the caret's own line
+
+    private func furniture(_ source: String) -> [String] {
+        let text = source as NSString
+        return CellFurniture.headingMarkers(MarkdownSourceStyle.runs(in: source), in: text)
+            .map { text.substring(with: $0) }
+    }
+
+    func testTheHashesAtTheHeadOfALineAreFurnitureAndNothingElseIs() {
+        XCTAssertEqual(furniture("## Section"), ["## "])
+        XCTAssertEqual(furniture("###### Deep\n\n# Top"), ["###### ", "# "])
+        // Not an inline pair, not a fence, not a hash inside the words.
+        XCTAssertTrue(furniture("Plain **bold** here").isEmpty)
+        XCTAssertTrue(furniture("```swift\nlet x = 1\n```").isEmpty)
+        XCTAssertTrue(furniture("a #hashtag mid-line").isEmpty)
+        XCTAssertTrue(furniture("#no space after").isEmpty)
+    }
+
+    func testAnEmptyHeadingIsStillFurniture() {
+        // `hideable` leaves a run that IS its whole line alone, so an
+        // empty heading kept its hashes; as furniture it does not.
+        XCTAssertTrue(hideable("## ").isEmpty)
+        XCTAssertEqual(furniture("## "), ["## "])
+    }
+
+    func testFurnitureStaysHiddenWhileItsOwnParagraphIsRevealed() {
+        let source = "## Section"
+        let text = source as NSString
+        let hiding = MarkerHiding()
+        hiding.setMarkers(MarkerHiding.hideable(MarkdownSourceStyle.runs(in: source), in: text))
+        hiding.setFurniture(CellFurniture.read(text, runs: MarkdownSourceStyle.runs(in: source)))
+        // The caret is in the heading — the one case that used to show it.
+        _ = hiding.setRevealed(NSRange(location: 0, length: text.length))
+        XCTAssertTrue(hiding.isHidden(0), "the # is furniture on the rendered page")
+        XCTAssertTrue(hiding.isHidden(2), "and so is the space after it")
+        XCTAssertFalse(hiding.isHidden(3), "the words are not")
+    }
+
+    func testTheCaretIsPushedOutOfTheFrontOfFurniture() {
+        let piece = [NSRange(location: 0, length: 3)]
+        // Anywhere inside it — including its very start, which is where a
+        // click on the left edge and Home both land.
+        for at in 0...2 {
+            XCTAssertEqual(MarkerHiding.outside(NSRange(location: at, length: 0), of: piece),
+                           NSRange(location: 3, length: 0), "from \(at)")
+        }
+        // Past it, and a real selection, are left exactly as they are.
+        XCTAssertEqual(MarkerHiding.outside(NSRange(location: 5, length: 0), of: piece),
+                       NSRange(location: 5, length: 0))
+        XCTAssertEqual(MarkerHiding.outside(NSRange(location: 0, length: 9), of: piece),
+                       NSRange(location: 0, length: 9))
+        XCTAssertEqual(MarkerHiding.outside(NSRange(location: 1, length: 0), of: []),
+                       NSRange(location: 1, length: 0))
+    }
+
+    func testABackspaceBehindFurnitureTakesTheWholePiece() {
+        let piece = [NSRange(location: 0, length: 3)]
+        XCTAssertEqual(MarkerHiding.furnitureBehind(3, in: piece), piece[0])
+        XCTAssertNil(MarkerHiding.furnitureBehind(4, in: piece))
+        XCTAssertNil(MarkerHiding.furnitureBehind(0, in: piece))
+        XCTAssertNil(MarkerHiding.furnitureBehind(3, in: []))
+    }
+
     func testTheRevealedParagraphKeepsItsMarkers() {
         let hiding = MarkerHiding()
         hiding.setMarkers([NSRange(location: 6, length: 2), NSRange(location: 12, length: 2),

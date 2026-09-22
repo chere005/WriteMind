@@ -60,7 +60,64 @@ struct MarkdownPreview: View {
         var language: CodeLanguage { CodeLanguage.from(fence: MarkdownFormatting.fenceLanguage(open)) ?? .plain }
     }
 
-    @State private var editingRange: NSRange?
+    /// WHERE THE CARET IS ON THIS PAGE, and there is only one of it.
+    ///
+    /// A cell open as its markdown in one text view, or ONE REMINDER'S
+    /// WORDS with its box still a live checkbox beside it (Sean,
+    /// 2026-09-21: "when modifying a checklist.. the checkboxes remain in
+    /// tact and just the text part of the list becomes editable, one at a
+    /// time"). Both open at once is what this makes unrepresentable:
+    /// `editingRange` below is a window onto it, so every one of the
+    /// sixteen places that already wrote `editingRange = nil` closes an
+    /// open reminder too, without a line of change at any of them.
+    enum Cursor: Equatable {
+        case none
+        case cell(NSRange)
+        /// The range of the item's WORDS, not of its line.
+        case item(NSRange)
+    }
+
+    @State private var cursor: Cursor = .none
+
+    /// The cell open for typing — nil while a reminder is, because a
+    /// reminder is not a cell and the block still renders around it.
+    private var editingRange: NSRange? {
+        get { if case .cell(let range) = cursor { return range }; return nil }
+        nonmutating set { cursor = newValue.map { .cell($0) } ?? .none }
+    }
+
+    /// The reminder open for typing, by the range of its words.
+    private var editingItem: NSRange? {
+        get { if case .item(let range) = cursor { return range }; return nil }
+        nonmutating set {
+            if let newValue { cursor = .item(newValue) }
+            else if case .item = cursor { cursor = .none }
+        }
+    }
+
+    /// The CELL something is open in, whichever kind of cursor it is.
+    /// Every whole-cell command asks this: with a reminder open, ⌃⌫ and
+    /// Duplicate and the Format menu must still mean the checklist, not
+    /// the note's first cell (which is what `items.first` gives).
+    private var openCell: NSRange? {
+        switch cursor {
+        case .none: return nil
+        case .cell(let range): return range
+        case .item(let range):
+            return NotebookCells.block(containing: range.location, in: markdown)?.range
+        }
+    }
+
+    /// Where the caret is in the NOTE — the open thing's start plus how
+    /// far into its text view the caret sits. The same sum for a cell and
+    /// for a reminder, which is why it is written once.
+    private var caretInNote: Int {
+        let inside = bridge.textView?.selectedRange().location ?? 0
+        switch cursor {
+        case .none: return 0
+        case .cell(let range), .item(let range): return range.location + inside
+        }
+    }
     /// The cells held by their brackets — several of them, discontiguous,
     /// and none of them open for typing (Sean, 2026-09-20: "fix selecting
     /// multiple cells by clicking and dragging, shift clicking, or cmd
@@ -72,9 +129,25 @@ struct MarkdownPreview: View {
     /// the markdown pane keeps it in `tv.selectedRanges`.
     @State private var selectedCells: [NSRange] = []
     @State private var draft = ""
+    /// The words of the one reminder open for typing.
+    @State private var itemDraft = ""
     @State private var focusToken = 0
-    @State private var caretAtStart = false
-    @State private var hoveredSeam: SeamID?
+    /// Where the caret lands in whatever opens next.
+    @State private var caret: BlockEditor.Caret = .end
+    /// WHERE THE POINTER IS ON THIS PAGE — a seam, or a cell's words.
+    ///
+    /// One reader for both, because the two hand the cursor to each other:
+    /// the place the pointer has ARRIVED at is often told before the place
+    /// it left, so leaving A took back the cursor B had just set. Each
+    /// hover asks "was it me" against this before it hands anything back
+    /// (the seams' own `ours`, generalised to the rest of the page).
+    enum Spot: Hashable {
+        case seam(SeamID)
+        /// A rendered cell, by the offset that identifies its row.
+        case cell(Int)
+    }
+
+    @State private var hovered: Spot?
     /// The cell a drag from a bar is growing from, once it has started —
     /// settled by the first movement and then kept, so dragging back past
     /// the start does not swap ends.
@@ -258,7 +331,7 @@ struct MarkdownPreview: View {
             if let top = PreviewLayout.topRow(positions: places, scroll: offset) { onTopCell?(top) }
         }
         .background(Color(nsColor: .textBackgroundColor))
-        .onChange(of: editingRange) { _, range in onEditingChanged?(range != nil) }
+        .onChange(of: cursor) { _, cursor in onEditingChanged?(cursor != .none) }
         // The pen going up takes the bar with it.
         .onChange(of: seamsEnabled) { _, enabled in if !enabled { disarm() } }
         .onChange(of: focusedSeam) { _, focused in
@@ -280,7 +353,7 @@ struct MarkdownPreview: View {
             bridge.moveSectionInDocument = { up in moveWholeSection(up: up) }
             bridge.mergeCellsInDocument = { mergeCells() }
             bridge.splitCellInDocument = { splitCell() }
-            bridge.cellRangeInDocument = { editingRange ?? items.first?.range }
+            bridge.cellRangeInDocument = { openCell ?? items.first?.range }
             bridge.cellEditInDocument = { make in cellEdit(make) }
             // And what a Format command means while the BAR is the cursor.
             // There is no text view on this side for the bridge to read the
@@ -288,10 +361,21 @@ struct MarkdownPreview: View {
             // to `ensureEditing`, which opened the note's FIRST cell and
             // titled that (2026-09-20).
             bridge.armedBar = { kind in
-                guard armedSeam != nil else { return false }
-                if let kind { armedType = kind }
-                return true
+                guard let seam = armedSeam else { return false }
+                // THE CELL IS MADE THERE, now (Sean, 2026-09-21: "if i
+                // click on something like a style, or a bullet list, or a
+                // quoted section, etc.. it should create a cell at the
+                // position of the bar ready for that type of input").
+                // Recording the kind and waiting for a character is the
+                // + on the bar's job, and it keeps it; a button pressed
+                // has to do something the moment it is pressed.
+                openSeam(.empty, as: kind ?? .text, at: seam.offset)
+                // A kind IS the whole command. Anything else still has to
+                // run, and by the time `perform` comes back round the
+                // cell it runs in is open.
+                return kind != nil
             }
+            bridge.barIsUp = { armedSeam != nil }
         }
         .onDisappear {
             onEditingChanged?(false)
@@ -302,6 +386,7 @@ struct MarkdownPreview: View {
             bridge.cellRangeInDocument = nil
             bridge.cellEditInDocument = nil
             bridge.armedBar = nil
+            bridge.barIsUp = nil
         }
         .environment(\.openURL, OpenURLAction { url in
             let destination = url.absoluteString
@@ -386,7 +471,7 @@ struct MarkdownPreview: View {
             let held = CellSelection.covers(item.range, selectedCells)
             out.append(CellBrackets.Bracket(key: "cell:\(item.id)", depth: depth,
                                             top: place.top, bottom: place.bottom,
-                                            selected: editingRange == item.range || held,
+                                            selected: openCell == item.range || held,
                                             held: held, range: item.range))
         }
 
@@ -419,7 +504,7 @@ struct MarkdownPreview: View {
                         font: BlockView.editingNSFont(item.block),
                         bridge: bridge,
                         focusToken: focusToken,
-                        caretAtStart: caretAtStart,
+                        caret: caret,
                         placeholder: fence == nil
                             ? "Write something — ⌘1 a title, ⇧⌘L a list, ⌃⌘Q a quote"
                             : "Type the code",
@@ -447,11 +532,79 @@ struct MarkdownPreview: View {
             // can't edit this" (Sean, 2026-09-19: "i still cant do things
             // like edit code or text etc in wysiwyg editing"). Selecting
             // text is what the editor that opens is for.
-            BlockView(block: block, onToggleTodo: { index in tickTodo(item.range, at: index) })
+            BlockView(block: block,
+                      onToggleTodo: { index in tickTodo(item.range, at: index) },
+                      editing: checklistEditing(in: item.range, block: block))
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .contentShape(Rectangle())
-                .onTapGesture { beginEditing(item.range) }
+                // A CHECKLIST'S ITEMS OWN THEIR OWN CLICKS, so a click on
+                // a reminder opens that reminder and not the whole cell
+                // (Sean, 2026-09-21). The bracket in the gutter is still
+                // how the whole list is opened, which is how a list's
+                // kind is changed and how a reminder is unmade.
+                .onTapGesture { if !Self.isChecklist(block) { beginEditing(item.range) } }
+                // AN I-BEAM OVER THE WORDS (Sean, 2026-09-21: "in wysiwyg
+                // mode as i hover over text and such it should be a text
+                // edit cursor"). A rendered block is SwiftUI `Text` with
+                // no cursor rects of its own, so the pointer over the
+                // whole page was the arrow — a page you can click into
+                // and type in, saying nothing of the sort.
+                //
+                // Set on every move rather than pushed, and handed back
+                // on the way out, for the reasons the seams are: a pushed
+                // cursor loses to cursorUpdate, and `NSCursor.set()` is
+                // global and sticks until something else sets one. The
+                // "was it me" question is `hovered`, so the seam the
+                // pointer has just arrived at does not have its cursor
+                // taken back by the cell it left.
+                .onContinuousHover(coordinateSpace: .local) { phase in
+                    switch phase {
+                    case .active:
+                        // Not while the pen, the arrow tool or a
+                        // placement owns the pane: the pointer there is
+                        // the layer's, and two answers to one pointer is
+                        // the flicker that cost seven rounds.
+                        guard editable, seamsEnabled else { return }
+                        if hovered != .cell(item.id) { hovered = .cell(item.id) }
+                        let put = Self.textCursor
+                        put.set()
+                        if seamCursor !== put { seamCursor = put }
+                    case .ended:
+                        let ours = hovered == .cell(item.id)
+                        if ours { hovered = nil }
+                        let back = Self.cursor(hovering: false, ours: ours, put: seamCursor)
+                        if ours { seamCursor = nil }
+                        back?.set()
+                    }
+                }
         }
+    }
+
+    static func isChecklist(_ block: MarkdownBlock?) -> Bool {
+        if case .todos = block { return true }
+        return false
+    }
+
+    /// What a rendered checklist needs to let ONE of its items be typed
+    /// in. Nil for every other kind of cell, and nil too when the walk
+    /// and the parser disagree about how many reminders are in the cell —
+    /// an item editor bound to the wrong line is worse than none.
+    private func checklistEditing(in cell: NSRange, block: MarkdownBlock?) -> BlockView.ChecklistEditing? {
+        guard editable, case .todos(let shown)? = block else { return nil }
+        let found = ListEditing.reminders(in: cell, of: markdown as NSString)
+        guard found.count == shown.count else { return nil }
+        return BlockView.ChecklistEditing(
+            openWords: editingItem,
+            items: found,
+            text: itemBinding,
+            focusToken: focusToken,
+            caret: caret,
+            bridge: bridge,
+            onOpen: { reminder, caret in openItem(reminder.text, caret: caret) },
+            onSplit: { head, tail in splitItem(head: head, tail: tail) },
+            onDeleteEmpty: { removeItem() },
+            onJoinPrevious: { joinItemToPrevious() },
+            onMove: { moveFromItem($0) })
     }
 
     /// One seam: the WHOLE space between two cells, top to bottom and
@@ -482,7 +635,7 @@ struct MarkdownPreview: View {
                 // the random spot below it's currently at"). The whole
                 // seam is still the hit area.
                 .overlay(alignment: .top) {
-                    if armedSeam == id || hoveredSeam == id {
+                    if armedSeam == id || hovered == .seam(id) {
                         HStack(spacing: 6) {
                             // The + is a button, and the only thing on the
                             // bar that is: the rest of the seam arms and
@@ -521,7 +674,7 @@ struct MarkdownPreview: View {
                 .onContinuousHover(coordinateSpace: .local) { phase in
                     switch phase {
                     case .active(let point):
-                        if hoveredSeam != id { hoveredSeam = id }
+                        if hovered != .seam(id) { hovered = .seam(id) }
                         // Set on every move, not pushed once: the text
                         // views either side put their own cursors back
                         // the moment the pointer touches them.
@@ -533,8 +686,8 @@ struct MarkdownPreview: View {
                         // Whether the pointer was on THIS seam, read
                         // before it is forgotten: the seam it has moved
                         // on to may have claimed the pointer already.
-                        let ours = hoveredSeam == id
-                        if ours { hoveredSeam = nil }
+                        let ours = hovered == .seam(id)
+                        if ours { hovered = nil }
                         // And handed back on the way out. There is no
                         // text view under the pointer on this side to put
                         // its own cursor back, so the horizontal I-beam
@@ -583,7 +736,17 @@ struct MarkdownPreview: View {
         guard editable,
               let edit = MarkdownFormatting.toggleTodo(text: markdown, block: block, item: index)
         else { return }
+        // Where the caret was, before the button took the keyboard. A box
+        // and a caret share a row for the first time here: pressing the
+        // box makes it first responder, and without this the words you
+        // were in the middle of typing stop taking what you type.
+        let held = editingItem != nil ? bridge.textView?.selectedRange().location : nil
         markdown = (markdown as NSString).replacingCharacters(in: edit.range, with: edit.replacement)
+        // A tick is one character for one (`toggleTodo`, and a test says
+        // so), so nothing the caret was measured against has moved.
+        guard let held else { return }
+        caret = .at(held)
+        focusToken += 1
     }
 
     /// A drag that began on a bar: the cells between where it started and
@@ -647,6 +810,12 @@ struct MarkdownPreview: View {
     /// this page's seams last set, and if that is not still what is on
     /// screen then somebody else has the pointer and it is not ours to
     /// hand back.
+    /// What the words of a rendered cell put on the pointer: the ordinary
+    /// I-beam, upright — the cell is text, and it is clicked into and
+    /// typed in. The seam's is the same I-beam ON ITS SIDE, which is how
+    /// the two read as one idea rather than two.
+    static var textCursor: NSCursor { .iBeam }
+
     static func cursor(hovering: Bool, onPlus: Bool = false, ours: Bool = false,
                        put: NSCursor? = nil, current: NSCursor = .current) -> NSCursor? {
         if hovering { return onPlus ? .pointingHand : .iBeamCursorForVerticalLayout }
@@ -850,7 +1019,7 @@ struct MarkdownPreview: View {
         fence = nil
         draft = opened.draft
         editingRange = opened.editing
-        caretAtStart = false
+        caret = .end
         focusToken += 1
     }
 
@@ -928,7 +1097,7 @@ struct MarkdownPreview: View {
     /// set in the meantime is still left alone.
     private func dropHover() {
         let back = Self.cursor(hovering: false, ours: true, put: seamCursor)
-        hoveredSeam = nil
+        hovered = nil
         seamCursor = nil
         back?.set()
     }
@@ -981,7 +1150,7 @@ struct MarkdownPreview: View {
             beginEditing(cells[id.index - 1].range)
         } else {
             guard id.index < cells.count else { return }
-            beginEditing(cells[id.index].range, caretAtStart: true)
+            beginEditing(cells[id.index].range, caret: .start)
         }
     }
 
@@ -1014,7 +1183,7 @@ struct MarkdownPreview: View {
         draft = opened.draft
         editingRange = opened.editing
         // Behind what was typed — which for an empty cell is the same place.
-        caretAtStart = false
+        caret = .end
         focusToken += 1
     }
 
@@ -1035,7 +1204,114 @@ struct MarkdownPreview: View {
         })
     }
 
-    private func beginEditing(_ range: NSRange, caretAtStart: Bool = false) {
+    // MARK: - One reminder of a checklist
+
+    /// Open ONE item's words, with its box left alone. The other cursors
+    /// go out the way `beginEditing` puts them out — two cursors is what
+    /// he was looking at before.
+    private func openItem(_ words: NSRange, caret: BlockEditor.Caret) {
+        guard editable else { return }
+        onClick?()
+        disarm()
+        selectedCells = []
+        itemDraft = (markdown as NSString).substring(with: words)
+        editingItem = words
+        self.caret = caret
+        focusToken += 1
+    }
+
+    /// Every keystroke straight into the note, over the item's words and
+    /// nothing else — the box, the marker and the indent are outside the
+    /// range, so they cannot be typed over or deleted by accident.
+    private var itemBinding: Binding<String> {
+        Binding(get: { itemDraft }, set: { typed in
+            itemDraft = typed
+            guard let range = editingItem else { return }
+            let ns = markdown as NSString
+            guard NSMaxRange(range) <= ns.length else { return }
+            markdown = ns.replacingCharacters(in: range, with: typed)
+            editingItem = NSRange(location: range.location, length: (typed as NSString).length)
+        })
+    }
+
+    /// Return in an item: the next reminder, open and empty.
+    private func splitItem(head: String, tail: String) {
+        guard let range = editingItem,
+              let split = ListEditing.split(markdown, item: range, head: head, tail: tail)
+        else { return }
+        markdown = split.markdown
+        openItem(split.editing, caret: .start)
+    }
+
+    /// Backspace in an item with nothing in it: the item goes. The last
+    /// one of a checklist takes the cell with it, which is what ⌫ in an
+    /// empty CELL has always done.
+    private func removeItem() {
+        guard let range = editingItem,
+              let gone = ListEditing.removeEmpty(markdown, item: range)
+        else { return }
+        if let above = gone.editing {
+            markdown = gone.markdown
+            openItem(above, caret: .end)
+            return
+        }
+        // Nothing above it in the list: if the cell has no reminders left
+        // it goes too, and the note closes up behind it.
+        let cell = openCell
+        markdown = gone.markdown
+        cursor = .none
+        guard let cell,
+              let block = MarkdownParser.positioned(from: gone.markdown)
+                .first(where: { $0.range.location == cell.location })
+        else { return }
+        if case .blank = block.block {
+            let (updated, previous) = PreviewEditing.removeBlock(gone.markdown, at: block.range)
+            markdown = updated
+            if let previous { beginEditing(previous) }
+        }
+    }
+
+    /// Backspace at the start of words that are not empty: they join the
+    /// reminder above.
+    private func joinItemToPrevious() {
+        guard let range = editingItem,
+              let joined = ListEditing.joinPrevious(markdown, item: range)
+        else { return }
+        markdown = joined.markdown
+        guard let above = ListEditing.reminder(
+            forText: NSRange(location: joined.editing.location, length: 0),
+            in: joined.markdown as NSString) ?? nearestReminder(at: joined.editing.location)
+        else { return }
+        openItem(above.text, caret: .at(joined.editing.location - above.text.location))
+    }
+
+    private func nearestReminder(at offset: Int) -> Reminder? {
+        let ns = joinedText
+        let line = ns.lineRange(for: NSRange(location: min(offset, max(ns.length - 1, 0)), length: 0))
+        return ListEditing.reminder(onLineAt: line, in: ns)
+    }
+
+    private var joinedText: NSString { markdown as NSString }
+
+    /// ↑ and ↓ inside an item walk the list before they leave the cell,
+    /// and Escape puts the caret away.
+    private func moveFromItem(_ move: BlockEditor.Move) {
+        guard let range = editingItem, let cell = openCell else { return }
+        let all = ListEditing.reminders(in: cell, of: markdown as NSString)
+        let here = all.firstIndex { $0.text.location == range.location }
+        switch move {
+        case .out:
+            cursor = .none
+        case .up:
+            if let here, here > 0 { openItem(all[here - 1].text, caret: .end) }
+            else { armSeam(beside: cell, below: false) }
+        case .down:
+            if let here, here + 1 < all.count { openItem(all[here + 1].text, caret: .end) }
+            else { armSeam(beside: cell, below: true) }
+        }
+    }
+
+    private func beginEditing(_ range: NSRange, caret: BlockEditor.Caret = .end) {
         guard editable else { return }
         onClick?()
         // Two cursors is what he was looking at before: a block with a
@@ -1056,7 +1332,7 @@ struct MarkdownPreview: View {
             draft = source
         }
         editingRange = range
-        self.caretAtStart = caretAtStart
+        self.caret = caret
         focusToken += 1
     }
 
@@ -1065,7 +1341,7 @@ struct MarkdownPreview: View {
     /// is empty.
     private func openSomething() -> Bool {
         guard editable else { return false }
-        if editingRange != nil { return true }
+        if cursor != .none { return true }
         let parsed = MarkdownParser.positioned(from: markdown)
         if let first = parsed.first {
             beginEditing(first.range)
@@ -1100,7 +1376,7 @@ struct MarkdownPreview: View {
     /// held, and the one open for typing (or the first) when none is.
     private var heldCells: [NSRange] {
         selectedCells.isEmpty
-            ? [editingRange ?? items.first?.range].compactMap { $0 }
+            ? [openCell ?? items.first?.range].compactMap { $0 }
             : selectedCells
     }
 
@@ -1150,15 +1426,14 @@ struct MarkdownPreview: View {
     /// blocks, so it is the note that is edited, not the block's own text
     /// view (Sean, 2026-09-19: "cmd+d and cmd+m to split and merge cells").
     private func mergeCells() {
-        let inside = bridge.textView?.selectedRange().location ?? 0
-        let caret = (editingRange?.location ?? 0) + inside
+        let caret = caretInNote
         guard let edit = NotebookCells.merge(text: markdown,
                                              selection: NSRange(location: caret, length: 0))
         else { return }
         let updated = (markdown as NSString).replacingCharacters(in: edit.range, with: edit.replacement)
         markdown = updated
         // Stay in the cell the two became.
-        if editingRange != nil,
+        if cursor != .none,
            let block = MarkdownParser.positioned(from: updated)
             .first(where: { NSLocationInRange(edit.selection.location, $0.range) }) {
             beginEditing(block.range)
@@ -1177,8 +1452,7 @@ struct MarkdownPreview: View {
     /// the markdown pane gets there by the caret alone, but there is no
     /// caret here to follow.
     private func splitCell() {
-        let inside = bridge.textView?.selectedRange().location ?? 0
-        let caret = (editingRange?.location ?? 0) + inside
+        let caret = caretInNote
         guard let cell = NotebookCells.block(containing: caret, in: markdown),
               let edit = NotebookCells.split(text: markdown,
                                              selection: NSRange(location: caret, length: 0))
@@ -1190,14 +1464,14 @@ struct MarkdownPreview: View {
     }
 
     private func moveWholeSection(up: Bool) {
-        let caret = editingRange?.location ?? 0
+        let caret = openCell?.location ?? 0
         guard let edit = NotebookOutline.moveSection(text: markdown,
                                                      selection: NSRange(location: caret, length: 0), up: up)
         else { return }
         let updated = (markdown as NSString).replacingCharacters(in: edit.range, with: edit.replacement)
         markdown = updated
         // Follow the section to where it went.
-        if editingRange != nil {
+        if cursor != .none {
             let parsed = MarkdownParser.positioned(from: updated)
             let landing = edit.selection.location
             if let block = parsed.first(where: { NSLocationInRange(landing, $0.range) }) ?? parsed.first {
@@ -1208,14 +1482,14 @@ struct MarkdownPreview: View {
 
     private func insertBlock(at offset: Int) {
         guard editable else { return }
-        let (updated, caret) = PreviewEditing.insertBlock(in: markdown, at: offset)
+        let (updated, opened) = PreviewEditing.insertBlock(in: markdown, at: offset)
         markdown = updated
         // Always a plain text cell, whatever the cell above it was (Sean,
         // 2026-09-19: "default is always just text").
         fence = nil
         draft = ""
-        editingRange = NSRange(location: caret, length: 0)
-        caretAtStart = true
+        editingRange = NSRange(location: opened, length: 0)
+        caret = .start
         focusToken += 1
         disarm()
         dropHover()
@@ -1227,7 +1501,7 @@ struct MarkdownPreview: View {
         markdown = updated
         draft = tail
         editingRange = editing
-        caretAtStart = true
+        caret = .start
         focusToken += 1
     }
 
@@ -1271,7 +1545,38 @@ struct MarkdownPreview: View {
         /// Ticking the nth box of a task list. Nil on paper and anywhere
         /// else the note cannot be written to.
         var onToggleTodo: ((Int) -> Void)?
+        /// What a CHECKLIST needs to let one of its items be typed in.
+        /// Nil for every other kind of block, and nil on paper — the PDF
+        /// export builds a `BlockView` with nothing but its block, and
+        /// an `ImageRenderer` draws an AppKit text view as nothing at all.
+        var editing: ChecklistEditing?
         @Environment(\.notePaper) private var paper
+
+        /// The one item of a checklist that is open for typing, and
+        /// everything it needs to be.
+        ///
+        /// Keyed by the RANGE OF ITS WORDS and not by an index: an index
+        /// goes stale the moment a line is added above it, and this view
+        /// is rebuilt from the note on every keystroke.
+        struct ChecklistEditing {
+            var openWords: NSRange?
+            /// The reminders of this cell, in the order they are drawn.
+            var items: [Reminder]
+            var text: Binding<String>
+            var focusToken: Int
+            var caret: BlockEditor.Caret
+            var bridge: EditorBridge
+            var onOpen: (Reminder, BlockEditor.Caret) -> Void
+            var onSplit: (String, String) -> Void
+            var onDeleteEmpty: () -> Void
+            var onJoinPrevious: () -> Void
+            var onMove: (BlockEditor.Move) -> Void
+
+            func isOpen(_ index: Int) -> Bool {
+                guard let openWords, index < items.count else { return false }
+                return NSEqualRanges(openWords, items[index].text)
+            }
+        }
 
         var body: some View {
             switch block {
@@ -1296,9 +1601,10 @@ struct MarkdownPreview: View {
                 .padding(.leading, 8)
             case .todos(let items):
                 // A task list: the box is the control, and only the box —
-                // a tap on the words opens the cell for typing like any
-                // other (Sean, 2026-09-21: "todo bullets that can be
-                // checked or unchecked").
+                // and it STAYS the control while the words beside it are
+                // being typed (Sean, 2026-09-21: "when modifying a
+                // checklist.. the checkboxes remain in tact and just the
+                // text part of the list becomes editable, one at a time").
                 VStack(alignment: .leading, spacing: 4) {
                     ForEach(Array(items.enumerated()), id: \.offset) { index, item in
                         HStack(alignment: .firstTextBaseline, spacing: 8) {
@@ -1310,12 +1616,7 @@ struct MarkdownPreview: View {
                             .buttonStyle(.plain)
                             .disabled(onToggleTodo == nil)
                             .help(item.done ? "Done — click to undo it" : "Click when it is done")
-                            Text(MarkdownInline.attributed(item.text, paper: paper))
-                                .font(.system(size: 15))
-                                // Done is struck through and faded, the way
-                                // a finished line in a notebook is.
-                                .strikethrough(item.done, color: .secondary)
-                                .foregroundStyle(item.done ? AnyShapeStyle(.secondary) : AnyShapeStyle(.primary))
+                            words(of: item, at: index)
                         }
                     }
                 }
@@ -1388,6 +1689,62 @@ struct MarkdownPreview: View {
                 // it, and there would be nowhere left to click the rule.
                 Divider().padding(.vertical, 4)
             }
+        }
+
+        /// ONE REMINDER'S WORDS: the rendered text, with the editor drawn
+        /// OVER it when this is the item that is open.
+        ///
+        /// An overlay, not a swap. The `Text` keeps the row's height and
+        /// its baseline whatever is over it, so opening an item moves
+        /// neither the box beside it nor the cells, the seams, the
+        /// brackets or the floating ink below it — all of which are laid
+        /// out from the measured height of this row (`PreviewRowHeights`
+        /// → `PreviewLayout.positions`). Swapping the `Text` for a text
+        /// view grows the line by about five points, and everything under
+        /// it slides.
+        @ViewBuilder
+        private func words(of item: TodoItem, at index: Int) -> some View {
+            let open = editing?.isOpen(index) ?? false
+            // An empty reminder still has to be a line tall, or there is
+            // nothing to click and nowhere to draw the editor.
+            Text(MarkdownInline.attributed(item.text.isEmpty ? " " : item.text, paper: paper))
+                .font(.system(size: 15))
+                // Done is struck through and faded, the way a finished
+                // line in a notebook is.
+                .strikethrough(item.done, color: .secondary)
+                .foregroundStyle(item.done ? AnyShapeStyle(.secondary) : AnyShapeStyle(.primary))
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .opacity(open ? 0 : 1)
+                .overlay(alignment: .topLeading) {
+                    if open, let editing {
+                        BlockEditor(text: editing.text,
+                                    font: .systemFont(ofSize: 15),
+                                    bridge: editing.bridge,
+                                    focusToken: editing.focusToken,
+                                    caret: editing.caret,
+                                    metrics: .listItem,
+                                    singleLine: true,
+                                    onSplit: editing.onSplit,
+                                    onDeleteEmpty: editing.onDeleteEmpty,
+                                    onJoinPrevious: editing.onJoinPrevious,
+                                    onMove: editing.onMove)
+                    }
+                }
+                .contentShape(Rectangle())
+                .onTapGesture(coordinateSpace: .local) { point in
+                    guard let editing, index < editing.items.count else { return }
+                    editing.onOpen(editing.items[index], Self.landing(in: item.text, at: point.x))
+                }
+        }
+
+        /// Where the caret goes for a click at `x`. On the words as they
+        /// were WRITTEN, when what is drawn is character for character
+        /// what is in the note; at the end when it is not, because
+        /// `**bold**` renders four characters shorter than it is written
+        /// and an x through the rendered line means nothing in the source.
+        static func landing(in source: String, at x: CGFloat) -> BlockEditor.Caret {
+            let drawn = String(MarkdownInline.attributed(source).characters)
+            return drawn == source ? .atX(x) : .end
         }
 
         /// Title · Header · Section · Subsection · Subsubsection · Author

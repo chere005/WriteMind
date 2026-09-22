@@ -31,44 +31,69 @@ final class ArmedBarFormatTests: XCTestCase {
 
     // MARK: - The source pane
 
-    func testAHeadingShortcutAtABarNamesTheKindInsteadOfRetitlingTheCellBelow() {
+    func testAHeadingShortcutAtABarMakesTheCellThereAndDoesNotRetitleTheOneBelow() {
         let (view, bridge) = armed(at: 12)
         bridge.heading(.title)
-        XCTAssertEqual(view.string, note, "the neighbour is not touched")
-        XCTAssertEqual(view.armedType, .heading(.title))
-        XCTAssertEqual(view.armedSeam, 12, "and the bar is still up")
-        // Which is to say: ⌘1 then a character is the + then a character.
+        // The cell is MADE, now, with the marker in it and the caret where
+        // the words go (Sean, 2026-09-21: "it should create a cell at the
+        // position of the bar ready for that type of input").
+        XCTAssertEqual(view.string, "First cell\n\n# \n\nSecond cell")
+        XCTAssertEqual(view.selectedRange(), NSRange(location: 14, length: 0))
+        XCTAssertNil(view.armedSeam, "the bar was the cursor and the caret has taken over")
         view.insertText("x", replacementRange: NSRange(location: NSNotFound, length: 0))
         XCTAssertEqual(view.string, "First cell\n\n# x\n\nSecond cell")
     }
 
-    func testEveryCommandTheListHasAKindForChoosesThatKindAtTheBar() {
-        let wanted: [(String, (EditorBridge) -> Void, CellTypes.Kind)] = [
-            ("Title", { $0.heading(.title) }, .heading(.title)),
-            ("Body Text", { $0.heading(.body) }, .text),
-            ("Dashes List", { $0.list(.dashes) }, .list(.dashes)),
-            ("Dots List", { $0.bullets() }, .list(.dots)),
-            ("Quote", { $0.quote() }, .quote),
-            ("Code Block", { $0.codeBlock(language: "swift") }, .code),
+    func testEveryCommandThatNamesAKindMakesThatCellAtTheBar() {
+        let wanted: [(String, (EditorBridge) -> Void, String)] = [
+            ("Title", { $0.heading(.title) }, "First cell\n\n# \n\nSecond cell"),
+            ("Body Text", { $0.heading(.body) }, "First cell\n\n\n\nSecond cell"),
+            ("Dashes List", { $0.list(.dashes) }, "First cell\n\n* \n\nSecond cell"),
+            ("Dots List", { $0.bullets() }, "First cell\n\n- \n\nSecond cell"),
+            ("Quote", { $0.quote() }, "First cell\n\n> \n\nSecond cell"),
         ]
-        for (name, command, kind) in wanted {
+        for (name, command, expected) in wanted {
             let (view, bridge) = armed(at: 12)
             command(bridge)
-            XCTAssertEqual(view.string, note, "\(name) wrote into the note")
-            XCTAssertEqual(view.armedType, kind, "\(name)")
+            XCTAssertEqual(view.string, expected, name)
+            XCTAssertNil(view.armedSeam, "\(name) left the bar up")
         }
+        // A fenced block is a pair of lines rather than a prefix, so it is
+        // named apart rather than spelled out beside the others.
+        let (view, bridge) = armed(at: 12)
+        bridge.codeBlock(language: "swift")
+        XCTAssertTrue(view.string.contains("```"), view.string)
+        XCTAssertTrue(view.string.hasPrefix("First cell\n\n"), view.string)
+        XCTAssertTrue(view.string.hasSuffix("\n\nSecond cell"), view.string)
     }
 
-    func testACommandWithNoKindOnTheListDoesNothingAtAllAtTheBar() {
-        // Bold, indent, maths: there is no cell to apply them to, and
-        // the cell below the bar is not it.
-        for command in [{ (b: EditorBridge) in b.bold() }, { $0.italic() }, { $0.indent() },
-                        { $0.outdent() },
-                        { $0.insertMath("Pi", display: false) }, { $0.deleteCell() }] {
+    func testACommandWithNoKindOpensAPlainCellAtTheBarAndRunsInIt() {
+        // Bold and the rest name no kind, so the cell is a plain one and
+        // the command does its ordinary work inside it — which is what
+        // "ready for that type of input" means for something that is not
+        // a kind of cell.
+        let (bold, boldBridge) = armed(at: 12)
+        boldBridge.bold()
+        XCTAssertEqual(bold.string, "First cell\n\n****\n\nSecond cell")
+        XCTAssertNil(bold.armedSeam)
+
+        let (maths, mathsBridge) = armed(at: 12)
+        mathsBridge.insertMath("Pi", display: false)
+        XCTAssertTrue(maths.string.contains("Pi"), maths.string)
+        XCTAssertTrue(maths.string.hasPrefix("First cell\n\n"), maths.string)
+    }
+
+    func testACommandThatActsOnACellStillDoesNothingAtABar() {
+        // Delete, duplicate, move, split, merge: there is no cell at a
+        // bar, and making an empty one to delete is churn in the note and
+        // a step on the undo stack for a gesture that did nothing.
+        for command in [{ (b: EditorBridge) in b.deleteCell() }, { $0.duplicateCell() },
+                        { $0.moveCell(up: true) }, { $0.splitCell() }, { $0.mergeCells() },
+                        { $0.expandSelection() }] {
             let (view, bridge) = armed(at: 12)
             command(bridge)
             XCTAssertEqual(view.string, note)
-            XCTAssertEqual(view.armedType, .text, "and nothing was chosen either")
+            XCTAssertEqual(view.armedSeam, 12, "and the bar is still up")
         }
     }
 
@@ -85,25 +110,40 @@ final class ArmedBarFormatTests: XCTestCase {
 
     // MARK: - The rendered page, where there is no text view at the bar
 
-    func testAFormatCommandAtABarOnTheRenderedPageOpensNoCellAtAll() {
-        // `perform` fell through to `ensureEditing` — `openSomething`,
+    func testAFormatCommandAtABarOnTheRenderedPageGoesToTheBarAndNotToTheFirstCell() {
+        // `perform` used to fall through to `ensureEditing` — `openSomething`,
         // which knows nothing about the bar and opens the note's FIRST
         // cell. ⌘1 at a bar under the last cell titled the top of the note.
         let bridge = EditorBridge()
         var opened = 0
-        var chosen: [CellTypes.Kind?] = []
+        var asked: [CellTypes.Kind?] = []
         bridge.ensureEditing = { opened += 1; return true }
-        bridge.armedBar = { kind in chosen.append(kind); return true }
+        bridge.barIsUp = { true }
+        // What the page really does: it opens the cell and says whether
+        // that was the whole command.
+        bridge.armedBar = { kind in asked.append(kind); return kind != nil }
 
         bridge.heading(.title)
         bridge.list(.dots)
         bridge.quote()
-        XCTAssertEqual(chosen, [.heading(.title), .list(.dots), .quote])
-        XCTAssertEqual(opened, 0, "no block was opened to put the command in")
+        XCTAssertEqual(asked, [.heading(.title), .list(.dots), .quote])
+        XCTAssertEqual(opened, 0, "a kind is the whole of the command")
 
+        // Bold names no kind: the page opens a plain cell, and the bridge
+        // then waits for the text view that cell is about to build.
         bridge.bold()
-        XCTAssertEqual(chosen.last, CellTypes.Kind?.none, "and bold names no kind")
-        XCTAssertEqual(opened, 0)
+        XCTAssertEqual(asked.last, CellTypes.Kind?.none)
+        XCTAssertEqual(opened, 1, "and it runs in the cell that just opened")
+    }
+
+    func testACellCommandAtABarOnTheRenderedPageMakesNothing() {
+        let bridge = EditorBridge()
+        var asked = 0
+        bridge.ensureEditing = { XCTFail("nothing to open"); return false }
+        bridge.barIsUp = { true }
+        bridge.armedBar = { _ in asked += 1; return true }
+        bridge.expandSelection()
+        XCTAssertEqual(asked, 0, "acting on a cell is not making one")
     }
 
     func testWithNoBarUpTheRenderedPageStillOpensSomethingToTypeIn() {
@@ -111,6 +151,7 @@ final class ArmedBarFormatTests: XCTestCase {
         var opened = 0
         bridge.ensureEditing = { opened += 1; return true }
         bridge.armedBar = { _ in false }
+        bridge.barIsUp = { false }
         bridge.heading(.title)
         XCTAssertEqual(opened, 1)
     }

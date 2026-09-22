@@ -15,8 +15,20 @@ struct BlockEditor: NSViewRepresentable {
     let bridge: EditorBridge
     /// Changing this takes the keyboard.
     var focusToken: Int
-    var caretAtStart = false
+    /// Where the caret lands when this editor takes the keyboard.
+    var caret: Caret = .end
     var placeholder = ""
+    /// HOW THE TEXT IS SET, so an editor standing in for a line of a
+    /// rendered list sits on the same baseline as the words it replaced.
+    /// A cell's editor has the two points of air and the three points of
+    /// leading the source pane uses; an item's editor has neither,
+    /// because the `Text` it is drawn over has neither (Sean, 2026-09-21:
+    /// "just the text part of the list becomes editable").
+    var metrics: Metrics = .cell
+    /// One line only: a pasted newline becomes a space. An item of a list
+    /// that gains a newline is no longer one item, and the block would be
+    /// re-parsed out from under the caret mid-paste.
+    var singleLine = false
     /// A list, a quote or a fenced block: Return adds a line to it rather
     /// than starting a new block.
     var keepsNewlines = false
@@ -26,9 +38,35 @@ struct BlockEditor: NSViewRepresentable {
     var language: CodeLanguage?
     var onSplit: ((String, String) -> Void)?
     var onDeleteEmpty: (() -> Void)?
+    /// Backspace at the very start of something that is NOT empty: the
+    /// item joins the one above it, which is what every list does. Nil
+    /// leaves the key to AppKit, which at offset zero does nothing.
+    var onJoinPrevious: (() -> Void)?
     var onMove: ((Move) -> Void)?
 
     enum Move { case up, down, out }
+
+    /// Where the caret goes when this editor takes the keyboard.
+    enum Caret: Equatable {
+        case start
+        case end
+        /// A character offset into this editor's own text.
+        case at(Int)
+        /// The x a click landed on, in the editor's own coordinates — so
+        /// clicking the middle of a word puts the caret in the middle of
+        /// that word, the way clicking text does everywhere else.
+        case atX(CGFloat)
+    }
+
+    struct Metrics: Equatable {
+        var inset: NSSize
+        var lineSpacing: CGFloat
+
+        /// A cell of the note, in its own editor.
+        static let cell = Metrics(inset: NSSize(width: 0, height: 2), lineSpacing: 3)
+        /// One line of a rendered list, drawn over the `Text` it replaces.
+        static let listItem = Metrics(inset: .zero, lineSpacing: 0)
+    }
 
     func makeCoordinator() -> Coordinator { Coordinator(self) }
 
@@ -48,7 +86,9 @@ struct BlockEditor: NSViewRepresentable {
         view.isContinuousSpellCheckingEnabled = true
         view.isGrammarCheckingEnabled = false
         view.drawsBackground = false
-        view.textContainerInset = NSSize(width: 0, height: 2)
+        view.metrics = metrics
+        view.singleLine = singleLine
+        view.textContainerInset = metrics.inset
         view.isVerticallyResizable = false
         view.isHorizontallyResizable = false
         view.textContainer?.widthTracksTextView = true
@@ -65,6 +105,12 @@ struct BlockEditor: NSViewRepresentable {
     func updateNSView(_ view: BlockTextView, context: Context) {
         context.coordinator.parent = self
         view.placeholder = placeholder
+        view.singleLine = singleLine
+        if view.metrics != metrics {
+            view.metrics = metrics
+            view.textContainerInset = metrics.inset
+            context.coordinator.restyle(view)
+        }
         bridge.textView = view
 
         if view.baseFont != font || context.coordinator.language != language {
@@ -82,12 +128,11 @@ struct BlockEditor: NSViewRepresentable {
 
         if context.coordinator.focusToken != focusToken {
             context.coordinator.focusToken = focusToken
-            let caretAtStart = caretAtStart
+            let caret = caret
             DispatchQueue.main.async {
                 guard let window = view.window else { return }
                 window.makeFirstResponder(view)
-                let length = (view.string as NSString).length
-                view.setSelectedRange(NSRange(location: caretAtStart ? 0 : length, length: 0))
+                view.setSelectedRange(NSRange(location: view.offset(for: caret), length: 0))
             }
         }
     }
@@ -140,18 +185,32 @@ struct BlockEditor: NSViewRepresentable {
             let source = view.string
             if let language, language != .plain {
                 CodeColours.style(storage, language: language, font: view.baseFont,
-                                  paragraph: BlockTextView.paragraphStyle)
+                                  paragraph: view.paragraphStyle)
                 // Code is code: there are no markdown markers in it to hide.
                 hiding.setMarkers([])
+                hiding.setFurniture(CellFurniture.Reading())
             } else {
                 MarkdownSourceStyle.apply(to: storage, base: view.baseFont,
-                                          paragraph: BlockTextView.paragraphStyle)
-                hiding.setMarkers(MarkerHiding.hideable(MarkdownSourceStyle.runs(in: source),
-                                                        in: source as NSString))
+                                          paragraph: view.paragraphStyle)
+                let runs = MarkdownSourceStyle.runs(in: source)
+                let text = source as NSString
+                hiding.setMarkers(MarkerHiding.hideable(runs, in: text))
+                // THE MARKERS ARE FURNITURE HERE, not text to be typed.
+                // This is the rendered page: the reader clicked a heading
+                // to change its WORDS, or a reminder to change what it
+                // says, and the `## ` and the `- [ ] ` that the source
+                // pane rightly shows on the caret's line have no business
+                // appearing and shunting them sideways (Sean, 2026-09-21:
+                // "don't show the markdown characters for header, only
+                // edit the text in a reminders list or bullet list").
+                // `CellFurniture` is the whole of that rule; the kind of a
+                // cell is changed with the ladder and the list buttons,
+                // which is what those are for.
+                hiding.setFurniture(CellFurniture.read(text, runs: runs))
             }
             view.typingAttributes = [.font: view.baseFont,
                                      .foregroundColor: NSColor.textColor,
-                                     .paragraphStyle: BlockTextView.paragraphStyle]
+                                     .paragraphStyle: view.paragraphStyle]
             view.selectedRanges = selection
             // The glyphs already exist, so the hiding has to invalidate them
             // by hand — the same dance the source editor does.
@@ -163,6 +222,18 @@ struct BlockEditor: NSViewRepresentable {
             }
             view.updateHiddenMarkers(hiding)
             view.invalidateIntrinsicContentSize()
+        }
+
+        /// AND THE CARET STAYS OUT OF THE FURNITURE. Hidden characters the
+        /// caret can still be put among are worse than visible ones: the
+        /// key that looks like it will type at the front of the heading
+        /// types between two of its hashes instead, and the line stops
+        /// being a heading with nothing on screen to say why. Clicking the
+        /// left edge, Home and ⌘← all land on the first character that can
+        /// be seen.
+        func textView(_ textView: NSTextView, willChangeSelectionFromCharacterRange oldRange: NSRange,
+                      toCharacterRange newRange: NSRange) -> NSRange {
+            MarkerHiding.outside(newRange, of: hiding.furnitureRanges)
         }
 
         /// The caret moved: the line it left hides its markers again, the
@@ -220,7 +291,32 @@ struct BlockEditor: NSViewRepresentable {
                     view.apply(edit)
                     return true
                 }
-                return parent.bridge.outdentForBackspace()
+                // Nothing to the left at all: the thing this editor holds
+                // joins the one above it, which is what a list does. Asked
+                // BEFORE the outdent, because an editor that holds one
+                // line of a list has no prefix of its own to outdent —
+                // the `- [ ] ` is furniture outside it.
+                if caret.length == 0, caret.location == 0, let join = parent.onJoinPrevious {
+                    join()
+                    return true
+                }
+                // A level of indentation, or the bullet, first — that is
+                // the ordinary behaviour of the key on a list and it is
+                // already right (`outdentForBackspace`).
+                if parent.bridge.outdentForBackspace() { return true }
+                // Otherwise, standing just behind a piece of furniture
+                // takes the WHOLE piece: `## ` off a heading, `- [ ] ` off
+                // a reminder. The caret cannot be inside either, so left
+                // alone the key ate one space and the line quietly stopped
+                // being a heading — a change nothing on screen announced.
+                if caret.length == 0,
+                   let piece = MarkerHiding.furnitureBehind(caret.location,
+                                                            in: hiding.furnitureRanges) {
+                    view.apply(CodeTyping.Edit(range: piece, replacement: "",
+                                               selection: NSRange(location: piece.location, length: 0)))
+                    return true
+                }
+                return false
 
             case #selector(NSResponder.cancelOperation(_:)):
                 parent.onMove?(.out)
@@ -271,6 +367,39 @@ struct BlockEditor: NSViewRepresentable {
 final class BlockTextView: PasteAwareTextView {
     var placeholder = ""
     var baseFont: NSFont = .systemFont(ofSize: 15)
+    /// How the text is set — see `BlockEditor.Metrics`.
+    var metrics: BlockEditor.Metrics = .cell
+    /// One line only: a newline that arrives by paste becomes a space.
+    var singleLine = false
+
+    /// This view's own paragraph style, built from its metrics. Not the
+    /// shared static any more: an editor standing in for one line of a
+    /// rendered list has to sit on that line's baseline, and three points
+    /// of leading is what would push it off.
+    var paragraphStyle: NSParagraphStyle { Self.paragraphStyle(metrics) }
+
+    /// Where the caret goes for a `BlockEditor.Caret`.
+    func offset(for caret: BlockEditor.Caret) -> Int {
+        let length = (string as NSString).length
+        switch caret {
+        case .start: return 0
+        case .end: return length
+        case .at(let offset): return min(max(offset, 0), length)
+        case .atX(let x):
+            guard let layout = layoutManager, let container = textContainer, length > 0 else {
+                return length
+            }
+            layout.ensureLayout(for: container)
+            let origin = textContainerOrigin
+            let point = CGPoint(x: x - origin.x, y: layout.usedRect(for: container).midY)
+            let glyph = layout.glyphIndex(for: point, in: container, fractionOfDistanceThroughGlyph: nil)
+            var index = layout.characterIndexForGlyph(at: glyph)
+            // Past the middle of the last glyph is past the last glyph.
+            let box = layout.boundingRect(forGlyphRange: NSRange(location: glyph, length: 1), in: container)
+            if point.x > box.midX { index += 1 }
+            return min(max(index, 0), length)
+        }
+    }
     /// Set while the cell is a fenced block: brackets close themselves and
     /// Tab is indentation (Sean, 2026-09-19: "in a code cell in wysiwyg
     /// add basic features like auto {} () [] and tab inserts a 4space
@@ -278,8 +407,13 @@ final class BlockTextView: PasteAwareTextView {
     var isCode = false
 
     /// The pair goes in with the bracket, and typing the closer steps over
-    /// the one that is already there.
+    /// the one that is already there. A single-line editor also flattens
+    /// whatever newlines arrive with a paste.
     override func insertText(_ string: Any, replacementRange: NSRange) {
+        if singleLine, let typed = string as? String, typed.contains(where: \.isNewline) {
+            let flat = typed.split(whereSeparator: \.isNewline).joined(separator: " ")
+            return super.insertText(flat, replacementRange: replacementRange)
+        }
         guard isCode, let typed = string as? String,
               let edit = CodeTyping.typing(typed, in: self.string, selection: selectedRange())
         else {
@@ -303,22 +437,25 @@ final class BlockTextView: PasteAwareTextView {
         return true
     }
 
-    static let paragraphStyle: NSParagraphStyle = {
+    static func paragraphStyle(_ metrics: BlockEditor.Metrics) -> NSParagraphStyle {
         let style = NSMutableParagraphStyle()
-        style.lineSpacing = 3
+        style.lineSpacing = metrics.lineSpacing
         // The same four-space grid the markdown pane uses (Sean,
         // 2026-09-19: "indentation and tab width is 4 spaces").
         style.tabStops = []
         style.defaultTabInterval = MarkdownTextView.tabWidth
         return style
-    }()
+    }
+
+    /// A cell's, which is what everything but a list item uses.
+    static let paragraphStyle: NSParagraphStyle = paragraphStyle(.cell)
 
     func height(fitting width: CGFloat) -> CGFloat {
         guard let container = textContainer, let manager = layoutManager else { return 22 }
         container.containerSize = NSSize(width: max(width, 1), height: .greatestFiniteMagnitude)
         manager.ensureLayout(for: container)
         let used = manager.usedRect(for: container).height
-        return max(ceil(used), baseFont.pointSize * 1.3) + textContainerInset.height * 2
+        return max(ceil(used), baseFont.pointSize * 1.3) + metrics.inset.height * 2
     }
 
     override var intrinsicContentSize: NSSize {
@@ -336,7 +473,7 @@ final class BlockTextView: PasteAwareTextView {
         let attributes: [NSAttributedString.Key: Any] = [
             .font: baseFont,
             .foregroundColor: NSColor.tertiaryLabelColor,
-            .paragraphStyle: Self.paragraphStyle
+            .paragraphStyle: paragraphStyle
         ]
         (placeholder as NSString).draw(at: NSPoint(x: textContainerInset.width,
                                                    y: textContainerInset.height),

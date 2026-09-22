@@ -9,7 +9,11 @@ right, a sidebar of notes that are plain `.md` files in `~/Documents/WriteMind`.
 Native SwiftUI + AppKit, one Xcode project, no web layer, no server, no package
 manager, no dependencies. The README is deliberately short: the tour is
 `docs/FEATURES.md`, building and shipping is `docs/BUILDING.md`, the open
-list is `docs/TODO.md`, and THIS file is how the code is put together.
+list is `docs/TODO.md`, what the cross-platform port has still to pick up
+from here is `docs/CROSS-PLATFORM.md` (Sean, 2026-09-21: "keep a log of
+things we're working on for the cross platform app to eventually
+implement" — one entry per noticeable change, in the same commit as the
+change), and THIS file is how the code is put together.
 
 - [Standing rules](#standing-rules) — the things that cost real time when
   they are broken: whose data the notes are, what a section is, how the app
@@ -299,11 +303,22 @@ CoreMind's `bin/report-status.sh`.
   (which revealed the neighbour's `## ` the moment the bar was armed by
   a click, and not when it was armed by ↓ — `textViewDidChangeSelection`
   sets `armedSeam` BEFORE it asks, or the answer is for the move before
-  this one), then `EditorBridge`. A FORMAT COMMAND AT A BAR NAMES A
-  KIND: the bar is in no cell, so ⌘1 there means what Title on the +
-  means (`EditorBridge.atArmedBar`, the same `CellTypes.Kind` list),
-  and a command the list has no kind for — bold, indent, maths — does
-  nothing at all. Left alone it restyled whatever cell the caret was
+  this one), then `EditorBridge`. A COMMAND AT A BAR MAKES THE CELL
+  THERE (Sean, 2026-09-21: "if i click on something like a style, or a
+  bullet list, or a quoted section, etc.. it should create a cell at the
+  position of the bar ready for that type of input"). The bar is in no
+  cell, so `EditorBridge.atArmedBar` makes one: a command that NAMES a
+  kind — the ladder, the three lists, the quote, the fenced block —
+  opens the cell with that marker already in it and is finished, and
+  anything else — bold, the text style, maths — opens a PLAIN cell and
+  then runs in it. `perform(opensACell:)` tells those from the third
+  sort, the commands that act ON a cell — delete, duplicate, move,
+  split, merge — which still do nothing at a bar, because an empty cell
+  made to be deleted is churn in the note and a step on the undo stack
+  for a gesture that did nothing. It used to record the kind and wait
+  for a character, which is what the + on the bar does and goes on
+  doing; a BUTTON pressed has to do something the moment it is pressed,
+  and one that named no kind did nothing whatsoever. Left alone it restyled whatever cell the caret was
   parked against: the one BELOW the bar in the source pane, and on the
   rendered page the note's FIRST cell, because with no text view
   `perform` fell through to `ensureEditing`.

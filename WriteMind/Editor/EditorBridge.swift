@@ -32,45 +32,85 @@ final class EditorBridge {
     var cellEditInDocument: ((@escaping (NSRange, String) -> MarkdownFormatting.Edit?) -> Void)?
 
     /// The insertion bar between two cells, on the RENDERED page, where
-    /// there is no text view to read it off. Returns true when a bar is
-    /// up — and takes the kind, if the command has one, the way the + on
-    /// that bar does. The markdown pane needs no closure: its bar lives
-    /// on the very text view this bridge is holding.
+    /// there is no text view to read it off. Takes the kind the command
+    /// names, if it names one, and OPENS THE CELL THERE. Returns true when
+    /// that was the whole of the command and there is nothing left to run.
+    /// The markdown pane needs no closure: its bar lives on the very text
+    /// view this bridge is holding.
     var armedBar: ((CellTypes.Kind?) -> Bool)?
+    /// Whether that bar is up, asked and nothing more. A command that acts
+    /// ON a cell — delete it, duplicate it, split it — is not a command
+    /// that MAKES one, so it needs to know without making anything.
+    var barIsUp: (() -> Bool)?
 
-    /// A Format command while the bar IS the cursor.
+    /// A command while the bar IS the cursor: THE CELL IS MADE THERE.
     ///
-    /// The bar is in no cell, so there is no cell for such a command to
-    /// change — it says what the cell the bar OPENS will be, which is
-    /// exactly what the + on that same bar offers (Sean, 2026-09-20:
-    /// "pressing the + button on that bar should bring up the list of
-    /// style types that the next input will create a cell the type of").
-    /// Left to itself ⌘1 at a bar retitled whatever cell the caret was
-    /// parked against: the one BELOW it in the source pane, and — with
-    /// no text view at all on the rendered page — the note's very FIRST
-    /// cell, which `ensureEditing` opened to have somewhere to put it
-    /// (2026-09-20, two reviewers). A command the list has no kind for
-    /// is nobody's business at a bar and does nothing.
+    /// Sean, 2026-09-21: "when in the horizontal input cursor mode, if i
+    /// click on something like a style, or a bullet list, or a quoted
+    /// section, etc.. it should create a cell at the position of the bar
+    /// ready for that type of input." So every command works at a bar,
+    /// and works by opening the cell the bar stands for:
+    ///
+    /// - one that NAMES A KIND — the heading ladder, the three lists, the
+    ///   quote, the fenced block — is the whole of the job: the cell opens
+    ///   with that marker already in it and the caret where the words go;
+    /// - anything else — bold, the text style, maths — opens a PLAIN cell
+    ///   and then runs in it, exactly as it would have run in a cell that
+    ///   was already open.
+    ///
+    /// It used to record the kind and wait for a character, which the + on
+    /// the bar still does (Sean, 2026-09-20: "the list of style types that
+    /// the NEXT INPUT will create a cell the type of") — that is the +'s
+    /// job and it keeps it. A button pressed is not a kind chosen from a
+    /// list: nothing happened on screen, and pressing Bullet List at a bar
+    /// looked broken. Anything with no kind at all did nothing whatsoever.
+    ///
+    /// What it must never go back to is running in whatever cell the caret
+    /// is parked against — the one BELOW the bar in the source pane, and
+    /// on the rendered page the note's very FIRST cell, which
+    /// `ensureEditing` opened to have somewhere to put it (2026-09-20, two
+    /// reviewers). The bar is in no cell; that is why it makes one.
+    ///
+    /// Returns true when the command is FINISHED, false when the caller
+    /// still has to run it — in the cell that has just opened.
     @discardableResult
     private func atArmedBar(_ kind: CellTypes.Kind?) -> Bool {
         if let tv = textView as? PasteAwareTextView, tv.armedSeam != nil {
-            if let kind { tv.armedType = kind }
-            return true
+            tv.openArmedSeam(as: kind ?? .text)
+            return kind != nil
         }
         return armedBar?(kind) ?? false
+    }
+
+    /// Is the bar the cursor right now — asked without touching anything.
+    private var isAtArmedBar: Bool {
+        if let tv = textView as? PasteAwareTextView, tv.armedSeam != nil { return true }
+        return barIsUp?() ?? false
     }
 
     /// Do it now if there is somewhere to do it, otherwise open a block and
     /// do it as soon as there is. SwiftUI builds the text view a turn or two
     /// after the block opens, so this waits — briefly, and never forever.
-    func perform(_ action: @escaping () -> Void, attempts: Int = 8) {
-        // Nothing that edits a cell runs at a bar. The commands that name
-        // a KIND have already taken it by the time they reach here.
-        if atArmedBar(nil) { return }
+    /// `opensACell` is what tells the two kinds of command apart at a bar.
+    /// One WRITES something — bold, a style, maths — and a bar is a
+    /// perfectly good place to write it, so a cell is opened there and the
+    /// command runs in it. The other acts ON a cell — delete it, duplicate
+    /// it, move it, split it — and at a bar there is no such cell; making
+    /// an empty one to delete is churn in the note and a step on the undo
+    /// stack for a gesture that did nothing.
+    func perform(opensACell: Bool = true, attempts: Int = 8, _ action: @escaping () -> Void) {
+        // At a bar, a cell is opened first and then this runs in it. The
+        // commands that name a KIND never reach here: they are finished by
+        // the opening itself.
+        if opensACell {
+            if atArmedBar(nil) { return }
+        } else if isAtArmedBar {
+            return
+        }
         if textView != nil { action(); return }
         guard attempts > 0, ensureEditing?() == true else { return }
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.03) { [weak self] in
-            self?.perform(action, attempts: attempts - 1)
+            self?.perform(opensACell: opensACell, attempts: attempts - 1, action)
         }
     }
 
@@ -231,12 +271,33 @@ final class EditorBridge {
 
     /// One step out: word, cell, section, note.
     func expandSelection() {
-        perform { [weak self] in
+        perform(opensACell: false) { [weak self] in
             guard let self, let tv = textView,
                   let wider = NotebookCells.expand(tv.selectedRange(), in: tv.string) else { return }
             tv.setSelectedRange(wider)
             tv.scrollRangeToVisible(wider)
         }
+    }
+
+    /// ⌫ OVER CELLS THAT ARE HELD — their brackets lit, not a run of
+    /// characters inside one. Returns false when the selection is not
+    /// that, so the key stays an ordinary backspace.
+    ///
+    /// Sean, 2026-09-21: "backspace is enough to delete the selected cell
+    /// so no need for ^+backspace". The rendered page has answered the
+    /// bare key since it had cells (`MarkdownPreview.cellKey`); this is
+    /// the source pane catching up, and it is what makes taking ⌃⌫ away
+    /// a simplification rather than a loss. `CellSelection.picked` is the
+    /// same reading every other whole-cell command uses, so ⌫ takes
+    /// exactly the cells the lit brackets say it will.
+    @discardableResult
+    func deleteHeldCells() -> Bool {
+        guard let tv = textView else { return false }
+        let cells = MarkdownParser.positioned(from: tv.string).map(\.range)
+        let picked = CellSelection.picked(cells: cells, selection: tv.selectedRanges.map(\.rangeValue))
+        guard !picked.isEmpty else { return false }
+        apply(CellCommands.edits(over: picked, in: tv.string) { CellCommands.delete($0, in: $1) })
+        return true
     }
 
     /// Take the whole cell away and close the stack behind it.
@@ -274,7 +335,7 @@ final class EditorBridge {
     /// One edit per selected cell, in whichever pane is up.
     private func cellEdit(_ make: @escaping (NSRange, String) -> MarkdownFormatting.Edit?) {
         if let cellEditInDocument { cellEditInDocument(make); return }
-        perform { [weak self] in
+        perform(opensACell: false) { [weak self] in
             guard let self, let tv = textView else { return }
             apply(CellCommands.edits(over: selectedCells(), in: tv.string, make: make))
         }
@@ -327,14 +388,23 @@ final class EditorBridge {
                                             wl: canonical, display: display))
     }
 
+    /// Through `perform`, like every other command on the bar: with
+    /// nothing open it opens a cell — at the insertion bar when one is up,
+    /// and that is what "ready for that type of input" means for a style
+    /// that is not a kind of cell (Sean, 2026-09-21).
     func applySpan(_ style: MarkdownFormatting.SpanStyle) {
-        guard let tv = textView else { return }
-        apply(MarkdownFormatting.applySpan(text: tv.string, selection: tv.selectedRange(), style: style))
+        perform { [weak self] in
+            guard let self, let tv = textView else { return }
+            apply(MarkdownFormatting.applySpan(text: tv.string, selection: tv.selectedRange(),
+                                               style: style))
+        }
     }
 
     func removeSpan() {
-        guard let tv = textView else { return }
-        apply(MarkdownFormatting.removeSpan(text: tv.string, selection: tv.selectedRange()))
+        perform { [weak self] in
+            guard let self, let tv = textView else { return }
+            apply(MarkdownFormatting.removeSpan(text: tv.string, selection: tv.selectedRange()))
+        }
     }
 
     /// Sublime Text's ⌘D: the word under the caret first, then one more
@@ -411,7 +481,7 @@ final class EditorBridge {
 
     /// The same as `lines`, for an edit that may have nothing to do.
     private func maybe(_ transform: @escaping (String, NSRange) -> MarkdownFormatting.Edit?) {
-        perform { [weak self] in
+        perform(opensACell: false) { [weak self] in
             guard let self, let tv = textView, let edit = transform(tv.string, tv.selectedRange()) else { return }
             apply(edit)
         }
