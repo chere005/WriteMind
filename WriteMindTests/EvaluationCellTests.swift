@@ -57,10 +57,40 @@ final class EvaluationCellTests: XCTestCase {
         }
     }
 
-    func testThereAreThreeEnvironmentsAndTheyAreTheOnesHeNamed() {
-        XCTAssertEqual(Evaluator.allCases.map(\.badge), ["PY", "C++", "WL"])
+    /// Sean, 2026-09-21: "wl, c++, or python"; 2026-09-22: "add C and
+    /// Rust evals", and "default to wolfram" — which is why Wolfram is
+    /// first, since the order here is the order the menu offers.
+    func testTheEnvironmentsAreTheOnesHeNamedInTheOrderHeWantsThem() {
+        XCTAssertEqual(Evaluator.allCases.map(\.badge), ["WL", "PY", "C", "C++", "RS"])
         XCTAssertEqual(Evaluator.allCases.map(\.fence),
-                       ["eval python", "eval c++", "eval wl"])
+                       ["eval wl", "eval python", "eval c", "eval c++", "eval rust"])
+        XCTAssertEqual(Evaluator.allCases.first, .wolfram)
+    }
+
+    /// C, C++ and Rust are compiled — two processes, two exit codes — and
+    /// the source file's EXTENSION is what tells the compiler what it is
+    /// reading, so it belongs to the model and not to the runner.
+    func testTheCompiledOnesNameTheirSourceAndTheirStandard() {
+        for evaluator in Evaluator.allCases where evaluator.isCompiled {
+            let name = evaluator.sourceFile ?? ""
+            XCTAssertTrue(name.hasPrefix("cell."), "\(evaluator) has no source file")
+            let arguments = evaluator.compileArguments(source: "/tmp/in", output: "/tmp/out")
+            XCTAssertEqual(arguments.suffix(3), ["-o", "/tmp/out", "/tmp/in"], "\(evaluator)")
+            XCTAssertGreaterThan(arguments.count, 3, "\(evaluator) names no standard")
+        }
+        XCTAssertEqual(Set(Evaluator.allCases.filter(\.isCompiled)), [.c, .cpp, .rust])
+        // Wolfram takes its source as an argument and writes no file.
+        XCTAssertNil(Evaluator.wolfram.sourceFile)
+        XCTAssertEqual(Evaluator.python.sourceFile, "cell.py")
+    }
+
+    /// The sentence that says an environment is not one of ours has to
+    /// name the ones that are, and it cannot be allowed to go stale.
+    func testTheUnknownEnvironmentSentenceNamesEveryEnvironmentThereIs() {
+        let message = Evaluator.Refusal.unknownEnvironment("fortran").message
+        for evaluator in Evaluator.allCases {
+            XCTAssertTrue(message.contains(evaluator.title), "\(evaluator.title) is not in it")
+        }
     }
 
     func testTheToolsAreLookedForByAbsolutePathAndNeverJustOne() {

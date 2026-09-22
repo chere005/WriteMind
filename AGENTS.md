@@ -624,8 +624,9 @@ CoreMind's `bin/report-status.sh`.
 - **RUNNING A CELL IS THE MOST DANGEROUS THING THIS APP DOES, and it is
   refused by default.** Sean, 2026-09-21: "finish the work on evaluation
   cells", and "evaluation cells are completely different from code
-  cells". An evaluation cell is ```eval python, ```eval c++ or
-  ```eval wl — ⌘9 makes one, turns the caret's cell into one, or at an
+  cells". An evaluation cell is ```eval wl, ```eval python, ```eval c,
+  ```eval c++ or ```eval rust — ⌘9 makes one, turns the caret's cell
+  into one, or at an
   ARMED BAR makes one there (the same rule every other kind-naming
   command follows; it used to ask `caretCell()` and so restyled the
   cell BELOW the bar), ⇧↩
@@ -676,6 +677,16 @@ CoreMind's `bin/report-status.sh`.
   `wl` STAYS MATHS: Wolfram code is ```wls, which was already a code
   fence, and nothing may ever be appended to a `wl` fence because
   `MathMarkup.isMathFence` compares the whole info string.
+  ADDING AN ENVIRONMENT IS ADDING A ROW to `Evaluator` and nothing
+  else: the tag, the badge, the colouring, the candidate paths, and —
+  for a compiled one — `sourceFile` (the extension is what tells the
+  compiler what it is reading) and `compileArguments`. `CellRunner` has
+  TWO SHAPES, `isCompiled` or not, and no list of languages in it.
+  rustc lives in `~/.cargo/bin`, which is the one place a list of
+  system paths never looks, so `candidates` builds a home-relative
+  path; and `Refusal.unknownEnvironment`'s sentence is GENERATED from
+  `allCases`, because a hand-written "not Python, C++ or Wolfram" goes
+  stale the first time the list changes.
   Wolfram needs `-code` and it needs HOME. `wolframscript <path>` opens
   an INTERACTIVE session and prints a banner; `-file` runs the file
   and shows no value; `-code` shows the value of the last expression,

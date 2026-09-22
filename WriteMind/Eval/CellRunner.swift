@@ -44,12 +44,10 @@ enum CellRunner {
             return .failure(.refused(.missingTool(evaluator)))
         }
         do {
-            switch evaluator {
-            case .python, .wolfram:
-                return .success(try await interpret(source, with: tool, as: evaluator))
-            case .cpp:
+            if evaluator.isCompiled {
                 return .success(try await compileAndRun(source, with: tool, as: evaluator))
             }
+            return .success(try await interpret(source, with: tool, as: evaluator))
         } catch let failure as Failure {
             return .failure(failure)
         } catch {
@@ -70,12 +68,12 @@ enum CellRunner {
         // shows the value of the last expression, which is what an Out
         // cell is for. Measured all three on 2026-09-21.
         let arguments: [String]
-        if evaluator == .wolfram {
-            arguments = ["-code", source]
-        } else {
-            let file = directory.appending(path: "cell.py")
+        if let name = evaluator.sourceFile {
+            let file = directory.appending(path: name)
             try source.write(to: file, atomically: true, encoding: .utf8)
             arguments = [file.path]
+        } else {
+            arguments = ["-code", source]
         }
         var result = try await spawn(tool, arguments, in: directory,
                                      environment: evaluator.environment)
@@ -99,19 +97,20 @@ enum CellRunner {
         return lines.joined(separator: "\n")
     }
 
-    /// C++ is not an interpreter: two processes, two exit codes and
-    /// two stderrs that mean different things. A compile that fails is the
-    /// answer — there is nothing to run and the diagnostics ARE the output.
+    /// C, C++ and Rust are not interpreters: two processes, two exit
+    /// codes and two stderrs that mean different things. A compile that
+    /// fails is the answer — there is nothing to run and the diagnostics
+    /// ARE the output.
     private static func compileAndRun(_ source: String, with tool: String,
                                       as evaluator: Evaluator) async throws -> EvalResult {
         let directory = try scratch()
         defer { try? FileManager.default.removeItem(at: directory) }
-        let file = directory.appending(path: "cell.cpp")
+        let file = directory.appending(path: evaluator.sourceFile ?? "cell.txt")
         let binary = directory.appending(path: "cell.out")
         try source.write(to: file, atomically: true, encoding: .utf8)
 
-        let standard = "-std=c++20"
-        let build = try await spawn(tool, [standard, "-o", binary.path, file.path],
+        let build = try await spawn(tool, evaluator.compileArguments(source: file.path,
+                                                                    output: binary.path),
                                     in: directory, environment: evaluator.environment)
         guard build.status == 0, !build.timedOut else {
             var failed = build

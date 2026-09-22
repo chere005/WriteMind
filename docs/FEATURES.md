@@ -171,7 +171,8 @@ is how the code is put together.
   cell under it, an evaluation pair's takes the code and its answer.
 - **Evaluation cells, which are not code cells.** A code cell is code you
   are writing about; an evaluation cell is code the note runs, and the file
-  says which: ```eval python, ```eval c++, ```eval wl. ⌘9 makes one, or
+  says which: ```eval wl, ```eval python, ```eval c, ```eval c++,
+  ```eval rust. ⌘9 makes one, or
   turns the cell the caret is in into one — the code is kept. ⇧↩ runs it,
   and nothing else does. At its far left is a badge saying which
   environment it is — click it to pick another and the fence is rewritten

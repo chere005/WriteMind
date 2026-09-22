@@ -10,7 +10,8 @@ import Foundation
 /// never confused by this app, by another markdown editor, or by anyone
 /// reading the file.
 ///
-///     ```eval python          ```eval c++          ```eval wl
+///     ```eval wl     ```eval python     ```eval c
+///     ```eval c++    ```eval rust
 ///
 /// ⌘9 makes one, or turns the cell the caret is in into one. ⇧↩ runs it.
 /// The badge at its left says which environment it is and changes it.
@@ -39,18 +40,25 @@ enum EvaluationKeys {
 }
 
 enum Evaluator: String, CaseIterable, Identifiable, Equatable {
-    case python
-    case cpp
+    /// WOLFRAM FIRST, because it is the one a new cell is (Sean,
+    /// 2026-09-22: "default to wolfram"). The order here is the order the
+    /// menu offers them in.
     case wolfram
+    case python
+    case c
+    case cpp
+    case rust
 
     var id: String { rawValue }
 
     /// What follows `eval` in the fence.
     var tag: String {
         switch self {
-        case .python: return "python"
-        case .cpp: return "c++"
         case .wolfram: return "wl"
+        case .python: return "python"
+        case .c: return "c"
+        case .cpp: return "c++"
+        case .rust: return "rust"
         }
     }
 
@@ -63,9 +71,11 @@ enum Evaluator: String, CaseIterable, Identifiable, Equatable {
     /// would get.
     var language: CodeLanguage {
         switch self {
-        case .python: return .python
-        case .cpp: return .cpp
         case .wolfram: return .wolfram
+        case .python: return .python
+        case .c: return .c
+        case .cpp: return .cpp
+        case .rust: return .rust
         }
     }
 
@@ -73,17 +83,21 @@ enum Evaluator: String, CaseIterable, Identifiable, Equatable {
     /// drawn in the margin beside the code.
     var badge: String {
         switch self {
-        case .python: return "PY"
-        case .cpp: return "C++"
         case .wolfram: return "WL"
+        case .python: return "PY"
+        case .c: return "C"
+        case .cpp: return "C++"
+        case .rust: return "RS"
         }
     }
 
     var title: String {
         switch self {
-        case .python: return "Python"
-        case .cpp: return "C++"
         case .wolfram: return "Wolfram"
+        case .python: return "Python"
+        case .c: return "C"
+        case .cpp: return "C++"
+        case .rust: return "Rust"
         }
     }
 
@@ -120,10 +134,53 @@ enum Evaluator: String, CaseIterable, Identifiable, Equatable {
     /// Absolute, because a GUI app inherits launchd's PATH: /usr/bin,
     /// /bin, /usr/sbin, /sbin and nothing else. Homebrew is not on it.
     var candidates: [String] {
+        let home = FileManager.default.homeDirectoryForCurrentUser.path
         switch self {
-        case .python: return ["/usr/bin/python3", "/opt/homebrew/bin/python3", "/usr/local/bin/python3"]
-        case .cpp: return ["/usr/bin/clang++", "/opt/homebrew/bin/clang++"]
         case .wolfram: return ["/opt/homebrew/bin/wolframscript", "/usr/local/bin/wolframscript"]
+        case .python: return ["/usr/bin/python3", "/opt/homebrew/bin/python3", "/usr/local/bin/python3"]
+        case .c: return ["/usr/bin/clang", "/opt/homebrew/bin/clang", "/usr/local/bin/clang"]
+        case .cpp: return ["/usr/bin/clang++", "/opt/homebrew/bin/clang++"]
+        // rustup puts it in the home directory and nowhere else, which
+        // is the one place a list of system paths would never find it.
+        case .rust: return ["\(home)/.cargo/bin/rustc", "/opt/homebrew/bin/rustc",
+                            "/usr/local/bin/rustc"]
+        }
+    }
+
+    // MARK: - The two shapes a cell runs in
+
+    /// A COMPILED cell is two processes and two exit codes; an
+    /// interpreted one is a single child. The extension is what tells the
+    /// compiler what it is reading, so the name is the model's to say.
+    var sourceFile: String? {
+        switch self {
+        case .wolfram: return nil  // it takes its source as an argument
+        case .python: return "cell.py"
+        case .c: return "cell.c"
+        case .cpp: return "cell.cpp"
+        case .rust: return "cell.rs"
+        }
+    }
+
+    var isCompiled: Bool {
+        switch self {
+        case .c, .cpp, .rust: return true
+        case .python, .wolfram: return false
+        }
+    }
+
+    /// What the compiler is handed. The standard is named rather than
+    /// left to the tool's default, so a cell means the same thing on a
+    /// machine with a different compiler on it.
+    func compileArguments(source: String, output: String) -> [String] {
+        switch self {
+        case .c: return ["-std=c17", "-o", output, source]
+        case .cpp: return ["-std=c++20", "-o", output, source]
+        // rustc warns loudly about a crate name it inferred from a file
+        // called `cell`; naming the binary is enough to quiet it, and
+        // `-O` because a cell is run once and read once.
+        case .rust: return ["-O", "-o", output, source]
+        case .python, .wolfram: return []
         }
     }
 
@@ -175,8 +232,12 @@ enum Evaluator: String, CaseIterable, Identifiable, Equatable {
                 return "That is not an evaluation cell. ⌘9 makes one, "
                     + "or turns the cell the caret is in into one."
             case .unknownEnvironment(let tag):
-                return "This cell says it runs as “\(tag)”, which is not "
-                    + "Python, C++ or Wolfram. Pick one from the badge on its left."
+                // The list is GENERATED, so adding an environment cannot
+                // leave a sentence behind naming the old three.
+                let known = Evaluator.allCases.map(\.title)
+                return "This cell says it runs as “\(tag)”, which is not one of "
+                    + "\(known.dropLast().joined(separator: ", ")) or \(known.last ?? "")."
+                    + " Pick one from the badge on its left."
             case .missingTool(let evaluator):
                 return "\(evaluator.title) is not installed where WriteMind looks "
                     + "(\(evaluator.candidates.joined(separator: ", ")))."

@@ -465,6 +465,21 @@ one you drew. (Sean, 2026-09-22: "show in and out to the left of input and
 output cells similar to mathematica.. this dropdown icon should look like a
 button and be positioned well".)
 
+### A compiled cell and an interpreted one are two shapes, not five cases
+Adding an environment should be adding a row to the model and nothing else.
+What varies between them is small and belongs to the model: the fence tag, the
+badge, the colouring, where the tool might be, whether it COMPILES, what its
+source file is called (the extension is what tells a compiler what it is
+reading) and what the compiler is handed. The runner then has two shapes — one
+child, or a build and then a run — and no list of languages in it at all.
+
+Two things that bite when the list grows. A tool installed by a language's own
+installer is in the HOME directory and nowhere a list of system paths would
+look: rustup puts rustc in ~/.cargo/bin, so the candidate list has to be able
+to name it. And any sentence that says "that is not one of X, Y or Z" must be
+GENERATED from the list, or it goes stale the first time the list changes and
+tells the reader something false. (Sean, 2026-09-22: "add C and Rust evals".)
+
 ## Done there
 
 Nothing yet.
