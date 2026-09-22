@@ -462,6 +462,16 @@ CoreMind's `bin/report-status.sh`.
   cell OPEN for typing pads by `codePadding` like the rendered one — with
   12 there, clicking into a code cell dropped everything below it twenty
   points and lifted it back on the way out.
+- **A CODE CELL IS A BOX ROUND ITS CODE.** `MarkdownPreview.codePadding`
+  is half the code's own size, so the box is a little bigger than the
+  text (Sean, 2026-09-22: "there shouldn't be so much padding in the
+  cells themselves"). It was ONE SOURCE LINE, which made a code cell
+  exactly as tall as the other pane's `` ``` body ``` `` — a contract
+  given up on purpose, because a full line of air each side made a
+  one-line cell three and a half lines tall and nothing depended on the
+  heights being equal: the two modes come back to the same CELL by its
+  id (`PreviewLayout.topRow`, `NoteStore.topCell`), never by a
+  measurement.
 - **Nothing on the drawing layer moves the text.** Objects float: no
   exclusion band, no per-block push, no anchor, no re-homing, no bracket
   (Sean, 2026-09-20: "all drawing, captured or drawn with the pen tool,

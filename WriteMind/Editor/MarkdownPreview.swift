@@ -262,11 +262,23 @@ struct MarkdownPreview: View {
     static let blockGap: CGFloat = MarkdownTextView.lineHeight
         + MarkdownTextView.paragraphStyle.lineSpacing
 
-    /// The air above and below a rendered code block. It is ONE SOURCE
-    /// LINE, because that is what the ``` line it stands in for takes in
-    /// the other pane — the two sides then lay a code cell out to the
-    /// same height instead of drifting a few points a block.
-    static var codePadding: CGFloat { MarkdownTextView.lineHeight }
+    /// The air above and below a rendered code block: HALF THE TEXT IT
+    /// HOLDS, so the box hugs the code and comes out a little bigger
+    /// than it (Sean, 2026-09-22: "there shouldn't be so much padding in
+    /// the cells themselves, it should be about the size of the text a
+    /// little bigger").
+    ///
+    /// It used to be ONE SOURCE LINE, which is what the ``` line it
+    /// stands in for takes in the other pane, so that the two sides laid
+    /// a code cell out to exactly the same height. That contract is
+    /// deliberately given up here: a full line of air each side made a
+    /// one-line cell three and a half lines tall, which is what Sean is
+    /// looking at. Nothing depends on the heights being EQUAL — the two
+    /// modes come back to the same cell by its id
+    /// (`PreviewLayout.topRow`, `NoteStore.topCell`), never by a
+    /// measurement — so what is lost is that a long note of code is a
+    /// different total height in the two modes, and that is all.
+    static var codePadding: CGFloat { (MarkdownTextView.codeSize / 2).rounded() }
     /// The air under the last cell. All of it is the tail seam now — the
     /// gap, the strip the page used to offer a click on, and the margin
     /// that was under them — because everything below the last cell is

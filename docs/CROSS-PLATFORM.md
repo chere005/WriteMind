@@ -421,6 +421,21 @@ seam low on the page rather than centred, because what you have just made is
 above it and worth seeing. (Sean, 2026-09-22: "make the cursor behavior after
 evaluating a cell elegant".)
 
+### A code cell is a box round its code
+The padding inside a rendered fenced block should be about the size of the
+text it holds, so the box comes out a little bigger than the code and not much
+more. A whole line of air each side — which is what the other pane spends on
+the two fence lines it actually shows — makes a one-line cell three and a half
+lines tall, and a page of short cells reads as a column of empty boxes.
+
+The reason it was a whole line is worth knowing before it is put back: it made
+a code cell EXACTLY as tall in both modes. That contract is not needed —
+switching modes comes back to the same CELL by its id and never by a
+measurement — so all that is given up is that a long note of code is a
+different total height in the two panes. (Sean, 2026-09-22: "there shouldn't
+be so much padding in the cells themselves, it should be about the size of the
+text a little bigger".)
+
 ## Done there
 
 Nothing yet.

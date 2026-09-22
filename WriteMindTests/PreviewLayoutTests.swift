@@ -159,31 +159,33 @@ final class CellSpacingTests: XCTestCase {
     }
 }
 
-/// A code cell is the same height on both sides of the app (the open list:
-/// "the two panes are close to the same height, not exactly").
+/// A rendered code cell is a box round its code and not much more.
 final class CodeCellHeightTests: XCTestCase {
-    /// What the SOURCE pane gives a fenced cell: the ``` line, the body,
-    /// the closing ```, all at one source line each.
-    private func source(bodyLines: Int) -> CGFloat {
-        CGFloat(bodyLines + 2) * MarkdownTextView.lineHeight
-    }
-
-    /// What the RENDERED page gives it: the body at the same size and the
-    /// same spacing, with the padding standing in for the two fences.
+    /// What the RENDERED page gives a fenced cell: the body at the source
+    /// pane's size and spacing, and the padding.
     private func rendered(bodyLines: Int) -> CGFloat {
         CGFloat(bodyLines) * MarkdownTextView.lineHeight + 2 * MarkdownPreview.codePadding
     }
 
-    func testTheTwoPanesGiveACodeCellTheSameHeight() {
-        for lines in [1, 2, 5, 20] {
-            XCTAssertEqual(source(bodyLines: lines), rendered(bodyLines: lines), accuracy: 0.001,
-                           "\(lines) lines of code")
-        }
+    /// Sean, 2026-09-22: "there shouldn't be so much padding in the cells
+    /// themselves, it should be about the size of the text a little
+    /// bigger". A one-line cell used to be three and a half lines tall.
+    func testTheBoxHugsTheCodeItHolds() {
+        let line = MarkdownTextView.lineHeight
+        XCTAssertLessThan(rendered(bodyLines: 1), line * 2,
+                          "one line of code is a box a little bigger than one line")
+        XCTAssertGreaterThan(rendered(bodyLines: 1), line, "and not tighter than the text itself")
     }
 
-    func testThePaddingIsOneSourceLine() {
-        // Which is what the ``` line it stands in for takes over there.
-        XCTAssertEqual(MarkdownPreview.codePadding, MarkdownTextView.lineHeight)
+    func testThePaddingIsHalfTheTextRatherThanAWholeSourceLine() {
+        XCTAssertEqual(MarkdownPreview.codePadding,
+                       (MarkdownTextView.codeSize / 2).rounded(), accuracy: 0.001)
+        // THE OLD CONTRACT, GIVEN UP ON PURPOSE. The padding used to be
+        // one source line, so that a code cell was exactly as tall as the
+        // other pane's ``` body ``` — a full line of air each side. The
+        // two modes come back to the same CELL by its id and never by a
+        // measurement, so nothing depended on it.
+        XCTAssertLessThan(MarkdownPreview.codePadding, MarkdownTextView.lineHeight / 2)
     }
 
     func testTheRenderedPageSetsCodeAtTheSizeTheSourceDoes() {
