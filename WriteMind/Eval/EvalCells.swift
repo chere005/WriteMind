@@ -126,6 +126,33 @@ enum EvalCells {
         return out
     }
 
+    /// WHICH `In[n]` A CELL IS: the nth answered pair in the note,
+    /// counted from the top, and nil for a cell that has not been run.
+    ///
+    /// Sean, 2026-09-22: "show in and out to the left of input and output
+    /// cells similar to mathematica.. the dropdown for evaluator type
+    /// will become the In[n] after evaluation".
+    ///
+    /// BY POSITION IN THE NOTE, not by the order the cells were run in.
+    /// A notebook numbers In[] at evaluation time and the pair keeps that
+    /// number for the session; there is no session here — a note is a
+    /// file, it is opened tomorrow, and the only thing in it that could
+    /// carry a number is the fence, which is not ours to scribble in. So
+    /// the number is READ OFF THE NOTE like everything else: insert a
+    /// pair above another and the one below renumbers, which is what
+    /// anybody reading the file top to bottom would call them anyway.
+    static func number(of cell: NSRange, in groups: [Group]) -> Int? {
+        groups.firstIndex {
+            NSEqualRanges($0.input, cell) || NSEqualRanges($0.output, cell)
+        }.map { $0 + 1 }
+    }
+
+    /// Whether this cell is the ANSWER half of its pair — `Out[n]` rather
+    /// than `In[n]`.
+    static func isAnswer(_ cell: NSRange, in groups: [Group]) -> Bool {
+        groups.contains { NSEqualRanges($0.output, cell) }
+    }
+
     /// Whether a cell is inside a group — which is what pushes its own
     /// bracket one step in, so the group's sits outside it. Containment,
     /// not the two ends: a blank cell standing between the code and its

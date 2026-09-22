@@ -436,6 +436,35 @@ different total height in the two panes. (Sean, 2026-09-22: "there shouldn't
 be so much padding in the cells themselves, it should be about the size of the
 text a little bigger".)
 
+### In[n] and Out[n] down the left, and the pair lines up
+A notebook writes the pair's number in the margin beside both halves. Do the
+same, in ONE column, because the thing that makes a pair read as one thing is
+that the two boxes start at the same x — the answer had no mark at all, so its
+box began a badge's width to the left of the code's and the eye caught that
+before anything else.
+
+The mark changes with the cell's state and so does its KIND. A cell that has
+not run has something to decide, so its mark is the environment menu drawn as
+a button; a cell that has run has a number instead, so its mark is a plain
+label, and so is its answer's. The margin is then a record of what ran rather
+than a row of controls. Nothing is lost when the menu goes: the fence still
+says what the cell runs as, in the file and in the other pane.
+
+The number is READ OFF THE NOTE — the nth answered pair, counted from the top
+— and not kept from the run. A notebook numbers In[] at evaluation time and
+holds it for the session; a note is a file that gets opened again tomorrow,
+and the only place a number could be kept is the fence, which is not ours to
+scribble in. Inserting a pair above another renumbers the one below, which is
+what anybody reading the file top to bottom would call them anyway.
+
+One platform trap: a SwiftUI `Menu` cannot be made to look like an ordinary
+button. Under the borderless style it draws its own disclosure arrow, on the
+LEFT, and throws the label's background and border away. A plain button that
+pops a real menu at the pointer is the way to a control that looks like the
+one you drew. (Sean, 2026-09-22: "show in and out to the left of input and
+output cells similar to mathematica.. this dropdown icon should look like a
+button and be positioned well".)
+
 ## Done there
 
 Nothing yet.

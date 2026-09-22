@@ -630,11 +630,27 @@ CoreMind's `bin/report-status.sh`.
   command follows; it used to ask `caretCell()` and so restyled the
   cell BELOW the bar), ⇧↩
   runs it AND NOTHING ELSE DOES, the badge at its left picks the
-  environment, and the answer goes under it in an ```out cell. ONE
-  control in that margin: `EvaluatorBadge`, built outside both the
-  rendered block and the open editor so that clicking into a cell to
-  type does not take it away (Sean, 2026-09-22: "the indicator for
-  WL/Python/C++ never goes away, and get rid of the play button"). A PLAIN CODE CELL NEVER RUNS: that
+  environment, and the answer goes under it in an ```out cell.
+  **`CellMark` IS THE MARGIN**, one column for both halves of a pair so
+  that the two boxes start at the same x — the answer had none, and its
+  box began a badge's width left of the code's. What it says and what
+  KIND of thing it is both follow the cell's state (Sean, 2026-09-22:
+  "the dropdown for selecting an evaluator shows before it's
+  evaluated.. after it's evaluated it disappears and is replaced by the
+  In[]"): a cell with nothing decided carries the environment menu
+  drawn as a button, a cell that has run carries `In[n]` as a plain
+  label and its answer `Out[n]`. The number is
+  `EvalCells.number(of:in:)` — the nth pair in the NOTE, not the order
+  things were run in, because there is no session and the only place a
+  number could be kept is the fence. It is built outside both the
+  rendered block and the open editor so clicking into a cell to type
+  does not take it away ("the indicator for WL/Python/C++ never goes
+  away, and get rid of the play button"). **A SwiftUI `Menu` cannot be
+  made to look like a button**: under `.borderlessButton` it draws its
+  own chevron on the LEFT and discards the label's background and
+  border, so the mark is a plain `Button` popping `EvaluatorMenu` at
+  `NSEvent.mouseLocation`, the same way `CellTypeMenu` serves the + on
+  the insertion bar. A PLAIN CODE CELL NEVER RUNS: that
   distinction is the feature, and it is in the file so that another
   editor can see it too. ⇧↩ arrives as `insertNewline:`, not
   `insertLineBreak:` (macOS gives that one to ⌃↩), so the shift is

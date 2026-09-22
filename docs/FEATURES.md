@@ -174,8 +174,10 @@ is how the code is put together.
   says which: ```eval python, ```eval c++, ```eval wl. ⌘9 makes one, or
   turns the cell the caret is in into one — the code is kept. ⇧↩ runs it,
   and nothing else does. At its far left is a badge saying which
-  environment it is; click it to pick another and the fence is rewritten.
-  The badge stays put while the cell is open for typing. The answer lands in an ```out
+  environment it is — click it to pick another and the fence is rewritten
+  — and once the cell has been run that becomes `In[n]`, with `Out[n]`
+  beside the answer, the way a notebook marks a pair. The mark stays put
+  while the cell is open for typing. The answer lands in an ```out
   cell underneath, and running again replaces that answer rather than
   piling another one up. A line in square brackets is the app talking
   (`[no output]`, `[exit 1]`, `[stderr]`); every other line came out of

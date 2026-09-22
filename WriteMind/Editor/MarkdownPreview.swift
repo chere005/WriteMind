@@ -313,6 +313,9 @@ struct MarkdownPreview: View {
                 // this same order and two of them can share an offset.
                 let seams = self.seams
                 let cells = items
+                // The In/Out pairs, read off the note once for the whole
+                // page rather than once per row.
+                let pairs = EvalCells.groups(in: markdown)
                 ForEach(Array(cells.enumerated()), id: \.element.id) { index, item in
                     seamView(index < seams.count ? seams[index] : nil, index: index)
                         .id(SeamRow(index: index))
@@ -320,7 +323,7 @@ struct MarkdownPreview: View {
                     // applies it — so a seam is the full width of the
                     // page and so is the row above it, and there is no
                     // strip down either side that answers nothing.
-                    cell(item)
+                    cell(item, in: pairs)
                         .id(item.id)
                         .background {
                             GeometryReader { proxy in
@@ -662,7 +665,7 @@ struct MarkdownPreview: View {
     }
 
     @ViewBuilder
-    private func row(_ item: Item) -> some View {
+    private func row(_ item: Item, in groups: [EvalCells.Group]) -> some View {
         if item.isEditing {
             BlockEditor(text: draftBinding,
                         font: BlockView.editingNSFont(item.block),
@@ -696,12 +699,11 @@ struct MarkdownPreview: View {
                 // "the indicator for WL/Python/C++ never goes away").
                 // Beside it rather than inside it, in the margin the
                 // page already leaves, so the words do not move for it.
-                .padding(.leading, openBadge == nil ? 0 : EvaluatorBadge.width + 6)
+                .padding(.leading, openMark(item, in: groups) == nil ? 0 : CellMark.width + 6)
                 .overlay(alignment: .topLeading) {
-                    if let openBadge {
-                        EvaluatorBadge(fence: openBadge,
-                                       isRunning: runningCell == item.range.location,
-                                       onPick: { onPickEvaluator?($0, item.range) })
+                    if let role = openMark(item, in: groups) {
+                        CellMark(role: role, isRunning: runningCell == item.range.location,
+                                 onPick: { onPickEvaluator?($0, item.range) })
                     }
                 }
         } else if let block = item.block {
@@ -713,7 +715,7 @@ struct MarkdownPreview: View {
             // text is what the editor that opens is for.
             BlockView(block: block,
                       onToggleTodo: { index in tickTodo(item.range, at: index) },
-                      evaluation: evaluation(of: item.range),
+                      evaluation: evaluation(of: item, in: groups),
                       editing: checklistEditing(in: item.range, block: block))
                 .frame(maxWidth: .infinity, alignment: .leading)
                 // The faint promise a hover over the gutter makes. An
@@ -763,8 +765,8 @@ struct MarkdownPreview: View {
     /// so the seam the pointer has just arrived at does not have its
     /// cursor taken back by the cell it left.
     @ViewBuilder
-    private func cell(_ item: Item) -> some View {
-        row(item)
+    private func cell(_ item: Item, in groups: [EvalCells.Group]) -> some View {
+        row(item, in: groups)
             .padding(.horizontal, Self.sideInset)
             .frame(maxWidth: .infinity, alignment: .leading)
             .contentShape(Rectangle())
@@ -799,22 +801,34 @@ struct MarkdownPreview: View {
             }
     }
 
-    /// THE OPEN CELL'S OWN BADGE: its fence, when the cell being typed
-    /// in is an evaluation cell and this page has an environment menu to
-    /// offer. Nil for prose, for a plain code cell, and on paper.
-    private var openBadge: String? {
+    /// THE OPEN CELL'S OWN MARK, when the cell being typed in is an
+    /// evaluation cell and this page has an environment menu to offer.
+    /// Nil for prose, for a plain code cell, and on paper.
+    private func openMark(_ item: Item, in groups: [EvalCells.Group]) -> CellMark.Role? {
         guard editable, onPickEvaluator != nil, let fence else { return nil }
         let language = MarkdownFormatting.fenceLanguage(fence.open)
-        return Evaluator.isEvaluation(fence: language) ? language : nil
+        guard Evaluator.isEvaluation(fence: language) else { return nil }
+        return .input(fence: language, number: EvalCells.number(of: item.range, in: groups))
     }
 
-    /// What a code cell's own left margin says. Nil while the page is
-    /// read-only — the PDF carries no controls — and nil when nothing has
-    /// wired the environment menu up.
-    private func evaluation(of cell: NSRange) -> BlockView.Evaluation? {
-        guard editable, onPickEvaluator != nil else { return nil }
-        return BlockView.Evaluation(isRunning: runningCell == cell.location,
-                                    onPick: { onPickEvaluator?($0, cell) })
+    /// What a cell's own left margin says: `In[n]` or the environment
+    /// over the code, `Out[n]` over its answer, and nothing at all over
+    /// any other block. Nil too while the page is read-only — the PDF
+    /// carries no controls — and when nothing has wired the menu up.
+    private func evaluation(of item: Item, in groups: [EvalCells.Group]) -> BlockView.Evaluation? {
+        guard editable, onPickEvaluator != nil, case .code(let language, _) = item.block
+        else { return nil }
+        let cell = item.range
+        if let number = EvalCells.number(of: cell, in: groups),
+           EvalCells.isAnswer(cell, in: groups) {
+            return BlockView.Evaluation(role: .output(number: number), isRunning: false,
+                                        onPick: { _ in })
+        }
+        guard Evaluator.isEvaluation(fence: language) else { return nil }
+        return BlockView.Evaluation(
+            role: .input(fence: language, number: EvalCells.number(of: cell, in: groups)),
+            isRunning: runningCell == cell.location,
+            onPick: { onPickEvaluator?($0, cell) })
     }
 
     static func isChecklist(_ block: MarkdownBlock?) -> Bool {
@@ -1800,6 +1814,7 @@ struct MarkdownPreview: View {
         var evaluation: Evaluation?
 
         struct Evaluation {
+            var role: CellMark.Role
             var isRunning: Bool
             var onPick: (Evaluator) -> Void
         }
@@ -1940,8 +1955,9 @@ struct MarkdownPreview: View {
                 // choice and there is no second place for it to disagree
                 // with. Not on an Out cell: an answer is not run.
                 HStack(alignment: .top, spacing: 6) {
-                    if let evaluation, Evaluator.isEvaluation(fence: language) {
-                        gutter(language, evaluation)
+                    if let evaluation {
+                        CellMark(role: evaluation.role, isRunning: evaluation.isRunning,
+                                 onPick: evaluation.onPick)
                     }
                     codeBody(language, body)
                 }
@@ -1982,13 +1998,6 @@ struct MarkdownPreview: View {
                 .background(CodeColours.background, in: RoundedRectangle(cornerRadius: 6))
         }
 
-        /// The badge that says which environment this cell is — one
-        /// control, and the same one the open editor puts beside itself.
-        @ViewBuilder
-        private func gutter(_ language: String?, _ evaluation: Evaluation) -> some View {
-            EvaluatorBadge(fence: language, isRunning: evaluation.isRunning,
-                           onPick: evaluation.onPick)
-        }
 
         /// ONE REMINDER'S WORDS: the rendered text, with the editor drawn
         /// OVER it when this is the item that is open.

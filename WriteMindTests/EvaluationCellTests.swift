@@ -278,6 +278,38 @@ final class EvaluationCellTests: XCTestCase {
         XCTAssertTrue(EvalCells.isGrouped(cell(spaced, at: 1), in: groups))
     }
 
+    /// Sean, 2026-09-22: "the dropdown for evaluator type will become
+    /// the In[n] after evaluation". The number is the pair's place in the
+    /// note, so a cell with no answer has none at all.
+    func testTheNumberIsThePairsPlaceInTheNote() {
+        let note = "```eval python\na\n```\n\n```out\nA\n```\n\n"
+            + "```eval wl\nb\n```\n\n```out\nB\n```\n\n```eval python\nc\n```"
+        let groups = EvalCells.groups(in: note)
+        XCTAssertEqual(EvalCells.number(of: cell(note, at: 0), in: groups), 1)
+        XCTAssertEqual(EvalCells.number(of: cell(note, at: 1), in: groups), 1, "its answer shares it")
+        XCTAssertEqual(EvalCells.number(of: cell(note, at: 2), in: groups), 2)
+        XCTAssertEqual(EvalCells.number(of: cell(note, at: 3), in: groups), 2)
+        XCTAssertNil(EvalCells.number(of: cell(note, at: 4), in: groups),
+                     "a cell that has not been run has no number")
+
+        XCTAssertFalse(EvalCells.isAnswer(cell(note, at: 0), in: groups))
+        XCTAssertTrue(EvalCells.isAnswer(cell(note, at: 1), in: groups))
+        XCTAssertFalse(EvalCells.isAnswer(cell(note, at: 4), in: groups))
+    }
+
+    /// Sean, 2026-09-22: "the dropdown for selecting an evaluator shows
+    /// before it's evaluated.. after it's evaluated it disappears and is
+    /// replaced by the In[]". So the mark's WORDS say which it is.
+    func testTheMarkIsTheEnvironmentUntilItHasRunAndTheNumberAfterwards() {
+        XCTAssertEqual(CellMark.title(.input(fence: "eval python", number: nil)), "PY")
+        XCTAssertEqual(CellMark.title(.input(fence: "eval wl", number: nil)), "WL")
+        XCTAssertEqual(CellMark.title(.input(fence: "eval python", number: 3)), "In[3]")
+        XCTAssertEqual(CellMark.title(.output(number: 3)), "Out[3]")
+        // A fence this app does not know still opens the menu, and says
+        // so rather than naming a language it cannot run.
+        XCTAssertEqual(CellMark.title(.input(fence: "eval fortran", number: nil)), "—")
+    }
+
     func testEveryPairInANoteIsItsOwnGroup() {
         let two = "```eval python\na\n```\n\n```out\nA\n```\n\n```eval wl\nb\n```\n\n```out\nB\n```"
         let groups = EvalCells.groups(in: two)
