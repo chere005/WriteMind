@@ -584,6 +584,34 @@ CoreMind's `bin/report-status.sh`.
 - **One heavy build at a time** (baseline). `xcodebuild` here is one; a
   device or desktop build in a sibling repo is another. Queue, never overlap.
 
+- **RUNNING A CELL IS THE MOST DANGEROUS THING THIS APP DOES, and it is
+  refused by default.** Sean, 2026-09-21: "finish the work on evaluation
+  cells". A ```python, ```c, ```cpp or ```wls cell runs on ⌘9 or on the ▶
+  in its own left margin, and the answer goes under it in an ```out cell.
+  The app is unsandboxed with the hardened runtime off, so a child runs
+  with his full privileges and inherits WriteMind's TCC identity — a
+  Python cell that opens ~/Documents raises a prompt with the notes app's
+  name on it. So, all of it checked by tests rather than trusted:
+  **`CellRunner` is the only file that may say `Process(`**, and a test
+  walks every source and fails on a second one; **a run starts only from
+  a press** — never on opening a note, never on a save, never from a
+  view's body, and `NoteStore.swift` itself may not call it; **the guard
+  is `TestHost.isActive` on the first line of the spawn**, not a disabled
+  menu item, because `tools/test.sh` makes the Debug app the test host and
+  the suite reaches in with `@testable` (and `tools/smoke.sh` kills only
+  the app's pid, so a child started there would be orphaned); **the child
+  never touches the .md** — the answer comes back in memory and goes in
+  through the editor bridge, so ⌘Z takes it out the way it takes out the
+  words read off a picture; and **a shell fence is never run at all**,
+  because the text of a fence is not evidence Sean typed it.
+  `wl` STAYS MATHS: Wolfram code is ```wls, which was already a code
+  fence, and nothing may ever be appended to a `wl` fence because
+  `MathMarkup.isMathFence` compares the whole info string.
+  Wolfram Engine here is installed and NOT activated; it asks for a
+  Wolfram ID on stdin, which is why the child's stdin is the null device
+  — it gets EOF and exits instead of hanging. The app says what happened
+  and never tries to activate anything.
+
 ## How it is wired
 
 ```

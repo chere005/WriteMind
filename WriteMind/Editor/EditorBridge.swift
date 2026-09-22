@@ -31,6 +31,20 @@ final class EditorBridge {
     var cellRangeInDocument: (() -> NSRange?)?
     var cellEditInDocument: ((@escaping (NSRange, String) -> MarkdownFormatting.Edit?) -> Void)?
 
+    /// WRITING INTO THE NOTE FROM OUTSIDE THE CARET — the one thing an
+    /// evaluation does that nothing else here does. The rendered page
+    /// installs this; the source pane has none and goes through its text
+    /// view, which is the only path in the app that registers undo.
+    var writeInDocument: ((MarkdownFormatting.Edit) -> Void)?
+
+    /// An edit nobody typed. It must not take the keyboard and must not
+    /// move the caret: the answer to a cell arrives while somebody is
+    /// still typing in another one.
+    func write(_ edit: MarkdownFormatting.Edit) {
+        if let writeInDocument { writeInDocument(edit); return }
+        apply(edit, stealingFocus: false)
+    }
+
     /// The insertion bar between two cells, on the RENDERED page, where
     /// there is no text view to read it off. Takes the kind the command
     /// names, if it names one, and OPENS THE CELL THERE. Returns true when
@@ -515,13 +529,27 @@ final class EditorBridge {
         }
     }
 
-    private func apply(_ edit: MarkdownFormatting.Edit) {
+    private func apply(_ edit: MarkdownFormatting.Edit, stealingFocus: Bool = true) {
         guard let tv = textView, let storage = tv.textStorage else { return }
-        tv.window?.makeFirstResponder(tv)
+        if stealingFocus { tv.window?.makeFirstResponder(tv) }
         guard tv.shouldChangeText(in: edit.range, replacementString: edit.replacement) else { return }
+        // Through `shouldChangeText`/`didChangeText` even when nobody
+        // typed it: that pair is the only thing in this app that puts an
+        // edit on the undo stack, and an answer written into a note has
+        // to come back out with ⌘Z the way the words read off a picture
+        // do (`NoteStore.readText`).
+        let selection = tv.selectedRanges
         storage.replaceCharacters(in: edit.range, with: edit.replacement)
         tv.didChangeText()
-        tv.setSelectedRange(edit.selection)
-        tv.scrollRangeToVisible(edit.selection)
+        if stealingFocus {
+            tv.setSelectedRange(edit.selection)
+            tv.scrollRangeToVisible(edit.selection)
+        } else {
+            // Where the caret was, moved by however much longer the note
+            // just got — never dragged to what was written.
+            tv.selectedRanges = selection.map {
+                NSValue(range: EvalCells.shifted($0.rangeValue, by: edit))
+            }
+        }
     }
 }

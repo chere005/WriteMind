@@ -165,6 +165,15 @@ is how the code is put together.
   item starts the next one; Return on an empty item ends the list. The
   chevron beside the list button picks dots, dashes or numbers — `- `, `* `
   and `1. ` on disk, a round bullet, a dash and a number on the page.
+- **Cells that run.** A Python, C, C++ or Wolfram cell has a badge at its
+  far left saying what it runs as — click it to pick another, which
+  rewrites the fence — and a ▶ under it. ⌘9 runs the cell the caret is in.
+  The answer lands in an ```out cell underneath, and running again
+  replaces that answer rather than piling another one up. A line in
+  square brackets is the app talking (`[no output]`, `[exit 1]`,
+  `[stderr]`); every other line came out of the program. Nothing runs by
+  itself — not on opening a note, not on saving — and a shell cell is
+  never run at all.
 - **Code blocks, in five languages.** The `</>` button (⌘8) fences the
   selection or opens an empty block; its chevron tags the fence C, C++,
   Wolfram, Python or TypeScript, and the block is coloured — in the editor

@@ -49,6 +49,7 @@ fails if the two disagree.
 | ⇧⌘L | List, in whichever style the bar is set to |
 | ⌃⌘Q | Quote |
 | ⌘8 | Code block |
+| ⌘9 | Run this cell — Python, C, C++ or Wolfram — and put the answer under it |
 | ⌘] ⌘[ | Indent, outdent |
 | ⇧⌘I | Insert a picture |
 

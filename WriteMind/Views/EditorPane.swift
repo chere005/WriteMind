@@ -72,7 +72,10 @@ struct EditorPane: View {
                                         // The same switch, off the same
                                         // expression: the two panes are
                                         // the same notebook.
-                                        seamsEnabled: !appState.canvasOwnsPane)
+                                        seamsEnabled: !appState.canvasOwnsPane,
+                                        onRunCell: { store.runCell($0) },
+                                        onPickEvaluator: { store.setEnvironment($0, of: $1) },
+                                        runningCell: store.runningCell)
                             .id(note.id)
                     }
                     // The drawing belongs to the note, so it shows in both
@@ -106,6 +109,10 @@ struct EditorPane: View {
                 }
                 .onAppear {
                     appState.editor.pasteImage = { store.pasteImage(from: $0) }
+                    // How an evaluation's answer reaches the note: the
+                    // bridge's own write, which takes no keyboard and
+                    // moves no caret.
+                    store.writeCell = { appState.editor.write($0) }
                     // Pictures land under the caret while the source editor
                     // is up; the preview's blocks have their own text views.
                     store.caretAnchor = { appState.mode == .editor ? appState.editor.caretLineFrame() : nil }

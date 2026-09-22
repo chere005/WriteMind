@@ -659,7 +659,21 @@ final class NoteStore: ObservableObject {
         return true
     }
 
-    private func notice(_ text: String) {
+    /// A line in the footer. Not private since 2026-09-21: an
+    /// evaluation's refusals go here too, and they are raised by the
+    /// menu command rather than by the store.
+    /// THE CELL THAT IS RUNNING, by the offset it starts at — one child
+    /// at a time, which is a limit and is written down as one. Never
+    /// `isCapturing`: that one guards the camera's OCR and a page
+    /// capture, and sharing it would cross-block them and print "Reading
+    /// the page…" over an evaluation.
+    @Published var runningCell: Int?
+    /// How an answer reaches the note: `EditorPane` hands over the
+    /// editor bridge's own write, which does not take the keyboard and
+    /// does not move the caret.
+    var writeCell: ((MarkdownFormatting.Edit) -> Void)?
+
+    func notice(_ text: String) {
         captureNotice = text
         Task {
             try? await Task.sleep(nanoseconds: 5_000_000_000)

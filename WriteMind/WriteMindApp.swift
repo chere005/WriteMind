@@ -305,6 +305,14 @@ struct FormatMenu: Commands {
             // the rendered page, the text view's own delete in the
             // source — so ⌃⌫ was a second way to do what the obvious key
             // already did.
+            Divider()
+
+            // ⌘9 — RUN THIS CELL. The only thing in this app that starts
+            // a process, and it starts one only from a press.
+            Button("Run Cell") { store.runCell(editor.caretCell()) }
+                .shortcut(.runCell)
+                .disabled(store.selectedNote == nil || store.runningCell != nil)
+
             Button("Delete Cell") { editor.deleteCell() }
                 .disabled(store.selectedNote == nil)
             Button("Move Cell Up") { editor.moveCell(up: true) }

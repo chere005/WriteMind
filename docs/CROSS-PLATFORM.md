@@ -15,6 +15,32 @@ nothing is deleted: this file is the ledger of the two apps agreeing.
 
 ## Open
 
+### Cells that run, and everything that must refuse to
+A fenced code cell runs on a key and on a ▶ in its own left margin, beside
+a badge that says which environment it is and changes the fence when you
+pick another. The answer is written into the document as another fenced
+block tagged `out`, directly under the cell; running again replaces that
+block and nothing else. Found by POSITION, vetoed by the TAG — the block
+below, and only if it is tagged — so a re-run can never overwrite something
+a person wrote there. Inside it, a line in square brackets is the app
+talking and every other line came out of the process; a run that printed
+nothing still writes `[no output]`, so a run always looks like one. Escape
+any output line that would close the fence, or the rest of the document
+re-parses as code.
+
+The refusals matter more than the feature. Only a press starts a child —
+never on open, on save, on reload or from a view's body — and that is
+worth a test that reads the sources, not a comment. Keep process spawning
+to ONE file and fail the build on a second. Put the test-environment guard
+at the spawn, not at the menu: a test host may BE the app. The child never
+writes the document; the answer comes back in memory and goes in through
+whatever path registers undo. Shell cells are refused permanently: the text
+of a fence is not evidence the owner typed it. And a tool that is missing,
+or installed but not licensed, gets a sentence someone can act on — resolve
+tools from a candidate list of absolute paths, because a GUI app inherits
+the launcher's PATH and will not find anything in /opt or /usr/local.
+(Sean, 2026-09-21.)
+
 ### The viewfinder has a shape, and it is one number
 An aspect-ratio control on the camera: Free plus the usual ratios in both
 orientations, on the same dropdown that picks the input, since it is the

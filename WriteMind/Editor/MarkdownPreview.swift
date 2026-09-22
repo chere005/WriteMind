@@ -48,6 +48,12 @@ struct MarkdownPreview: View {
     /// pointer is never horizontal and no seam can be armed. The same
     /// switch the markdown pane has, off the same expression.
     var seamsEnabled: Bool = true
+    /// Running a cell, from the ▶ in its own left margin. Nil on paper.
+    var onRunCell: ((NSRange) -> Void)?
+    /// What a cell runs as, picked from the badge beside the ▶.
+    var onPickEvaluator: ((Evaluator, NSRange) -> Void)?
+    /// Which cell is running, by the offset it starts at.
+    var runningCell: Int?
 
     @State private var rowHeights: [Int: CGFloat] = [:]
     /// The fence lines of the code block being typed in. The editor shows
@@ -376,6 +382,26 @@ struct MarkdownPreview: View {
                 return kind != nil
             }
             bridge.barIsUp = { armedSeam != nil }
+            // An answer written under a cell while somebody is typing in
+            // another one: the note changes, and everything holding a raw
+            // offset further down it moves by the same amount. Nothing
+            // else edits this note from outside the caret, which is why
+            // nothing else has had to do this.
+            bridge.writeInDocument = { edit in
+                let ns = markdown as NSString
+                guard NSMaxRange(edit.range) <= ns.length else { return }
+                markdown = ns.replacingCharacters(in: edit.range, with: edit.replacement)
+                switch cursor {
+                case .none: break
+                case .cell(let range): cursor = .cell(EvalCells.shifted(range, by: edit))
+                case .item(let range): cursor = .item(EvalCells.shifted(range, by: edit))
+                }
+                selectedCells = selectedCells.map { EvalCells.shifted($0, by: edit) }
+                if let seam = armedSeam {
+                    armedSeam = SeamID(index: seam.index,
+                                       offset: EvalCells.shifted(seam.offset, by: edit))
+                }
+            }
         }
         .onDisappear {
             onEditingChanged?(false)
@@ -387,6 +413,7 @@ struct MarkdownPreview: View {
             bridge.cellEditInDocument = nil
             bridge.armedBar = nil
             bridge.barIsUp = nil
+            bridge.writeInDocument = nil
         }
         .environment(\.openURL, OpenURLAction { url in
             let destination = url.absoluteString
@@ -534,6 +561,7 @@ struct MarkdownPreview: View {
             // text is what the editor that opens is for.
             BlockView(block: block,
                       onToggleTodo: { index in tickTodo(item.range, at: index) },
+                      evaluation: evaluation(of: item.range),
                       editing: checklistEditing(in: item.range, block: block))
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .contentShape(Rectangle())
@@ -578,6 +606,16 @@ struct MarkdownPreview: View {
                     }
                 }
         }
+    }
+
+    /// What a code cell's own left margin can do. Nil while the page is
+    /// read-only, and nil when nothing has wired a runner up.
+    private func evaluation(of cell: NSRange) -> BlockView.Evaluation? {
+        guard editable, let onRunCell else { return nil }
+        return BlockView.Evaluation(
+            isRunning: runningCell == cell.location,
+            onPick: { onPickEvaluator?($0, cell) },
+            onRun: { onRunCell(cell) })
     }
 
     static func isChecklist(_ block: MarkdownBlock?) -> Bool {
@@ -1545,6 +1583,17 @@ struct MarkdownPreview: View {
         /// Ticking the nth box of a task list. Nil on paper and anywhere
         /// else the note cannot be written to.
         var onToggleTodo: ((Int) -> Void)?
+        /// What a code cell needs to be run and to say what it runs as.
+        /// Nil on paper and anywhere else the note cannot be written to —
+        /// the PDF export builds a `BlockView` with nothing but its block.
+        var evaluation: Evaluation?
+
+        struct Evaluation {
+            var isRunning: Bool
+            var onPick: (Evaluator) -> Void
+            var onRun: () -> Void
+        }
+
         /// What a CHECKLIST needs to let one of its items be typed in.
         /// Nil for every other kind of block, and nil on paper — the PDF
         /// export builds a `BlockView` with nothing but its block, and
@@ -1656,24 +1705,19 @@ struct MarkdownPreview: View {
                 MathView(source: body, size: 21)
                     .frame(maxWidth: .infinity, alignment: .center)
             case .code(let language, let body):
-                // Coloured when the fence names a language this app knows,
-                // plain monospace otherwise (Sean, 2026-09-19).
-                // The same size and the same spacing the source pane sets
-                // code at, and one source line of padding above and below
-                // — which is exactly what the two ``` lines take over
-                // there. A code cell is then the same height on both
-                // sides, which it was not: the source showed two fence
-                // lines (about 44 points) where the page showed 24 points
-                // of padding, and a note full of code drifted a block at a
-                // time (the open list).
-                Text(CodeColours.attributed(body,
-                                            language: CodeLanguage.from(fence: language) ?? .plain,
-                                            size: MarkdownTextView.codeSize))
-                    .lineSpacing(MarkdownTextView.paragraphStyle.lineSpacing)
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, MarkdownPreview.codePadding)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .background(CodeColours.background, in: RoundedRectangle(cornerRadius: 6))
+                // THE EVALUATOR'S DROPDOWN SITS AT THE FAR LEFT of a code
+                // cell (Sean, 2026-09-21: "this type of cell has a drop
+                // down icon on the far left picking the evaluator
+                // environment.. WL just meant a WL icon there"). Picking
+                // one rewrites the cell's fence, so the note carries the
+                // choice and there is no second place for it to disagree
+                // with. Not on an Out cell: an answer is not run.
+                HStack(alignment: .top, spacing: 6) {
+                    if let evaluation, !EvalOutput.isOut(block) {
+                        gutter(language, evaluation)
+                    }
+                    codeBody(language, body)
+                }
             case .blank(let lines):
                 // A cell of empty lines: as tall as those lines, and
                 // clickable, so it can be typed into (Sean, 2026-09-20).
@@ -1689,6 +1733,72 @@ struct MarkdownPreview: View {
                 // it, and there would be nowhere left to click the rule.
                 Divider().padding(.vertical, 4)
             }
+        }
+
+        /// Coloured when the fence names a language this app knows, plain
+        /// monospace otherwise (Sean, 2026-09-19). The same size and the
+        /// same spacing the source pane sets code at, and one source line
+        /// of padding above and below — which is exactly what the two ```
+        /// lines take over there. A code cell is then the same height on
+        /// both sides, which it was not: the source showed two fence lines
+        /// (about 44 points) where the page showed 24 points of padding,
+        /// and a note full of code drifted a block at a time.
+        @ViewBuilder
+        private func codeBody(_ language: String?, _ body: String) -> some View {
+            Text(CodeColours.attributed(body,
+                                        language: CodeLanguage.from(fence: language) ?? .plain,
+                                        size: MarkdownTextView.codeSize))
+                .lineSpacing(MarkdownTextView.paragraphStyle.lineSpacing)
+                .padding(.horizontal, 12)
+                .padding(.vertical, MarkdownPreview.codePadding)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(CodeColours.background, in: RoundedRectangle(cornerRadius: 6))
+        }
+
+        /// The badge that says which environment this cell is, and the ▶
+        /// that runs it. Two controls, because "what is this" and "do it"
+        /// are two questions — and the badge is a menu so the answer to
+        /// the first can be changed without typing in the fence.
+        @ViewBuilder
+        private func gutter(_ language: String?, _ evaluation: Evaluation) -> some View {
+            let evaluator = Evaluator.from(fence: language)
+            VStack(spacing: 4) {
+                Menu {
+                    ForEach(Evaluator.allCases) { choice in
+                        Button { evaluation.onPick(choice) } label: {
+                            HStack {
+                                Text(choice.title)
+                                if evaluator == choice { Image(systemName: "checkmark") }
+                            }
+                        }
+                    }
+                } label: {
+                    Text(evaluator?.badge ?? "—")
+                        .font(.system(size: 9, weight: .bold, design: .monospaced))
+                        .frame(width: 26, height: 18)
+                }
+                .menuStyle(.borderlessButton)
+                .menuIndicator(.hidden)
+                .fixedSize()
+                .help(evaluator.map { "Runs as \($0.title) — pick another" }
+                        ?? "No language: pick what this cell runs as")
+
+                if evaluation.isRunning {
+                    ProgressView().controlSize(.small).frame(width: 26, height: 18)
+                } else {
+                    Button { evaluation.onRun() } label: {
+                        Image(systemName: "play.fill")
+                            .font(.system(size: 9))
+                            .frame(width: 26, height: 18)
+                    }
+                    .buttonStyle(.plain)
+                    .foregroundStyle(evaluator == nil ? AnyShapeStyle(.tertiary) : AnyShapeStyle(.secondary))
+                    .disabled(evaluator == nil)
+                    .help("Run this cell (⌘9)")
+                }
+            }
+            .padding(.top, MarkdownPreview.codePadding)
+
         }
 
         /// ONE REMINDER'S WORDS: the rendered text, with the editor drawn
