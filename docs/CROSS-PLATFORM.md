@@ -511,6 +511,18 @@ a floor — a stroke already at the floor comes through untouched, since a
 capture with holes in it is worse than a heavy one. (Sean, 2026-09-22: "the
 scale is correct, but the thickness of the writing is too thick".)
 
+### Thinning the trace is also how the last grid dots go
+A printed dot grid is caught by looking for a lattice — regular spacing, two
+neighbours at an angle — and a few always get past it: the ones near an edge
+with no neighbour on one side, or a dot that touched something. They are a few
+pixels across, and the erosion that thins the pen leaves them under the speck
+limit. So CLEAN, THIN, THEN CLEAN AGAIN: the first pass drops the specks, the
+grid and the page edge and is what the stroke width is measured off (measuring
+raw ink would be measuring the dots as much as the pen), and the second takes
+whatever the thinning has reduced to nothing. It costs a second component pass
+and takes nothing off a real stroke. (Sean, 2026-09-22: "now some of the
+background dots are getting picked up by mistake".)
+
 ## Done there
 
 Nothing yet.

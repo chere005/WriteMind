@@ -195,7 +195,21 @@ enum NotebookCapture {
             return Result(image: picture, pageSize: size, frame: window, shape: shape, pageFound: quad != nil)
         case .ink:
             guard let (gray, width, height) = grayscale(normalised, maxWidth: size.width) else { return nil }
-            let mask = thinned(inkMask(gray: gray, width: width, height: height))
+            // CLEAN, THIN, THEN CLEAN AGAIN. The first pass drops the
+            // specks, the printed grid and the page's edge, and is what
+            // the stroke width is measured off — measuring the raw ink
+            // would be measuring the dots as much as the pen. The second
+            // is there BECAUSE of the thinning: a printed dot that got
+            // past the lattice is a few pixels across, and two passes of
+            // erosion leave it under the speck limit, so the dots that
+            // survived the grid search come out in the wash (Sean,
+            // 2026-09-22: "now some of the background dots are getting
+            // picked up by mistake").
+            let cleaned = inkMask(gray: gray, width: width, height: height)
+            let thin = thinned(cleaned)
+            let mask = Mask(width: width, height: height,
+                            ink: keepingMarks(thin.ink, width: width, height: height,
+                                              minimumSize: 7, minimumArea: 20))
             guard let box = inkBox(of: mask, within: region == nil ? nil : window),
                   let picture = image(from: mask, colour: colour, box: box) else { return nil }
             return Result(image: picture, pageSize: size,
@@ -469,16 +483,15 @@ enum NotebookCapture {
     /// writing is too thick". A capture lands at more than twice the size
     /// it used to, and the trace is faithful — so the pen's real stroke
     /// arrives twice as heavy beside the note's text as it did, which is
-    /// what he is looking at. Half is the size that puts the WEIGHT back
-    /// where it was while leaving the writing where the scale now puts
-    /// it.
-    static let strokeKeep = 0.5
+    /// what he is looking at. A THIRD: half of it was still heavy, said
+    /// twice the same day.
+    static let strokeKeep = 0.35
 
     /// And how thin a stroke is ever allowed to get, in mask pixels.
     /// Under about this a pencil line comes apart into dots, and a
     /// capture with holes in it is worse than a heavy one — so a stroke
     /// already at the floor is left exactly as it was.
-    static let strokeFloor = 2.5
+    static let strokeFloor = 2.0
 
     /// THE INK'S MEAN STROKE WIDTH, in mask pixels: twice the area over
     /// the boundary.

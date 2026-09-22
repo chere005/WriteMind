@@ -170,6 +170,30 @@ final class NotebookCaptureTests: XCTestCase {
         XCTAssertEqual(NotebookCapture.thinned(bar(thick: 1)), bar(thick: 1))
     }
 
+    /// Sean, 2026-09-22: "now some of the background dots are getting
+    /// picked up by mistake". A printed dot that got past the lattice is
+    /// a few pixels across, and the erosion that thins the pen leaves it
+    /// under the speck limit — so cleaning AGAIN after thinning takes the
+    /// stragglers, and takes nothing off a real stroke.
+    func testAStrayGridDotDoesNotSurviveTheThinning() {
+        var ink = [Bool](repeating: false, count: width * height)
+        // A pen stroke, and a 5-pixel dot away from it.
+        for y in 20..<28 { for x in 20..<100 { ink[y * width + x] = true } }
+        for y in 60..<65 { for x in 60..<65 { ink[y * width + x] = true } }
+        let raw = NotebookCapture.Mask(width: width, height: height, ink: ink)
+        XCTAssertTrue(raw.ink[62 * width + 62], "the dot is there to begin with")
+
+        let thin = NotebookCapture.thinned(raw)
+        let cleaned = NotebookCapture.Mask(
+            width: width, height: height,
+            ink: NotebookCapture.keepingMarks(thin.ink, width: width, height: height,
+                                              minimumSize: 7, minimumArea: 20))
+        XCTAssertFalse(cleaned.ink.enumerated().contains { $0.element && $0.offset / width >= 55 },
+                       "the dot is gone")
+        XCTAssertNotNil(cleaned.bounds, "and the stroke is not")
+        XCTAssertGreaterThan(NotebookCapture.strokeWidth(of: cleaned), 1.5)
+    }
+
     func testThinningNeverTakesTheWritingAway() {
         for thick in 1...12 {
             let thinned = NotebookCapture.thinned(bar(thick: thick))
