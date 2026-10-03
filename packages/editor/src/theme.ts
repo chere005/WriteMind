@@ -28,6 +28,14 @@ export const notebookTheme = EditorView.theme({
   "&.cm-focused": { outline: "none" },
   ".cm-selectionBackground, ::selection": { backgroundColor: "var(--wm-selection)" },
   "&.cm-focused .cm-selectionBackground": { backgroundColor: "var(--wm-selection)" },
+  // CodeMirror's own base theme assumes a light page (a pale selection and a
+  // BLACK caret), and this one follows the system: so both are set from the
+  // app's tokens, at the base theme's own specificity, or they lose to it.
+  "&.cm-focused > .cm-scroller > .cm-selectionLayer .cm-selectionBackground, .cm-selectionLayer .cm-selectionBackground": {
+    backgroundColor: "var(--wm-selection)",
+  },
+  ".cm-cursor, .cm-dropCursor": { borderLeft: "2px solid var(--wm-text)", marginLeft: "-1px" },
+  ".cm-activeLine": { backgroundColor: "transparent" },
 
   ".wm-marker": { color: "var(--wm-faint)" },
   ".wm-bold": { fontWeight: "700" },
@@ -107,6 +115,25 @@ export const notebookTheme = EditorView.theme({
     borderBottom: "1.1px solid var(--wm-rule)",
     cursor: "pointer",
   },
+  ".wm-bracket:hover": { borderColor: "var(--wm-accent)" },
   ".wm-bracket-group": { borderWidth: "1.5px" },
+  ".wm-bracket-folded": { borderStyle: "dashed", backgroundColor: "var(--wm-rule)" },
+  ".wm-folded": {
+    color: "var(--wm-faint)",
+    cursor: "pointer",
+    marginLeft: "6px",
+    padding: "0 4px",
+    borderRadius: "3px",
+    border: "1px solid var(--wm-rule)",
+    fontSize: "12px",
+  },
+  ".wm-link": { color: "var(--wm-accent)", textDecoration: "underline" },
+  ".wm-tok-keyword": { color: "var(--wm-tok-keyword, #c2185b)" },
+  ".wm-tok-type": { color: "var(--wm-tok-type, #00838f)" },
+  ".wm-tok-string": { color: "var(--wm-tok-string, #2e7d32)" },
+  ".wm-tok-comment": { color: "var(--wm-tok-comment, #8a8a94)", fontStyle: "italic" },
+  ".wm-tok-number": { color: "var(--wm-tok-number, #e65100)" },
+  ".wm-tok-function": { color: "var(--wm-tok-function, #1565c0)" },
+  ".wm-tok-symbol": { color: "var(--wm-tok-symbol, #6a4c93)" },
   ".wm-bracket-lit": { borderColor: "var(--wm-accent)", borderWidth: "2px" },
 })

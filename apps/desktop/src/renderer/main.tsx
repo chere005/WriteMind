@@ -2,6 +2,11 @@ import { StrictMode } from "react"
 import { createRoot } from "react-dom/client"
 import { App } from "./App"
 import "./app.css"
+import { watchPen } from "./penSettings"
+import { installPenCursor } from "./penCursor"
+
+watchPen()
+installPenCursor()
 
 // An app that silently does nothing is the worst kind: anything thrown in
 // the renderer says so on screen, where it can be read, rather than in a

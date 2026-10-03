@@ -17,7 +17,7 @@ export interface Note {
 
 /** The file name without its extension. */
 export function stem(path: string): string {
-  const name = path.split("/").pop() ?? path
+  const name = path.split(/[\\/]/).pop() ?? path
   const dot = name.lastIndexOf(".")
   return dot > 0 ? name.slice(0, dot) : name
 }

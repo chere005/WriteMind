@@ -1,12 +1,12 @@
 {
   "name": "@writemind/desktop",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
   "type": "module",
   "main": "out/main/main.mjs",
   "scripts": {
     "build:app": "node scripts/build.mjs",
-    "build": "vite build && node scripts/build.mjs && sh ../../tools/build-vision.sh",
+    "build": "vite build && node scripts/build.mjs && node scripts/build-vision.mjs",
     "start": "electron .",
     "dev": "node scripts/dev.mjs",
     "package": "npm run build && electron-builder --config electron-builder.yml",

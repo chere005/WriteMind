@@ -17,7 +17,7 @@ export type ShapeKind =
 export interface Point { x: number; y: number }
 
 export const NODE_KINDS: ShapeKind[] =
-  ["rectangle", "roundedRectangle", "oval", "diamond", "triangle", "parallelogram"]
+  ["rectangle", "roundedRectangle", "oval", "diamond", "triangle", "parallelogram", "text"]
 export const MARK_KINDS: ShapeKind[] = ["check", "cross", "question", "star"]
 
 /** Nodes carry a label and are what arrows land on; marks are marks. */

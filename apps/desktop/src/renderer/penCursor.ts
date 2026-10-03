@@ -1,0 +1,113 @@
+/**
+ * Taking the pen over from the OS pointer.
+ *
+ * While a pen is near the window the Windows arrow is hidden everywhere
+ * (`html.pen-active`, which hides the cursor) and an in-app cursor follows the
+ * pen instead: a ring the size of the pen's line in the pen's colour over the
+ * page, a dot with a cross while erasing, a small arrow-dot over the chrome
+ * (bars, sidebar, buttons). It is ONE fixed element moved with a transform
+ * once a frame — no React render per move, hovering included. A real mouse
+ * event gives the OS cursor back.
+ *
+ * The cursor SAYS WHAT THE PEN WILL DO: a dashed square while the lower
+ * button (or the Select tool) is selecting, with a + when it extends, the
+ * red cross while erasing, a hand while a button pans. (data-kind: ring,
+ * arrow, erase, select, add, pan.)
+ *
+ * While a pen is active the page also stops behaving as if a mouse were
+ * hovering: the mouse-only compatibility events a pen hover generates
+ * (mousemove, mouseover) are not delivered (the seams' hover bars and the
+ * brackets listen for them), and the press-and-hold context menu is
+ * suppressed except in text fields.
+ */
+
+import { penNear, penSettings } from "./penSettings"
+import { heldAction, subscribeLive, watchLive } from "./penLive"
+import { installPenActions, penMenuAllowed } from "./penActions"
+
+let colour = "#2D7DD2"
+let width = 3
+export function setPenLook(nextColour: string, nextWidth: number): void {
+  colour = nextColour
+  width = nextWidth
+  if (element) paintLook()
+}
+
+let element: HTMLDivElement | null = null
+let kind = ""
+let frame: number | null = null
+let at = { x: 0, y: 0 }
+let over: Element | null = null
+
+const CHROME = ".top-bar, .sidebar, .sidebar-bar, .tab-bar, .camera-bar, .pad-strip, .footer, button, select, input, .style-pop, .video-pop, .kind-menu, .context-menu, .bar-context"
+
+function paintLook(): void {
+  if (!element) return
+  const size = Math.max(6, Math.round(width) + 6)
+  element.style.setProperty("--pen-size", `${size}px`)
+  element.style.setProperty("--pen-colour", colour)
+}
+
+function draw(): void {
+  frame = null
+  if (!element) return
+  const chrome = over instanceof Element && over.closest(CHROME) !== null
+  const held = heldAction()
+  const tool = penSettings()
+  const next = held === "erase" ? "erase" : held === "select" ? "select" : held === "add" ? "add"
+    : held === "pan" ? "pan" : tool.eraser ? "erase" : tool.selectTool ? "select"
+      : chrome ? "arrow" : "ring"
+  if (next !== kind) { kind = next; element.dataset.kind = next }
+  element.style.transform = `translate(${at.x}px, ${at.y}px)`
+}
+
+function setActive(on: boolean): void {
+  document.documentElement.classList.toggle("pen-active", on)
+  if (element) element.style.display = on ? "block" : "none"
+}
+
+let installed = false
+export function installPenCursor(): void {
+  if (installed || typeof document === "undefined") return
+  installed = true
+  watchLive()
+  installPenActions()
+  element = document.createElement("div")
+  element.className = "pen-cursor"
+  element.style.display = "none"
+  document.body.appendChild(element)
+  paintLook()
+  subscribeLive(() => { if (frame === null) frame = requestAnimationFrame(draw) })
+
+  const moved = (event: PointerEvent) => {
+    if (event.pointerType === "pen") {
+      at = { x: event.clientX, y: event.clientY }
+      over = event.target as Element | null
+      if (!document.documentElement.classList.contains("pen-active")) setActive(true)
+      if (frame === null) frame = requestAnimationFrame(draw)
+    } else if (event.pointerType === "mouse" && !penNear(250)) {
+      if (document.documentElement.classList.contains("pen-active")) setActive(false)
+    }
+  }
+  window.addEventListener("pointermove", moved, true)
+  window.addEventListener("pointerdown", moved, true)
+  // The pen leaving the window or the tablet's range puts the cursor away.
+  document.addEventListener("pointerleave", (event) => { if (event.pointerType === "pen") setActive(false) }, true)
+  document.documentElement.addEventListener("pointerleave", () => {
+    if (document.documentElement.classList.contains("pen-active")) setActive(false)
+  })
+
+  // No mouse-style hover from a pen.
+  const quiet = (event: Event) => {
+    if (document.documentElement.classList.contains("pen-active") && penNear(400)) event.stopPropagation()
+  }
+  for (const type of ["mousemove", "mouseover", "mouseenter"]) window.addEventListener(type, quiet, true)
+
+  // Press-and-hold is a right click to Windows Ink; the pen has no use for the menu.
+  window.addEventListener("contextmenu", (event) => {
+    if (penMenuAllowed()) return
+    if (!document.documentElement.classList.contains("pen-active") || !penNear(1500)) return
+    if (event.target instanceof Element && event.target.closest("input, textarea, select")) return
+    event.preventDefault()
+  }, true)
+}

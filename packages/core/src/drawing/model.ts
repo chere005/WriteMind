@@ -16,7 +16,8 @@
  * an unreadable sidecar is an empty drawing rather than a thrown error.
  */
 
-import { defaultAspect, type Point, type ShapeKind } from "./shapes"
+import { readPressures } from "./pen"
+import { defaultAspect,type Point, type ShapeKind } from "./shapes"
 
 export interface ItemTransform {
   /** Fractions of the pane. */
@@ -35,6 +36,8 @@ export interface Stroke {
   width: number
   /** Normalised 0…1 points. */
   points: Point[]
+  /** A pen's pressure, 0…1, one per point; absent for a mouse stroke. */
+  pressures?: number[]
   transform: ItemTransform
   group: string | null
 }
@@ -86,7 +89,28 @@ export interface ConnectorItem {
   transform: ItemTransform
   /** The corners between the ends, for a line attached to a node. */
   bends: Point[]
+  /**
+   * The segments that were dragged by hand, and where they were put. They
+   * win over the routing ("its final drag is where it goes"). Absent in an
+   * older sidecar; read as none.
+   */
+  overrides?: SegmentOverride[]
 }
+
+/**
+ * One segment moved by hand: which one, which way it ran, and the coordinate
+ * it was left at, as a fraction of the pane. `vertical` is true when the
+ * segment ran up and down, so `value` is an x.
+ */
+export interface SegmentOverride {
+  index: number
+  vertical: boolean
+  value: number
+}
+
+/** A line with an end on a node is routed; one floating free is not. */
+export const isRouted = (c: { startNode: string | null; endNode: string | null }): boolean =>
+  c.startNode !== null || c.endNode !== null
 
 export type CanvasItem =
   | { kind: "stroke"; stroke: Stroke }
@@ -225,6 +249,7 @@ export function readDrawing(json: string | null): Drawing {
         colorHex: text(given.colorHex, "#1C1C1E"),
         width: number(given.width, 3),
         points: ((given.points as unknown[]) ?? []).map((p) => point(p, { x: 0, y: 0 })),
+        pressures: readPressures(given.pressures, ((given.points as unknown[]) ?? []).length),
         transform: transformOf(given.transform),
         group: groupOf(given.group),
       },
@@ -242,6 +267,7 @@ export function readDrawing(json: string | null): Drawing {
           colorHex: text(given.colorHex, "#1C1C1E"),
           width: number(given.width, 3),
           points: ((given.points as unknown[]) ?? []).map((p) => point(p, { x: 0, y: 0 })),
+          pressures: readPressures(given.pressures, ((given.points as unknown[]) ?? []).length),
           transform: transformOf(given.transform),
           group: groupOf(given.group),
         },
@@ -294,6 +320,20 @@ export function readDrawing(json: string | null): Drawing {
           lineWidth: number(given.lineWidth, 2),
           transform: transformOf(given.transform),
           bends: ((given.bends as unknown[]) ?? []).map((p) => point(p, { x: 0, y: 0 })),
+          // Present only when a hand dragged a segment, so a plain line
+          // reads back exactly as it was written.
+          ...(Array.isArray(given.overrides) && given.overrides.length > 0
+            ? {
+              overrides: (given.overrides as unknown[]).map((o) => {
+                const given2 = (o ?? {}) as Record<string, unknown>
+                return {
+                  index: number(given2.index, 0),
+                  vertical: given2.vertical === true,
+                  value: number(given2.value, 0),
+                }
+              }),
+            }
+            : {}),
         },
       })
     }

@@ -20,7 +20,9 @@ export const emptyOrder = (): NoteOrder => ({ folders: {} })
 
 /** The key a folder is stored under: its path relative to the root. */
 export function orderKey(folder: string, root: string): string {
-  const clean = (path: string) => path.replace(/\/+$/, "")
+  // Windows paths arrive with backslashes; the key is always slash-separated
+  // so order.json reads the same on every platform.
+  const clean = (path: string) => path.replace(/\\/g, "/").replace(/\/+$/, "")
   const folderPath = clean(folder)
   const rootPath = clean(root)
   if (folderPath === rootPath) return ""
@@ -57,4 +59,29 @@ export function forget(order: NoteOrder, name: string, folder: string, root: str
   if (left.length === 0) delete folders[key]
   else folders[key] = left
   return { folders }
+}
+
+/**
+ * A row dropped onto another row: `moving` takes `before`'s place (last when
+ * there is no `before`, or it is not in the list), and is taken out of where
+ * it was. This is the whole of "drag to rearrange" — the move between folders
+ * is a file move, and the place is this list. Ported from `NoteStore.place`.
+ */
+export function placing(names: string[], moving: string, before: string | null): string[] {
+  const rest = names.filter((name) => name !== moving)
+  const at = before === null ? -1 : rest.indexOf(before)
+  if (at < 0) return [...rest, moving]
+  return [...rest.slice(0, at), moving, ...rest.slice(at)]
+}
+
+/** A name added at the end of a folder's list if it is not in it (a row moved in). */
+export const appending = (names: string[], name: string): string[] =>
+  names.includes(name) ? names : [...names, name]
+
+/** Whether `candidate` is `folder` or inside it — a section cannot be dropped into itself. */
+export function isInside(candidate: string, folder: string): boolean {
+  const clean = (path: string) => path.replace(/\\/g, "/").replace(/\/+$/, "")
+  const a = clean(candidate)
+  const b = clean(folder)
+  return a === b || a.startsWith(b + "/")
 }

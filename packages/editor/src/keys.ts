@@ -8,15 +8,19 @@
  */
 
 import { insertNewlineAndIndent } from "@codemirror/commands"
+import { EditorSelection } from "@codemirror/state"
 import type { Extension } from "@codemirror/state"
 import { EditorView, keymap, type Command } from "@codemirror/view"
 import {
-  BOLD, ITALIC, STRIKE, UNDERLINE_CLOSE, UNDERLINE_OPEN,
+  BOLD, ITALIC, STRIKE, UNDERLINE_CLOSE, UNDERLINE_OPEN, copyCell, deleteCell, duplicateCell,
+  editsOver, movingCells, pasteCell,
   caretLine, codeBlock, indent, listContinuation, mergeCells, moveSection, outdent,
   outdentForBackspace, setHeading, splitCell, substring, toggleList, toggleQuote, toggleWrap,
   type Edit, type Heading, type ListStyle, type Range,
 } from "@writemind/core"
-import { applyEdit } from "./notebook"
+import { heldCells } from "./brackets"
+import { extraKeys } from "./extras"
+import { applyEdit, notebookField } from "./notebook"
 
 const selection = (view: EditorView): Range => {
   const main = view.state.selection.main
@@ -88,7 +92,7 @@ const carryTheListOn: Command = (view) => {
  * the hard way, where a key attached to a toolbar button stopped working
  * the moment its section was collapsed.
  */
-export const notebookKeys: Extension = keymap.of([
+const baseKeys: Extension = keymap.of([
   { key: "Mod-b", run: wrap(BOLD), preventDefault: true },
   { key: "Mod-i", run: wrap(ITALIC), preventDefault: true },
   { key: "Mod-u", run: wrap(UNDERLINE_OPEN, UNDERLINE_CLOSE), preventDefault: true },
@@ -114,3 +118,166 @@ export const notebookKeys: Extension = keymap.of([
   { key: "Enter", run: carryTheListOn },
   { key: "Enter", run: insertNewlineAndIndent },
 ])
+
+// MARK: - Whole cells
+
+/**
+ * A cell is a thing you can hold (Sean, 2026-09-20): once its bracket is
+ * clicked, Delete takes it, ⌘C copies it whole, ⌘X cuts it, ⌘V puts one back
+ * after it, and typing replaces it. These are the core's `CellCommands`
+ * applied to what `heldCells` says is held — and each one declines (returns
+ * false) when nothing is held, so an ordinary selection keeps the ordinary
+ * editor's behaviour.
+ */
+const CELLS_MIME = "application/x-writemind-cells"
+
+/** Several edits as ONE transaction, with the selection mapped through them. */
+function applyEdits(view: EditorView, edits: Edit[], keep: "caret" | "cells"): void {
+  const ascending = [...edits].sort((a, b) => a.range.location - b.range.location)
+  let shift = 0
+  const ranges = ascending.map((edit) => {
+    const at = edit.selection.location + shift
+    shift += edit.replacement.length - edit.range.length
+    return EditorSelection.range(at, at + (keep === "cells" ? edit.selection.length : 0))
+  })
+  view.dispatch({
+    changes: edits.map((edit) => ({
+      from: edit.range.location,
+      to: edit.range.location + edit.range.length,
+      insert: edit.replacement,
+    })),
+    selection: keep === "cells"
+      ? EditorSelection.create(ranges)
+      : EditorSelection.create([ranges[0]!]),
+    scrollIntoView: true,
+  })
+  view.focus()
+}
+
+const heldOnes = (view: EditorView): Range[] => {
+  const selected = view.state.selection.ranges.some((r) => !r.empty)
+  return selected ? heldCells(view) : []
+}
+
+export const deleteHeldCells: Command = (view) => {
+  const held = heldOnes(view)
+  if (held.length === 0) return false
+  const text = view.state.doc.toString()
+  const edits = editsOver(held, text, (span, whole) => deleteCell(span, whole))
+  if (edits.length === 0) return false
+  applyEdits(view, edits, "caret")
+  return true
+}
+
+export const duplicateHeldCells: Command = (view) => {
+  const held = heldOnes(view)
+  if (held.length === 0) return false
+  const text = view.state.doc.toString()
+  const edits = editsOver(held, text, (span, whole) => duplicateCell(span, whole))
+  if (edits.length === 0) return false
+  applyEdits(view, edits, "cells")
+  return true
+}
+
+const moveHeld = (up: boolean): Command => (view) => {
+  const held = heldOnes(view)
+  if (held.length === 0) return false
+  const edits = movingCells(held, up, view.state.doc.toString())
+  if (edits.length === 0) return true // held, but at the end of the note: say nothing
+  applyEdits(view, edits, "cells")
+  return true
+}
+
+/** The held cells' markdown, one after another with a blank line between. */
+const heldMarkdown = (view: EditorView, held: Range[]): string => {
+  const text = view.state.doc.toString()
+  return held.map((cell) => copyCell(cell, text)).join("\n\n")
+}
+
+/** Copy, cut and paste go through the DOM events, so the system clipboard is used. */
+const cellClipboard = EditorView.domEventHandlers({
+  copy(event, view) {
+    const held = heldOnes(view)
+    if (held.length === 0 || !event.clipboardData) return false
+    const markdown = heldMarkdown(view, held)
+    event.clipboardData.setData("text/plain", markdown)
+    event.clipboardData.setData(CELLS_MIME, markdown)
+    event.preventDefault()
+    return true
+  },
+  cut(event, view) {
+    const held = heldOnes(view)
+    if (held.length === 0 || !event.clipboardData) return false
+    const markdown = heldMarkdown(view, held)
+    event.clipboardData.setData("text/plain", markdown)
+    event.clipboardData.setData(CELLS_MIME, markdown)
+    event.preventDefault()
+    deleteHeldCells(view)
+    return true
+  },
+  paste(event, view) {
+    const markdown = event.clipboardData?.getData(CELLS_MIME)
+    if (!markdown) return false
+    const text = view.state.doc.toString()
+    const cells = view.state.field(notebookField).cells.map((cell) => cell.range)
+    const held = heldOnes(view)
+    // After the last held cell, or after the cell the caret is in.
+    const caret = view.state.selection.main.head
+    const after = held.length > 0
+      ? held[held.length - 1]!
+      : cells.find((r) => caret >= r.location && caret <= r.location + r.length)
+    event.preventDefault()
+    if (!after) {
+      // Nothing to go after: an empty note takes the cells as they are.
+      applyEdit(view, {
+        range: { location: 0, length: text.length },
+        replacement: markdown,
+        selection: { location: 0, length: markdown.length },
+      })
+      return true
+    }
+    applyEdits(view, [pasteCell(markdown, after, text)], "cells")
+    return true
+  },
+})
+
+/**
+ * Typing over held cells REPLACES them: the first is overwritten by what was
+ * typed and the rest go, with the blank lines that held them apart. (The
+ * editor's own answer to several ranges is to type into every one.)
+ */
+const typingOverCells = EditorView.inputHandler.of((view, _from, _to, typed) => {
+  const held = heldOnes(view)
+  if (held.length < 2 || typed.length === 0) return false
+  const text = view.state.doc.toString()
+  const edits = editsOver(held, text, (span, whole) => deleteCell(span, whole))
+  const front = edits[edits.length - 1]
+  if (!front) return false
+  const tail = text.slice(front.range.location, front.range.location + front.range.length).match(/\n+$/)
+  edits[edits.length - 1] = {
+    range: front.range,
+    replacement: typed + (tail ? tail[0] : ""),
+    selection: { location: front.range.location + typed.length, length: 0 },
+  }
+  applyEdits(view, edits, "caret")
+  return true
+})
+
+export const cellKeys: Extension = [
+  keymap.of([
+    { key: "Backspace", run: deleteHeldCells },
+    { key: "Delete", run: deleteHeldCells },
+    { key: "Ctrl-Backspace", run: deleteHeldCells },
+    { key: "Ctrl-Shift-d", run: duplicateHeldCells, preventDefault: true },
+    { key: "Ctrl-Shift-ArrowUp", run: moveHeld(true), preventDefault: true },
+    { key: "Ctrl-Shift-ArrowDown", run: moveHeld(false), preventDefault: true },
+  ]),
+  cellClipboard,
+  typingOverCells,
+]
+
+/** Cell commands first, so a held cell gets Delete before the editor's own. */
+export const notebookKeys: Extension = [cellKeys, baseKeys, extraKeys]
+
+/** Move the held cells one place — what dragging a held bracket does. */
+export const moveHeldCells = (view: EditorView, up: boolean): boolean => moveHeld(up)(view)

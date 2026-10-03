@@ -26,7 +26,8 @@ function withFakeTesseract(lines: string[]): string {
 }
 
 describe("the reader this machine has", () => {
-  it("finds tesseract on the PATH and reads a picture with it", async () => {
+  // The stand-in is a shell script; on Windows tesseract must be a real .exe.
+  it.skipIf(process.platform === "win32")("finds tesseract on the PATH and reads a picture with it", async () => {
     withFakeTesseract(["first line", "", "second line"])
     expect(tesseract()).not.toBeNull()
     expect(canRead("/nowhere")).toBe(true)

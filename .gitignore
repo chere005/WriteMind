@@ -26,3 +26,6 @@ apps/desktop/out/
 
 # electron-builder output
 dist-electron/
+
+# The shortcut icon tools/setup-windows.ps1 makes from packaging/icon.png
+packaging/writemind.ico

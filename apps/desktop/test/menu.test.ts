@@ -1,0 +1,211 @@
+import { describe, expect, it } from "vitest"
+import type { MenuItemConstructorOptions } from "electron"
+import {
+  COMMANDS, acceleratorFor, commandForKey, initialMenuState, matches, type MenuState,
+} from "../src/shared/commands"
+import { buildMenu } from "../src/main/menu"
+
+const project = { name: "Untitled Project", edited: false, folders: [{ path: "/a", name: "a" }] }
+
+function menu(state: Partial<MenuState> = {}, platform = "win32", folders = project.folders) {
+  return buildMenu({
+    platform, state: { ...initialMenuState, ...state }, project: { ...project, folders }, run: () => {},
+  })
+}
+
+const labels = (items: MenuItemConstructorOptions[]): string[] =>
+  items.map((one) => (one.type === "separator" ? "-" : one.label ?? `role:${one.role}`))
+
+const sub = (items: MenuItemConstructorOptions[], label: string): MenuItemConstructorOptions[] => {
+  const found = items.find((one) => one.label === label)
+  return (found?.submenu ?? []) as MenuItemConstructorOptions[]
+}
+
+describe("the application menu is the Mac's", () => {
+  // "Pen" is the port's own menu (the Mac has no tablet), between Insert and Input Devices.
+  it("has WriteMindApp.swift's menus in the order the Mac has them", () => {
+    expect(labels(menu())).toEqual([
+      "File", "Project", "Edit", "View", "Format", "Insert", "Pen", "Input Devices", "Window", "role:help",
+    ])
+  })
+
+  it("File: New Note, Close Tab, Open Notes Folder, Export, Quit", () => {
+    expect(labels(sub(menu(), "File"))).toEqual([
+      "New Note", "-", "Close Tab", "-", "Open Notes Folder", "-", "Export", "-", "Quit",
+    ])
+    expect(labels(sub(sub(menu(), "File"), "Export"))).toEqual(["PDF…"])
+  })
+
+  it("Project: the name, Add Folder, Remove Folder, Save, Save As, Open, New", () => {
+    expect(labels(sub(menu(), "Project"))).toEqual([
+      "Untitled Project", "-", "Add Folder to Project…", "Remove Folder", "-", "Save Project",
+      "Save Project As…", "-", "Open Project…", "New Project",
+    ])
+  })
+
+  it("Project: says when the saved project has been edited, and will not remove the last folder", () => {
+    const edited = buildMenu({
+      platform: "win32", state: initialMenuState, run: () => {},
+      project: { name: "Notes", edited: true, folders: [{ path: "/a", name: "a" }] },
+    })
+    expect(sub(edited, "Project")[0]!.label).toBe("Notes — edited")
+    const remove = sub(sub(menu(), "Project"), "Remove Folder")
+    expect(remove).toHaveLength(1)
+    expect(remove[0]!.enabled).toBe(false)
+    const two = sub(sub(menu({}, "win32", [{ path: "/a", name: "a" }, { path: "/b", name: "b" }]),
+      "Project"), "Remove Folder")
+    expect(two.map((one) => one.enabled)).toEqual([true, true])
+  })
+
+  it("Edit: Undo, Redo, the drawing's pair, the clipboard, then the selections", () => {
+    expect(labels(sub(menu(), "Edit"))).toEqual([
+      "Undo", "Redo", "Undo Drawing", "Redo Drawing", "-", "role:cut", "role:copy", "role:paste",
+      "role:selectAll", "-", "Expand Selection", "Select Next Occurrence", "Select All Occurrences",
+    ])
+  })
+
+  it("Undo Drawing and Redo Drawing are disabled until there is something to take back", () => {
+    const off = sub(menu(), "Edit")
+    expect([off[2]!.enabled, off[3]!.enabled]).toEqual([false, false])
+    const on = sub(menu({ canUndoDrawing: true, canRedoDrawing: true }), "Edit")
+    expect([on[2]!.enabled, on[3]!.enabled]).toEqual([true, true])
+  })
+
+  it("View: the toggles read as the Mac's do, in both states", () => {
+    expect(labels(sub(menu({ camera: true }), "View")).slice(0, 5)).toEqual([
+      "Hide Notes Sidebar", "Show Markdown Preview", "Hide Video", "Hide Notes Pane", "Show Markdown Markers",
+    ])
+    const flipped = menu({ sidebar: false, rendered: true, camera: false, editorPane: false, markers: true })
+    expect(labels(sub(flipped, "View")).slice(0, 5)).toEqual([
+      "Show Notes Sidebar", "Show Markdown Editor", "Show Video", "Show Notes Pane", "Hide Markdown Markers",
+    ])
+    expect(labels(sub(menu(), "View")).slice(5, 10)).toEqual([
+      "-", "Fold Section", "Unfold Section", "Fold All Sections", "Unfold All Sections",
+    ])
+  })
+
+  it("Format: the heading ladder, marks, list, quote, indentation, cells, sections", () => {
+    expect(labels(sub(menu(), "Format"))).toEqual([
+      "Title", "Chapter", "Author", "Section", "Subsection", "Subsubsection", "Body Text", "-",
+      "Bold", "Italic", "Underline", "Strikethrough", "-",
+      "Dots List", "Quote", "-",
+      "Decrease Indentation", "Increase Indentation", "-",
+      "Split Cell", "Merge Cells", "-",
+      "Duplicate Cell", "Delete Cell", "Move Cell Up", "Move Cell Down", "-",
+      "Move Section Up", "Move Section Down",
+    ])
+    expect(labels(sub(menu({ listStyle: "To-do" }), "Format"))).toContain("To-do List")
+  })
+
+  it("the cell commands wait for a note, like the Mac's .disabled(store.selectedNote == nil)", () => {
+    const format = sub(menu(), "Format")
+    for (const label of ["Split Cell", "Merge Cells", "Duplicate Cell", "Delete Cell", "Move Cell Up", "Move Cell Down"]) {
+      expect(format.find((one) => one.label === label)!.enabled).toBe(false)
+    }
+    const withNote = sub(menu({ hasNote: true }), "Format")
+    expect(withNote.find((one) => one.label === "Split Cell")!.enabled).toBe(true)
+    expect(sub(menu(), "File").find((one) => one.label === "Close Tab")!.enabled).toBe(false)
+  })
+
+  it("Insert: Image…, Text Box, a separator, Code Block (named for its language)", () => {
+    expect(labels(sub(menu(), "Insert"))).toEqual(["Image…", "Text Box", "-", "Code Block"])
+    expect(labels(sub(menu({ codeLanguage: "Python" }), "Insert"))).toEqual(["Image…", "Text Box", "-", "Python Block"])
+  })
+
+  it("Input Devices: the cameras with a tick on the live one, the Tablet source, Turn Camera Off, Refresh", () => {
+    const none = sub(menu(), "Input Devices")
+    expect(labels(none)).toEqual(["No cameras found", "-", "Tablet", "Tablet Pad (Full Screen)", "-", "Turn Camera Off", "Refresh Device List"])
+    expect(none[5]!.enabled).toBe(false)
+    const some = sub(menu({ cameras: [{ id: "x", name: "Desk" }, { id: "y", name: "Phone" }], cameraId: "y" }),
+      "Input Devices")
+    expect(labels(some)).toEqual(["Desk", "Phone", "-", "Tablet", "Tablet Pad (Full Screen)", "-", "Turn Camera Off", "Refresh Device List"])
+    expect(some.map((one) => one.checked)).toEqual([false, true, undefined, false, undefined, undefined, undefined, undefined])
+    expect(some[6]!.enabled).toBe(true)
+  })
+
+  it("Tablet Pad has a key (Ctrl+Alt+T), and the item turns into Exit while the pad is up", () => {
+    const off = sub(menu(), "Input Devices").find((one) => one.id === "tabletPad")!
+    expect(off.accelerator).toBe("CmdOrCtrl+Alt+T")
+    expect(off.registerAccelerator).toBe(false)
+    const on = sub(menu({ pad: true }), "Input Devices").find((one) => one.id === "tabletPad")!
+    expect(on.label).toBe("Exit Tablet Pad")
+    expect(commandForKey({ key: "t", ctrlKey: true, altKey: true, shiftKey: false, metaKey: false }, "win32")?.id).toBe("tabletPad")
+  })
+
+  it("shows the keys and registers none of them (one press is one action)", () => {
+    const every = (items: MenuItemConstructorOptions[]): MenuItemConstructorOptions[] =>
+      items.flatMap((one) => [one, ...every((one.submenu ?? []) as MenuItemConstructorOptions[])])
+    const keyed = every(menu()).filter((one) => one.accelerator)
+    expect(keyed.length).toBeGreaterThan(30)
+    for (const one of keyed) expect(one.registerAccelerator, one.label).toBe(false)
+  })
+
+  it("uses no role that carries a REGISTERED accelerator of its own against ours", () => {
+    // `windowMenu` brought Minimize = Ctrl+M (Merge Cells) and Close = Ctrl+W (Close Tab).
+    const every = (items: MenuItemConstructorOptions[]): MenuItemConstructorOptions[] =>
+      items.flatMap((one) => [one, ...every((one.submenu ?? []) as MenuItemConstructorOptions[])])
+    const roles = new Set(every(menu({}, "win32")).map((one) => one.role).filter(Boolean))
+    for (const role of roles) {
+      expect(["cut", "copy", "paste", "selectAll", "quit", "togglefullscreen", "toggleDevTools", "help"])
+        .toContain(role)
+    }
+    const dev = every(buildMenu({ platform: "win32", state: initialMenuState, project, dev: true, run: () => {} }))
+      .find((one) => one.role === "toggleDevTools")
+    expect(dev!.accelerator).toBe("F12")
+  })
+
+  it("the Mac's chords land where the mapping says", () => {
+    const view = sub(menu({ camera: true }), "View")
+    const key = (label: string) => view.find((one) => one.label === label)!.accelerator
+    expect(key("Hide Notes Sidebar")).toBe("CmdOrCtrl+Alt+S")
+    expect(key("Hide Video")).toBe("CmdOrCtrl+Alt+C")
+    expect(key("Hide Notes Pane")).toBe("CmdOrCtrl+Alt+E")
+    expect(key("Show Markdown Preview")).toBe("CmdOrCtrl+Shift+P")
+    const format = sub(menu(), "Format")
+    const fk = (label: string) => format.find((one) => one.label === label)!.accelerator
+    expect(fk("Split Cell")).toBe("Ctrl+D")
+    expect(fk("Merge Cells")).toBe("Ctrl+M")
+    expect(fk("Duplicate Cell")).toBe("Ctrl+Shift+D")
+    expect(fk("Title")).toBe("CmdOrCtrl+1")
+    expect(fk("Body Text")).toBe("CmdOrCtrl+7")
+    expect(sub(menu({}, "darwin"), "View")[0]!.accelerator).toBe("Ctrl+Cmd+S")
+  })
+})
+
+describe("the key table", () => {
+  it("never gives one chord to two commands", () => {
+    const seen = new Map<string, string>()
+    for (const platform of ["win32", "darwin"]) {
+      seen.clear()
+      for (const command of COMMANDS) {
+        const key = acceleratorFor(command.id, platform)
+        if (!key) continue
+        const normal = key.replace(/CmdOrCtrl/g, platform === "darwin" ? "Cmd" : "Ctrl").toLowerCase()
+        expect(seen.get(normal), `${platform}: ${command.id} vs ${seen.get(normal)} on ${key}`).toBeUndefined()
+        seen.set(normal, command.id)
+      }
+    }
+  })
+
+  const event = (key: string, mods: Partial<Record<"ctrlKey" | "metaKey" | "altKey" | "shiftKey", boolean>> = {}) =>
+    ({ key, ctrlKey: false, metaKey: false, altKey: false, shiftKey: false, ...mods })
+
+  it("matches exactly: Ctrl+Z is not Ctrl+Alt+Z, and Shift counts", () => {
+    expect(matches(event("z", { ctrlKey: true }), "CmdOrCtrl+Z", "win32")).toBe(true)
+    expect(matches(event("z", { ctrlKey: true, altKey: true }), "CmdOrCtrl+Z", "win32")).toBe(false)
+    expect(matches(event("Z", { ctrlKey: true, altKey: true, shiftKey: true }), "CmdOrCtrl+Alt+Shift+Z", "win32")).toBe(true)
+    expect(matches(event("z", { metaKey: true }), "CmdOrCtrl+Z", "darwin")).toBe(true)
+    expect(matches(event("ArrowLeft", { ctrlKey: true, altKey: true }), "CmdOrCtrl+Alt+Left", "win32")).toBe(true)
+  })
+
+  it("finds the page's commands by key and leaves the editor's alone", () => {
+    expect(commandForKey(event("s", { ctrlKey: true, altKey: true }), "win32")?.id).toBe("toggleSidebar")
+    expect(commandForKey(event("P", { ctrlKey: true, shiftKey: true }), "win32")?.id).toBe("toggleMode")
+    expect(commandForKey(event("A", { ctrlKey: true, shiftKey: true }), "win32")?.id).toBe("addFolder")
+    // Bold is CodeMirror's key; the page must not run it as well.
+    expect(commandForKey(event("b", { ctrlKey: true }), "win32")).toBeNull()
+    expect(commandForKey(event("d", { altKey: true }), "win32")).toBeNull()
+    // And Ctrl+Z is useUndo's.
+    expect(commandForKey(event("z", { ctrlKey: true }), "win32")).toBeNull()
+  })
+})

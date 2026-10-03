@@ -1,7 +1,7 @@
 {
   "name": "writemind-cross",
   "private": true,
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "WriteMind for macOS and Windows: one notebook, two platforms.",
   "workspaces": [
     "packages/*",
@@ -9,7 +9,7 @@
   ],
   "scripts": {
     "test": "vitest run",
-    "typecheck": "tsc -b --pretty false",
+    "typecheck": "tsc -b --pretty false && tsc -p apps/desktop",
     "dev": "npm -w @writemind/desktop run dev",
     "build": "npm -w @writemind/desktop run build"
   },

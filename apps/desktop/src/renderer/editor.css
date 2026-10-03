@@ -1,0 +1,122 @@
+/* The notebook's own colours: the code highlighter's palette has a light and
+   a dark half, so a fenced block reads either way round. */
+:root {
+  --wm-tok-keyword: #c2185b;
+  --wm-tok-type: #00838f;
+  --wm-tok-string: #2e7d32;
+  --wm-tok-comment: #8a8a94;
+  --wm-tok-number: #e65100;
+  --wm-tok-function: #1565c0;
+  --wm-tok-symbol: #6a4c93;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --wm-tok-keyword: #ff7ab2;
+    --wm-tok-type: #4ec9d6;
+    --wm-tok-string: #8bd48d;
+    --wm-tok-comment: #7d7d88;
+    --wm-tok-number: #ffb067;
+    --wm-tok-function: #7ab7ff;
+    --wm-tok-symbol: #c3a2f0;
+  }
+}
+
+/* The link banner: up until the target is picked or the user backs out. */
+.link-banner {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 12px;
+  background: var(--wm-accent);
+  color: #fff;
+  font-size: 12px;
+}
+.link-banner .spacer { flex: 1; }
+.link-banner button {
+  border: 1px solid rgba(255, 255, 255, 0.6);
+  background: transparent;
+  color: #fff;
+  border-radius: 5px;
+  padding: 2px 10px;
+  cursor: pointer;
+}
+.link-banner button:hover { background: rgba(255, 255, 255, 0.2); }
+
+/* A row being dragged, and the line a dropped row would land above. */
+.note-row.dragging, .section-row.dragging { opacity: 0.4; }
+.note-row.drop-above { box-shadow: 0 -2px 0 var(--wm-accent); }
+.section-row.drop-into { outline: 2px solid var(--wm-accent); outline-offset: -2px; }
+.rows.drop-root { outline: 2px dashed var(--wm-accent); outline-offset: -2px; }
+
+/* The text-style popover. */
+.style-pop {
+  position: absolute;
+  z-index: 20;
+  top: calc(100% + 4px); left: 0;
+  padding: 8px 10px;
+  background: var(--wm-chrome);
+  border: 1px solid var(--wm-rule);
+  border-radius: 6px;
+  box-shadow: 0 4px 16px var(--wm-shadow);
+  font-size: 12px;
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 6px 8px;
+  align-items: center;
+}
+.style-pop .actions { grid-column: 1 / -1; display: flex; gap: 6px; justify-content: flex-end; }
+
+
+/* The right-click menu on the page (Cut / Copy / Paste / Select All). */
+.context-menu {
+  position: fixed;
+  z-index: 30;
+  min-width: 180px;
+  padding: 4px;
+  border-radius: 8px;
+  border: 1px solid var(--wm-rule);
+  background: var(--wm-chrome);
+  box-shadow: 0 8px 24px var(--wm-shadow);
+}
+.context-menu button {
+  display: flex;
+  justify-content: space-between;
+  gap: 24px;
+  width: 100%;
+  text-align: left;
+  border: 0;
+  background: transparent;
+  padding: 5px 8px;
+  border-radius: 5px;
+  font-size: 12.5px;
+  color: var(--wm-text);
+  cursor: default;
+}
+.context-menu button:hover:not(:disabled) { background: var(--wm-accent); color: #fff; }
+.context-menu button:disabled { color: var(--wm-faint); }
+.context-menu kbd { font: inherit; color: var(--wm-faint); }
+.context-menu button:hover:not(:disabled) kbd { color: rgba(255, 255, 255, 0.8); }
+.context-menu hr { border: 0; border-top: 1px solid var(--wm-rule); margin: 4px 2px; }
+
+/* A text box being typed into: the card's own font, padding and corner, so the
+   words do not move when the caret arrives or leaves. */
+.wm-textbox-edit {
+  position: absolute;
+  pointer-events: auto;
+  box-sizing: border-box;
+  margin: 0;
+  padding: 8px 10px;
+  /* A ring outside the box rather than a border inside it: a border would take
+     3 points of the line's width and the words would wrap differently here
+     than they are drawn. */
+  border: 0;
+  box-shadow: 0 0 0 1.5px var(--wm-accent);
+  border-radius: 6px;
+  outline: none;
+  resize: none;
+  overflow: hidden;
+  font: 14px/18px -apple-system, "Segoe UI", system-ui, sans-serif;
+  white-space: pre-wrap;
+  overflow-wrap: break-word;
+  transform-origin: center;
+}

@@ -80,6 +80,8 @@ button { font: inherit; color: inherit; }
 .mac .sidebar-bar { padding-left: 78px; }
 
 .icon-button {
+  flex: none;
+  white-space: nowrap;
   width: 24px;
   height: 22px;
   border: 0;
@@ -178,14 +180,45 @@ button { font: inherit; color: inherit; }
 
 .top-bar {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
-  gap: 1px;
-  height: 32px;
-  padding: 0 6px;
+  gap: 2px 1px;
+  min-height: 32px;
+  padding: 3px 6px;
   border-bottom: 1px solid var(--wm-rule);
   background: var(--wm-chrome);
-  overflow: hidden;
+  position: relative;
+  z-index: 5;
 }
+.top-bar > *, .pop-anchor { flex: none; }
+.top-bar .icon-button, .top-bar select { white-space: nowrap; }
+.pop-anchor { position: relative; display: inline-flex; }
+/* The right-hand end (rendered page, PDF) stays right, and drops to its own
+   line rather than being clipped when the pane is narrow. */
+.top-bar > .bar-spacer { flex: 1 1 0; min-width: 0; }
+
+.pen-menu { position: relative; display: inline-flex; }
+.pen-chip { width: auto; padding: 0 6px; gap: 5px; font-size: 11px; }
+.pen-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--wm-faint); }
+.pen-pen .pen-dot { background: #e0a21a; }
+.pen-pressure .pen-dot { background: #2fb457; }
+.pen-pop { width: 340px; display: block; max-height: 80vh; overflow-y: auto; }
+.pen-pop h4 { margin: 12px 0 4px; font-size: 11px; text-transform: uppercase; letter-spacing: 0.04em; color: var(--wm-faint); }
+.pen-pop .pen-slot { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+.pen-pop .pen-slot select { max-width: 190px; }
+.pen-lamps { display: flex; gap: 6px; margin: 4px 0; }
+.pen-lamp { flex: 1; text-align: center; padding: 3px 0; border-radius: 4px; border: 1px solid var(--wm-faint); font-size: 11px; opacity: 0.55; }
+.pen-lamp.ever { opacity: 0.85; border-style: dashed; }
+.pen-lamp.on { opacity: 1; background: #2fb457; color: #fff; border-color: #2fb457; }
+.pen-bar { height: 6px; border-radius: 3px; background: rgba(128, 128, 128, 0.25); overflow: hidden; }
+.pen-bar span { display: block; height: 100%; background: #2D7DD2; }
+.pen-keys { width: 100%; border-collapse: collapse; font-size: 11px; }
+.pen-keys td { padding: 1px 4px 1px 0; vertical-align: middle; }
+.pen-key { display: inline-flex; gap: 6px; align-items: center; }
+.pen-copy { width: auto; padding: 0 6px; font-size: 10px; }
+.pen-pop p { margin: 0 0 8px; line-height: 1.35; }
+.pen-pop label { display: block; margin: 4px 0; }
+.pen-pop .hint { color: var(--wm-faint); margin: 8px 0 0; }
 
 .editor { flex: 1; min-height: 0; position: relative; }
 .editor .cm-editor { height: 100%; }
@@ -280,11 +313,12 @@ button { font: inherit; color: inherit; }
 .stack { position: relative; flex: 1; min-height: 0; display: flex; }
 .stack .editor { flex: 1; min-width: 0; }
 
-.wm-canvas { position: absolute; inset: 0; overflow: hidden; }
+.wm-canvas { position: absolute; inset: 0; overflow: hidden; touch-action: none; }
 .wm-canvas canvas { position: absolute; left: 0; top: 0; }
 .wm-handles { position: absolute; inset: 0; pointer-events: none; }
 
 .wm-handle {
+  pointer-events: auto;
   position: absolute;
   width: 22px;
   height: 22px;
@@ -300,6 +334,54 @@ button { font: inherit; color: inherit; }
 }
 .wm-handle:hover { color: var(--wm-accent); border-color: var(--wm-accent); }
 .wm-handle-wide { width: 28px; border-radius: 11px; }
+/* The circle on a segment of a routed line. */
+.wm-segment {
+  width: 12px;
+  height: 12px;
+  background: var(--wm-accent);
+  border-color: #fff;
+  opacity: 0.85;
+}
+.wm-segment:hover { opacity: 1; }
+
+/* A node's label, typed over the node. */
+.wm-label-edit {
+  position: absolute;
+  pointer-events: auto;
+  height: 24px;
+  box-sizing: border-box;
+  padding: 0 6px;
+  text-align: center;
+  font: 13px -apple-system, "Segoe UI", system-ui, sans-serif;
+  color: var(--wm-text);
+  background: var(--wm-page);
+  border: 1.5px solid var(--wm-accent);
+  border-radius: 4px;
+  outline: none;
+}
+
+/* The crop box over a picture. */
+.wm-crop { position: absolute; transform-origin: center; pointer-events: none; }
+.wm-crop-box {
+  position: absolute;
+  box-sizing: border-box;
+  border: 1.5px dashed var(--wm-accent);
+  box-shadow: 0 0 0 9999px rgba(0, 0, 0, 0.35);
+  pointer-events: none;
+}
+.wm-crop-corner {
+  position: absolute;
+  width: 12px;
+  height: 12px;
+  margin: -6px 0 0 -6px;
+  border-radius: 2px;
+  background: var(--wm-accent);
+  border: 1px solid #fff;
+  pointer-events: auto;
+  cursor: crosshair;
+}
+.wm-crop-bar { position: absolute; display: flex; gap: 6px; pointer-events: none; }
+.wm-crop-bar .wm-handle { position: static; }
 
 .pen-colour {
   width: 22px;
@@ -344,3 +426,282 @@ button { font: inherit; color: inherit; }
 }
 .camera-bar .icon-button { background: rgba(0, 0, 0, 0.45); color: #e8e8ea; }
 .camera-bar .icon-button:hover { background: var(--wm-accent); }
+
+/* The page's four corners over the viewfinder ("Straighten"). */
+.camera .quad { position: absolute; inset: 0; pointer-events: none; }
+.camera .quad polygon {
+  fill: rgba(109, 169, 240, 0.10);
+  stroke: var(--wm-accent);
+  stroke-width: 1.5;
+}
+.camera .quad-corner {
+  position: absolute;
+  width: 16px;
+  height: 16px;
+  margin: -8px 0 0 -8px;
+  border-radius: 50%;
+  background: var(--wm-accent);
+  border: 2px solid #fff;
+  cursor: grab;
+  touch-action: none;
+}
+
+/* Maths: typeset in the notebook, and the palette that puts it there. */
+.wm-math { font-family: "Cambria Math", "STIX Two Math", "Times New Roman", serif; white-space: nowrap; }
+.wm-math-block { text-align: center; padding: 6px 0; cursor: text; }
+.math-pop {
+  position: fixed;
+  z-index: 60;
+  width: 340px;
+  padding: 8px;
+  border: 1px solid var(--wm-rule);
+  border-radius: 8px;
+  background: var(--wm-chrome);
+  box-shadow: 0 8px 24px var(--wm-shadow);
+  font-size: 12px;
+}
+.math-pop button, .math-pop input {
+  font: inherit;
+  color: var(--wm-text);
+}
+.math-tabs { display: flex; flex-wrap: wrap; gap: 2px; margin-bottom: 6px; }
+.math-tabs button, .math-foot button {
+  padding: 2px 7px;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--wm-soft);
+  cursor: pointer;
+}
+.math-tabs button.on, .math-tabs button:hover, .math-foot button:hover { background: var(--wm-accent); color: #fff; }
+.math-grid { display: grid; grid-template-columns: repeat(6, 1fr); gap: 3px; max-height: 190px; overflow: auto; }
+.math-grid button {
+  height: 30px;
+  border: 1px solid var(--wm-rule);
+  border-radius: 4px;
+  background: var(--wm-page);
+  cursor: pointer;
+  font-size: 13px;
+}
+.math-grid button:hover { border-color: var(--wm-accent); color: var(--wm-accent); }
+.math-form { display: flex; flex-direction: column; gap: 4px; }
+.math-title { font-weight: 600; color: var(--wm-soft); margin-bottom: 2px; }
+.math-form label { display: flex; align-items: center; gap: 6px; }
+.math-form label span { width: 96px; color: var(--wm-soft); }
+.math-pop input {
+  flex: 1;
+  min-width: 0;
+  padding: 3px 6px;
+  border: 1px solid var(--wm-rule);
+  border-radius: 4px;
+  background: var(--wm-page);
+}
+.math-custom { margin-top: 6px; display: flex; }
+.math-foot { display: flex; align-items: center; gap: 6px; margin-top: 8px; min-height: 28px; }
+.math-preview { font-size: 15px; color: var(--wm-text); overflow: hidden; text-overflow: ellipsis; max-width: 150px; }
+.math-foot .spacer { flex: 1; }
+
+/* ---------- Chrome: the bars, the sections of the text bar, edit mode ---------- */
+
+.icon-button:disabled { opacity: 0.35; cursor: default; background-color: transparent; }
+.icon-button.on:disabled { background-color: transparent; }
+
+/* The bar over the list: 44 points, its buttons right-aligned. */
+.sidebar-bar { height: 44px; }
+.sidebar-bar .icon-button { width: 22px; }
+
+/* The video's switch and its chevron are one control. */
+.bar-split { position: relative; display: inline-flex; align-items: center; border-radius: 5px;
+  background: color-mix(in srgb, var(--wm-rule) 35%, transparent); }
+.bar-split.on { background: color-mix(in srgb, var(--wm-accent) 22%, transparent); }
+.bar-split > .icon-button.on { background-color: transparent; color: var(--wm-accent); }
+.bar-split > .icon-button { background-color: transparent; }
+.bar-split > .icon-button:hover { background-color: var(--wm-rule); }
+.bar-split > .chevron, .bar-split > .chevron-button {
+  width: 14px; padding: 0; font-size: 9px; border-left: 1px solid var(--wm-rule); border-radius: 0 5px 5px 0;
+}
+select.chevron {
+  appearance: none; -webkit-appearance: none; text-align: center; text-align-last: center;
+  --chev: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='8' height='5'%3E%3Cpath d='M1 1l3 3 3-3' fill='none' stroke='%23888' stroke-width='1.3' stroke-linecap='round'/%3E%3C/svg%3E");
+  background-image: var(--chev);
+  background-repeat: no-repeat; background-position: center; color: transparent;
+}
+select.chevron:hover, select.chevron:disabled { background-image: var(--chev); background-repeat: no-repeat; background-position: center; }
+select.chevron option { color: var(--wm-text); background: var(--wm-chrome); }
+.video-pop {
+  position: absolute; top: calc(100% + 4px); right: 0; z-index: 30; min-width: 210px; padding: 4px;
+  border: 1px solid var(--wm-rule); border-radius: 8px; background: var(--wm-chrome);
+  box-shadow: 0 8px 24px var(--wm-shadow); font-size: 12.5px;
+}
+.video-pop button { display: flex; width: 100%; text-align: left; border: 0; background: transparent;
+  padding: 4px 8px; border-radius: 5px; cursor: pointer; }
+.video-pop button:hover:not(:disabled) { background: var(--wm-accent); color: #fff; }
+.video-pop button:disabled { opacity: 0.4; cursor: default; }
+.video-pop .tick { width: 16px; flex: none; }
+.video-pop .none { padding: 4px 8px; color: var(--wm-faint); }
+.video-pop hr { border: 0; border-top: 1px solid var(--wm-rule); margin: 4px 2px; }
+
+/* Rows: edit mode puts duplicate and a two-click trash on each. */
+.note-row, .section-row { display: flex; align-items: center; gap: 6px; }
+.note-row .text { flex: 1; min-width: 0; }
+.section-row .name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.section-row .count { font-size: 10px; font-weight: 400; color: var(--wm-faint); }
+.row-buttons { display: inline-flex; gap: 2px; flex: none; }
+.row-button {
+  flex: none; display: inline-flex; align-items: center; justify-content: center;
+  width: 22px; height: 22px; padding: 0; border: 0; border-radius: 5px;
+  background: transparent; color: var(--wm-soft); cursor: pointer;
+}
+.row-button:hover { background: var(--wm-rule); }
+.row-button.trash.armed { background: #d9382c; color: #fff; }
+.note-row.open .row-button { color: #fff; }
+.note-row.open .row-button:hover { background: rgba(255, 255, 255, 0.25); }
+.note-row.open .row-button.armed { background: #d9382c; }
+
+/* The text bar: sections, each with a grip that puts it away. */
+.bar-group { display: inline-flex; align-items: center; gap: 1px; flex: none; position: relative; }
+.bar-group .bar-select { width: auto; padding: 0 3px; font-size: 11px; }
+.bar-group .away-icon { opacity: 0.55; font-size: 11px; }
+.bar-grip {
+  flex: none; display: inline-flex; align-items: center; justify-content: center;
+  width: 11px; height: 22px; padding: 0; border: 0; background: transparent; cursor: pointer;
+}
+.bar-grip i { display: block; width: 1px; height: 16px; border-radius: 1px; background: var(--wm-rule); }
+.bar-grip:hover i { width: 3px; background: var(--wm-soft); }
+.bar-context {
+  position: fixed; z-index: 70; min-width: 160px; padding: 6px 10px; font-size: 12px;
+  border: 1px solid var(--wm-rule); border-radius: 8px; background: var(--wm-chrome);
+  box-shadow: 0 8px 24px var(--wm-shadow);
+}
+.bar-context .heading { color: var(--wm-faint); margin-bottom: 4px; }
+.bar-context label { display: block; padding: 2px 0; cursor: pointer; }
+
+/* Hide Notes Pane: the camera takes the window. */
+.app.no-editor .camera { flex: 1 1 auto; }
+
+/* The selects in the text bar are a fixed, narrow width: a bar that is as wide
+   as its longest option pushes the pen off the end of the window. */
+.bar-group .bar-select.narrow { width: 66px; text-overflow: ellipsis; }
+
+/* The tablet as a source for the video pane: a sheet of dotted notebook paper. */
+
+.camera .note { pointer-events: none; z-index: 2; }
+.camera-bar { z-index: 3; flex-wrap: wrap; justify-content: flex-end; max-width: 100%; }
+
+/* The pen has taken over the pointer: no OS arrow, our own cursor instead (penCursor.ts). */
+html.pen-active, html.pen-active * { cursor: none !important; }
+html.pen-active .stack, html.pen-active .tablet { touch-action: none; }
+.pen-cursor {
+  position: fixed; left: 0; top: 0; z-index: 100000; pointer-events: none;
+  width: 0; height: 0; will-change: transform;
+}
+.pen-cursor::before {
+  content: ""; position: absolute; box-sizing: border-box;
+  width: var(--pen-size, 9px); height: var(--pen-size, 9px);
+  margin: calc(var(--pen-size, 9px) / -2) 0 0 calc(var(--pen-size, 9px) / -2);
+  border: 1.5px solid var(--pen-colour, #2D7DD2); border-radius: 50%;
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.7);
+}
+.pen-cursor::after { content: ""; position: absolute; width: 2px; height: 2px; margin: -1px 0 0 -1px; border-radius: 50%; background: var(--pen-colour, #2D7DD2); }
+.pen-cursor[data-kind="arrow"]::before {
+  width: 10px; height: 10px; margin: 0; border: 0; border-radius: 0; box-shadow: none;
+  background: #fff; clip-path: polygon(0 0, 100% 45%, 45% 55%, 35% 100%);
+  filter: drop-shadow(0 0 1px #000);
+}
+.pen-cursor[data-kind="arrow"]::after { display: none; }
+.pen-cursor[data-kind="select"]::before, .pen-cursor[data-kind="add"]::before {
+  width: 18px; height: 18px; margin: -9px 0 0 -9px; border: 1.5px dashed #2D7DD2; border-radius: 2px;
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.7);
+}
+.pen-cursor[data-kind="add"]::after {
+  content: "+"; width: auto; height: auto; margin: -22px 0 0 8px; background: none; color: #2D7DD2;
+  font: bold 13px/1 sans-serif; text-shadow: 0 0 2px #fff;
+}
+.pen-cursor[data-kind="pan"]::before {
+  content: "✋"; width: auto; height: auto; margin: -10px 0 0 -8px; border: 0; border-radius: 0; box-shadow: none;
+  font-size: 18px; line-height: 1; filter: drop-shadow(0 0 1px #fff);
+}
+.pen-cursor[data-kind="pan"]::after { display: none; }
+.pen-cursor[data-kind="erase"]::before {
+  width: 16px; height: 16px; margin: -8px 0 0 -8px; border: 1.5px solid #e5484d; border-radius: 3px;
+  background: linear-gradient(#e5484d, #e5484d) center / 100% 1.5px no-repeat, linear-gradient(#e5484d, #e5484d) center / 1.5px 100% no-repeat;
+}
+
+/* THE TABLET SHEET: the host fills the pane, the sheet (the screen's shape) is fitted inside it. */
+.tablet-host { position: absolute; inset: 0; background: #101012; overflow: hidden; }
+.tablet-host .tablet {
+  position: absolute;
+  background-color: #fdfdfb;
+  background-image: radial-gradient(circle, #c4c8cf 1px, transparent 1.3px);
+  background-size: 22px 22px;
+  background-position: 11px 11px;
+  touch-action: none;
+  outline: none;
+  user-select: none;
+}
+.tablet-host .tablet canvas { display: block; }
+.tablet .box {
+  position: absolute;
+  border: 1.5px dashed var(--wm-accent);
+  background: rgba(109, 169, 240, 0.12);
+  pointer-events: none;
+}
+/* "Show area": a frame round the sheet whose corners are easy to click in the driver. */
+.area-frame {
+  position: absolute; inset: 0; pointer-events: none; z-index: 4;
+  border: 6px solid #e5484d; box-shadow: inset 0 0 0 2px #fff, 0 0 0 2px #fff;
+  animation: area-pulse 1s ease-in-out infinite alternate;
+}
+.area-frame .corner {
+  position: absolute; background: #e5484d; color: #fff; font-size: 11px; font-weight: 600;
+  padding: 2px 6px; white-space: nowrap;
+}
+.area-frame .tl { left: 0; top: 0; }
+.area-frame .br { right: 0; bottom: 0; }
+@keyframes area-pulse { from { opacity: 1; } to { opacity: 0.55; } }
+.area-pop {
+  position: absolute; top: 40px; right: 8px; z-index: 5; width: min(340px, calc(100% - 16px));
+  padding: 10px 12px; font-size: 12px; line-height: 1.4; text-align: left;
+  background: var(--wm-chrome); color: var(--wm-text); border: 1px solid var(--wm-rule);
+  border-radius: 8px; box-shadow: 0 8px 24px var(--wm-shadow);
+}
+.area-help p { margin: 0 0 8px; }
+.area-help .hint { color: var(--wm-faint); }
+.area-help .area-numbers { font-variant-numeric: tabular-nums; }
+.area-help .area-numbers span { color: var(--wm-soft); font-size: 11px; }
+.area-help .area-buttons { display: flex; gap: 6px; }
+.area-details { margin: 8px 0 0; }
+.area-details summary { cursor: pointer; color: var(--wm-soft); }
+
+/* PAD MODE: only the sheet, full screen, and a strip that comes down from the top. */
+.pad { position: fixed; inset: 0; z-index: 9000; background: #000; }
+.pad .tablet-host { background: #000; }
+.pad-strip {
+  position: absolute; left: 0; right: 0; top: 0; z-index: 10;
+  display: flex; align-items: center; gap: 8px; padding: 8px 12px; flex-wrap: wrap;
+  background: rgba(30, 31, 34, 0.96); color: #e8e8ea; box-shadow: 0 4px 18px rgba(0, 0, 0, 0.5);
+  transform: translateY(-110%); transition: transform 0.14s ease-out; pointer-events: none;
+}
+.pad-strip.shown { transform: none; pointer-events: auto; }
+.pad-button {
+  min-height: 48px; min-width: 56px; padding: 0 16px; font-size: 15px; border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.2); background: rgba(255, 255, 255, 0.1); cursor: pointer;
+}
+.pad-button:hover { background: rgba(255, 255, 255, 0.2); }
+.pad-button.on { background: var(--wm-accent); color: #fff; border-color: transparent; }
+.pad-button.primary { background: var(--wm-accent); color: #fff; font-weight: 600; border-color: transparent; }
+.pad-button.small { min-width: 48px; padding: 0 10px; font-size: 20px; }
+.pad-button.exit { background: #d9382c; border-color: transparent; color: #fff; }
+.pad-button:disabled { opacity: 0.4; cursor: default; }
+.pad-swatch { width: 40px; height: 40px; border-radius: 50%; border: 3px solid transparent; cursor: pointer; padding: 0; }
+.pad-swatch.on { border-color: #fff; box-shadow: 0 0 0 2px var(--wm-accent); }
+.pad-width { min-width: 28px; text-align: center; font-size: 16px; font-variant-numeric: tabular-nums; }
+.pad-sep { width: 1px; align-self: stretch; background: rgba(255, 255, 255, 0.2); margin: 4px 2px; }
+.pad-grow { flex: 1; }
+.pad-strip .pen-chip { min-height: 48px; font-size: 13px; padding: 0 12px; color: #e8e8ea; }
+.pad-strip .pen-pop { top: 100%; color: var(--wm-text); }
+.pad-toast {
+  position: absolute; left: 50%; bottom: 28px; transform: translateX(-50%); z-index: 11;
+  padding: 10px 18px; border-radius: 8px; font-size: 15px;
+  background: rgba(30, 31, 34, 0.95); color: #e8e8ea; pointer-events: none;
+}
