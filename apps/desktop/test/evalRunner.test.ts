@@ -352,7 +352,8 @@ describe("only a press starts a child (EvaluationSpawnTests)", () => {
 
   it("nothing but Shift+Enter in the cell asks for a run — not opening, saving or loading a note", () => {
     expect(holding("packages/editor/src", /\bhost\.run\(/)).toEqual(["packages/editor/src/eval/index.ts"])
-    const editor = readFileSync(path.join(ROOT, "packages/editor/src/eval/index.ts"), "utf8")
+    // Line endings as checked out: CI's Windows runner hands Git's files over with \r\n.
+    const editor = readFileSync(path.join(ROOT, "packages/editor/src/eval/index.ts"), "utf8").replace(/\r\n/g, "\n")
     // runCellAt is called from runCell only, and runCell is bound to Shift-Enter only.
     expect(editor.match(/runCellAt\(/g)?.length).toBe(2)
     expect(editor).toMatch(/const runCell: Command = \(view\) => \{\n\s+const plugin = view\.plugin\(evalPlugin\)\n\s+return plugin \? runCellAt\(view, plugin\) : false/)
