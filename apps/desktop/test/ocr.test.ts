@@ -95,6 +95,14 @@ describe("the service in front of the engine", () => {
     return { calls, read }
   }
   const tick = () => new Promise((resolve) => setTimeout(resolve, 20))
+  /**
+   * Wait until `ready()` holds (or give up after 3 s and let the expect say what is wrong). A request writes its
+   * picture to a temporary file before the engine is asked, and on CI's runner that write can take longer than a
+   * fixed tick: waiting for the thing itself keeps the test about order, not about the disk's speed.
+   */
+  const until = async (ready: () => boolean) => {
+    for (let waited = 0; waited < 3000 && !ready(); waited += 10) await new Promise((resolve) => setTimeout(resolve, 10))
+  }
 
   it("reads a picture once however many times it is asked (the key is what is IN it)", async () => {
     let reads = 0
@@ -130,15 +138,15 @@ describe("the service in front of the engine", () => {
     const service = new OcrService(read)
     const asked = service.request({ id: "a", source: { bytes: picture(1) } })
     const caught = asked.catch((error: Error) => error.name)
-    await tick()
+    await until(() => calls.length >= 1)
     expect(calls).toHaveLength(1)
     service.cancel("a")
     expect(await caught).toBe("AbortError")
-    await tick()
+    await until(() => calls[0]!.stopped)
     expect(calls[0]!.stopped).toBe(true)
     // …and asking again starts a fresh read rather than inheriting the dead one.
     const again = service.request({ id: "b", source: { bytes: picture(1) } })
-    await tick()
+    await until(() => calls.length >= 2)
     expect(calls).toHaveLength(2)
     calls[1]!.finish()
     expect((await again).lines[0]!.text).toBe("read")
@@ -149,7 +157,7 @@ describe("the service in front of the engine", () => {
     const service = new OcrService(read)
     const first = service.request({ id: "a", source: { bytes: picture(1) } }).catch((error: Error) => error.name)
     const second = service.request({ id: "b", source: { bytes: picture(1) } })
-    await tick()
+    await until(() => calls.length >= 1)
     service.cancel("a")
     expect(await first).toBe("AbortError")
     expect(calls[0]!.stopped).toBe(false)
@@ -171,6 +179,7 @@ describe("the service in front of the engine", () => {
     const { calls, read } = slowReader()
     const service = new OcrService(read)
     const results = [1, 2, 3].map((n) => service.request({ id: String(n), source: { bytes: picture(n) } }).catch((error: Error) => error.name))
+    await until(() => calls.length >= 2)
     await tick()
     expect(calls).toHaveLength(2)
     expect(service.busy).toBe(3)
