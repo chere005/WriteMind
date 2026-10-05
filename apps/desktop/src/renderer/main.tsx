@@ -2,7 +2,6 @@ import "./penGateBoot"   // FIRST: the pen gate's listeners must be the first ca
 import { StrictMode } from "react"
 import { createRoot } from "react-dom/client"
 import { App } from "./App"
-import PenSink from "./PenSink"
 import "./app.css"
 import "./chrome.css"
 import { watchPen } from "./penSettings"
@@ -10,10 +9,9 @@ import { installPenCursor } from "./penCursor"
 import { installPenFeed } from "./penFeed"
 import { installDropGuard } from "./dropGuard"
 
-// The pen sink is this same bundle in a window of its own (main/pen/overlay.ts): the transparent window that holds the pen to the sheet.
-const sink = new URLSearchParams(location.search).has("pen-sink")
 watchPen()
-if (!sink) { installPenCursor(); installPenFeed() }
+installPenCursor()
+installPenFeed()
 installDropGuard()
 
 // An app that silently does nothing is the worst kind: anything thrown in
@@ -56,6 +54,6 @@ window.addEventListener("unhandledrejection", (event) =>
 
 createRoot(document.getElementById("root")!).render(
   <StrictMode>
-    {sink ? <PenSink /> : <App />}
+    <App />
   </StrictMode>,
 )

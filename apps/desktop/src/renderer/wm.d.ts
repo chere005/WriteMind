@@ -76,7 +76,6 @@ declare global {
       e2eSetBounds?(bounds: unknown): Promise<void>
       /** The tablet pen's native feed (shared/pen.ts PenApi); present on every platform, `available: false` off Windows. */
       pen: import("../shared/pen").PenApi
-      windowInfo?(): Promise<import("./tabletPage").DisplayInfo | null>
       onNotesChanged(listener: () => void): () => void
       onFlushRequest(listener: () => Promise<void> | void): () => void
       onEdit(listener: (which: "undo" | "redo") => void): () => void

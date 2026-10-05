@@ -3,11 +3,11 @@
  *
  * `wintab-data` and `wintab-system` are one class; only the context differs. The data context reads the tablet and moves nothing.
  * The system context additionally asks the driver to map the pen to the sheet (`setSheetPhysical`), so it is only ever opened when
- * the guard process is READY (fail closed: no guard, no system context) and is registered with the guard the moment it exists.
+ * a lease is READY, when the host gives one (the app does not: there is no guard process, see LeaseApi in shared/pen.ts for the residual risk).
  *
  * Start (a chain of small awaited steps, 4 s budget, each native step timed): recover stale contexts once per process, WTInfo
  * (0 tablets -> retry "after-replug" with the plain reason), read the device, create the owner window, open the context with the
- * FIRST mask of the ladder, register with the guard, poll. The packet mask is a LADDER (full -> min -> tiny): the layout has never met
+ * FIRST mask of the ladder, poll. The packet mask is a LADDER (full -> min -> tiny): the layout has never met
  * a real packet, so the first 20 packets are judged for plausibility and an implausible stream, or a first packet bigger than the
  * computed size (a PacketSizeMismatch), moves the context to the next mask; nothing fits -> a fatal error naming both sizes.
  *
@@ -19,7 +19,7 @@
  * it has been seen in BOTH states), otherwise the VisitTracker timeouts (600 ms hovering, 2000 ms in contact); exactly one leave
  * sample per visit. x / y leave in the DEVICE frame (y not flipped, no rotation): frame.ts and the manager own that.
  *
- * stop() is synchronous and idempotent: clears the timers, closes the context (WTClose), tells the guard, gives the 1 ms timer back,
+ * stop() is synchronous and idempotent: clears the timers, closes the context (WTClose), gives the 1 ms timer back,
  * destroys the window. closeAllWintab() (wintabNative.ts) does the same for every context on every exit path.
  */
 
@@ -55,7 +55,7 @@ export interface WintabBackendOptions {
 
 const START_BUDGET_MS = 3500
 const SLOW_TICK_MS = 10
-/** A fresh process-wide guard so the stale-context recovery runs once per journal path. */
+/** Process-wide memory so the stale-context recovery runs once per journal path. */
 const recovered = new Set<string>()
 
 const msgOf = (e: unknown): string => (e instanceof Error ? e.message : String(e))
@@ -156,7 +156,7 @@ export class WintabBackend implements PenBackend {
       this.core.setState("unavailable", a.reason)
       return { ok: false, reason: a.reason, retry: "never" }
     }
-    if (this.mode === "system" && !ctx.lease.ready()) {
+    if (this.mode === "system" && ctx.lease && !ctx.lease.ready()) {
       const reason = "guard not ready: refusing a system context"
       this.core.setState("failed", reason)
       return { ok: false, reason, retry: "later" }
@@ -213,7 +213,7 @@ export class WintabBackend implements PenBackend {
     this.deviceInfo = this.makeDeviceInfo(device)
     this.core.setDevice(this.deviceInfo)
     this.describeDevice(device)
-    ctx.trace.event(this.name, "layout", {
+    if (this.mode === "data" || firstOnce(ctx.trace, "layout")) ctx.trace.event(this.name, "layout", {
       dev: { name: device.name, x: device.x, y: device.y, pressure: device.pressure, orientation: device.orientation, pktRate: device.pktRate, pktData: hex(device.pktData), cursors: device.cursors },
       interface: ifc,
     })
@@ -266,7 +266,7 @@ export class WintabBackend implements PenBackend {
   // ---- the context --------------------------------------------------------------------------
 
   /**
-   * Open a context with MASK_LADDER[maskIdx], register it with the guard, and make it the live session. The new context is opened
+   * Open a context with MASK_LADDER[maskIdx], and make it the live session. The new context is opened
    * BEFORE the old one is closed (a rectangle change or a mask step), so the pointer is never without a context in between.
    */
   protected openSession(rect: Box | null, maskIdx: number): { ok: true } | { ok: false; reason: string; fatal: boolean; fatalError?: FfiOverrun } {
@@ -285,10 +285,11 @@ export class WintabBackend implements PenBackend {
     const session = result.session
     if (!session) return { ok: false, reason: result.error ?? "WTOpen failed", fatal: false }
     const handle = session.handle.toString()
+    // No lease (the app has no guard process): the context is unguarded and is freed in-process / by the journal. With one, fail closed.
     let held = false
-    try { held = ctx.lease.holdWintab(handle, this.mode) } catch { held = false }
-    if (!held && this.mode === "system") {
-      session.close() // fail closed: no guard, no system context
+    try { held = ctx.lease ? ctx.lease.holdWintab(handle, this.mode) : false } catch { held = false }
+    if (ctx.lease && !held && this.mode === "system") {
+      session.close() // fail closed: a lease was given and refused
       return { ok: false, reason: "guard not ready: refusing a system context", fatal: false }
     }
     if (result.maskChanged) ctx.trace.event(this.name, "mask-changed", { asked: hex(result.maskChanged.asked), stored: hex(result.maskChanged.stored) })
@@ -298,15 +299,18 @@ export class WintabBackend implements PenBackend {
     this.maskIdx = maskIdx
     if (old) this.closeSession(old)
     this.setupDecoding(session)
-    ctx.trace.event(this.name, "context-opened", {
-      mode: this.mode, handle, mask: hex(session.mask), packetSize: packetSize(session.mask), ladder: maskIdx, leaseHeld: held,
-      stored: dumpContext(session.context),
-    })
+    // The system context is opened on every pen visit: its layout and stored context are logged once per session, later visits log nothing here.
+    if (this.mode === "data" || firstOnce(ctx.trace, "context-opened")) {
+      ctx.trace.event(this.name, "context-opened", {
+        mode: this.mode, handle, mask: hex(session.mask), packetSize: packetSize(session.mask), ladder: maskIdx, ...(ctx.lease ? { leaseHeld: held } : {}),
+        stored: dumpContext(session.context),
+      })
+    }
     this.core.fact("mask", hex(session.mask))
     this.core.fact("packetSize", packetSize(session.mask))
     this.core.fact("ladder", maskIdx)
     this.core.fact("inRect", `${session.context.inOrg[0]}+${session.context.inExt[0]} x ${session.context.inOrg[1]}+${session.context.inExt[1]}`)
-    this.core.fact("contextState", held ? "open (guarded)" : "open (journal only)")
+    this.core.fact("contextState", held ? "open (guarded)" : "open (in-process cleanup + journal; no guard process)")
     if (this.mode === "system") this.core.fact("sysRect", rect ? `${rect.x},${rect.y} ${rect.width}x${rect.height}` : null)
     return { ok: true }
   }
@@ -323,11 +327,11 @@ export class WintabBackend implements PenBackend {
     )
   }
 
-  /** Close one session, tell the guard. Never throws. */
+  /** Close one session (and tell the lease, when there is one). Never throws. */
   private closeSession(s: WintabSessionLike): void {
     const handle = s.handle.toString()
     try { s.close() } catch { /* WTClose cannot be retried */ }
-    try { this.ctx?.lease.dropWintab(handle) } catch { /* the guard is gone: nothing to tell */ }
+    try { this.ctx?.lease?.dropWintab(handle) } catch { /* nothing to tell */ }
   }
 
   // ---- the sheet rectangle (system mode; see WintabSystemBackend) ---------------------------
@@ -429,7 +433,7 @@ export class WintabBackend implements PenBackend {
         this.stats.packets += raws.length
         this.lastPacketAt = arrived
         this.core.raw(raws.length)
-        this.traceRaw(raws, session.mask, arrived)
+        if (this.mode === "data") this.traceRaw(raws, session.mask, arrived)
         for (const r of raws) {
           if ((r.status & TPS.PROXIMITY) !== 0) this.bitSet = true
           else this.bitClear = true
@@ -620,6 +624,16 @@ export class WintabSystemBackend extends WintabBackend implements SystemMapped {
     this.pending = undefined
     super.release()
   }
+}
+
+/** True the first time for this (trace sink, name): the system backend is rebuilt every pen visit and must not repeat its big dumps. */
+const onceSeen = new WeakMap<object, Set<string>>()
+function firstOnce(sink: object, name: string): boolean {
+  let s = onceSeen.get(sink)
+  if (!s) { s = new Set(); onceSeen.set(sink, s) }
+  if (s.has(name)) return false
+  s.add(name)
+  return true
 }
 
 const tick = (): Promise<void> => new Promise<void>((resolve) => setImmediate(resolve))

@@ -3,10 +3,8 @@ import { readdirSync, readFileSync, statSync } from "node:fs"
 import path from "node:path"
 import { fileURLToPath } from "node:url"
 import {
-  aspectOf, describeArea, fallbackInfo, fitRect, physicalRect, stripWanted, STRIP_EDGE,
-  SHEET_REF, strokeUnder, TabletPage, type InkStroke,
+  aspectOf, fitRect, SHEET_REF, strokeUnder, TabletPage, type InkStroke,
 } from "../src/renderer/tabletPage"
-import { coversDisplay, OVERLAY_MARGIN, overlayBounds } from "../src/shared/grab"
 
 describe("the sheet is fitted inside whatever holds it, never stretched", () => {
   it("fills a container of its own shape", () => {
@@ -34,63 +32,6 @@ describe("the sheet is fitted inside whatever holds it, never stretched", () => 
   })
 })
 
-describe("the sheet's rectangle in physical pixels (for the driver's 'Click to define')", () => {
-  const rect = { x: 100, y: 50, width: 400, height: 225 }
-  it("at 100%: window position plus the pane's offset", () => {
-    const area = physicalRect(rect, {
-      content: { x: 300, y: 200, width: 1440, height: 900 }, display: { x: 0, y: 0, width: 1920, height: 1080 }, scale: 1,
-    })
-    expect(area).toMatchObject({ x: 400, y: 250, width: 400, height: 225, right: 799, bottom: 474, screenWidth: 1920, screenHeight: 1080 })
-  })
-  it("at 150%: CSS pixels are scaled to the display's physical ones", () => {
-    const area = physicalRect(rect, {
-      content: { x: 200, y: 100, width: 1280, height: 720 }, display: { x: 0, y: 0, width: 1280, height: 720 }, scale: 1.5,
-    })
-    expect(area).toMatchObject({ x: 450, y: 225, width: 600, height: 338, screenWidth: 1920, screenHeight: 1080 })
-  })
-  it("on a second monitor it is relative to THAT display's origin", () => {
-    const area = physicalRect(rect, {
-      content: { x: 2000, y: 100, width: 1000, height: 700 }, display: { x: 1920, y: 0, width: 2560, height: 1440 }, scale: 1,
-    })
-    expect(area.x).toBe(80 + 100)
-    expect(area.y).toBe(150)
-    expect(area.screenWidth).toBe(2560)
-  })
-  it("falls back to the window's own numbers", () => {
-    const info = fallbackInfo({
-      screenX: 100, screenY: 100, outerWidth: 1016, outerHeight: 839, innerWidth: 1000, innerHeight: 800,
-      devicePixelRatio: 1.25, screen: { width: 1920, height: 1080 },
-    })
-    expect(info.scale).toBe(1.25)
-    expect(info.content.x).toBe(108)
-    expect(info.content.y).toBe(100 + (839 - 800 - 8))
-  })
-  it("is described in words the driver's dialog uses", () => {
-    const text = describeArea(physicalRect(rect, {
-      content: { x: 0, y: 0, width: 800, height: 600 }, display: { x: 0, y: 0, width: 1920, height: 1080 }, scale: 1,
-    }))
-    expect(text).toContain("x 100, y 50")
-    expect(text).toContain("400 × 225")
-    expect(text).toContain("1,920 × 1,080")
-  })
-})
-
-describe("Grab's strip comes down at the top edge and goes away on its own", () => {
-  const idle = { y: 500, overStrip: false, writing: false, pinned: false, sinceLeft: 10_000 }
-  it("is hidden when the pen is elsewhere", () => expect(stripWanted(idle)).toBe(false))
-  it("shows at the top edge and while over it", () => {
-    expect(stripWanted({ ...idle, y: STRIP_EDGE })).toBe(true)
-    expect(stripWanted({ ...idle, overStrip: true })).toBe(true)
-  })
-  it("lingers a moment after the pointer leaves, then goes", () => {
-    expect(stripWanted({ ...idle, sinceLeft: 500 })).toBe(true)
-    expect(stripWanted({ ...idle, sinceLeft: 2500 })).toBe(false)
-  })
-  it("never shows while a stroke is being written", () => {
-    expect(stripWanted({ ...idle, y: 3, overStrip: true, writing: true })).toBe(false)
-  })
-})
-
 describe("the sheet is resolution-independent", () => {
   const stroke = (width: number): InkStroke => ({ colorHex: "#000", width, points: [{ x: 0.1, y: 0.5 }, { x: 0.9, y: 0.5 }] })
   it("keeps the shape it was made with", () => {
@@ -106,35 +47,6 @@ describe("the sheet is resolution-independent", () => {
       expect(at(0.004, width)).toBe(0)
       expect(at(0.02, width)).toBe(-1)
     }
-  })
-})
-
-describe("the Grab overlay can never look like a full-screen app to Windows", () => {
-  const monitor = { x: 0, y: 0, width: 1920, height: 1080 }
-  it("covers the whole display but stops short of the bottom edge", () => {
-    const bounds = overlayBounds(monitor)
-    expect(bounds).toEqual({ x: 0, y: 0, width: 1920, height: 1080 - OVERLAY_MARGIN })
-    expect(coversDisplay(bounds, monitor)).toBe(false)
-  })
-  it("on a second monitor with an origin of its own (even a negative one)", () => {
-    const second = { x: 1920, y: -200, width: 2560, height: 1440 }
-    const bounds = overlayBounds(second)
-    expect(bounds.x).toBe(1920)
-    expect(bounds.y).toBe(-200)
-    expect(bounds.width).toBe(2560)
-    expect(coversDisplay(bounds, second)).toBe(false)
-  })
-  it("whatever the display, the result is never taken for full screen, and is never empty", () => {
-    for (const display of [{ x: 0, y: 0, width: 1280, height: 720 }, { x: -1920, y: 0, width: 1920, height: 1200 }, { x: 0, y: 0, width: 3840, height: 2160 }, { x: 0, y: 0, width: 5, height: 1 }]) {
-      const bounds = overlayBounds(display)
-      expect(bounds.height).toBeGreaterThanOrEqual(1)
-      if (display.height > OVERLAY_MARGIN) expect(coversDisplay(bounds, display)).toBe(false)
-    }
-  })
-  it("says when a window WOULD be taken for full screen", () => {
-    expect(coversDisplay(monitor, monitor)).toBe(true)
-    expect(coversDisplay({ x: -5, y: -5, width: 2000, height: 1200 }, monitor)).toBe(true)
-    expect(coversDisplay({ x: 0, y: 0, width: 1920, height: 1079 }, monitor)).toBe(false)
   })
 })
 

@@ -21,7 +21,7 @@ import { newID, noTransform, pressureScale, type CanvasItem, type Point, type Re
 /**
  * The sheet is resolution-independent. Points are fractions of the sheet and
  * widths are in REFERENCE UNITS: the sheet is `SHEET_REF` units wide whatever
- * its size on screen (a 500 px pane, a 1920 px overlay), so a stroke
+ * its size on screen (a 500 px pane, a 1920 px pane), so a stroke
  * drawn on one looks the same on the other and lands in the note the same.
  */
 export const SHEET_REF = 1000
@@ -116,16 +116,18 @@ export function inkExtent(strokes: InkStroke[]): Rect | null {
 /**
  * Strokes drawn on a canvas. `toPixel` maps a point (fraction of the sheet) to
  * canvas pixels; `scale` is canvas pixels per sheet point, for the widths.
- * `colour` overrides every stroke's colour (the reader wants black on white).
+ * `colour` overrides every stroke's colour (the reader wants black on white);
+ * `tint` changes how each stroke's own colour LOOKS (ink on dark paper).
  */
 export function paintStrokes(context: CanvasRenderingContext2D, strokes: InkStroke[],
-  toPixel: (point: Point) => Point, scale: number, colour?: string, from = 0): void {
+  toPixel: (point: Point) => Point, scale: number, colour?: string, from = 0,
+  tint?: (colorHex: string) => string): void {
   context.lineCap = "round"
   context.lineJoin = "round"
   for (const stroke of strokes) {
     const points = stroke.points.map(toPixel)
     if (points.length === 0) continue
-    context.strokeStyle = colour ?? stroke.colorHex
+    context.strokeStyle = colour ?? tint?.(stroke.colorHex) ?? stroke.colorHex
     const pressures = stroke.pressures
     if (points.length === 1) {
       context.lineWidth = Math.max(0.5, stroke.width * scale)
@@ -199,8 +201,7 @@ export function landStrokes(strokes: InkStroke[], options: {
  * wipe the page.
  */
 /**
- * One change to the sheet, so that two views of it (the notes window and the
- * grab overlay) can keep the same strokes AND the same undo history by
+ * One change to the sheet, so that two views of it can keep the same strokes AND the same undo history by
  * replaying the same operations in the same order.
  */
 export interface SheetState { strokes: InkStroke[]; past: InkStroke[][]; future: InkStroke[][] }
@@ -218,7 +219,7 @@ export class TabletPage {
    * Width over height of the sheet. The sheet has the SCREEN's shape turned by
    * the tablet's orientation (a driver in Pen mode maps the whole tablet to the
    * whole screen, so that is the shape of the tablet as seen through the pen),
-   * and every view of it — the pane and the grab overlay —
+   * and every view of it
    * fits that shape inside itself. Strokes are fractions of the sheet, so
    * changing the shape never destroys ink: it only changes the page shape the
    * next capture is made on (rotate the ink with `rotateInk` if it should turn).
@@ -341,19 +342,8 @@ export class TabletPage {
 
 // MARK: - The sheet's geometry (no React, no DOM, so it can be tested with numbers)
 //
-// THE DRIVER OWNS THE MAPPING. A Wacom tablet in Pen mode is mapped by its
-// driver to the whole screen (or to the portion of it the person chose in
-// Wacom Tablet Properties > Mapping): the pen's absolute position on the
-// tablet becomes an absolute position on the screen. An app cannot change
-// that. What it CAN do is make the part of the screen the driver maps to be
-// the sheet:
-//
-//  - GRAB: a transparent overlay over the display receives the pen wherever it
-//    is, and the pen's place on the display becomes a place on the sheet.
-//  - TABLET AREA: the sheet is a rectangle on the screen, and this says exactly
-//    which one, in physical pixels, so it can be given to the driver.
-//
-// (There is no full-screen mode: the app never enters full screen.)
+// The sheet is a rectangle on the pane, the screen's shape (turned by the tablet's orientation), fitted inside
+// the pane and never stretched. The pen feed maps the whole tablet onto it.
 
 /** The largest rectangle of shape `aspect` (width over height) that fits in `container`, centred. */
 export function fitRect(container: Size, aspect: number): Rect {
@@ -379,93 +369,81 @@ export function screenAspect(): number {
   return typeof window === "undefined" ? 16 / 9 : aspectOf(window.screen.width, window.screen.height)
 }
 
-/** Where the window is on the desktop, as the shell reports it (device-independent pixels). */
-export interface DisplayInfo {
-  /** The window's content area. */
-  content: Rect
-  /** The display the window is on. */
-  display: Rect
-  /** Physical pixels per device-independent pixel on that display (1.5 at 150%). */
-  scale: number
-}
 
-/** A rectangle in the physical pixels of one display, origin at that display's top-left. */
-export interface PhysicalRect {
-  x: number
-  y: number
-  width: number
-  height: number
-  /** Opposite corner, inclusive of the rectangle (what the second click of 'Click to define' lands on). */
-  right: number
-  bottom: number
-  /** The display's own size in physical pixels. */
-  screenWidth: number
-  screenHeight: number
-}
+// MARK: - The dashed box: a section of the sheet to bring in
+//
+// All in FRACTIONS of the sheet (0...1) except where a size in pixels is passed. The mouse drags the box (the pen
+// writes); a drag inside the box moves it, a drag from a corner handle resizes it; a click outside clears it.
 
-/**
- * The sheet's rectangle on the display, in PHYSICAL pixels. `inWindow` is the
- * sheet's getBoundingClientRect (CSS pixels from the page's top-left);
- * `info` is where the page itself is on the desktop. A page's CSS pixel is
- * a device-independent one, so the conversion to physical is the display's
- * scale — which is what makes the answer right at 150% and on a second monitor.
- */
-export function physicalRect(inWindow: Rect, info: DisplayInfo): PhysicalRect {
-  const left = info.content.x - info.display.x + inWindow.x
-  const top = info.content.y - info.display.y + inWindow.y
-  const x = Math.round(left * info.scale), y = Math.round(top * info.scale)
-  const width = Math.round(inWindow.width * info.scale), height = Math.round(inWindow.height * info.scale)
+export type BoxHandle = "nw" | "ne" | "sw" | "se"
+export type BoxHit = BoxHandle | "inside" | null
+
+/** A box from two corners, in any order. */
+export const boxFromPoints = (a: Point, b: Point): Rect => ({
+  x: Math.min(a.x, b.x), y: Math.min(a.y, b.y), width: Math.abs(b.x - a.x), height: Math.abs(b.y - a.y),
+})
+
+const clamp01 = (value: number): number => Math.min(1, Math.max(0, value))
+
+/** Where the corner handles are. */
+export function boxCorner(box: Rect, handle: BoxHandle): Point {
   return {
-    x, y, width, height, right: x + width - 1, bottom: y + height - 1,
-    screenWidth: Math.round(info.display.width * info.scale), screenHeight: Math.round(info.display.height * info.scale),
+    x: handle === "nw" || handle === "sw" ? box.x : box.x + box.width,
+    y: handle === "nw" || handle === "ne" ? box.y : box.y + box.height,
+  }
+}
+const OPPOSITE: Record<BoxHandle, BoxHandle> = { nw: "se", se: "nw", ne: "sw", sw: "ne" }
+
+/** What a press at `point` hits: a corner handle (within `grab` px of it), the inside of the box, or nothing. */
+export function hitBox(box: Rect, point: Point, size: Size, grab = 10): BoxHit {
+  let best: BoxHandle | null = null, nearest = Infinity
+  for (const handle of ["nw", "ne", "sw", "se"] as BoxHandle[]) {
+    const corner = boxCorner(box, handle)
+    const distance = Math.hypot((point.x - corner.x) * size.width, (point.y - corner.y) * size.height)
+    if (distance <= grab && distance < nearest) { best = handle; nearest = distance }
+  }
+  if (best) return best
+  const inside = point.x >= box.x && point.x <= box.x + box.width && point.y >= box.y && point.y <= box.y + box.height
+  return inside ? "inside" : null
+}
+
+/** The box moved by (dx, dy) fractions, kept on the sheet. */
+export function moveBox(box: Rect, dx: number, dy: number): Rect {
+  return {
+    x: Math.min(1 - box.width, Math.max(0, box.x + dx)),
+    y: Math.min(1 - box.height, Math.max(0, box.y + dy)),
+    width: box.width, height: box.height,
   }
 }
 
 /**
- * Without the shell's answer (a browser, a test) the window's own numbers
- * will do: `screenX/Y` are the window's outer corner and `devicePixelRatio`
- * the scale. Less exact — the frame's thickness is guessed from the
- * outer/inner difference — but never missing.
+ * `origin` with the corner `handle` dragged to `to`: the opposite corner stays, the box turns the other way
+ * if it is dragged across it, stays on the sheet, and is never smaller than `min` px either way.
  */
-export function fallbackInfo(win: {
-  screenX: number; screenY: number; outerWidth: number; outerHeight: number
-  innerWidth: number; innerHeight: number; devicePixelRatio: number
-  screen: { width: number; height: number }
-}): DisplayInfo {
-  const side = Math.max(0, (win.outerWidth - win.innerWidth) / 2)
-  const top = Math.max(0, win.outerHeight - win.innerHeight - side)
-  return {
-    content: { x: win.screenX + side, y: win.screenY + top, width: win.innerWidth, height: win.innerHeight },
-    display: { x: 0, y: 0, width: win.screen.width, height: win.screen.height },
-    scale: win.devicePixelRatio || 1,
+export function resizeBox(origin: Rect, handle: BoxHandle, to: Point, size: Size, min = 8): Rect {
+  const anchor = boxCorner(origin, OPPOSITE[handle])
+  const minW = min / Math.max(1, size.width), minH = min / Math.max(1, size.height)
+  const axis = (a: number, t: number, least: number): [number, number] => {
+    const target = clamp01(t)
+    const direction = target >= a ? 1 : -1
+    const length = Math.max(least, Math.abs(target - a))
+    let from = direction === 1 ? a : a - length
+    from = Math.min(1 - length, Math.max(0, from))
+    return [from, length]
   }
+  const [x, width] = axis(anchor.x, to.x, minW)
+  const [y, height] = axis(anchor.y, to.y, minH)
+  return { x, y, width, height }
 }
-
-/** A line a person can read: "x 1,234 y 56 to x 2,000 y 480 (766 × 424 px)". */
-export function describeArea(area: PhysicalRect): string {
-  const n = (value: number) => value.toLocaleString("en-US")
-  return `x ${n(area.x)}, y ${n(area.y)}  to  x ${n(area.right)}, y ${n(area.bottom)}  (${n(area.width)} × ${n(area.height)} px of ${n(area.screenWidth)} × ${n(area.screenHeight)})`
-}
-
-/** A pen hovering within this many pixels of the sheet's top edge brings the Grab strip down. */
-export const STRIP_EDGE = 28
 
 /**
- * Whether Grab's top strip should be showing. It comes down when the pen
- * (or pointer) is at the top edge or over the strip itself, stays while a
- * pointer is on it, and goes away on its own a moment after the pointer
- * leaves — and never while a stroke is being written.
+ * The part of the sheet a box takes, in fractions of the sheet: the box clipped to it, or all of it for no box;
+ * null when the box is off the sheet or under 2 px either way (`shown` is the sheet's size on screen).
  */
-export function stripWanted(state: {
-  y: number | null
-  overStrip: boolean
-  writing: boolean
-  pinned: boolean
-  sinceLeft: number
-  hideAfter?: number
-}): boolean {
-  if (state.writing) return false
-  if (state.pinned || state.overStrip) return true
-  if (state.y !== null && state.y <= STRIP_EDGE) return true
-  return state.sinceLeft < (state.hideAfter ?? 1800)
+export function regionOfSheetBox(box: Rect | null, shown: Size): Rect | null {
+  if (!box) return { x: 0, y: 0, width: 1, height: 1 }
+  const x0 = clamp01(box.x), y0 = clamp01(box.y)
+  const x1 = clamp01(box.x + box.width), y1 = clamp01(box.y + box.height)
+  if ((x1 - x0) * shown.width < 2 || (y1 - y0) * shown.height < 2) return null
+  return { x: x0, y: y0, width: x1 - x0, height: y1 - y0 }
 }

@@ -130,19 +130,10 @@ async function tellFolders(): Promise<void> {
   window?.webContents.send("notes:changed")
 }
 
-// MARK: - The pen (native tablet capture: main/pen/*, docs/spikes/DESIGN-pen-capture.md)
+// MARK: - The pen (the tablet read by the app itself: main/pen/*). No window of its own, nothing hooked or clipped.
 
-/** The pen subsystem: the manager that reads the tablet, the containment, the sink. Built once, inside a try/catch (subsystem.ts). */
+/** The pen subsystem: the manager over Wintab and the window pen. Built once, inside a try/catch (subsystem.ts). */
 let pen: PenSubsystem | null = null
-
-/** Where the window is on the desktop, for the tablet-area helper (physical pixels come from the scale). */
-function windowInfo() {
-  const win = window
-  if (!win) return null
-  const content = win.getContentBounds()
-  const display = screen.getDisplayMatching(win.getBounds())
-  return { content, display: display.bounds, scale: display.scaleFactor }
-}
 
 // MARK: - The application menu
 
@@ -288,7 +279,7 @@ async function createWindow(): Promise<void> {
       if (!closing.isDestroyed()) closing.close()
     })
   })
-  // The pen subsystem hears the window's own focus / visibility / geometry, and lets go when the window closes, its page dies or reloads (panic.ts safety net).
+  // The pen subsystem hears the window's own focus / visibility, and lets go when the window closes, its page dies or reloads.
   pen?.attachWindow()
 
   // THE RENDERER'S CONSOLE GOES TO THE APP'S LOG. A desktop app has no
@@ -314,7 +305,9 @@ if (!gotLock) {
   app.quit()
 } else {
   app.on("second-instance", () => {
-    if (!window || window.isDestroyed() || process.env.WRITEMIND_OFFSCREEN) return
+    if (process.env.WRITEMIND_OFFSCREEN) return
+    // The process outlived its window (a helper window kept it): a second launch makes a new one instead of doing nothing.
+    if (!window || window.isDestroyed()) { if (app.isReady()) void createWindow(); return }
     if (window.isMinimized()) window.restore()
     window.focus()
   })
@@ -493,17 +486,12 @@ app.whenReady().then(async () => {
     else if (command === "copy") contents.copy()
     else if (command === "paste") contents.paste()
   })
-  // NATIVE PEN CAPTURE: the tablet's pen read by the app itself (the Wacom lane; everything behind this one call).
+  // THE PEN: the tablet read by the app itself, only while the Tablet sheet is open and this window is in front.
   pen = startPenSubsystem({
-    app, screen, shell, ipc: ipcMain, powerMonitor, window: () => window, here, dev: DEV, e2e: !!process.env.WRITEMIND_E2E,
-    env: process.env, platform: process.platform, session,
-    loadSink: async (overlay) => {
-      if (DEV) await overlay.loadURL("http://localhost:5173/?pen-sink=1")
-      else await overlay.loadFile(path.join(here, "../renderer/index.html"), { query: { "pen-sink": "1" } })
-    },
+    app, screen, ipc: ipcMain, powerMonitor, window: () => window, e2e: !!process.env.WRITEMIND_E2E,
+    env: process.env, platform: process.platform,
     log: (line) => console.log(line),
   })
-  ipcMain.handle("window:info", () => windowInfo())
   rebuildMenu()
   // Lets the end-to-end scripts press Edit > Undo without a pointer.
   if (process.env.WRITEMIND_E2E) (globalThis as Record<string, unknown>).__wmMenu = Menu
@@ -559,6 +547,7 @@ app.whenReady().then(async () => {
 })
 
 app.on("before-quit", () => { pen?.dispose(); void project?.remember(projectStateFile()) })
+app.on("will-quit", () => { pen?.dispose() })
 
 app.on("window-all-closed", () => {
   folderWatch.stop()

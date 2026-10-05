@@ -220,7 +220,10 @@ export function placement(options: {
   pane: Size
   nudge: number
 }): { center: Point; width: number } {
-  const { frame, pageSize, pane, nudge } = options
+  const { frame, pageSize, nudge } = options
+  // A pane that has no size (the notes pane put away measures 0 x 0) would divide by zero and save NaN: it is
+  // measured as the smallest pane there can be instead (the Mac's `paneSize` falls back to 900 x 600 below 40).
+  const pane = { width: Math.max(1, options.pane.width), height: Math.max(1, options.pane.height) }
   const pageWidth = Math.min(
     pane.width * PAGE_FRACTION,
     pane.height * PAGE_FRACTION * pageSize.width / Math.max(1, pageSize.height))

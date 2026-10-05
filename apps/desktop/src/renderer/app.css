@@ -208,16 +208,6 @@ button { font: inherit; color: inherit; }
 .pen-pop h4 { margin: 12px 0 4px; font-size: 11px; text-transform: uppercase; letter-spacing: 0.04em; color: var(--wm-faint); }
 .pen-pop .pen-slot { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
 .pen-pop .pen-slot select { max-width: 190px; }
-.pen-lamps { display: flex; gap: 6px; margin: 4px 0; }
-.pen-lamp { flex: 1; text-align: center; padding: 3px 0; border-radius: 4px; border: 1px solid var(--wm-faint); font-size: 11px; opacity: 0.55; }
-.pen-lamp.ever { opacity: 0.85; border-style: dashed; }
-.pen-lamp.on { opacity: 1; background: #2fb457; color: #fff; border-color: #2fb457; }
-.pen-bar { height: 6px; border-radius: 3px; background: rgba(128, 128, 128, 0.25); overflow: hidden; }
-.pen-bar span { display: block; height: 100%; background: #2D7DD2; }
-.pen-keys { width: 100%; border-collapse: collapse; font-size: 11px; }
-.pen-keys td { padding: 1px 4px 1px 0; vertical-align: middle; }
-.pen-key { display: inline-flex; gap: 6px; align-items: center; }
-.pen-copy { width: auto; padding: 0 6px; font-size: 10px; }
 .pen-pop p { margin: 0 0 8px; line-height: 1.35; }
 .pen-pop label { display: block; margin: 4px 0; }
 .pen-pop .hint { color: var(--wm-faint); margin: 8px 0 0; }
@@ -462,7 +452,9 @@ button { font: inherit; color: inherit; }
 
 .camera .trouble {
   position: absolute;
-  top: 40px;
+  bottom: 30px; /* above the note line, never under the header (which wraps in a narrow pane) */
+  z-index: 3;
+  pointer-events: none;
   left: 0;
   right: 0;
   text-align: center;
@@ -709,80 +701,4 @@ html.pen-active .stack, html.pen-active .tablet { touch-action: none; }
   background: linear-gradient(#e5484d, #e5484d) center / 100% 1.5px no-repeat, linear-gradient(#e5484d, #e5484d) center / 1.5px 100% no-repeat;
 }
 
-/* THE TABLET SHEET: the host fills the pane, the sheet (the screen's shape) is fitted inside it. */
-.tablet-host { position: absolute; inset: 0; background: #101012; overflow: hidden; }
-.tablet-host .tablet {
-  position: absolute;
-  background-color: #fdfdfb;
-  background-image: radial-gradient(circle, #c4c8cf 1px, transparent 1.3px);
-  background-size: 22px 22px;
-  background-position: 11px 11px;
-  touch-action: none;
-  outline: none;
-  user-select: none;
-}
-.tablet-host .tablet canvas { display: block; }
-.tablet .box {
-  position: absolute;
-  border: 1.5px dashed var(--wm-accent);
-  background: rgba(109, 169, 240, 0.12);
-  pointer-events: none;
-}
-/* "Show area": a frame round the sheet whose corners are easy to click in the driver. */
-.area-frame {
-  position: absolute; inset: 0; pointer-events: none; z-index: 4;
-  border: 6px solid #e5484d; box-shadow: inset 0 0 0 2px #fff, 0 0 0 2px #fff;
-  animation: area-pulse 1s ease-in-out infinite alternate;
-}
-.area-frame .corner {
-  position: absolute; background: #e5484d; color: #fff; font-size: 11px; font-weight: 600;
-  padding: 2px 6px; white-space: nowrap;
-}
-.area-frame .tl { left: 0; top: 0; }
-.area-frame .br { right: 0; bottom: 0; }
-@keyframes area-pulse { from { opacity: 1; } to { opacity: 0.55; } }
-.area-pop {
-  position: absolute; top: 40px; right: 8px; z-index: 5; width: min(340px, calc(100% - 16px));
-  padding: 10px 12px; font-size: 12px; line-height: 1.4; text-align: left;
-  background: var(--wm-chrome); color: var(--wm-text); border: 1px solid var(--wm-rule);
-  border-radius: 8px; box-shadow: 0 8px 24px var(--wm-shadow);
-}
-.area-help p { margin: 0 0 8px; }
-.area-help .hint { color: var(--wm-faint); }
-.area-help .area-numbers { font-variant-numeric: tabular-nums; }
-.area-help .area-numbers span { color: var(--wm-soft); font-size: 11px; }
-.area-help .area-buttons { display: flex; gap: 6px; }
-.area-details { margin: 8px 0 0; }
-.area-details summary { cursor: pointer; color: var(--wm-soft); }
-
-/* The ring that shows where the pen is on the sheet (Grab: the OS arrow is not where the sheet's pen is). */
-.sheet-ring { position: absolute; left: 0; top: 0; width: 0; height: 0; pointer-events: none; z-index: 3; }
-.sheet-ring::after { content: ""; position: absolute; left: calc(var(--ring) / -2); top: calc(var(--ring) / -2); width: var(--ring); height: var(--ring); box-sizing: border-box; border: 2px solid var(--ring-colour, #2D7DD2); border-radius: 50%; background: rgba(255,255,255,0.35); box-shadow: 0 0 0 1px #fff; }
-.sheet-ring.erase::after { border-color: #d9382c; border-radius: 3px; }
-.tablet-host.remapped, .tablet-host.remapped .tablet { cursor: none; }
-body:has(.tablet-host.remapped) .pen-cursor { display: none !important; }
-
-/* GRAB: the overlay window over the whole display. */
-html.grab-page, html.grab-page body { background: rgba(0, 0, 0, 0.01) !important; overflow: hidden; cursor: none; width: 100vw; height: 100vh; }
-html.grab-page #root { position: fixed; inset: 0; }
-.grab-root { position: fixed; inset: 0; touch-action: none; user-select: none; font: 12px system-ui, sans-serif; }
-.grab-sheet { position: absolute; box-shadow: 0 0 0 100vmax rgba(0, 0, 0, 0.16), 0 0 0 2px var(--wm-accent, #2D7DD2); overflow: hidden; }
-.grab-root.mouse .grab-sheet { box-shadow: 0 0 0 100vmax rgba(0, 0, 0, 0.05), 0 0 0 2px rgba(120, 130, 150, 0.9); }
-.grab-root.mouse .grab-sheet .tablet { opacity: 0.85; }
-.grab-sheet .tablet-host { position: absolute; inset: 0; }
-.grab-tag { position: absolute; right: 0; bottom: 0; padding: 1px 6px; font-size: 10px; background: rgba(0,0,0,0.55); color: #fff; pointer-events: none; z-index: 5; }
-.grab-strip { position: absolute; left: 0; right: 0; top: 0; display: flex; flex-wrap: wrap; gap: 4px; padding: 4px; background: rgba(28, 28, 30, 0.92); transform: translateY(-110%); transition: transform 0.12s; z-index: 6; }
-.grab-strip.shown { transform: none; }
-.grab-button { min-height: 28px; padding: 0 8px; border: 1px solid rgba(255,255,255,0.25); border-radius: 5px; background: rgba(255,255,255,0.1); color: #fff; font-size: 12px; }
-.grab-button.on { background: var(--wm-accent, #2D7DD2); border-color: transparent; }
-.grab-button.primary { background: var(--wm-accent, #2D7DD2); font-weight: 600; border-color: transparent; }
-.grab-button.exit { background: #d9382c; border-color: transparent; }
-.grab-button.small { min-width: 28px; font-size: 16px; padding: 0 6px; }
-.grab-button:disabled { opacity: 0.4; }
-.grab-swatch { width: 24px; height: 24px; border-radius: 50%; border: 2px solid transparent; padding: 0; }
-.grab-swatch.on { border-color: #fff; }
-.grab-toast { position: absolute; left: 50%; bottom: 8px; transform: translateX(-50%); padding: 4px 10px; border-radius: 6px; background: rgba(28,28,30,0.92); color: #fff; z-index: 7; pointer-events: none; }
-
-.grab-hud { align-self: center; padding: 1px 6px; font-size: 11px; border-radius: 4px; background: rgba(0,0,0,0.45); color: #e8e8ea; }
-.grab-hud.pen { background: var(--wm-accent, #2D7DD2); }
-.grab-hud.mouse { background: #6b7280; }
+/* THE TABLET SHEET: see tablet.css. */

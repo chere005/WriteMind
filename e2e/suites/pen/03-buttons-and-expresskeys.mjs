@@ -65,9 +65,6 @@ ok("two strokes drawn with the tip", (await strokes()) === 2)
 await js(`document.querySelector('[data-pen=chip]').click()`); await sleep(100)
 ok("popover shows the four selects with the Mac-idiom defaults",
   await js(`['lower','upper','eraser','tipAlt'].map(k=>document.querySelector('[data-pen='+'btn-'+k+']').value).join()`) === "select,pan,erase,none")
-ok("ExpressKeys table lists the shortcuts with copy buttons",
-  await js(`document.querySelectorAll('[data-pen=express] tr').length >= 12 && document.querySelectorAll('[data-pen-copy]').length >= 12`))
-ok("a suggested layout is shown", await js(`document.querySelector('.pen-pop').textContent.includes('4 keys:') && document.querySelector('.pen-pop').textContent.includes('8 keys:')`))
 await closePop()
 
 // ---- lower = Select (hold): hover-style, tip-first, and move-only
@@ -91,15 +88,7 @@ ok("pen cursor is a select box while the lower button is down", (await held(2)) 
 ok("...a hand for the upper (pan)", (await held(4)) === "pan")
 ok("...the red cross for the eraser end", (await held(32)) === "erase")
 ok("...a ring again when nothing is held", (await held(0)) === "ring")
-await js(`document.querySelector('[data-pen=chip]').click()`); await sleep(100)
-await held(2)
-ok("Test panel: lower lamp lit", await js(`document.querySelector('[data-lamp=lower]').classList.contains('on')`))
-await held(0)
-ok("...marked as seen afterwards", await js(`const l=document.querySelector('[data-lamp=lower]');l.classList.contains('ever') && !l.classList.contains('on')`))
-await pe("pointermove", X + 300, Y + 300, { button: 0, buttons: 1, pressure: 0.8 }); await sleep(150)
-ok("...tip lamp lit and the pressure bar up", await js(`document.querySelector('[data-lamp=tip]').classList.contains('on') && parseFloat(document.querySelector('.pen-bar span').style.width) > 70`))
-await pe("pointerup", X + 300, Y + 300, { button: 0, buttons: 0 })
-await closePop()
+// (the Pen popover's Test panel and ExpressKeys table are gone: it keeps the pen toggles, buttons, orientation and Reset calibration)
 
 // ---- upper = Pan
 const t0 = await scrollTop()

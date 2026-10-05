@@ -1,0 +1,58 @@
+/*
+  THE TABLET SHEET: the host fills the pane, the sheet (the screen's shape) is fitted inside it. The paper is a
+  canvas under the ink canvas; the box is dashed over both.
+*/
+.tablet-host { position: absolute; inset: var(--camera-top, 0px) 0 0 0; background: #101012; overflow: hidden; }
+.tablet-host .tablet {
+  position: absolute;
+  touch-action: none;
+  outline: none;
+  user-select: none;
+  overflow: hidden;
+}
+.tablet-host .tablet canvas { position: absolute; left: 0; top: 0; display: block; pointer-events: none; }
+.tablet-host .tablet canvas.paper { z-index: 0; }
+.tablet-host .tablet canvas.ink { z-index: 1; }
+
+/* The dashed box: what is outside it is dimmed (the camera's even-odd fill), its edge is dashed, its corners can be dragged. */
+.tablet .box-clip { position: absolute; inset: 0; overflow: hidden; pointer-events: none; z-index: 2; }
+.tablet .box {
+  position: absolute; box-sizing: border-box;
+  border: 1.5px dashed var(--wm-accent, #2D7DD2);
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.55), 0 0 0 9999px rgba(0, 0, 0, 0.16);
+}
+.tablet .box .handle {
+  position: absolute; width: 9px; height: 9px; box-sizing: border-box; margin: -4.5px 0 0 -4.5px;
+  background: #fff; border: 1.5px solid var(--wm-accent, #2D7DD2); border-radius: 2px;
+}
+.tablet .box .handle[data-handle="nw"] { left: 0; top: 0; }
+.tablet .box .handle[data-handle="ne"] { left: 100%; top: 0; }
+.tablet .box .handle[data-handle="sw"] { left: 0; top: 100%; }
+.tablet .box .handle[data-handle="se"] { left: 100%; top: 100%; }
+
+/* The sheet's header: quiet. The small words are for the person, never a panel. */
+.camera-bar .pen-word { font-size: 11px; color: rgba(255, 255, 255, 0.55); padding: 0 4px; align-self: center; white-space: nowrap; }
+.camera-bar .bring-in { display: inline-flex; align-items: center; gap: 4px; }
+.camera-bar .bring-in .label { font-size: 11px; color: rgba(255, 255, 255, 0.7); padding-left: 4px; }
+
+/* Paper: a menu the person opens, closed by a choice, Esc or a click away. */
+.paper-menu { position: relative; display: inline-flex; }
+.paper-pop {
+  position: absolute; z-index: 8; top: calc(100% + 4px); left: 0; width: 240px; box-sizing: border-box; padding: 8px;
+  display: flex; flex-direction: column; gap: 8px;
+  background: rgba(28, 28, 32, 0.97); color: #e8e8ea; border: 1px solid rgba(255, 255, 255, 0.16); border-radius: 10px;
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.45); font-size: 12px;
+}
+.paper-pop .group { display: flex; flex-direction: column; gap: 2px; }
+.paper-pop .group-title { font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.04em; color: rgba(255, 255, 255, 0.5); padding: 0 4px 2px; }
+.paper-pop .row { display: flex; gap: 4px; }
+.paper-pop button {
+  border: 1px solid transparent; border-radius: 6px; background: transparent; color: inherit; font: inherit;
+  padding: 4px 8px; cursor: pointer; text-align: left; display: flex; align-items: center; gap: 8px;
+}
+.paper-pop .row button { flex: 1; min-width: 0; padding: 4px 3px; gap: 4px; justify-content: center; border-color: rgba(255, 255, 255, 0.14); }
+.paper-pop button:hover { background: rgba(255, 255, 255, 0.1); }
+.paper-pop button[aria-checked="true"] { background: var(--wm-accent, #2D7DD2); border-color: transparent; color: #fff; }
+.paper-pop .swatch { width: 12px; height: 12px; border-radius: 3px; border: 1px solid rgba(255, 255, 255, 0.4); flex: none; }
+.paper-pop .row .swatch { display: inline-block; }
+.camera-bar select[data-tablet="orientation"] { width: 112px; text-overflow: ellipsis; }

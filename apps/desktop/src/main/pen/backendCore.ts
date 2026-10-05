@@ -8,8 +8,7 @@
  *
  * The state words: the backend itself sets idle / starting / armed / failed / unavailable. It also reports `live` while
  * the LIVENESS rule holds locally (>= LIVE_MIN_SAMPLES in-range samples inside LIVE_WINDOW_MS, one of which moved) and
- * drops back to `armed` when the visit ends. `stale` needs a witness (something other than this backend saying the pen is
- * here), so only the FeedManager ever decides it.
+ * drops back to `armed` when the visit ends. `stale` is the FeedManager's call alone (it sees the other backends).
  */
 
 import {

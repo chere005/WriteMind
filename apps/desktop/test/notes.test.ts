@@ -2,7 +2,7 @@ import { createHash } from "node:crypto"
 import {
   chmodSync, cpSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, writeFileSync,
 } from "node:fs"
-import { promises as fsp } from "node:fs"
+import fs, { promises as fsp } from "node:fs"
 import os from "node:os"
 import path from "node:path"
 import { afterEach, describe, expect, it, vi } from "vitest"
@@ -353,7 +353,10 @@ describe("renaming and moving keep the drawing and the place", () => {
   it("a duplicate gets a copy of the drawing and sits right after the original", async () => {
     const home = scratch()
     const a = note(home, "a.md")
-    note(home, "b.md")
+    const b = note(home, "b.md")
+    // The list is newest first: a is the newer one by a clear margin, not by the clock ticking between two writes.
+    fs.utimesSync(b, new Date(Date.now() - 60000), new Date(Date.now() - 60000))
+    fs.utimesSync(a, new Date(), new Date())
     setProjectFolders([home])
     await writeDrawing(home, a, drawing("#010101"))
     const copy = await duplicateNote(home, a)

@@ -43,24 +43,33 @@ const cancelled = (signal?: AbortSignal): boolean => signal?.aborted === true
  * Ask the main process for a reading. Taken back when `signal` aborts: the
  * engine is stopped if nobody else wants the same picture.
  */
-async function ask(request: { file?: string; bytes?: Uint8Array; languages?: string[] },
-  signal?: AbortSignal): Promise<OcrReading | null> {
+export async function ask(request: { file?: string; bytes?: Uint8Array; languages?: string[] },
+  signal?: AbortSignal, deadlineMs?: number): Promise<OcrReading | null> {
   if (cancelled(signal)) return null
   const id = nextId()
   const stop = () => { void window.wm.ocrCancel(id).catch(() => undefined) }
   signal?.addEventListener("abort", stop, { once: true })
+  // A reader that never answers (a hung PowerShell) must not hold a capture for the main process's own minute:
+  // past the deadline the request is taken back and the caller goes on without a reading.
+  let late = false
+  const timer = deadlineMs ? setTimeout(() => { late = true; stop() }, deadlineMs) : null
   try {
     return await window.wm.ocrRead({ id, ...request })
   } catch (error) {
+    if (late) { console.warn("WriteMind: the picture reader did not answer in time"); return null }
     if (!cancelled(signal) && (error as { name?: string }).name !== "AbortError"
       && !String((error as Error).message ?? error).includes("cancelled")) {
       console.warn("WriteMind: the picture reader failed:", (error as Error).message ?? error)
     }
     return null
   } finally {
+    if (timer) clearTimeout(timer)
     signal?.removeEventListener("abort", stop)
   }
 }
+
+/** How long a capture waits for the reader's words (labels for a chart, a box read as text) before going without. */
+export const CAPTURE_READ_DEADLINE_MS = 8000
 
 /** A canvas as PNG bytes, ready to send. */
 export async function pngBytes(canvas: HTMLCanvasElement): Promise<Uint8Array | null> {
@@ -152,26 +161,36 @@ function loadPicture(file: string): Promise<HTMLImageElement | null> {
  * Empty when nothing could be read; null when the request was taken back.
  */
 export async function readPictureLines(file: string, signal?: AbortSignal): Promise<string[] | null> {
+  return (await readPictureResult(file, signal))?.lines ?? null
+}
+
+/** `readPictureLines` that also says whether the reader FAILED (no answer at all) as against reading nothing. */
+export async function readPictureResult(file: string, signal?: AbortSignal):
+Promise<{ lines: string[]; failed: boolean } | null> {
   const picture = await loadPicture(file)
   if (!picture) {
     // The file could not be drawn here; the reader can still try it as it is.
     const plain = await ask({ file }, signal)
-    return plain ? composeLines(plain, null) : cancelled(signal) ? null : []
+    if (cancelled(signal)) return null
+    return plain ? { lines: composeLines(plain, null), failed: false } : { lines: [], failed: true }
   }
   const prepared = await prepareForReading(picture, picture.naturalWidth, picture.naturalHeight, signal)
   if (cancelled(signal)) return null
   let reading: OcrReading | null
-  // A traced capture is an SVG, which no reader decodes: it goes as the picture it draws (on white).
-  if (prepared && (prepared.cleaned || /.svg$/i.test(file))) {
+  // What goes is the picture AS THE PAGE SHOWS IT: upright (a phone photo carries its turn in an EXIF tag the
+  // reader ignores), flattened on white (a transparent PNG with dark writing is otherwise black on black), a printed
+  // grid painted out, an SVG (which no reader decodes) drawn. The marks are read off this same canvas, so the
+  // boxes and the ink agree. Only a picture the page cannot draw at all is handed over as the file.
+  if (prepared) {
     const bytes = await pngBytes(prepared.canvas)
-    reading = bytes ? await ask({ bytes }, signal) : null
+    reading = bytes ? await ask({ bytes }, signal) : await ask({ file }, signal)
   } else {
     reading = await ask({ file }, signal)
   }
   if (cancelled(signal)) return null
-  if (!reading) return []
+  if (!reading) return { lines: [], failed: true }
   await breathe()
-  return composeLines(reading, prepared?.page ?? null)
+  return { lines: composeLines(reading, prepared?.page ?? null), failed: false }
 }
 
 /**
@@ -182,7 +201,7 @@ export async function readCanvasLines(canvas: HTMLCanvasElement, signal?: AbortS
   const prepared = await prepareForReading(canvas, canvas.width, canvas.height, signal)
   if (cancelled(signal)) return null
   const bytes = await pngBytes(prepared?.canvas ?? canvas)
-  const reading = bytes ? await ask({ bytes }, signal) : null
+  const reading = bytes ? await ask({ bytes }, signal, CAPTURE_READ_DEADLINE_MS) : null
   if (cancelled(signal)) return null
   if (!reading) return []
   await breathe()
@@ -246,12 +265,12 @@ export async function wordsForChart(canvas: HTMLCanvasElement, signal?: AbortSig
   const forReading = prepared.page ? withoutOutlines(prepared.canvas, prepared.page) : prepared.canvas
   const bytes = await pngBytes(forReading)
   if (!bytes || cancelled(signal)) return []
-  const reading = await ask({ bytes }, signal)
+  const reading = await ask({ bytes }, signal, CAPTURE_READ_DEADLINE_MS)
   return reading ? flowWordsFrom(reading, { width: canvas.width, height: canvas.height }) : []
 }
 
 // End-to-end scripts (WRITEMIND_E2E, whose preload adds `e2eWindow`) look inside the reading;
 // nothing else does.
 if (typeof window !== "undefined" && (window as unknown as { wm?: { e2eWindow?: unknown } }).wm?.e2eWindow) {
-  ;(window as unknown as Record<string, unknown>).__wmOcr = { prepareForReading, readPictureLines, wordsForChart, composeLines, ask, withoutOutlines }
+  ;(window as unknown as Record<string, unknown>).__wmOcr = { prepareForReading, readPictureLines, readPictureResult, wordsForChart, composeLines, ask, withoutOutlines }
 }

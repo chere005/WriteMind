@@ -10,7 +10,7 @@ export function OrientationSelect({ className = "icon-button", compact = false }
   const value = useOrientation()
   return (
     <select className={className} data-tablet="orientation" value={String(value)}
-            title="Tablet orientation: how the tablet is turned on your desk, as in Wacom Tablet Properties. The sheet takes this shape, and in Grab the pen is turned to match."
+            title="Tablet orientation: how the tablet is turned on your desk, as in Wacom Tablet Properties. The sheet takes this shape, and with Pen capture the pen is turned to match."
             aria-label="Tablet orientation"
             style={compact ? { width: "auto", padding: "0 4px", fontSize: 11 } : undefined}
             onPointerDown={(event) => event.stopPropagation()}

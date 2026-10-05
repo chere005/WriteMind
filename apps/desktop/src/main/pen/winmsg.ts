@@ -1,8 +1,7 @@
 /**
  * winmsg.ts - a message-only window whose WNDPROC is a koffi callback (docs/spikes/DESIGN-pen-capture.md 12.1).
  *
- * Used by the Wintab backend (the context's owner window: WT_PACKET / WT_PROXIMITY arrive here), by the Raw Input
- * backend (WM_INPUT / WM_INPUT_DEVICE_CHANGE) and by the pointer-range witness (IMPL-B). A message-only window
+ * Used by the Wintab backend (the context's owner window: WT_PACKET / WT_PROXIMITY arrive here). A message-only window
  * (HWND_MESSAGE parent) has no taskbar button, no z-order and is never visible; Electron's main thread pumps its
  * messages because Chromium owns the thread's loop.
  *

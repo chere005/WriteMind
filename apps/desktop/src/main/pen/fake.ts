@@ -123,15 +123,19 @@ export class FakeBackend implements PenBackend {
   emitEvent(e: BackendEvent): void {
     for (const l of [...this.eventListeners]) l(e)
   }
+
+  /** The device the next start() reports (the fake tablet of the E2E injector). */
+  setDevice(device: DeviceInfo | null): void { this.opts.device = device }
 }
 
 /**
- * The E2E backend. Always "available", frame kind screen, no OS resources. `push` is what pen:e2e-inject calls; the samples enter the
- * manager exactly where a real backend's samples enter.
+ * The E2E backends. Always "available", no OS resources. `push` is what pen:e2e-inject calls; the samples enter the manager exactly where a
+ * real backend's samples enter. "inject" delivers the sheet frame; "inject-tablet" is a fake Wintab tablet in the DEVICE frame (it reports
+ * a device, so the device frame and the status string apply to it).
  */
 export class InjectBackend extends FakeBackend {
-  constructor() {
-    super("inject", { frameKind: "screen" })
+  constructor(name: "inject" | "inject-tablet" = "inject") {
+    super(name, { frameKind: name === "inject" ? "screen" : "device" })
   }
 
   push(samples: PenSample[]): void {

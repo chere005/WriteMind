@@ -216,7 +216,7 @@ describe("start: the data context", () => {
     const r = rig()
     r.h.lease.isReady = false
     expect((await r.start()).ok).toBe(true)
-    expect(r.b.status().facts.contextState).toBe("open (journal only)")
+    expect(r.b.status().facts.contextState).toBe("open (in-process cleanup + journal; no guard process)")
   })
   it("traces the layout (device, interface) and the stored context", async () => {
     const r = rig()
@@ -525,6 +525,18 @@ describe("the system context: fail closed, mapped to the sheet", () => {
     expect(s.options).toMatchObject({ mode: "system", sysRect: SHEET })
     expect(r.h.lease.held).toEqual([{ handle: "100", mode: "system" }])
     expect(r.b.status().facts.sysRect).toBe("1100,200 700x700")
+  })
+  it("every pen visit reopens it, but the layout and the stored context are logged ONCE per session (pen.log stays quiet); raw packets are not traced", async () => {
+    const r = rig("system")
+    for (let i = 0; i < 4; i++) {
+      expect((await r.start({ sheetPhysical: SHEET })).ok).toBe(true)
+      r.native.sessions[i]!.push([move(0), move(1)])
+      r.tick(); r.flush()
+      r.b.stop()
+    }
+    expect(r.h.trace.named("layout")).toHaveLength(1)
+    expect(r.h.trace.named("context-opened")).toHaveLength(1)
+    expect(r.h.trace.raws).toHaveLength(0)
   })
   it("with no sheet at start: armed with NO context (the pointer stays the driver's) until a rectangle arrives", async () => {
     const r = rig("system")

@@ -135,3 +135,14 @@ describe("an open crop box", () => {
     expect(layerKey(facts({ key: "c", ctrl: true, cropOpen: true }))).toBeNull()
   })
 })
+
+describe("Ctrl+C / Ctrl+X with words selected in the note are the words' (Drawinglane-fix2)", () => {
+  it("lets go of the pick and leaves the copy to the notebook", () => {
+    expect(layerKey(facts({ key: "x", ctrl: true, textSelected: true }))).toEqual({ take: "letGo" })
+    expect(layerKey(facts({ key: "c", ctrl: true, textSelected: true }))).toEqual({ take: "letGo" })
+  })
+  it("still copies and cuts the objects when only a caret is in the note", () => {
+    expect(layerKey(facts({ key: "x", ctrl: true, textSelected: false }))).toEqual({ take: "cut" })
+    expect(layerKey(facts({ key: "c", ctrl: true }))).toEqual({ take: "copy" })
+  })
+})

@@ -184,6 +184,16 @@ function plausible(quad: PagePoint[]): boolean {
   return Math.min(...sides) > 0.12 * Math.max(...sides)
 }
 
+/**
+ * Whether four corners (as dragged by hand) could be a page: convex, in the order top-left, top-right, bottom-right,
+ * bottom-left (a crossed or mirrored set is not), every angle one a page has under perspective, no side a sliver of
+ * another. The same test the finder's own quads pass.
+ */
+export function isPlausiblePage(corners: PageCorners): boolean {
+  const points = cornersOf(corners)
+  return points.every((point) => Number.isFinite(point.x) && Number.isFinite(point.y)) && plausible(points)
+}
+
 // MARK: - pictures
 
 interface Plane { data: Float32Array; width: number; height: number }

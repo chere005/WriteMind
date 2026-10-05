@@ -15,7 +15,7 @@
  */
 
 import {
-  darkerThanPaper, EDGE_INSET, findPage, inkVector, marks, pageBox, quadFromPixels, resolveShape, shapeSize,
+  darkerThanPaper, EDGE_INSET, findPage, inkVector, isPlausiblePage, marks, pageBox, quadFromPixels, resolveShape, shapeSize,
   writingBox, writingMask, type Rect, type Size,
 } from "@writemind/core"
 import { grayOf, measuredPage, straightened, type Corners } from "./capturePipeline"
@@ -140,6 +140,9 @@ export async function takePicture(options: TakeOptions): Promise<Taken> {
   let inset = 0
   let section: Rect
   let learnedShape: number | null = null
+  if (corners && how === "hand" && !isPlausiblePage(corners)) {
+    return { trouble: "Those corners do not make a page - drag them onto the page's four corners." }
+  }
   if (corners) {
     const measured = measuredPage(corners, frame)
     const shape = resolveShape(measured.ratio, options.rememberedShape)

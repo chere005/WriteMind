@@ -10,7 +10,7 @@ import { parseOrientation, turnsOf, type Orientation, type Turns } from "../shar
 export const ORIENTATION_KEY = "writemind.orientation"
 
 function load(): Orientation {
-  try { return parseOrientation(localStorage.getItem(ORIENTATION_KEY)) } catch { return "match" }
+  try { return parseOrientation(localStorage.getItem(ORIENTATION_KEY)) } catch { return 0 }
 }
 
 let current: Orientation = load()
@@ -29,6 +29,19 @@ export function setOrientation(next: Orientation): void {
 export const subscribeOrientation = (listener: () => void): (() => void) => {
   listeners.add(listener)
   return () => { listeners.delete(listener) }
+}
+
+/**
+ * The tablet's own shape (long side over short side, from Wintab), or null when no tablet is known. The sheet is the whole tablet, so it takes
+ * THIS shape (turned by the orientation) rather than the screen's: a circle on the tablet is a circle on the sheet.
+ */
+let tabletShape: number | null = null
+export const tabletAspect = (): number | null => tabletShape
+export function setTabletAspect(aspect: number | null): void {
+  const next = aspect !== null && aspect >= 1 && aspect < 5 ? aspect : null
+  if (next === tabletShape) return
+  tabletShape = next
+  listeners.forEach((listener) => listener())
 }
 
 export const useOrientation = (): Orientation =>

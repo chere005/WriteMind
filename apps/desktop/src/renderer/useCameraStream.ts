@@ -107,7 +107,9 @@ export function useCameraStream(video: RefObject<HTMLVideoElement | null>, optio
           element.srcObject = opened
           await element.play().catch(() => undefined)
         }
-        if (cancelled) return
+        // The camera may have been pulled out while the first frame was awaited: `release()` (from the track's own
+        // `ended`) has already said so, and "running" must not overwrite it.
+        if (cancelled || stream !== opened || track.readyState === "ended") return
         const settings = track.getSettings()
         setState({ status: "running", problem: null, deviceId: settings.deviceId ?? wanted, label: track.label })
         // Labels (and the list itself) are only complete once a camera has been opened.

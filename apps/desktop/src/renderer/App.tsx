@@ -10,8 +10,9 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { EditorView } from "@codemirror/view"
 import { findNextMatch, revealAt } from "@writemind/editor"
 import {
-  anchorOffset, decodeDrawing, emptyDrawing, insertBlock, languageTitle, listTitle, makeNote, newID, noTransform,
-  parseLink, placedCentre, PRESET_COLOURS, readDrawing, resolveLinkTarget, textFingerprint, writeDrawing,
+  anchorOffset, bounds as itemBounds, capturePlacedCentre, decodeDrawing, emptyDrawing, insertBlock, insertionPointBelow,
+  languageTitle, listTitle, makeNote, newID, noTransform, parseLink, placedCentre, PRESET_COLOURS, readDrawing,
+  resolveLinkTarget, shifted, textFingerprint, writeDrawing,
   type CanvasItem, type CodeLanguage, type Drawing, type ListStyle, type Note, type Placement,
 } from "@writemind/core"
 import { Canvas, type CanvasMode } from "./Canvas"
@@ -19,7 +20,7 @@ import { DrawingHistory } from "./drawingHistory"
 import { useUndo } from "./useUndo"
 import { lazyText } from "./lazyText"
 import { forgetAll, historyOf, keepOnly as keepHistory, renameNote } from "./noteHistory"
-import { readPictureLines } from "./ocrClient"
+import { readPictureResult } from "./ocrClient"
 import { CameraPane, type Capture } from "./CameraPane"
 import { PaneDivider } from "./PaneDivider"
 import { TabBar } from "./TabBar"
@@ -207,10 +208,10 @@ export function App() {
   openRef.current = current
 
   useEffect(() => {
-    void (async () => {
-      setPlatform(await window.wm.capabilities())
-      await reload()
-    })()
+    // The notes list does not wait for the reader's probe (a PowerShell that is slow to start would hold the
+    // whole sidebar for up to 20 s): what the machine can do arrives when it arrives.
+    void window.wm.capabilities().then(setPlatform).catch(() => undefined)
+    void reload()
     // A note edited in another app shows up here: the folder watcher says
     // something moved, and the open note is read again unless there is an
     // edit in hand that has not reached disk yet — that one is ours, and
@@ -563,50 +564,87 @@ export function App() {
         },
       })
     }
-    editDrawing({
-      items: [...drawingRef.current.items, ...picture, ...(capture.strokes ?? []), ...(capture.chart ?? [])],
+    // WHERE it lands is the note's business, as on the Mac (placeCapture): one gap under the caret's line, else
+    // where it sat on the pane carried down by how far the note is scrolled. Whatever travels with the picture
+    // (the writing's own strokes, a chart read from it) moves by the same amount.
+    const pane = currentPane(view, lastPane)
+    const scroll = view ? view.scrollDOM.scrollTop : 0
+    let caretLine = null as null | { x: number; y: number; width: number; height: number }
+    if (view) {
+      const block = view.lineBlockAt(view.state.selection.main.head)
+      caretLine = { x: 30, y: block.top, width: pane.width - 60, height: block.height }
+    }
+    const taken = drawingRef.current.items.flatMap((item) => (item.kind === "image" ? [item.image.center] : []))
+    const centre = capturePlacedCentre({
+      center: capture.center, width: capture.width, aspect: capture.aspect, pane, scroll, caretLine, taken,
     })
-  }, [editDrawing, history])
+    const dx = (centre.x - capture.center.x) * pane.width, dy = (centre.y - capture.center.y) * pane.height
+    const carried = (items: CanvasItem[] | undefined): CanvasItem[] =>
+      !items || items.length === 0 ? [] : Math.abs(dx) < 0.01 && Math.abs(dy) < 0.01 ? items : shifted(items, dx, dy, pane)
+    editDrawing({
+      items: [...drawingRef.current.items,
+        ...picture.map((item) => (item.kind === "image" ? { ...item, image: { ...item.image, center: centre } } : item)),
+        ...carried(capture.strokes), ...carried(capture.chart)],
+    })
+  }, [editDrawing, history, view])
 
   /**
-   * The words out of a picture, into the note as a cell of its own — and
-   * the picture is PUT AWAY rather than thrown away, so nothing is lost
-   * if the reading was wrong.
+   * The words out of a picture, into the note as a cell of their own, right UNDER the picture (the Mac's
+   * `NoteStore.readText`: Sean, 2026-09-19, "converting an image ... to text should not replace the object itself,
+   * but insert the text underneath it"). The picture STAYS - reading it is not a conversion - and one Undo takes
+   * the words back out.
    */
-  // A picture being read: asking again while it is, does nothing; leaving the
-  // app takes every request back so no reader is left running.
+  // A picture being read: asking again while it is, does nothing; leaving the app or the note takes every request
+  // back so no reader is left running for a note that is no longer open.
   const reading = useRef(new Map<string, AbortController>())
   useEffect(() => () => { reading.current.forEach((job) => job.abort()) }, [])
+  useEffect(() => () => { reading.current.forEach((job) => job.abort()) }, [current])
+  /** A short line in the footer about a read (Reading..., what it came to); it goes by itself. */
+  const [readNotice, setReadNotice] = useState<string | null>(null)
+  const readNoticeTimer = useRef<number | null>(null)
+  const tellRead = useCallback((text: string | null, forMs = 5000) => {
+    if (readNoticeTimer.current !== null) window.clearTimeout(readNoticeTimer.current)
+    readNoticeTimer.current = null
+    setReadNotice(text)
+    if (text !== null && forMs > 0) readNoticeTimer.current = window.setTimeout(() => setReadNotice(null), forMs)
+  }, [])
   const readPicture = useCallback(async (file: string, id: string) => {
     if (reading.current.has(id)) return
+    // The result belongs to the note the picture is in: the reader takes a moment (the first read after launch
+    // the longest) and the person may open another note meanwhile.
+    const note = openRef.current
     const job = new AbortController()
     reading.current.set(id, job)
+    tellRead("Reading...", 0)
     // Markdown lines with the Mac's rules (struck, ringed, arrows, tasks, maths),
     // made off the page's thread: see ocrClient.ts.
-    let words: string[] | null
-    try { words = await readPictureLines(file, job.signal) } finally { reading.current.delete(id) }
-    if (words === null) return
+    let result: Awaited<ReturnType<typeof readPictureResult>>
+    try { result = await readPictureResult(file, job.signal) } finally { reading.current.delete(id) }
+    if (result === null || job.signal.aborted || openRef.current !== note) { tellRead(null); return }
+    const words = result.lines
     if (words.length === 0) {
-      console.error("WriteMind: the reader found no words in that picture")
+      tellRead(result.failed ? "The picture reader did not answer - try again." : "No text could be read in that picture.")
       return
     }
     const editor = view
     const text = textRef.current
-    const at = editor ? editor.state.selection.main.head : text.length
+    // Directly under the picture's bottom edge: in front of the first line that starts at or below it.
+    const picture = drawingRef.current.items.find((item) => item.kind === "image" && item.image.id === id)
+    let at = editor ? editor.state.selection.main.head : text.length
+    if (editor && picture) {
+      const pane = currentPane(editor, lastPane)
+      const bottom = itemBounds(picture, pane)
+      const y = bottom.y + bottom.height - editor.documentPadding.top
+      const block = editor.state.doc.length > 0 ? editor.lineBlockAtHeight(Math.max(0, y)) : null
+      at = insertionPointBelow(block ? { from: block.from, to: block.to, bottom: block.bottom } : null, y, editor.state.doc.length)
+    }
     const opened = insertBlock(text, at)
     const written = opened.markdown.slice(0, opened.caret) + words.join("\n")
       + opened.markdown.slice(opened.caret)
-    // The words going in and the picture being put away are ONE edit to Undo.
-    if (openRef.current) historyOf(openRef.current).clock.together()
     change(written)
     setDocument(written)
-    editDrawing({
-      items: drawingRef.current.items.map((item) =>
-        item.kind === "image" && item.image.id === id
-          ? { kind: "image", image: { ...item.image, hidden: true } }
-          : item),
-    })
-  }, [change, editDrawing, setDocument, view])
+    tellRead(words.length === 1 ? "Read 1 line into the note." : `Read ${words.length} lines into the note.`)
+  }, [change, setDocument, tellRead, view])
 
   /** The words read out of a box on the camera's page, into the note as a cell of their own (no picture to put away). */
   const readCameraText = useCallback((words: string[]) => {
@@ -1023,6 +1061,8 @@ export function App() {
       setCameraPick(next)
       remember("videoSource", next)
       setShowCamera(true)
+      // The same camera picked again (it was busy, or access was off, and is free now) changes no state: say so.
+      window.dispatchEvent(new Event("wm:camera-retry"))
       return
     }
     // The pen's tools and the keys the tablet's ExpressKeys type (penActions.ts).
@@ -1066,13 +1106,7 @@ export function App() {
       case "toggleEditorPane": toggleEditorPane(); return
       // The Mac's `turnOff`: no camera at all, and the pane says so (it stays where it is).
       case "cameraOff": setCameraPick(CAMERA_OFF); remember("videoSource", CAMERA_OFF); return
-      case "cameraRefresh": void refreshCameras(); return
-      case "tabletGrab": {
-        // Only the tablet sheet can be grabbed: bring it up first if it is not showing.
-        if (!showCamera || cameraPick !== TABLET_SOURCE) { setCameraPick(TABLET_SOURCE); setShowCamera(true); remember("videoSource", TABLET_SOURCE); return }
-        window.dispatchEvent(new Event("wm:grab-toggle"))
-        return
-      }
+      case "cameraRefresh": void refreshCameras(); window.dispatchEvent(new Event("wm:camera-retry")); return
       case "insertImage": if (hasNote) void choosePicture(); return
       case "insertTextBox": if (hasNote) arm({ kind: "shape", shape: "text" }); return
       case "insertMath": if (hasNote) window.dispatchEvent(new Event(MATH_OPEN_EVENT)); return
@@ -1234,6 +1268,7 @@ export function App() {
               {stale && <span title="The file changed under the app; nothing was overwritten (what was typed is kept in Recovered)">
                 file changed on disk — not saved
               </span>}
+              {readNotice && <span data-footer="read-notice" role="status">{readNotice}</span>}
               {mode === "pen" && <span>Pen</span>}
               {drawing.items.length > 0 && (
                 <span>{drawing.items.length === 1 ? "1 object" : `${drawing.items.length} objects`}</span>
@@ -1272,8 +1307,6 @@ export function App() {
           pane={currentPane(view, lastPane)}
           onCapture={(capture) => { void addCapture(capture) }}
           onHide={() => setShowCamera(false)}
-          onPenColour={setPenColour}
-          onPenWidth={setPenWidth}
           preferred={cameraPick}
           cameras={cameras}
           onPickSource={(id) => run(`camera:${id}`)}
@@ -1282,6 +1315,7 @@ export function App() {
           showEditor={showEditor}
           onToggleEditor={toggleEditorPane}
           onReadText={readCameraText}
+          note={current}
         />
       )}
     </div>

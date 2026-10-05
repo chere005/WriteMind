@@ -1,3 +1,5 @@
+> **SUPERSEDED (2026-10-04, wr-demolish):** the overlay, sink, guard, clip, containment, Raw Input, WebHID, check wizard and trace UI described here were deleted; only the Wintab data backend and the window pen remain (docs/PARITY.md "Pen demolition"). Kept as history and as evidence of what the hardware does.
+
 # Spike: the Wacom pen over WebHID (`navigator.hid`)
 
 Lane: Wacom. Written 2026-10-03 by `wspike-webhid`, updated the same evening once the tablet enumerated again. Code and

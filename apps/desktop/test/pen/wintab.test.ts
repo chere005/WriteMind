@@ -4,6 +4,7 @@
 // real packet.
 import { describe, expect, it } from "vitest"
 import { applyFrame } from "../../src/shared/pen"
+import { tabletToSheet } from "../../src/shared/orientation"
 import { defaultFrame } from "../../src/main/pen/frame"
 import {
   BTN, ClockAligner, CXO, LOGCONTEXT_SIZE, MASK_FULL, MASK_LADDER, MASK_MIN, MASK_TINY, PK, PlausibilityWatch, ProximityPolarity, TPS, WT_DEFBASE, WT_MSG,
@@ -192,13 +193,13 @@ describe("normalising (device frame: y is NOT flipped, nothing is rotated)", () 
     expect(normalisePacket({ ...blank(), x: 15200, y: 0 }, c, 0)).toMatchObject({ x: 1, y: 0 })
     expect(normalisePacket({ ...blank(), x: 7600, y: 4750 }, c, 0)).toMatchObject({ x: 0.5, y: 0.5 })
     // with the default landscape guess (flipY) the y-up corners land top-left / bottom-right
-    const f = defaultFrame("wintab", 15200, 9500)
+    const f = defaultFrame(15200, 9500)
     expect(f).toEqual({ turn: 0, flipY: true })
     expect(applyFrame(0, 1, f)).toEqual([0, 0])
     expect(applyFrame(1, 0, f)).toEqual([1, 1])
   })
-  it("a portrait raw frame (what this driver reports) is turned to landscape by the default guess {turn 1, flipY}", () => {
-    const f = defaultFrame("wintab", 9499, 15199)
+  it("a portrait raw frame (what this driver reports) is turned to landscape {turn 1, flipY}", () => {
+    const f = defaultFrame(9499, 15199)
     expect(f).toEqual({ turn: 1, flipY: true })
     const corners = [[0, 0], [9500, 0], [0, 15200], [9500, 15200]].map(([x, y]) => {
       const s = normalisePacket({ ...blank(), x: x!, y: y! }, cfg(), 0)
@@ -206,9 +207,23 @@ describe("normalising (device frame: y is NOT flipped, nothing is rotated)", () 
     })
     expect(new Set(corners.map((c) => c.join(","))).size).toBe(4)
     for (const [x, y] of corners) { expect(x === 0 || x === 1).toBe(true); expect(y === 0 || y === 1).toBe(true) }
-    // portrait top-left (x = 0, y = 15200 since y is up) turned 90 cw becomes landscape top-right
-    const tl = normalisePacket({ ...blank(), x: 0, y: 15200 }, cfg(), 0)
-    expect(applyFrame(tl.x, tl.y, f)).toEqual([1, 0])
+  })
+  it("Sean's Intuos S in Portrait (flipped): 1 2 / 3 4 written in the tablet's corners land in the sheet's corners, NOT mirrored", () => {
+    // 2026-10-05, the tablet turned with its LED at the bottom and Portrait (flipped) picked: the device (y as delivered, up) of each corner
+    // as the tablet then lay. Under the frame that morning ({turn 1}, no flipY) the four came out mirrored top-to-bottom.
+    const f = defaultFrame(9499, 15199)
+    const corner = (x: number, y: number) => {
+      const [u, v] = applyFrame(x, y, f)
+      const p = tabletToSheet({ x: u, y: v }, 3)
+      return [Math.round(p.x), Math.round(p.y)]
+    }
+    expect(corner(0, 1)).toEqual([0, 0]) // 1, top-left
+    expect(corner(1, 1)).toEqual([1, 0]) // 2, top-right
+    expect(corner(0, 0)).toEqual([0, 1]) // 3, bottom-left
+    expect(corner(1, 0)).toEqual([1, 1]) // 4, bottom-right
+    // and that morning's two corner touches (top-left, bottom-right), made in the same position, agree
+    expect(corner(0.069, 0.97)).toEqual([0, 0])
+    expect(corner(0.993, 0)).toEqual([1, 1])
   })
   it("clamps outside the active area and survives a zero extent", () => {
     const s = normalisePacket({ ...blank(), x: -50, y: 99999 }, cfg({ inExt: [15200, 9500] }), 0)

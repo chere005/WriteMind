@@ -1,3 +1,5 @@
+> **SUPERSEDED (2026-10-04, wr-demolish):** the overlay, sink, guard, clip, containment, Raw Input, WebHID, check wizard and trace UI described here were deleted; only the Wintab data backend and the window pen remain (docs/PARITY.md "Pen demolition"). Kept as history and as evidence of what the hardware does.
+
 # DESIGN: native pen capture for the Tablet sheet (final)
 
 Architect: `wdesign`, Wacom lane. Status: **FINAL, revision 3 (2026-10-04, midday CDT), ready for four implementers working in parallel.**
@@ -58,6 +60,7 @@ section 7; (5) the safety checklist and the no-pen test plan are sections 14 and
 | R13 | **Ownership rebalanced (12)**: `PenCheck.tsx` and `diagnostics.ts` go to B (it owns the check engine); `SheetStrip.tsx` and `SheetReach.tsx` go to C (it ports the strip out of the overlay it replaces); A owns the missing tests of the pure modules; every lane has a round-2 work order (12.7). | D's list was the critical path and as long as the other three together. | all |
 | R14 | **The E2E channel is `pen:inject`**, as the brief says (was `pen:e2e-inject`). The sink's private bridge `PenSinkApi` / `PEN_SINK_CHANNELS` joins the contract. | One name for the lead's scripts and the contract. | D |
 | R15 | **Esc is never taken from a text field** (8.8). | With the sink armed whenever a pen is near, an unconditional "Esc releases" would eat Esc while typing. | D |
+| R9a | **Overruled 2026-10-04: the sink is OPT-IN** (`WRITEMIND_PEN_SINK=1`); `contain: auto` and `sink` in the Pen menu do not start it otherwise, and the menu says so. 7.2, 7.7 and 14.1 #17 describe the earlier auto-trial. | It never worked on Sean's hardware and looked like a dead full-screen mode (PARITY). | C, D |
 | R16 | **The reach hint is P1** (7.7). | On Sean's window `dom` reaches about 0.67 x 0.62 of the tablet. | C |
 | R17 | The sink's pen events are also reported as `dom` witnesses (7.6). | Otherwise native backends could be neither calibrated nor judged stale once the sink absorbs the pen. | C |
 | R18 | **A green gate** (12.7, 15): `npm run typecheck` and `npx vitest run` are green at the end of the round, except other lanes' own failures. | Round 1 ended red. | all |

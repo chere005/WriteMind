@@ -15,7 +15,8 @@ for (const [i, f] of ["A1", "A2", "A3"].entries()) {
 }
 await reloadApp()
 
-const order = () => js(`[...document.querySelectorAll('.note-row')].map(r=>r.dataset.path.split(/[\\\\/]/).pop()).filter(n=>/^A\\d/.test(n))`)
+// root rows only: a note inside an open section (Sec/A2.md) is not part of the root list
+const order = () => js(`[...document.querySelectorAll('.note-row')].map(r=>r.dataset.path.replace(/\\\\/g,'/')).filter(p=>!p.includes('/Sec')).map(p=>p.split('/').pop()).filter(n=>/^A\\d/.test(n))`)
 const drag = (from, to) => js(`(async()=>{
   const q=(p)=>[...document.querySelectorAll('[data-path]')].find(e=>e.dataset.path.replace(/\\\\/g,'/').endsWith(p))
   const src=q(${JSON.stringify(from)}), tgt=q(${JSON.stringify(to)})
@@ -61,7 +62,8 @@ ok("a save after the move lands in the new folder", fs.readFileSync(path.join(no
 ok("and nothing is left behind", !exists("A2.md"))
 
 // 3. a row dropped on a note in another section lands beside it
-await js(`[...document.querySelectorAll('.section-row')].find(r=>r.dataset.path.endsWith('Sec')).click()`); await sleep(300)
+// open the section only if the move left it closed (a drop onto a section may already have opened it)
+await js(`(()=>{ if (![...document.querySelectorAll('[data-path]')].some(e=>e.dataset.path.replace(/\\\\/g,'/').endsWith('/Sec/In.md'))) [...document.querySelectorAll('.section-row')].find(r=>r.dataset.path.replace(/\\\\/g,'/').endsWith('Sec')).click() })()`); await sleep(300)
 await drag("/A3.md", "/Sec/In.md")
 await sleep(1000)
 ok("a note dropped on a row in a section moves there", exists("Sec/A3.md") && !exists("A3.md"))

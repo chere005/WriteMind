@@ -14,8 +14,9 @@
  *   2  Landscape (flipped)     turned 180 degrees
  *   3  Portrait (flipped)      turned 270 degrees clockwise
  *
- * "Match screen" is the default and means quarter turns = 0: the sheet has
- * the screen's own shape (landscape on a landscape display).
+ * Landscape (0) is the default: the sheet is the tablet as it lies on the
+ * desk (main/pen/frame.ts gives the device's own frame), and the person's
+ * choice here is the ONLY thing that turns it. Nothing is calibrated.
  *
  * Points are fractions 0..1 with a top-left origin.
  */
@@ -25,23 +26,21 @@ export interface Box { x: number; y: number; width: number; height: number }
 
 /** Quarter turns clockwise. */
 export type Turns = 0 | 1 | 2 | 3
-export type Orientation = "match" | Turns
+export type Orientation = Turns
 
 export const ORIENTATIONS: { value: Orientation; label: string }[] = [
-  { value: "match", label: "Match screen" },
-  { value: 0, label: "Landscape (0°)" },
-  { value: 1, label: "Portrait (90° clockwise)" },
-  { value: 2, label: "Landscape flipped (180°)" },
-  { value: 3, label: "Portrait flipped (270°)" },
+  { value: 0, label: "Landscape" },
+  { value: 2, label: "Landscape (flipped)" },
+  { value: 1, label: "Portrait" },
+  { value: 3, label: "Portrait (flipped)" },
 ]
 
-export const turnsOf = (orientation: Orientation): Turns => (orientation === "match" ? 0 : orientation)
+export const turnsOf = (orientation: Orientation): Turns => orientation
 
-/** The stored string back to an orientation; anything unknown is "match". */
+/** The stored string back to an orientation; anything unknown (an old "match" too) is Landscape. */
 export function parseOrientation(raw: unknown): Orientation {
-  if (raw === "match") return "match"
   const n = typeof raw === "number" ? raw : typeof raw === "string" && raw.trim() !== "" ? Number(raw) : NaN
-  return n === 0 || n === 1 || n === 2 || n === 3 ? n : "match"
+  return n === 0 || n === 1 || n === 2 || n === 3 ? n : 0
 }
 
 /** Whether the sheet is portrait for the given display shape (width over height). */

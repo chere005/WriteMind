@@ -1,9 +1,4 @@
 {
   "_comment": "Checks that fail today because of a bug tracked elsewhere. They print KNOWN (not FAIL) and do not fail the run; when one passes again the runner says FIXED and the entry should be deleted. Keep the list short and give every entry a reason. Shape: { script: 'suite/name', check: 'substring of the check name', reason: '...' }",
-  "issues": [
-    { "script": "tablet/01-sheet-as-camera", "check": "three nodes read off the sheet", "reason": "2026-10-03: Writing from the tablet sheet brings the strokes but no flow-chart nodes (the camera path reads its chart fine). Capture lane: tabletCapture.sheetChartLabelled; its .catch(() => []) hides why." },
-    { "script": "tablet/01-sheet-as-camera", "check": "two arrows read, attached to nodes", "reason": "same as above" },
-    { "script": "tablet/01-sheet-as-camera", "check": "the chart lands under the writing", "reason": "same as above" },
-    { "script": "tablet/01-sheet-as-camera", "check": "the pane says it read a chart", "reason": "same as above" }
-  ]
+  "issues": []
 }

@@ -1,7 +1,7 @@
 /**
- * penFeed.ts - the renderer's half of the native pen feed (docs/spikes/DESIGN-pen-capture.md 8.1 - 8.3), owned by IMPL-D.
+ * penFeed.ts - the renderer's half of the native pen feed (docs/spikes/DESIGN-pen-capture.md 8.1 - 8.3).
  *
- *   pen:samples (a PenBatch, SCREEN frame)  ->  tabletToSheet({x, y}, turns)  ->  a client point inside the sheet  ->  the SYNTHESISER
+ *   pen:samples (a PenBatch, SHEET frame: main already applied the device frame)  ->  orientation turns  ->  a client point inside the sheet  ->  the SYNTHESISER
  *   (shared/penEvents.ts: sample -> events)  ->  real `PointerEvent`s{pointerType: "pen"} dispatched on the element under that point.
  *
  * WHY SYNTHETIC EVENTS and not a new draw path: the e2e harness has driven the sheet and the notes page with exactly such events since the pen
@@ -12,16 +12,16 @@
  * The events pass the gate because the dispatch runs inside `gate.emit(...)`. A stroke keeps its target: from pointerdown to pointerup every event
  * goes to the element that took the pointerdown (like implicit pointer capture, which a synthetic pointer id cannot have), so a stroke that crosses
  * the strip or a button still ends on the sheet. Synthetic pointer events never produce `click`, so a pointerup on the same button as its
- * pointerdown after < 6 px of movement clicks it (what GrabOverlay.buttonUnder did).
+ * pointerdown after < 6 px of movement clicks it.
  *
  * The dispatcher is plain TypeScript over a few injected functions (the DOM is behind `DispatchEnv`), so the whole mapping is a vitest.
  */
 
 import { useSyncExternalStore } from "react"
-import type { FeedEvent, FeedStatus, PenApi, PenBatch, PenFeedSettings, PenSample, SheetGeometry, Turn } from "../shared/pen"
+import type { FeedStatus, PenApi, PenBatch, PenFeedSettings, PenSample, Turn } from "../shared/pen"
 import { createSynth, type SynthEvent } from "../shared/penEvents"
 import { tabletToSheet } from "../shared/orientation"
-import { currentTurns } from "./orientation"
+import { currentTurns, setTabletAspect } from "./orientation"
 import { penGate, type Gate } from "./penGate"
 
 /** The fixed pointer id of the synthetic pen (design 8.3). */
@@ -195,20 +195,18 @@ function realEnv(gate: Gate, fault: { n: number }): DispatchEnv {
 }
 
 // ---------------------------------------------------------------------------------------------
-// The store the UI reads (status, last event, toast), and the subscriptions
+// The store the UI reads (status, capture), and the subscriptions
 // ---------------------------------------------------------------------------------------------
 
 export interface FeedSnapshot {
   status: FeedStatus | null
-  /** The last FeedEvent that is worth a line on screen ("Pen: Wintab is live"), with the time it came. */
-  note: { text: string; at: number } | null
   /** Why the gate opened itself, or null. */
   selfOpen: string | null
   /** Capture is on right now (the gate is swallowing the OS pen). */
   capturing: boolean
 }
 
-let snapshot: FeedSnapshot = { status: null, note: null, selfOpen: null, capturing: false }
+let snapshot: FeedSnapshot = { status: null, selfOpen: null, capturing: false }
 const listeners = new Set<() => void>()
 const publish = (next: Partial<FeedSnapshot>): void => {
   snapshot = { ...snapshot, ...next }
@@ -218,30 +216,9 @@ export const feedSnapshot = (): FeedSnapshot => snapshot
 export const subscribeFeed = (listener: () => void): (() => void) => { listeners.add(listener); return () => { listeners.delete(listener) } }
 export const usePenFeedStore = (): FeedSnapshot => useSyncExternalStore(subscribeFeed, feedSnapshot)
 
-/** The sheet as main wants to know it (design 3.1 SheetGeometry), or null when it is not showing. */
-export function sheetGeometry(): SheetGeometry | null {
-  const element = document.querySelector<HTMLElement>('[data-tablet="surface"]')
-  if (!element) return null
-  const r = element.getBoundingClientRect()
-  if (!(r.width > 0 && r.height > 0)) return null
-  return { rect: { x: r.left, y: r.top, width: r.width, height: r.height }, turns: currentTurns(), aspect: r.width / r.height }
-}
-
-function describe(event: FeedEvent, label: (name: string) => string): string | null {
-  switch (event.kind) {
-    case "live": return `Pen: ${label(event.backend)} is live`
-    case "lost": return `Pen: ${label(event.backend)} stopped - ${event.reason}`
-    case "failover": return `Pen: now ${label(event.to)}`
-    case "released": return `Pen released - ${event.reason}`
-    case "needs-you": return event.message
-  }
-}
-
-const LABEL: Record<string, string> = {
-  "wintab-system": "Wintab (mapped)", "wintab-data": "Wintab", rawinput: "Raw HID", webhid: "WebHID", dom: "Window pen", overlay: "Overlay", inject: "Test",
-}
-const labelOf = (name: string): string => LABEL[name] ?? name
-
+/** The feed is silent this long mid-visit: let go (main ends a visit itself after 0.6 s hovering / 2 s in contact). */
+export const STALL_MS = 4000
+let lastBatchAt = 0
 let started = false
 let dispatcher: Dispatcher | null = null
 const fault = { n: 0 }
@@ -256,19 +233,27 @@ export function installPenFeed(): void {
   dispatcher = createDispatcher(realEnv(gate, fault), { onTip: () => gate.noteTip(), onThrow: (error) => gate.noteError(error) })
 
   api.onSamples((batch: PenBatch) => {
-    gate.noteSamples()
-    dispatcher?.batch(batch.samples)
+    const d = dispatcher
+    if (!d) return
+    // A real DOM pen contact that is already down is never cut: the feed waits for it to end.
+    if (!d.inRange && gate.domContact()) return
+    d.batch(batch.samples)
+    lastBatchAt = performance.now()
+    gate.setState({ nativeLive: d.inRange })
   })
+  // A feed that stalls mid-visit (a sample listener died, the backend hung) must not hold the pen forever: the window pen takes over again.
+  setInterval(() => {
+    if (dispatcher?.inRange && performance.now() - lastBatchAt > STALL_MS) { dispatcher.reset(); gate.setState({ nativeLive: false }) }
+  }, 1000)
   api.onStatus(acceptStatus)
   api.onEvent((event) => {
-    const text = describe(event, labelOf)
-    if (text) publish({ note: { text, at: Date.now() } })
-    if (event.kind === "released" || event.kind === "failover") dispatcher?.reset()
+    if (event.kind === "released" || event.kind === "failover") { dispatcher?.reset(); gate.setState({ nativeLive: false }) }
   })
   gate.onChange(() => publish({ capturing: gate.captureOn() }))
   gate.onSelfOpen((reason) => {
     dispatcher?.reset()
-    publish({ selfOpen: reason, note: { text: reason, at: Date.now() }, capturing: false })
+    gate.setState({ nativeLive: false })
+    publish({ selfOpen: reason, capturing: false })
     // Tell main too: it lets go of everything and waits for the person to switch capture on again.
     try { api.panic(`gate: ${reason}`) } catch { /* ignore */ }
   })
@@ -286,8 +271,10 @@ export function installPenFeed(): void {
 export function acceptStatus(status: FeedStatus): void {
   const gate = penGate()
   gate.setState({ available: status.available, enabled: status.settings.enabled, released: status.released !== null })
-  // The pen left the sheet's feed (released, capture off): end any contact so no stroke hangs.
-  if (status.released !== null || !status.settings.enabled) dispatcher?.reset()
+  // The pen left the sheet's feed (released, capture off): end any contact so no stroke hangs, and give the window pen back.
+  if (status.released !== null || !status.settings.enabled) { dispatcher?.reset(); gate.setState({ nativeLive: false }) }
+  // The sheet takes the tablet's own shape (landscape for a landscape tablet), whatever the screen's.
+  setTabletAspect(status.tablet?.aspect ?? null)
   publish({ status, capturing: gate.captureOn() })
 }
 export function markOpened(opened: boolean): void {
@@ -298,10 +285,10 @@ export function markOpened(opened: boolean): void {
 export function markSheet(showing: boolean): void {
   const gate = penGate()
   gate.setState({ sheetShowing: showing })
-  if (!showing) dispatcher?.reset()
+  if (!showing) { dispatcher?.reset(); gate.setState({ nativeLive: false }) }
   publish({ capturing: gate.captureOn() })
 }
-/** Change the feed's settings (capture, contain, backends, swap, trace) and let every reader see the answer at once. */
+/** Change the feed's settings (capture on / off) and let every reader see the answer at once. */
 export async function changeSettings(patch: Partial<PenFeedSettings>): Promise<PenFeedSettings | null> {
   const api = window.wm?.pen
   if (!api) return null
@@ -314,3 +301,7 @@ export function clearSelfOpen(): void {
   penGate().reset()
   publish({ selfOpen: null, capturing: penGate().captureOn() })
 }
+
+/** A Wintab tablet is known (the sheet then belongs to the pen and the mouse selects). */
+export const tabletKnown = (): boolean => snapshot.status?.tablet != null
+export const useTabletKnown = (): boolean => usePenFeedStore().status?.tablet != null

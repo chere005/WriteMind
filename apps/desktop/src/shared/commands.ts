@@ -126,8 +126,6 @@ export const COMMANDS: CommandDef[] = [
   // Input Devices
   c("cameraOff", "Turn Camera Off", "page"),
   c("cameraRefresh", "Refresh Device List", "page", "CmdOrCtrl+Alt+R", "Alt+Cmd+R"),
-  // The whole tablet becomes the sheet in the notes window (an overlay grabs the pen).
-  c("tabletGrab", "Grab Tablet to Sheet", "page", "CmdOrCtrl+Alt+G"),
 ]
 
 const byId = new Map(COMMANDS.map((command) => [command.id, command]))

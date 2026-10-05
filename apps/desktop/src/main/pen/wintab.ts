@@ -16,7 +16,7 @@
  *
  * FRAME. Samples leave here in the DEVICE frame: x / y are the packet's position over the context's input rectangle,
  * clamped to 0..1, and y is NOT flipped (Wintab's y points up; the manager's FrameTransform absorbs that, its default guess
- * for Wintab has flipY: true, frame.ts). `swapButtons` is applied later by the manager, never here.
+ * for Wintab has flipY: true, frame.ts). Buttons are not swapped anywhere: which button does what is the renderer's penSettings.
  */
 
 import { clamp01, type PenSample } from "../../shared/pen"
@@ -474,9 +474,14 @@ export function parseProximityMessage(lParam: number | bigint): { enteredContext
  * Stateful wrapper: aligns the clock, learns the proximity polarity, and turns packets into samples. It does NOT decide when
  * a visit ends (that is the VisitTracker's job, batcher.ts).
  */
+/** Contact starts at this pressure (fraction of the context's real pressure axis) or with the tip button, and lasts while it stays above the lower one: a debounce, not a delay. */
+export const TIP_DOWN_PRESSURE = 0.01
+export const TIP_UP_PRESSURE = 0.004
+
 export class WintabNormaliser {
   private readonly clock = new ClockAligner()
   readonly polarity: ProximityPolarity
+  private contact = false
 
   constructor(private cfg: NormaliserConfig, polarity: ProximityPolarity = new ProximityPolarity()) {
     this.polarity = polarity
@@ -496,7 +501,12 @@ export class WintabNormaliser {
     for (const r of raws) {
       const outcome = this.polarity.observe(r)
       if (outcome && onPolarity) onPolarity(outcome)
-      out.push(normalisePacket(r, this.cfg, hasTime ? this.clock.align(r.time, arrivedAtMs) : arrivedAtMs, this.polarity.bitMeansOut))
+      const s = normalisePacket(r, this.cfg, hasTime ? this.clock.align(r.time, arrivedAtMs) : arrivedAtMs, this.polarity.bitMeansOut)
+      // Tip: the button, or pressure with a little hysteresis, so a hovering pen's noise never flickers the contact.
+      const button = (r.buttons & BTN.TIP) !== 0
+      this.contact = button || (this.contact ? s.p >= TIP_UP_PRESSURE : s.p >= TIP_DOWN_PRESSURE)
+      s.tip = this.contact
+      out.push(s)
     }
     return out
   }

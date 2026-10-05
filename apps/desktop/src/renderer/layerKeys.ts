@@ -46,6 +46,8 @@ export interface KeyFacts {
   picked: boolean
   /** A crop box is open on a picture that is still there. */
   cropOpen: boolean
+  /** The notebook holds selected WORDS (not just a caret): Ctrl+C / Ctrl+X on those are the words', not the picked objects'. */
+  textSelected?: boolean
 }
 
 export type KeyVerdict =
@@ -111,6 +113,8 @@ export function layerKey(f: KeyFacts): KeyVerdict {
   if (plain && !f.shift && (f.key === "Backspace" || f.key === "Delete")) return { take: "delete" }
   const command = (f.ctrl || f.meta) && !f.alt && !f.shift
   const letter = f.key.toLowerCase()
+  // Words selected in the note and Ctrl+C / Ctrl+X: the person is copying the words; the pick is let go.
+  if (command && (letter === "c" || letter === "x") && f.inNotebook && f.textSelected) return { take: "letGo" }
   if (command && letter === "c") return { take: "copy" }
   if (command && letter === "x") return { take: "cut" }
 

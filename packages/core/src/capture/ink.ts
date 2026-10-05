@@ -210,6 +210,8 @@ export interface Marks {
 export function marks(ink: Uint8Array, width: number, height: number, options: {
   minimumSize?: number
   minimumArea?: number
+  /** A picture with no page edge in it (the tablet sheet, drawn on white): a mark across it is writing, not an edge. */
+  keepEdges?: boolean
 } = {}): Marks {
   const minimumSize = options.minimumSize ?? 7
   const minimumArea = options.minimumArea ?? 20
@@ -219,7 +221,8 @@ export function marks(ink: Uint8Array, width: number, height: number, options: {
   all.forEach((component, index) => {
     const isSpeck = componentArea(component) < minimumArea
       || Math.max(componentWidth(component), componentHeight(component)) < minimumSize
-    const isEdge = componentWidth(component) > width * 0.85 || componentHeight(component) > height * 0.85
+    const isEdge = !options.keepEdges
+      && (componentWidth(component) > width * 0.85 || componentHeight(component) > height * 0.85)
     const isDot = lattice?.has(index) ?? false
     if (!isSpeck && !isEdge && !isDot) writing.push(index)
   })
@@ -241,6 +244,7 @@ export function inkMask(gray: Uint8Array, width: number, height: number, options
   threshold?: number
   minimumSize?: number
   minimumArea?: number
+  keepEdges?: boolean
 } = {}): Uint8Array {
   const raw = darkerThanPaper(gray, width, height, options.threshold ?? 28)
   return writingMask(marks(raw, width, height, options))

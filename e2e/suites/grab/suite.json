@@ -1,6 +1,0 @@
-{
-  "description": "GRAB on the real desktop: the overlay over the display, injected pen and mouse, the mode machine, exits, orientation (run with --desktop; moves the real mouse)",
-  "desktop": true,
-  "isolation": "script",
-  "scriptTimeoutSec": 240
-}

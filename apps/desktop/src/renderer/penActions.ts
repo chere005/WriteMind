@@ -11,7 +11,7 @@
  * window in the capture phase, before any surface:
  *
  *  - a press whose action is a TAP, or NONE, is swallowed there, so no
- *    surface (notes page, tablet sheet, grab overlay) ever starts a gesture from it;
+ *    surface (notes page, tablet sheet) ever starts a gesture from it;
  *  - the same events drive `tapStep`, which fires the action once when the
  *    button comes up without the tip having touched.
  *

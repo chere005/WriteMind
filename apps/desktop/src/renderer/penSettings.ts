@@ -121,5 +121,3 @@ export function usePenSettings(): PenSettings {
   )
 }
 
-/** The grab overlay is another page: it takes the notes window pen settings as they are. */
-export const adoptPenSettings = (next: Partial<PenSettings>): void => set(next)

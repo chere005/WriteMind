@@ -3,13 +3,13 @@
  *
  * What it does: loads wintab32.dll, reads what the driver says about itself (interface, device, default contexts), opens ONE
  * context per session (a DATA context reads the tablet and moves nothing; a SYSTEM context additionally asks the driver to map the
- * pen to a screen rectangle and is only ever opened with a ready guard), polls packets, and guarantees every context is closed.
+ * pen to a screen rectangle and is opened only while the pen is over the sheet, see mapping.ts), polls packets, and guarantees every context is closed.
  *
  * CLEANUP. A leaked Wintab context outlives its process (measured: a hard-killed process leaves its contexts in the driver until
  * the driver restarts, and the driver counts them against a limit of 32):
  *  - every opened session is in `live`; `closeAllWintab()` closes them all and is wired (through win32.ts `registerRelease`) to
  *    the process exit paths: exit, SIGINT / SIGTERM / SIGBREAK, uncaughtExceptionMonitor. main.ts also calls it on before-quit /
- *    will-quit / window-all-closed. This is the only place (besides the guard) that calls WTClose;
+ *    will-quit / window-all-closed. This is the only place (besides the backends' own stop) that calls WTClose;
  *  - each context is named "WriteMind pen <pid>" in lcName and its handle is written to a journal file (every live handle of this
  *    process); `recoverStaleContexts` at the next start closes a journalled handle whose lcName still carries a DEAD pid's marker
  *    and nothing else. It NEVER closes a handle it cannot positively identify: handle numbers are small integers handed out in no
@@ -241,7 +241,7 @@ function writeJournal(path: string): void {
   try {
     if (!handles || handles.size === 0) { journals.delete(path); if (existsSync(path)) unlinkSync(path); return }
     writeFileSync(path, JSON.stringify({ pid: process.pid, handles: [...handles], at: Date.now() }))
-  } catch { /* the journal is a convenience: the guard and the exit hooks are the primary releases */ }
+  } catch { /* the journal is a convenience: the in-process exit hooks are the primary release; after a hard kill the journal is the recovery */ }
 }
 function journalAdd(path: string | undefined, handle: bigint): void {
   if (!path) return

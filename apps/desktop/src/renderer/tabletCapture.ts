@@ -1,22 +1,22 @@
 /**
- * The tablet sheet's memory and what taking from it means. Both the video pane
- * (CameraPane) and the Grab overlay (GrabOverlay) show THE SAME sheet and take
- * from it through THE SAME function, so a capture made in either is the same
- * capture: the strokes with their pressures, the Page picture, the Box
+ * The tablet sheet's memory and what taking from it means. The video pane
+ * (CameraPane) shows THE sheet and takes from it through one function: the strokes with their pressures, the Page picture, the Box
  * section, the flow-chart reader, the learned page shape, the placement.
  *
- * No React in here. The sheet outlives both views (putting the video away, or
- * ending a grab, does not wipe the page).
+ * No React in here. The sheet outlives the view (putting the video away does not wipe the page).
  */
 
 import {
-  placement, regionOf, resolveShape, shapeSize, type CanvasItem, type Rect, type Size,
+  placement, resolveShape, shapeSize, type CanvasItem, type Rect, type Size,
 } from "@writemind/core"
-import { bandUnder, chartSummary, renderSheet, sheetChartLabelled } from "./capturePipeline"
+import { bandUnder, chartSummary, sheetChartLabelled } from "./capturePipeline"
 import { wordsForChart } from "./ocrClient"
-import { currentTurns, subscribeOrientation } from "./orientation"
+import { currentTurns, subscribeOrientation, tabletAspect } from "./orientation"
 import { sheetAspectFor } from "../shared/orientation"
-import { inkExtent, landStrokes, screenAspect, SHEET_REF, splitByRegion, TabletPage } from "./tabletPage"
+import {
+  inkExtent, landStrokes, paintStrokes, regionOfSheetBox, screenAspect, SHEET_REF, splitByRegion, TabletPage, type InkStroke,
+} from "./tabletPage"
+import { inkOn, paintPaper, type Paper } from "./tabletPaper"
 
 export interface Capture {
   /** The picture's bytes, ready for `saveMedia`. Absent when the writing comes in as strokes. */
@@ -35,7 +35,7 @@ export interface Capture {
  * The sheet's shape: the screen's, turned by the tablet's orientation (landscape on a
  * landscape display unless the tablet is turned a quarter turn).
  */
-export const currentSheetAspect = (): number => sheetAspectFor(screenAspect(), currentTurns())
+export const currentSheetAspect = (): number => sheetAspectFor(tabletAspect() ?? screenAspect(), currentTurns())
 
 /** The one sheet. Its shape follows the orientation; its strokes are fractions of it and never change with it. */
 export const sheet = new TabletPage(currentSheetAspect())
@@ -45,11 +45,23 @@ subscribeOrientation(() => sheet.setAspect(currentSheetAspect()))
 export const sheetUnits = (aspect: number = sheet.aspect): Size =>
   ({ width: SHEET_REF, height: SHEET_REF / aspect })
 
-export const keptClearAfter = (): boolean => {
-  try { return localStorage.getItem("writemind.tabletClearAfter") !== "false" } catch { return true }
-}
-export const keepClearAfter = (on: boolean): void => {
-  try { localStorage.setItem("writemind.tabletClearAfter", String(on)) } catch { /* session only */ }
+/**
+ * The Page picture: the boxed part of the sheet as it looks, PAPER INCLUDED (the one place the paper goes), on a canvas
+ * of the cut's size. `units` is the sheet in reference units, `region` the part taken (fractions of it).
+ */
+export function renderSheetPicture(strokes: InkStroke[], paper: Paper, units: Size, pageSize: Size, onPage: Rect,
+  region: Rect, scale: number): HTMLCanvasElement {
+  const cut = document.createElement("canvas")
+  cut.width = Math.max(1, Math.round(onPage.width))
+  cut.height = Math.max(1, Math.round(onPage.height))
+  const context = cut.getContext("2d", { willReadFrequently: true })!
+  paintPaper(context, paper, units,
+    { x: region.x * units.width, y: region.y * units.height, width: region.width * units.width, height: region.height * units.height },
+    { width: cut.width, height: cut.height })
+  paintStrokes(context, strokes, (point) => ({
+    x: point.x * pageSize.width - onPage.x, y: point.y * pageSize.height - onPage.y,
+  }), scale, undefined, 0, (hex) => inkOn(paper, hex))
+  return cut
 }
 
 /** The page's shape, learned from the first capture and kept; and the nudge between two captures. */
@@ -68,9 +80,10 @@ export type SheetTake =
  * flow-chart reader looks at a black-on-white raster of the same ink.
  *
  * `box` is the dashed box in FRACTIONS of the sheet (or null for all of it),
- * `shown` the sheet's size on screen (only its shape and the box's minimum
- * size depend on it), `pane` the notes pane the capture is landed on. When
- * `clearAfter` is on, what was taken leaves the sheet (one Undo brings it back).
+ * `shown` the sheet's size on screen (only the box's minimum size depends
+ * on it), `pane` the notes pane the capture is landed on. WRITING takes what it
+ * brought off the sheet (one Undo brings it back); PAGE leaves the sheet as it is.
+ * The paper is in the Page picture and nowhere else.
  */
 export async function takeFromSheet(mode: "ink" | "page", options: {
   box: Rect | null
@@ -78,15 +91,13 @@ export async function takeFromSheet(mode: "ink" | "page", options: {
   pane: Size
   penColour: string
   penWidth: number
-  clearAfter: boolean
+  paper: Paper
 }): Promise<SheetTake> {
-  const { box, shown, pane, penColour, penWidth, clearAfter } = options
+  const { box, shown, pane, penColour, penWidth, paper } = options
+  const clearAfter = mode === "ink"
   if (shown.width <= 0 || shown.height <= 0) return { trouble: "no sheet to take from" }
   if (sheet.strokes.length === 0) return { trouble: "nothing written yet" }
-  const region = box
-    ? regionOf({ x: box.x * shown.width, y: box.y * shown.height, width: box.width * shown.width, height: box.height * shown.height },
-      shown, shown)
-    : { x: 0, y: 0, width: 1, height: 1 }
+  const region = regionOfSheetBox(box, shown)
   if (!region) return { trouble: "that box is not on the sheet" }
   const parts = splitByRegion(sheet.strokes, region)
   if (parts.inside.length === 0) return { trouble: "nothing written in that box" }
@@ -109,7 +120,7 @@ export async function takeFromSheet(mode: "ink" | "page", options: {
   let blob: Blob | undefined
   let frameOnPage = onPage
   if (mode === "page") {
-    const picture = renderSheet(parts.inside, pageSize, onPage, scale)
+    const picture = renderSheetPicture(parts.inside, paper, units, pageSize, onPage, region, scale)
     blob = (await new Promise<Blob | null>((resolve) => picture.toBlob(resolve, "image/jpeg", 0.9))) ?? undefined
     if (!blob) return { trouble: "could not make the picture" }
   } else {

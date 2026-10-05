@@ -1,7 +1,7 @@
 /**
  * What a press of the pen (or the mouse) means, with no React and no DOM in
  * it so the tests can ask it directly. Shared by the notes page
- * (`Canvas.tsx`), the tablet surface and the Grab overlay, so they can
+ * (`Canvas.tsx`), and the tablet surface, so they can
  * never disagree about which button does what.
  *
  * WHAT CHROMIUM DELIVERS FOR A WACOM PEN (Windows Ink, 2-button pen):

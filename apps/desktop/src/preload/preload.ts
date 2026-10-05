@@ -7,38 +7,24 @@
 import { contextBridge, ipcRenderer } from "electron"
 import { PEN_CHANNELS, type PenApi } from "../shared/pen"
 
-/**
- * NATIVE PEN CAPTURE (docs/spikes/DESIGN-pen-capture.md 3.3): window.wm.pen. An object, not flat functions; every name is spelled once in
- * shared/pen.ts (PEN_CHANNELS). The E2E hooks exist only under WRITEMIND_E2E.
- */
+/** window.wm.pen: the tablet pen's feed (shared/pen.ts PenApi; every channel name is spelled once there). The E2E hooks exist only under WRITEMIND_E2E. */
 const listen = <T>(channel: string, listener: (payload: T) => void): (() => void) => {
   const wrapped = (_event: unknown, payload: T) => listener(payload)
   ipcRenderer.on(channel, wrapped)
   return () => { ipcRenderer.removeListener(channel, wrapped) }
 }
 const pen: PenApi = {
-  open: (sheet) => ipcRenderer.invoke(PEN_CHANNELS.open, sheet),
+  open: () => ipcRenderer.invoke(PEN_CHANNELS.open),
   close: (reason) => ipcRenderer.invoke(PEN_CHANNELS.close, reason),
   status: () => ipcRenderer.invoke(PEN_CHANNELS.status),
   settings: () => ipcRenderer.invoke(PEN_CHANNELS.settings),
   setSettings: (patch) => ipcRenderer.invoke(PEN_CHANNELS.setSettings, patch),
-  sheet: (geometry) => ipcRenderer.send(PEN_CHANNELS.sheet, geometry),
-  witness: (w) => ipcRenderer.send(PEN_CHANNELS.witness, w),
-  dom: (reports) => ipcRenderer.send(PEN_CHANNELS.dom, reports),
   panic: (reason) => ipcRenderer.send(PEN_CHANNELS.panic, reason),
-  check: {
-    start: () => ipcRenderer.invoke(PEN_CHANNELS.checkStart),
-    step: (id) => ipcRenderer.invoke(PEN_CHANNELS.checkStep, id),
-    cancel: () => ipcRenderer.invoke(PEN_CHANNELS.checkCancel),
-    copy: () => ipcRenderer.invoke(PEN_CHANNELS.checkCopy),
-    test: (mechanism) => ipcRenderer.invoke(PEN_CHANNELS.containTest, mechanism),
-  },
-  setFrame: (frame) => ipcRenderer.invoke(PEN_CHANNELS.frameSet, frame),
-  revealTrace: () => ipcRenderer.invoke(PEN_CHANNELS.revealTrace),
+  sheet: (report) => ipcRenderer.send(PEN_CHANNELS.sheet, report),
+  retryMapping: () => ipcRenderer.invoke(PEN_CHANNELS.mappingRetry),
   onSamples: (listener) => listen(PEN_CHANNELS.samples, listener),
   onStatus: (listener) => listen(PEN_CHANNELS.statusPush, listener),
   onEvent: (listener) => listen(PEN_CHANNELS.event, listener),
-  onCheck: (listener) => listen(PEN_CHANNELS.check, listener),
   ...(process.env.WRITEMIND_E2E ? {
     e2e: {
       inject: (samples, backend) => ipcRenderer.invoke(PEN_CHANNELS.e2eInject, { samples, backend }),
@@ -108,8 +94,6 @@ const api = {
   },
   /** The tablet pen's native feed (main/pen/*): see PenApi in shared/pen.ts. */
   pen,
-  /** Where the window is on the desktop (content area, its display, the display's scale). */
-  windowInfo: () => ipcRenderer.invoke("window:info"),
   /** End-to-end scripts only (WRITEMIND_E2E): read the menu bar and press an item. */
   ...(process.env.WRITEMIND_E2E ? {
     e2eMenu: () => ipcRenderer.invoke("e2e:menu"),

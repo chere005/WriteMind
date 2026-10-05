@@ -44,11 +44,12 @@ import { ocrAvailable, readCanvasLines, wordsForChart } from "./ocrClient"
 import { CAMERA_OFF, TABLET_SOURCE } from "../shared/commands"
 import { setEraser, usePenSettings } from "./penSettings"
 import { TabletSurface, type SurfaceHandle } from "./TabletSurface"
-import { keepClearAfter, keptClearAfter, sheet, takeFromSheet, type Capture } from "./tabletCapture"
-import { TabletAreaHelp } from "./tabletArea"
+import { sheet, takeFromSheet, type Capture } from "./tabletCapture"
 import { OrientationSelect } from "./OrientationSelect"
+import { PaperMenu } from "./PaperMenu"
+import { paper as currentPaper } from "./tabletPaper"
+import { usePenWord, usePenWordNote } from "./penWord"
 import { usePenFeed } from "./usePenFeed"
-import { PenHud } from "./PenHud"
 import type { Platform } from "./wm"
 import "./camera.css"
 
@@ -62,9 +63,6 @@ interface Props {
   pane: Size
   onCapture(capture: Capture): void
   onHide(): void
-  /** The pen's colour and width, which the sheet strip changes. */
-  onPenColour?(hex: string): void
-  onPenWidth?(width: number): void
   /**
    * The source picked from the Input Devices menu (or the sidebar's video menu): a camera's id, the
    * tablet, "off" (no source, the Mac's placeholder), or null for the system's default camera.
@@ -79,6 +77,8 @@ interface Props {
   /** The notes pane is showing; when it is not, the corner offers the way back. */
   showEditor?: boolean
   onToggleEditor?(): void
+  /** The open note: a capture whose reading finishes after another note was opened is not added to that one. */
+  note?: string | null
   /** The words read out of a box, for the note. */
   onReadText?(lines: string[]): void
 }
@@ -93,17 +93,23 @@ const inset = (by: number): Quad01 => ({
   bottomRight: { x: 1 - by, y: 1 - by }, bottomLeft: { x: by, y: 1 - by },
 })
 
+const SWITCHED = "You opened another note while that was being read, so it was not added - take it again."
+
 const hex = (colour: string): string => (/^#[0-9a-f]{6}$/i.test(colour) ? colour : "#2D7DD2")
 
 /** What the Input Devices menu and the video menu can ask of the pane (`wm:camera-action`). */
 export type CameraAction = "turn-left" | "turn-right" | "original-size" | "resize-by-square"
 
 export function CameraPane({
-  platform, penColour, penWidth = 2, pane, onCapture, onHide, onPenColour, onPenWidth, preferred,
-  cameras = [], onPickSource, onRefreshCameras, onActiveCamera, showEditor = true, onToggleEditor, onReadText,
+  platform, penColour, penWidth = 2, pane, onCapture, onHide, preferred,
+  cameras = [], onPickSource, onRefreshCameras, onActiveCamera, showEditor = true, onToggleEditor, onReadText, note = null,
 }: Props) {
+  /** The open note NOW (a capture remembers the one it was taken in). */
+  const noteRef = useRef<string | null>(note)
+  noteRef.current = note
   const video = useRef<HTMLVideoElement | null>(null)
   const host = useRef<HTMLDivElement | null>(null)
+  const top = useRef<HTMLDivElement | null>(null)
   /** The tablet is the source: a sheet to write on, no camera is opened. */
   const tablet = preferred === TABLET_SOURCE
   /** "Turn Camera Off": nothing is opened and the pane says so. */
@@ -111,10 +117,17 @@ export function CameraPane({
   const wanted = preferred && preferred !== TABLET_SOURCE && preferred !== CAMERA_OFF ? preferred : null
   const [attempt, setAttempt] = useState(0)
   const stream = useCameraStream(video, { enabled: !tablet && !off, deviceId: wanted, attempt })
+  // Picking a camera again (the menu's, the placeholder's) or Refresh asks it to start again: a camera that was busy
+  // or refused is the SAME pick, which changes no state, so the pick says so.
+  useEffect(() => {
+    const again = () => setAttempt((was) => was + 1)
+    window.addEventListener("wm:camera-retry", again)
+    return () => window.removeEventListener("wm:camera-retry", again)
+  }, [])
   const surface = useRef<SurfaceHandle | null>(null)
   const pen = usePenSettings()
-  const [boxTool, setBoxTool] = useState(false)
-  const [clearAfter, setClearAfter] = useState(keptClearAfter)
+  const penWord = usePenWord()
+  const penWordNote = usePenWordNote()
   const [, edited] = useState(0)
   const [trouble, setTrouble] = useState<string | null>(null)
   const [read, setRead] = useState<string | null>(null)
@@ -122,9 +135,6 @@ export function CameraPane({
   const [box, setBox] = useState<Rect | null>(null)
   /** The tablet sheet's dashed box, in FRACTIONS of the sheet (the sheet is shown at any size). */
   const [sheetBox, setSheetBox] = useState<Rect | null>(null)
-  const [areaOpen, setAreaOpen] = useState(false)
-  /** The Tablet setup check card is open (the chip's popover and the Pen menu ask for it). */
-  const [checkOpen, setCheckOpen] = useState(false)
   const drag = useRef<{ x: number; y: number; id: number } | null>(null)
   /** The last click on the picture, so a second one close behind it is a double click (a pointer event carries no count). */
   const [dragging, setDragging] = useState(false)
@@ -326,6 +336,7 @@ export function CameraPane({
    */
   const take = useCallback(async (mode: CaptureMode) => {
     if (busy) return
+    const startedIn = noteRef.current
     const taken = snapshot()
     if (!taken) { setTrouble("There is no camera picture to take."); return }
     const { region, offPicture } = regionOfBox()
@@ -353,10 +364,14 @@ export function CameraPane({
       // with the words the machine's text reader finds inside them (only a
       // picture that holds a chart is ever sent to it, and without a reader a
       // node's label is typed on it by double-click).
+      if (mode !== "raw") setRead("Reading...")
       const chart = mode === "raw" ? [] : await chartFromLabelled(
         result.cut, { width: result.cut.width, height: result.cut.height }, pane, penColour, penWidth,
         bandUnder(where.center, where.width, aspect, pane), (canvas) => wordsForChart(canvas))
 
+      // The reading took a moment and the person may have opened another note meanwhile: this capture is of the
+      // note it was taken in, so it is not put in the one that is open now.
+      if (noteRef.current !== startedIn) { setTrouble(SWITCHED); setRead(null); return }
       setTrouble(null)
       const how = mode === "raw" ? null
         : result.how === "hand" ? "The corners you set squared the page up."
@@ -368,6 +383,9 @@ export function CameraPane({
         blob: result.blob, center: where.center, width: where.width, aspect,
         ...(chart.length > 0 ? { chart } : {}),
       })
+    } catch (error) {
+      console.warn("WriteMind: the capture failed:", error)
+      setTrouble("That could not be taken - try again, or drag the corners tighter onto the page."); setRead(null)
     } finally {
       setBusy(false)
     }
@@ -377,6 +395,7 @@ export function CameraPane({
   /** The box read into the note as words. */
   const takeText = useCallback(async () => {
     if (busy) return
+    const startedIn = noteRef.current
     const taken = snapshot()
     if (!taken) { setTrouble("There is no camera picture to read."); return }
     const { region, offPicture } = regionOfBox()
@@ -388,12 +407,17 @@ export function CameraPane({
         corners: straighten ? cornersPx(taken.frame) : null, rememberedShape: rememberedShape() ?? shape.current, colour: hex(penColour),
       })
       if ("trouble" in result) { setTrouble(result.trouble); return }
+      setRead("Reading...")
       const lines = await readCanvasLines(result.cut)
-      if (lines === null || lines.length === 0) { setTrouble("No text could be read in that box."); return }
+      if (noteRef.current !== startedIn) { setTrouble(SWITCHED); setRead(null); return }
+      if (lines === null || lines.length === 0) { setTrouble("No text could be read in that box."); setRead(null); return }
       setTrouble(null)
       setRead(lines.length === 1 ? "Read 1 line into the note." : `Read ${lines.length} lines into the note.`)
       setBox(null)
       onReadText?.(lines)
+    } catch (error) {
+      console.warn("WriteMind: reading the box failed:", error)
+      setTrouble("That could not be read - try again."); setRead(null)
     } finally {
       setBusy(false)
     }
@@ -405,33 +429,27 @@ export function CameraPane({
    * the strokes themselves, PAGE the sheet as a picture.
    */
   const takeTablet = useCallback(async (mode: "ink" | "page") => {
+    const startedIn = noteRef.current
     const out = await takeFromSheet(mode, {
       box: sheetBox, shown: surface.current?.size() ?? { width: 0, height: 0 }, pane,
-      penColour, penWidth, clearAfter,
+      penColour, penWidth, paper: currentPaper(),
     })
     if ("trouble" in out) { setTrouble(out.trouble); return }
+    if (noteRef.current !== startedIn) {
+      // The sheet was already cleared for it: one Undo on the sheet brings the writing back.
+      setTrouble(SWITCHED); surface.current?.repaint(); edited((was) => was + 1); return
+    }
     setTrouble(null)
     setRead(out.read)
-    // What was sent leaves the sheet (one Undo on the sheet brings it back).
-    if (out.cleared) {
-      surface.current?.repaint()
-      setSheetBox(null)
-      edited((was) => was + 1)
-    }
+    // Writing leaves the sheet once it is in the note (one Undo on the sheet brings it back); the box goes either way, as on the Mac.
+    if (out.cleared) surface.current?.repaint()
+    setSheetBox(null)
+    edited((was) => was + 1)
     onCapture(out.capture)
-  }, [sheetBox, clearAfter, onCapture, pane, penColour, penWidth])
+  }, [sheetBox, onCapture, pane, penColour, penWidth])
 
-  // PEN CAPTURE: the whole tablet is this sheet, with the notes still on screen (main/pen/*, renderer/penFeed.ts).
-  const feed = usePenFeed(tablet)
-  // The capture command (Ctrl+Alt+G, Input Devices) reaches the pane as an event; it switches capture on or off.
-  useEffect(() => {
-    if (!tablet) return
-    const toggle = () => feed.toggle()
-    const check = () => setCheckOpen(true)
-    window.addEventListener("wm:grab-toggle", toggle)
-    window.addEventListener("wm:pen-check", check)
-    return () => { window.removeEventListener("wm:grab-toggle", toggle); window.removeEventListener("wm:pen-check", check) }
-  }, [tablet, feed])
+  // THE PEN FEED: while the Tablet sheet shows, the whole tablet is this sheet (main/pen/*, renderer/penFeed.ts). Nothing to see.
+  usePenFeed(tablet)
 
   const corner = (name: CornerName) => toScreen({
     x: shown.x + quad[name].x * shown.width, y: shown.y + quad[name].y * shown.height,
@@ -486,13 +504,34 @@ export function CameraPane({
     else if (action === "whole") setBox(wholePictureBox())
   }
 
+  // The header (it wraps to two rows in a narrow pane) must never sit on the tablet sheet: the whole tablet maps onto the sheet, so a pen tap
+  // anywhere on it has to reach the sheet and nothing else. The sheet host starts below the header (--camera-top, tablet.css).
+  useLayoutEffect(() => {
+    const element = host.current, header = top.current
+    if (!element || !header) return
+    const measure = (): void => { element.style.setProperty("--camera-top", `${Math.ceil(header.offsetTop + header.offsetHeight + 4)}px`) }
+    measure()
+    if (typeof ResizeObserver === "undefined") return
+    const observer = new ResizeObserver(measure)
+    observer.observe(header)
+    return () => observer.disconnect()
+  }, [tablet])
+
+  // The one red line says it once: it goes by itself, and at the next thing the person does (a stroke, a box, a capture).
+  useEffect(() => {
+    if (!trouble) return
+    const timer = window.setTimeout(() => setTrouble(null), 6000)
+    return () => window.clearTimeout(timer)
+  }, [trouble])
+  useEffect(() => { setTrouble(null) }, [box])
+
   // MARK: what the pane says when there is no picture
 
   const problem = stream.problem ?? (off ? idleProblem() : null)
   const showPlaceholder = !tablet && (off || stream.status === "failed")
   const starting = !tablet && !off && stream.status === "starting"
 
-  const choose = (id: string) => onPickSource?.(id)
+  const choose = (id: string) => { onPickSource?.(id); setAttempt((was) => was + 1) }
 
   return (
     <div className={`camera${zooming ? " zooming" : ""}`} ref={host}
@@ -501,9 +540,8 @@ export function CameraPane({
       {tablet
         ? (
           <TabletSurface ref={surface} page={sheet} colour={penColour} width={penWidth}
-                         boxTool={boxTool} box={sheetBox}
-                         onBox={(rect, done) => { setSheetBox(rect); if (done) setBoxTool(false) }}
-                         onEdited={() => edited((was) => was + 1)} />
+                         box={sheetBox} onBox={(next) => { setSheetBox(next); setTrouble(null) }}
+                         onEdited={() => { edited((was) => was + 1); setTrouble(null) }} />
         )
         : (
           // The video element is always here (so the stream can be let go of cleanly); it is only SEEN once it is running.
@@ -586,13 +624,8 @@ export function CameraPane({
       )}
       {starting && <div className="starting" aria-label="Starting the camera"><span className="spinner" /></div>}
       {trouble && <div className="trouble">{trouble}</div>}
-      {tablet && areaOpen && (
-        <div className="area-pop" onPointerDown={(event) => event.stopPropagation()}>
-          <TabletAreaHelp />
-        </div>
-      )}
       {/* The corner (turn, zoom, back to the notes) and the bar (take, straighten) share one row, and wrap under each other in a narrow pane. */}
-      <div className="camera-top">
+      <div className="camera-top" ref={top}>
       <div className="camera-corner" onPointerDown={(event) => event.stopPropagation()}>
         {!tablet && (
           <>
@@ -623,10 +656,8 @@ export function CameraPane({
       <div className="camera-bar" onPointerDown={(event) => event.stopPropagation()}>
         {tablet && (
           <>
-            <button className={`icon-button${boxTool ? " on" : ""}`} data-tablet="box"
-                    title="Drag a dashed box over the part to bring in (or hold the pen's side button, or Ctrl, and drag). A tiny drag takes the box away."
-                    onClick={() => setBoxTool((was) => !was)}
-                    style={{ width: "auto", padding: "0 8px", fontSize: 11 }}>Box</button>
+            <PaperMenu />
+            <OrientationSelect compact />
             <button className={`icon-button${pen.eraser ? " on" : ""}`} data-tablet="erase"
                     title="Rub out whole strokes by touching them"
                     onClick={() => setEraser(!pen.eraser)}
@@ -639,24 +670,18 @@ export function CameraPane({
                     title="Wipe the sheet"
                     onClick={() => { surface.current?.clear(); setSheetBox(null) }}
                     style={{ width: "auto", padding: "0 8px", fontSize: 11 }}>Clear</button>
-            <button className={`icon-button${clearAfter ? " on" : ""}`} data-tablet="clear-after"
-                    title="Wipe what was taken from the sheet once it is in the note"
-                    onClick={() => {
-                      const next = !clearAfter
-                      setClearAfter(next)
-                      keepClearAfter(next)
-                    }}
-                    style={{ width: "auto", padding: "0 8px", fontSize: 11 }}>Clear after</button>
-            <OrientationSelect compact />
-            <PenHud feed={feed} onCheck={() => setCheckOpen(true)} />
-            <button className="icon-button" data-tablet="rotate-ink" disabled={sheet.strokes.length === 0}
-                    title="Turn the ink on the sheet a quarter turn clockwise (changing the orientation never moves ink by itself)"
-                    onClick={() => { sheet.rotateInk(1); edited((was) => was + 1) }}
-                    style={{ width: "auto", padding: "0 8px", fontSize: 11 }}>Rotate ink</button>
-            <button className={`icon-button${areaOpen ? " on" : ""}`} data-tablet="area"
-                    title="Which part of the screen is this sheet? For the tablet driver's Mapping settings"
-                    onClick={() => setAreaOpen((was) => !was)}
-                    style={{ width: "auto", padding: "0 8px", fontSize: 11 }}>Area</button>
+            <span className="bring-in" role="group" aria-label="Bring in">
+              <span className="label">Bring in</span>
+              <button className="icon-button" data-capture="ink"
+                      title="Bring the writing in as strokes: the boxed part, or the whole sheet. It leaves the sheet (Undo on the sheet brings it back)."
+                      onClick={() => { void takeTablet("ink") }}
+                      style={{ width: "auto", padding: "0 8px", fontSize: 11 }}>Writing</button>
+              <button className="icon-button" data-capture="page"
+                      title="Bring the sheet in as a picture, paper and all: the boxed part, or the whole sheet (read its words with Aa)"
+                      onClick={() => { void takeTablet("page") }}
+                      style={{ width: "auto", padding: "0 8px", fontSize: 11 }}>Page</button>
+            </span>
+            {penWord && <span className="pen-word" data-tablet="pen-word" title={penWordNote ?? undefined}>{penWord}</span>}
           </>
         )}
         {!tablet && (
@@ -673,14 +698,18 @@ export function CameraPane({
             )}
           </>
         )}
-        <button className="icon-button" data-capture="ink" disabled={!tablet && (!running || busy)}
-                title={tablet ? "Bring the writing in as strokes" : "Take the writing off the page"}
-                onClick={() => { void (tablet ? takeTablet("ink") : take("ink")) }}
-                style={{ width: "auto", padding: "0 8px", fontSize: 11 }}>Writing</button>
-        <button className="icon-button" data-capture="page" disabled={!tablet && (!running || busy)}
-                title={tablet ? "Bring the sheet in as a picture (read its words with Aa)" : "Take the page as a photograph"}
-                onClick={() => { void (tablet ? takeTablet("page") : take("page")) }}
-                style={{ width: "auto", padding: "0 8px", fontSize: 11 }}>Page</button>
+        {!tablet && (
+          <>
+            <button className="icon-button" data-capture="ink" disabled={!running || busy}
+                    title="Take the writing off the page"
+                    onClick={() => { void take("ink") }}
+                    style={{ width: "auto", padding: "0 8px", fontSize: 11 }}>Writing</button>
+            <button className="icon-button" data-capture="page" disabled={!running || busy}
+                    title="Take the page as a photograph"
+                    onClick={() => { void take("page") }}
+                    style={{ width: "auto", padding: "0 8px", fontSize: 11 }}>Page</button>
+          </>
+        )}
         {!tablet && (
           <button className="icon-button" data-capture="raw" disabled={!running || busy}
                   title="Take the raw picture, exactly as the camera sees it: no page found, nothing squared"
@@ -697,10 +726,8 @@ export function CameraPane({
           changes what the user does. Everything else the platform cannot
           do is simply not offered.
         */}
-        {tablet && feed.capturing
-          ? "Pen capture: the whole tablet is this sheet. Esc or Ctrl+Alt+G lets go. (Wacom's own Mapping ▸ Portion of screen does the same with no app — see Area.)"
-          : tablet
-          ? `Write with the pen${pen.eraser ? " — erasing" : pen.sideButton === "erases" ? " (side button erases)" : ""}, then take it.`
+        {tablet
+          ? (pen.eraser ? "Erasing: touch a stroke." : "The pen writes. Drag the mouse to box a part, then Bring in.")
           : straighten
             ? "Drag the four corners onto the page's corners, then take it."
             : platform && !platform.findsThePage

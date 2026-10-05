@@ -8,7 +8,7 @@
  *    perfectly still pen sends nothing and must not be "lifted" mid-stroke). Exactly ONE leave sample per visit.
  *  - RateMeter: samples per second over the last 2 s of flow, and the 95th percentile gap between consecutive samples.
  *
- * Pure: no Node, no Electron, no koffi (the WebHID helper page bundles this file for the browser). Timers are injected.
+ * Pure: no Node, no Electron, no koffi. Timers are injected.
  */
 
 import { LIVENESS, type PenSample } from "../../shared/pen"

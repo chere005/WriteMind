@@ -143,9 +143,8 @@ is how the code is put together.
   accuracy an English-first reading gives it. What comes back is markdown —
   a word with a line through it arrives struck out, a word with a ring round
   it in bold, a drawn arrow as →, and a line of algebra as this app's maths,
-  raised digits and all. The picture itself is put away rather than deleted,
-  and the Revert button on the bar brings it back and takes the words out
-  again.
+  raised digits and all. The picture itself stays (the words go in just under it);
+  Undo takes the words back out.
 - **A flow chart sketched on paper comes in as a flow chart.** Reading a
   picture that holds one brings the boxes in as nodes — rectangles, rounded
   rectangles, ovals, diamonds, triangles and parallelograms — with the

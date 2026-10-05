@@ -18,7 +18,7 @@ press would run twice. Each command names its owner instead:
 |---|---|---|
 | `editor` | CodeMirror's keymap (`packages/editor/src/keys.ts`, `extras.ts`). The page stands down because the key arrives `defaultPrevented`. | the Format menu, Select Next / All Occurrences, Code Block |
 | `history` | `useUndo` (the words and the drawing share one Undo) | Undo, Redo |
-| `page` | `useChrome` in the page | File, View, Insert, Undo/Redo Drawing, Expand Selection, Input Devices (incl. Grab Tablet to Sheet) |
+| `page` | `useChrome` in the page | File, View, Insert, Undo/Redo Drawing, Expand Selection, Input Devices |
 | `main` | `useChrome`, which hands it to the main process (dialogs, the project file) | Project menu |
 
 A **menu click** sends `menu:command` to the page (or runs in the main process
@@ -70,7 +70,6 @@ accelerators and collide with Merge Cells, Close Tab and Insert Image. The test
 | Code Block | ⌘8 | Ctrl+8 |
 | Maths… (port-only key; the Mac opens it from the bar) | — | Ctrl+Shift+M |
 | Refresh Device List | ⌥⌘R | Ctrl+Alt+R |
-| Grab Tablet to Sheet — on / off (port-only) | — | Ctrl+Alt+G |
 
 Notes, so nobody "fixes" them:
 
@@ -149,19 +148,15 @@ There is no full-screen mode of any kind. The old **Pad mode** (Ctrl+Alt+T, Inpu
 (Full Screen), the **Pad** button, the pen's "Tablet pad" ExpressKey suggestion) was removed on 2026-10-03,
 and so was View ▸ Toggle Full Screen. F11 / Win+Shift+Enter / a title-bar full-screen button do nothing: the
 window is created with `fullscreenable: false`. Ctrl+Alt+T is unassigned. If your Wacom ExpressKey still
-types it, nothing happens; remap it to Grab (Ctrl+Alt+G) or Send Writing (Ctrl+Alt+W).
+types it, nothing happens; remap it to Send Writing (Ctrl+Alt+W).
 
-## Grab (the whole tablet is the sheet, notes still visible)
+## The pen on the Tablet sheet (the whole tablet is the sheet, notes still visible)
 
-- On by default whenever the **Tablet** source is showing and WriteMind is the window in front. The
-  **Grab: on/off** switch in the sheet pane header (and **Ctrl+Alt+G**, Input Devices ▸ Grab Tablet to
-  Sheet) turns it off for good, or back on.
-- **Esc** (in the notes window), **Ctrl+Alt+G** (a global key while grabbed, so an ExpressKey can type
-  it) or the strip's **Exit** let go until you come back to the window or press Grab again. Putting
-  another window in front, minimising, switching to a camera, hiding the pane or quitting also lets go.
-- The overlay's strip (Send Writing, Send Page, Box, Erase, Undo, Clear, colours, width, orientation,
-  Rotate ink, Exit) comes down when the pen hovers ~0.4 s at the sheet's top edge.
-- **Tablet orientation** dropdown (sheet pane header, Pen popover): Match screen / Landscape
+- Automatic whenever the **Tablet** source is showing and WriteMind is the window in front: Wintab (the driver's own interface) feeds the
+  sheet, or, if Wintab is not delivering, the window's own pen events. No overlay, no hook, no mouse clip; the mouse keeps working.
+- **Esc** never lets go of the tablet: on the sheet it only clears the dashed box (or closes a menu). Putting another window in front,
+  minimising, switching to a camera, hiding the pane or quitting lets go.
+- **Tablet orientation** dropdown (sheet pane header, Pen popover): Match tablet / Landscape
   (0°) / Portrait (90° clockwise) / Landscape flipped (180°) / Portrait flipped (270°), remembered.
 
 ## Pen buttons and ExpressKeys (port-only)

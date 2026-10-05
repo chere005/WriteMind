@@ -268,6 +268,17 @@ export function Canvas({
     onChange(next)
   }, [drawing, size, onChange])
 
+  // The pen / cursor mode changing, or a tool being armed, puts the layer's pick, crop box, style bar and label
+  // away (the Mac does the same): the handles of a picked shape no longer stay up once the pen goes down.
+  const toolArmed_ = placing !== null
+  const modeSeen = useRef({ mode, armed: toolArmed_ })
+  useEffect(() => {
+    const was = modeSeen.current
+    modeSeen.current = { mode, armed: toolArmed_ }
+    if (was.mode === mode && (was.armed || !toolArmed_)) return
+    setSelection(new Set()); setCrop(null); setStyling(false); setLabelling(null)
+  }, [mode, toolArmed_])
+
   useEffect(() => { onSelectionChanged?.(selection.size) }, [selection, onSelectionChanged])
   useEffect(() => { if (selection.size === 0) setStyling(false) }, [selection])
 
@@ -523,7 +534,10 @@ export function Canvas({
   }, [])
 
   const change = useCallback((next: Drawing) => {
-    history.record(latest.current.drawing)
+    // An edit that changed nothing (a delete of ids that are gone) is no edit: no phantom undo step, and Redo lives.
+    const held = latest.current.drawing
+    if (next === held || (next.items.length === held.items.length && next.items.every((item, i) => item === held.items[i]))) return
+    history.record(held)
     publish(next)
   }, [history, publish])
 
@@ -1131,6 +1145,8 @@ export function Canvas({
         inNotebook: target instanceof HTMLElement && target.isContentEditable,
         picked: picked.size > 0 && shown !== null,
         cropOpen: cropping !== null,
+        textSelected: target instanceof HTMLElement && target.isContentEditable
+          && window.getSelection()?.isCollapsed === false,
       })
       if (!verdict) return
       if (verdict.take === "letGo") { setSelection(new Set()); return }

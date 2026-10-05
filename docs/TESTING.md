@@ -23,7 +23,7 @@ npm run e2e:list                       what there is
 npm run e2e -- --snapshot              test a COPY of the build taken now (use this when anyone else may rebuild)
 npm run e2e -- --port 9416             use exactly this debugging port (default: any free one)
 npm run e2e -- --file some/script.mjs  one script from anywhere, on a fresh instance
-npm run e2e -- --desktop               also the desktop suites (grab: injects OS input, moves the real mouse)
+npm run e2e -- --desktop               also the desktop suites (a suite that injects OS input and moves the real mouse)
 npm run e2e -- --keep --no-retry --fail-fast --repeat 3 --grep seams --script-timeout 90 --suite-timeout 600
 ```
 
@@ -40,7 +40,7 @@ against it, each as its own node process:
 * temp **profile** (`--user-data-dir`) and temp **notes folder** (`WRITEMIND_NOTES`) under the OS temp dir, so nothing
   of the person's own WriteMind or notes is ever touched; both are deleted afterwards (`--keep` keeps them);
 * `WRITEMIND_OFFSCREEN=1` (the window opens at -32000,-32000, never takes focus, never full screen) and
-  `WRITEMIND_E2E=1` (the menu / window / dialog / grab hooks `window.wm.e2e*`);
+  `WRITEMIND_E2E=1` (the menu / window / dialog hooks `window.wm.e2e*`);
 * the occlusion flags (`CalculateNativeWinOcclusion`, `disable-renderer-backgrounding`,
   `disable-backgrounding-occluded-windows`) that keep an offscreen window painting — CodeMirror's layers go stale
   without them;
@@ -66,7 +66,6 @@ against it, each as its own node process:
 | `tablet` | the tablet sheet as the video source: writing, box, chart, page, undo, erase, pen buttons on the sheet |
 | `chrome` | the three bars and their groups, one-press-one-action keys, the application menu, edit mode, projects |
 | `perf` | typing / scroll / pen frame times on a long note (generous limits; numbers are printed as notes) |
-| `grab` | **desktop**: the overlay over the display, injected pen / mouse, the mode machine, exits, orientation. Needs `--desktop` |
 
 Each suite folder has an optional `suite.json`:
 
@@ -115,7 +114,7 @@ The harness (`e2e/lib/harness.mjs`; the CDP client is `lib/cdp.mjs`, instance co
 * app: `freshNote`, `openNote`, `reloadApp`, `restartApp`, `seedNotes`, `resetNotes`, `writeNoteFile`, `readNoteFile`,
   `closeAllTabs`, `setPen`, `arm` (Shapes / Marks menu), `handles`, `saved(file)` (the drawing sidecar), `canvasBox`,
   `menu`, `menuClick`, `pickNext` (answer to the next native dialog), `windowInfo`, `showVideoPane`, `pickTablet`,
-  `pickCamera`, `noGrab`, `guardClipboard`
+  `pickCamera`, `guardClipboard`
 * DOM: `js`, `send`, `press(selector)` (synthetic click), `clickEl`, `centerOf`, `rectOf`, `pick`, `setSelect`,
   `setInput`, `waitFor`, `until`
 
@@ -135,10 +134,6 @@ git-ignored). With `WM_PORT` alone the notes folder is read from the app and scr
 * **Hover is `pointerenter`, and a synthetic `PointerEvent` does not produce one.** Features that depend on "the pen is
   over the sheet" (Ctrl+Z over the sheet, a button tap on the sheet) need a real move first:
   `hover(x, y, { pen: true })`.
-* **Grab must be off** for anything that shows the tablet sheet unless it is a desktop test. With Grab on (the app's
-  default), the app puts a transparent overlay over the display and routes the pen through it; synthetic in-page pen
-  events stop reaching the sheet once it starts, and a window is left over the person's screen. `noGrab()` sets
-  `writemind.grabAuto=false` and reloads.
 * **The window is set to 1440x900** (offscreen) when the harness loads, so layout and coordinates are the same every
   run. Do not hard-code points that depend on the viewport; derive them from `rectOf` / `brackets()` / `lineBoxes()`.
   A click at the far right of a line lands on the cell brackets, not the text.
@@ -158,10 +153,7 @@ git-ignored). With `WM_PORT` alone the notes folder is read from the app and scr
 
 ## The desktop suites
 
-`e2e/suites/grab` tests the GRAB overlay against the real desktop: it needs the window on screen, injects a synthetic
-Windows Ink pen and mouse input with `e2e/lib/inject.ps1` (SendInput-level; positions are given on a 1920x1200 reference
-display and scaled), and the app puts a transparent window over the display. It is skipped unless `--desktop`. Leave the
-mouse alone while it runs; afterwards check `GetClipCursor` and that no electron is left (the runner does the latter).
+There are none at the moment (the `grab` suite went with the overlay it tested). `--desktop` still exists for a suite that marks itself `desktop`.
 
 ## Moving other people's scripts in
 

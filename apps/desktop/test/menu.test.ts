@@ -121,13 +121,13 @@ describe("the application menu is the Mac's", () => {
 
   it("Input Devices: the cameras with a tick on the live one, the Tablet source, Turn Camera Off, Refresh", () => {
     const none = sub(menu(), "Input Devices")
-    expect(labels(none)).toEqual(["No cameras found", "-", "Tablet", "Grab Tablet to Sheet", "-", "Turn Camera Off", "Refresh Device List"])
-    expect(none[5]!.enabled).toBe(false)
+    expect(labels(none)).toEqual(["No cameras found", "-", "Tablet", "-", "Turn Camera Off", "Refresh Device List"])
+    expect(none[4]!.enabled).toBe(false)
     const some = sub(menu({ cameras: [{ id: "x", name: "Desk" }, { id: "y", name: "Phone" }], cameraId: "y" }),
       "Input Devices")
-    expect(labels(some)).toEqual(["Desk", "Phone", "-", "Tablet", "Grab Tablet to Sheet", "-", "Turn Camera Off", "Refresh Device List"])
-    expect(some.map((one) => one.checked)).toEqual([false, true, undefined, false, undefined, undefined, undefined, undefined])
-    expect(some[6]!.enabled).toBe(true)
+    expect(labels(some)).toEqual(["Desk", "Phone", "-", "Tablet", "-", "Turn Camera Off", "Refresh Device List"])
+    expect(some.map((one) => one.checked)).toEqual([false, true, undefined, false, undefined, undefined, undefined])
+    expect(some[5]!.enabled).toBe(true)
   })
 
   it("NOTHING goes full screen: no menu item, no role, no Ctrl+Alt+T command (Sean never asked for it)", () => {

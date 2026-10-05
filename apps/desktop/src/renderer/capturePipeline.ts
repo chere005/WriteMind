@@ -34,16 +34,19 @@ export interface Corners {
 const length = (a: { x: number; y: number }, b: { x: number; y: number }) =>
   Math.hypot(a.x - b.x, a.y - b.y)
 
+/** No page is longer than this many times its width: a thin quad would otherwise ask for a picture of that many megapixels. */
+const MAXIMUM_RATIO = 4
+
 /** Long side over short side of the page the corners enclose, and whether it stands upright. */
 export function measuredPage(corners: Corners, frame: Size): { ratio: number; portrait: boolean } {
   // The pinhole estimate first: the lengths of the edges of a TILTED page are
   // not its shape. Edge lengths are what is left when there is no perspective.
   const aspect = pageAspect(corners, frame)
-  if (aspect !== null) return { ratio: Math.max(aspect, 1 / aspect), portrait: aspect <= 1 }
+  if (aspect !== null) return { ratio: Math.min(MAXIMUM_RATIO, Math.max(aspect, 1 / aspect)), portrait: aspect <= 1 }
   const across = (length(corners.topLeft, corners.topRight) + length(corners.bottomLeft, corners.bottomRight)) / 2
   const down = (length(corners.topLeft, corners.bottomLeft) + length(corners.topRight, corners.bottomRight)) / 2
   return {
-    ratio: Math.max(across, down) / Math.max(1, Math.min(across, down)),
+    ratio: Math.min(MAXIMUM_RATIO, Math.max(across, down) / Math.max(1, Math.min(across, down))),
     portrait: down >= across,
   }
 }
@@ -105,8 +108,8 @@ const READING_SIDE = 1200
  * in `landing` (a band under the picture they were read from).
  */
 export function chartFrom(cut: CanvasImageSource, cutSize: Size, words: FlowWord[],
-  pane: Size, colourHex: string, lineWidth: number, landing: Rect | null): CanvasItem[] {
-  return chartOnInk(readingInk(cut, cutSize), words, pane, colourHex, lineWidth, landing)
+  pane: Size, colourHex: string, lineWidth: number, landing: Rect | null, keepEdges = false): CanvasItem[] {
+  return chartOnInk(readingInk(cut, cutSize, keepEdges), words, pane, colourHex, lineWidth, landing)
 }
 
 /** The writing of a picture as the chart reader sees it: lifted off the paper at a size the reading is quick at. */
@@ -140,14 +143,19 @@ function shrunk(source: CanvasImageSource, from: Size, w: number, h: number): HT
   return out
 }
 
-function readingInk(cut: CanvasImageSource, cutSize: Size): ReadingInk {
+/**
+ * `keepEdges`: the picture is the tablet's sheet drawn on white, which has no page edge in it. A chart drawn across the
+ * sheet is one connected mark nearly as wide as the sheet, which the camera's "mark across the page is its edge" rule
+ * would throw away (the whole chart read as nothing).
+ */
+function readingInk(cut: CanvasImageSource, cutSize: Size, keepEdges = false): ReadingInk {
   const scale = Math.min(1, READING_SIDE / Math.max(cutSize.width, cutSize.height))
   const w = Math.max(9, Math.round(cutSize.width * scale))
   const h = Math.max(9, Math.round(cutSize.height * scale))
   const small = shrunk(cut, cutSize, w, h)
   const context = small.getContext("2d", { willReadFrequently: true })!
   const gray = grayOf(context.getImageData(0, 0, w, h).data, w * h)
-  return { mask: inkMask(gray, w, h), w, h, scale }
+  return { mask: inkMask(gray, w, h, { keepEdges }), w, h, scale }
 }
 
 function chartOnInk(ink: ReadingInk, words: FlowWord[], pane: Size, colourHex: string, lineWidth: number,
@@ -186,8 +194,8 @@ function canvasOf(cut: CanvasImageSource, size: Size): HTMLCanvasElement {
  * what this was before.
  */
 export async function chartFromLabelled(cut: CanvasImageSource, cutSize: Size, pane: Size, colourHex: string,
-  lineWidth: number, landing: Rect | null, labels: LabelReader | null): Promise<CanvasItem[]> {
-  const ink = readingInk(cut, cutSize)
+  lineWidth: number, landing: Rect | null, labels: LabelReader | null, keepEdges = false): Promise<CanvasItem[]> {
+  const ink = readingInk(cut, cutSize, keepEdges)
   // No closed outline of a box's size: not a chart, and no reader is asked.
   if (!mayHoldChart(ink.mask, ink.w, ink.h)) return []
   let words: FlowWord[] = []
@@ -228,7 +236,7 @@ export function sheetChart(strokes: InkStroke[], pageSize: Size, region: Rect, f
   const margin = Math.round(Math.min(region.width, region.height) * 0.04) + 8
   const reading = renderSheet(strokes, pageSize, region, scale, "#000", margin)
   const found = chartFrom(reading, { width: reading.width, height: reading.height }, [], pane,
-    colourHex, lineWidth, null)
+    colourHex, lineWidth, null, true)
   if (found.length === 0 || !landing) return found
   const fw = Math.max(1, frame.width), fh = Math.max(1, frame.height)
   return placeFlowItems(found, {
@@ -246,7 +254,7 @@ export async function sheetChartLabelled(strokes: InkStroke[], pageSize: Size, r
   const margin = Math.round(Math.min(region.width, region.height) * 0.04) + 8
   const reading = renderSheet(strokes, pageSize, region, scale, "#000", margin)
   const found = await chartFromLabelled(reading, { width: reading.width, height: reading.height }, pane,
-    colourHex, lineWidth, null, labels)
+    colourHex, lineWidth, null, labels, true)
   if (found.length === 0 || !landing) return found
   const fw = Math.max(1, frame.width), fh = Math.max(1, frame.height)
   return placeFlowItems(found, {

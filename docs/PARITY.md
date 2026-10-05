@@ -111,29 +111,26 @@ highlighted and `<a id>` anchors are dropped where the Mac prints them as litera
 
 Not done / not verifiable here: the note row's date under the title (the Mac shows "Oct 3 · snippet"); a section row that is SELECTED
 (decides where the next note goes — here the open note's folder does); a real change of display scale while running (checked by
-device-metrics emulation, not by dragging the window between monitors); the real title bar's dark mode. A red "Cannot read properties
-of null (reading 'getBoundingClientRect')" bar appears when the last tab closes: `Canvas.tsx` `measure()` runs from its ResizeObserver
-after its host is gone (a `?.` fixes it; drawing lane).
+device-metrics emulation, not by dragging the window between monitors); the real title bar's dark mode. (The red `getBoundingClientRect` bar on closing the last tab is fixed: `measure()` guards its host; `agents/e2e/fix-projects/closeflush.mjs`.)
 
 ## The tablet as a source for the video pane (port-only)
 
 The Mac has a document camera; a Windows tablet has a pen. **Input Devices ▸
 Tablet** (also the video chevron in the sidebar; remembered, `camera:tablet`)
-swaps the camera feed for a dotted sheet written on with the pen.
+swaps the camera feed for a sheet of paper (dot grid by default) written on with the pen.
 
 | Camera feature | On the tablet |
 |---|---|
 | Writing button | the pen's own **stroke items** (with pressures), placed where the box was at the learned page scale. Not re-traced: nothing is lost to a threshold. |
 | Page button | the sheet rendered as a picture (the "Aa" reader works on it where an OCR exists, and is simply absent otherwise) |
-| Dashed box | **Box** button (one-shot), the pen's side button, or Ctrl-drag; strokes crossing the edge are cut |
+| Dashed box | the **mouse** drags it (the pen writes, the mouse never inks); drag inside moves it, corner handles resize it, Esc or a click outside clears it, a double click boxes the whole sheet (the Mac's `boxAction`); the pen's side button (Select) boxes too; strokes crossing the edge are cut |
 | Flow-chart reader | reads a black-on-white raster of the same ink; nodes/arrows land under the capture (same `flowChartItems` / `placeFlowItems`) |
 | Learned page shape / placement | the same `resolveShape` / `placement` (the sheet is the frame; no page-finding) |
 | One Ctrl+Z | takes back strokes + chart together (same `editDrawing`) |
 | Straighten | hidden (nothing to square up) |
 | Auto-send after idle | **not built** |
 
-Sheet extras: Undo (Ctrl+Z while the pen is over the pane), Erase, Clear,
-"Clear after" (what was sent leaves the sheet; default on). The sheet is kept
+Sheet header (quiet): **Paper ▾**, Orientation, Erase, Undo (Ctrl+Z while the pen is over the pane), Clear, **Bring in: Writing | Page**, and the pen's one status word. Writing takes the brought-in region off the sheet (one Undo brings it back); Page leaves the sheet. **Paper** (`tabletPaper.ts`, remembered in localStorage): Blank, Dot grid, Lines, Grid, Isometric dots, Cornell notes; Small / Medium / Large; White / Cream / Dark (on Dark the default blue and the black preset are lifted, any chosen colour is shown as chosen). The paper is a background canvas under the ink, never ink data: Page includes it, Writing and the flow-chart reader never see it. **The Mac has no paper chooser** (its dotted notebook is the physical paper the camera recognises, `NotebookCapture.swift`), so this list is a sensible standard set pending the Mac's real list. Evidence: `test/sheetBoxPaper.test.ts`, `agents/e2e/wr-sheet/sheet.mjs`. The sheet is kept
 when the pane is put away. Known approximation (shared with the camera): a
 chart is fitted into the band under the capture, so it can come out a little
 smaller than the strokes it was read from.
@@ -148,6 +145,25 @@ hover events and the press-and-hold context menu are not delivered for the pen;
 strokes keep going past the window edge (pointer capture). If the arrow still
 shows: Wacom Properties ▸ Mapping ▸ turn off Mouse mode. Not detected
 automatically.
+
+## Pen demolition (wr-demolish, 2026-10-04): what the app does now, and what the sections below no longer describe
+
+Sean's verdict on the Grab / overlay / capture-wizard build: a regression. Everything below about the **overlay, sink, Grab, the setup check, the HUD / chip text, the sheet strip and reach hint, Show area, the guard / lease / clip / sweep / panic / containment, Raw Input, WebHID and the trace UI is HISTORY: that code is deleted.** What is left, and verified:
+
+| Piece | Status | Evidence |
+|---|---|---|
+| The app creates NO window except the main one (no overlay, sink, helper page, hook, ClipCursor) | verified | offscreen instance: `EnumWindows` over the process tree = one visible window (WriteMind), the rest Chromium's hidden internals; CDP targets = 1 page; `GetClipCursor` = the whole screen (`agents/e2e/wr-demolish/windows.ps1`) |
+| Wintab DATA backend (reads the tablet, moves nothing) while the Tablet sheet is open and the window is in front; the context is closed otherwise | verified on this machine's real Wacom driver (context opened, closed on capture off, `pen.log` written); real PACKETS not re-verified this round | `WRITEMIND_PEN_NATIVE=1`, `agents/e2e/wr-demolish/native.mjs`; Wintab decoder: `test/pen/wintab*.test.ts` (real CTL-472 trace fixture) |
+| **No Wintab (other brands, driver missing): the window's own pen events drive the sheet exactly as before** (wr-wacom-core: the `dom` backend and its `pen:dom` round trip are DELETED; the gate swallows the pen's DOM events ONLY while the native feed is live, never cuts a DOM contact already down, and gives the pen back the moment the feed stops); the sheet says nothing | verified (fake feed) | `test/penGate.test.ts`; `agents/e2e/wacom/core.mjs` ("DOM pen events ignored while the feed is live, honoured when it stops") |
+| One quiet status string (`FeedStatus.text`: "Pen: tablet, mapped to sheet" / "Pen: tablet" / "Pen: window pointer" / "Pen: none"; one `status` line per change in `pen.log`), hook `renderer/penWord.ts` (empty unless a tablet is known) | shown quietly in the sheet header (`data-tablet=pen-word`) | `test/penManager.test.ts` |
+| Pen popover = pen always draws, pressure, button actions, orientation | built | `e2e/suites/pen`, `tablet` pass |
+| `pen.log` (transitions, errors, first 50 raw packets per session) and a small `pen-state.json` (capture on/off, the frame chosen per device) | built | `main/pen/log.ts`, `state.ts` |
+| **Orientation: set by the Orientation menu alone, nothing calibrated** (2026-10-05). The device frame follows from Wintab's extents (`frame.ts` `defaultFrame`): the CTL-472 reports PORTRAIT (9499 x 15199), so it is turned a quarter, y read up as Wintab says ({turn 1, flipY}). Checked on the real tablet in Portrait (flipped): 1 2 / 3 4 written in its corners land in the sheet's corners (a frame without the y flip had mirrored them top-to-bottom, which no orientation can undo; the morning's two-touch calibration had chosen that mirrored frame because the tablet lay in portrait). The pen inks from the first touch; the sheet is landscape, the tablet's own shape (1.6); Landscape / Landscape (flipped) / Portrait / Portrait (flipped) turn it. The two-touch calibration and Reset calibration are gone | unit-tested with Sean's 1 2 / 3 4 corners (`wintab.test.ts`); **needs Sean's pen to confirm in Landscape too** | `test/pen/frame.test.ts`, `test/pen/wintab.test.ts`, `test/penManager.test.ts` |
+| Pressure by the context's real axis (WTInfo `DVC_NPRESSURE`, 32767 here; the real trace peaks at 20521 = 0.63), contact with a small hysteresis (tip button, or 1% down / 0.4% up), samples batched at 8 ms | built | `test/pen/wintab.test.ts` |
+| **System mapping** (`main/pen/mapping.ts`): a second Wintab context (CXO_SYSTEM, lcSysOrg/Ext = the sheet in PHYSICAL pixels via `screen.dipToScreenRect`) opened only while the pen is in range over a visible, unturned sheet with the window in front, VERIFIED within ~2 s of motion (the polled system cursor must stay inside the sheet and track the pen), then watched; any doubt / pen out of range / blur / sheet closed / quit / error => WTClose at once, "refused" remembered per device (Retry in the Pen popover forgets it); no-op without koffi / wintab32 | **unit-tested with a FAKE native layer and a FAKE cursor only (26 tests); never run against a moving pen. Whether Wacom's driver honours it on the CTL-472 is UNKNOWN** | `test/pen/mapping.test.ts`, `test/penManager.test.ts` |
+| Mouse drags a dashed box on the sheet (selects a section to bring in), pen never a mouse | built (wr-sheet-ux) | `test/sheetBoxPaper.test.ts`, `agents/e2e/wr-sheet/sheet.mjs` |
+
+Files now: `main/pen/{backendCore,batcher,fake,frame,ipc,log,manager,mapping,state,subsystem,types,win32,winmsg,wintab,wintabBackend,wintabNative}.ts`; renderer `penFeed, usePenFeed, penGate, penGateBoot, penCursor, penButtons, penActions, penLive, penSettings, penWord, PenMenu, OrientationSelect, orientation, TabletSurface, tabletPage, tabletCapture, tabletFocus`; shared `pen, penEvents, orientation`. `WintabSystemBackend` is the system context's carrier, started only by `mapping.ts` (no guard process: contexts are closed by `closeAllWintab` on before-quit / will-quit / window closed / exit / uncaughtException / render-process-gone and recovered from the journal after a hard kill).
 
 ### Pen position source: WebHID spike (wspike-webhid, 2026-10-03; nothing in the app changed)
 
@@ -501,7 +517,7 @@ reading a fixture), and the e2e scripts in `C:\CLAUDIO\agents\e2e\ocr\` (`aa.mjs
 | Feature | Status |
 |---|---|
 | A reader on Windows: `Windows.Media.Ocr` through `helpers/wm-ocr.ps1`, no install for the profile's languages; capability = a probe that works (`readerFor`); order Vision, Windows, tesseract | built; `capabilities.ocrEngine` / `japaneseOCR` say which and whether Japanese |
-| Aa handle on a picture, Windows: lines in reading order, a dot grid painted out first, put in the note as a cell, picture put away | built, e2e (Arial / Times / Courier / Segoe Print, 4 lines in ~0.1-0.5 s) |
+| Aa handle on a picture, Windows: lines in reading order, a dot grid painted out first, put in the note as a cell UNDER the picture, the picture stays (the Swift `readText`; was: at the caret, picture hidden), a "Reading..." / "Read N lines" / "No text could be read in that picture." line in the footer, the result dropped (reader aborted) if another note is opened meanwhile, the prepared upright canvas always sent (EXIF-turned photos and transparent PNGs read) | built, e2e (Arial / Times / Courier / Segoe Print, 4 lines in ~0.1-0.5 s) |
 | ...a word with a line through it as `~~struck~~`, a ringed word as `**bold**`, a drawn arrow as `→` (inline between two readings, or on a line of its own), a box at the head of a line as `- [ ]` / `- [x]`, a line of algebra as `` `wl:...` `` | built (ported `HandwritingMarks` + `TextRecognition.compose`), e2e on drawn pictures |
 | Japanese: Japanese first when installed and kept only if it found any, per-character words put back together, no spaces between kana/kanji | built, **UNVERIFIED on a real engine** (this Windows has no Japanese OCR; `ocr.test.ts` draws a Japanese picture and reads it on a machine that has it) |
 | Raised digits become powers (`x2` to `x^2`) | not on Windows: the engine gives no per-character boxes (`superscripted` is ported and tested for readers that do) |
@@ -712,3 +728,74 @@ list" and the checks after it read the wrong rows (the files do move; the script
 of the instance, not by a power cut or a Windows shutdown. Spell check was checked as the attributes Chromium needs (`spellcheck` on the content, off on
 code), not as red wavy lines on a screenshot (an offscreen Chromium has no dictionary to show). A real IME, a real clipboard (the checks dispatch a
 `ClipboardEvent` with a DataTransfer) and a file dragged from Explorer were not tried.
+
+## Drawing lane, round 2 (fix-drawing, 2026-10-04)
+
+| Item | Status | Evidence |
+|---|---|---|
+| Verifier issues from the Drawing lane list (Backspace/Delete also eating a letter, stale pick/crop swallowing keys, palette lines attached, Enter confirms a crop, label Escape flag, total `readDrawing` + unknown shape kinds, pointer ownership, burst after Undo, eraser between samples) | already fixed by the earlier lane fixer, re-checked in the code | `layerKeys.test.ts`, `drawingFix1.test.ts`, `drawingBurst.test.ts`, `e2e/suites/drawing/06-keys.mjs` (55 pass) |
+| Ctrl+C / Ctrl+X with WORDS selected in the note are the words' (the pick is let go); a caret only still copies/cuts the objects | fixed (new) | `layerKeys.test.ts`, `07-mode-and-copy.mjs` |
+| Pen / cursor mode change, or arming a tool, puts away the pick, crop box, style bar and label (Mac) | fixed (new) | `07-mode-and-copy.mjs` |
+| An edit that changes nothing (delete of ids already gone) records no undo step | fixed (new) | `07-mode-and-copy.mjs` |
+
+## Projects and chrome, round 2 (fix-projects, 2026-10-04)
+
+The verifier lists for this lane (Projectsandchromelane) were already closed in earlier passes; this pass re-checked each HIGH/MEDIUM against the code and re-proved the data-loss ones on a rebuilt app.
+
+| Issue | Status | Evidence |
+|---|---|---|
+| Typing then closing the ONLY tab at once is on disk (`closeWhere` → `flushNow`) | fixed | `agents/e2e/fix-projects/closeflush.mjs` A |
+| Typing then closing the WINDOW (WM_CLOSE) at once is on disk (main asks the page to flush and waits for `app:flushed`, 2 s cap) | fixed; PARITY line about beforeunload alone is superseded | `closeflush.mjs` B |
+| No red error bar after the last tab closes | fixed | `closeflush.mjs` C |
+| Atomic note/sidecar/order writes, bounded file opens, readable rename names, section-trash only on nested folders, sections open by default, UI state remembered, project-folder watcher (deleted/unplugged folder), session writes queued, PDF cell pitch, Mac .pdf pictures, nested project folders | already fixed (earlier fixer) | `atomic/fileNames/watcher/projectSave/sidebarNested/chromeFixes/pdfPicture.test.ts` |
+| Flaky unit test "a duplicate gets a copy … sits right after the original" (relied on two files written in the same clock tick) | fixed: mtimes set explicitly | `notes.test.ts` |
+
+## Pen capture backends, finishing pass (wfin-core, 2026-10-04)
+
+| Item | Status | Evidence |
+|---|---|---|
+| Native backends (Wintab data context, Raw Input, WebHID) start with the REAL drivers on this machine under `WRITEMIND_E2E=1 WRITEMIND_PEN_NATIVE=1` | verified to **armed** (real descriptors of the CTL-472 read, Wintab context opened with the real `wintab32.dll`, vendor heartbeat seen). **No pen moved: no packet decoded from real hardware.** | `agents/e2e/wacom/wfin-core-start.mjs` (PASS: all armed, nothing contained, clip free, everything idle after close) |
+| Round-2 pen fixes: the setup check runs while capture is off / after Esc; trace switch really stops smp/dom/cur and a session record is written; an unplugged tablet reads "Pen: no tablet"; Pen menu's Tablet setup check brings the Tablet source up; panic chip says how to resume; closing the notes window destroys the opt-in sink; verdict advice names only controls that exist | unit-tested (penManager, trace, env, overlay, check tests); renderer wiring not e2e-run | `penManager.test.ts`, `trace.test.ts` |
+| Default never covers the display or touches the cursor: one visible window (offscreen), no clip, sink overlay only with `WRITEMIND_PEN_SINK=1` | verified | window enumeration of the instance's processes; second-process `Cursor.Clip` = whole screen |
+| Release on every path (clip, guard, lease, sweep, kill -9 of app and of guard) | verified with real processes: 75 PASS, final `GetClipCursor` free from koffi and from an independent PowerShell | `node apps/desktop/scripts/pen-guard-proof.mjs` |
+| Wintab context after kill -9 of the app is closed by `recoverStaleContexts` at the next Wintab start (name carries the dead pid) | verified on the real driver (`recovered-contexts closed:1`) | trace of the test instance |
+| Pointer-range witness + `listPointerDevices` (were stubs) | implemented; the list reproduces the design's measured values (CTL-472 INTEGRATED_PEN/EXTERNAL_PEN 15201 x 9501 himetric -> whole display; synthetic `Microsoft HID RID` flagged). The witness registers and unregisters cleanly; **an in-range message from the real pen is unverified** | `test/pen/pointerRange.test.ts` |
+| Manager: a backend that is already live now asks to take over on every sample (a thin hover window never blocked the upgrade); Raw Input `stop()` hands over what it had batched | fixed (unit tests that were red) | `penManager.test.ts`, `pen/rawinputBackend.test.ts` |
+
+## Camera and capture, second round (fix-camera, 2026-10-04)
+
+| Feature | Status | Evidence |
+|---|---|---|
+| A flow chart drawn right across the tablet sheet (one mark over 85% of the width) is read (the camera's "mark across the page = page edge" rule is off for the sheet: `inkMask({keepEdges})`) | fixed (the three tablet-flow checks) | `captureFix.test.ts`, `agents/e2e/wacom/tablet-flow.mjs` |
+| A camera/tablet capture lands under the caret's line, else where it sat on the pane carried down by the scroll (`capturePlacedCentre`); its strokes / chart move with it | fixed | `capture.test.ts`, `verify/Cameralane-v1-0/scrollcapture.mjs` |
+| Notes pane put away (0 x 0): `placement()` no longer saves NaN | fixed | `captureFix.test.ts`, `videoonly2.mjs` |
+| Hand-dragged Straighten corners are checked (`isPlausiblePage`: convex, 45-135 degrees, no sliver, not crossed); page ratio capped at 4; a capture that throws shows a message | fixed | `captureFix.test.ts`, `sliver.mjs` |
+| A capture whose reading finishes after another note was opened is not added to that note | fixed | `cameralane-v1-1/capswitch3.mjs`, `aa-race-nobusy.mjs` |
+| A reader that never answers: chart labels / the Text button give up after 8 s and go without | fixed | `ocrDeadline.test.ts` (not run against a hung PowerShell) |
+| Picking the same camera again (menu or placeholder) or Refresh retries a busy / refused camera; a track that ends while play() is pending says "unplugged" | fixed | `cam-r1/life2.mjs`, `life3.mjs`, `wedge2.mjs` |
+| The notes list no longer waits for the OCR probe at launch | fixed | not run against a slow helper (`startupgate.mjs`) |
+| Spurious ~~strike~~ / **bold** on plain prose, and arrows invented on tilted pictures | already fixed by the OCR lane (geometry padded, `TextAngle` undone: `deskew.ts`) | `spurious.mjs` 0 of 81, `tilt.mjs` |
+
+## Pen capture, the sheet's side (wfin-ui, 2026-10-04)
+
+| Item | Status | Evidence |
+|---|---|---|
+| The Tablet sheet consumes the native feed: tablet sample -> orientation -> sheet point -> real `pointerType:"pen"` events (pressure, side-button bits, tilt), the sheet's own handlers draw / erase / box; the real pen's DOM events are swallowed by the gate while capture is on | works with the fake backend; **no real pen moved** | `agents/e2e/wacom/penfeed.mjs` (corners of the tablet land on the sheet's corners in all four orientations; pressure ramp; lower = tap action, upper = select hold; gate; Send Writing; undo), `test/penFeed.test.ts` |
+| Pen-operated strip INSIDE the sheet (Send Writing, Box, Erase, Undo, Clear, colours, width, orientation, Rotate ink, Release): drops down at the top edge or for 2.5 s at the start, goes up when the pen is below it; the pen clicks it through the synthesiser's click rule | works (the hidden strip is `visibility:hidden`, so it never takes a pen event) | `penfeed.mjs` section 4 (tap on Send Writing lands the stroke with pressures in the note sidecar) |
+| Reach hint (hatched part of the sheet that lies outside this window: a tap there reaches another program) | mounted from the `dom` backend's cover/work facts; drawn only while capturing | `sheetReach.test.ts` (geometry only) |
+| Tablet setup check card (Start, per-step countdown and live table, Skip, Cancel, verdict page, advice, Copy diagnostics, Reveal trace, Turn / Mirror the direction, Test driver mapping) | works against the fake backend | `penfeed.mjs` section 9 |
+| The chip tells the truth, and why: tooltip lists Windows' view of the tablet (problem code / not listed) and every tablet backend's state ("Wintab: waiting, no samples yet", "Raw HID: failed - ...") | works | `penFeed.test.ts` (hudLines) |
+| `pen-trace.jsonl` is written (open, live, samples, check events) | works; **no typed `session` / `raw` / `dom` records are written, everything is an `ev` line** (manager side) | `penfeed.mjs` section 10 |
+| No overlay window, no full screen, mouse usable during capture | verified | `penfeed.mjs` section 6, `grab-fullscreen.mjs` (rewritten for capture) |
+
+## Final gates (final-gates, 2026-10-04)
+
+| Item | Status | Evidence |
+|---|---|---|
+| npm test, typecheck, locked build | green (100 files / 2246 tests) | local run |
+| e2e cells, drawing, maths, pen, tablet, camera, editor | all pass; the tablet flow-chart checks pass, so `e2e/known-issues.json` is empty | `npm run e2e -- --suite ...` |
+| editor/05-sidebar-drag | script fixed (root-list filter, section toggle); the app was right | `e2e/suites/editor/05-sidebar-drag.mjs` |
+| Wacom fake-feed scripts (pen feed, flow, cursor, buttons, no full screen) | pass; `penfeed.mjs` trace check fixed (typed `k` records) | `agents/e2e/wacom/run-all.mjs --quick` |
+| Real pen | still unverified (the setup check is gone: watch the status word and `pen.log` in the app's userData folder) | none |
+
+**Pen fixes (wr-fix, 2026-10-04).** The system mapping cannot starve the data feed any more: packets reaching the system context while the data context is silent for 150 ms close it at once and remember "refused" (`mapping.ts` `systemPacket` / `dataSeen`; `test/pen/mapping.test.ts`). A half-done calibration survives a blur (the corner taps are real OS clicks) and a one-packet tap counts as a touch (`test/pen/calibration.test.ts`, `test/penManager.test.ts`, `agents/e2e/wr-fix/tap1.mjs`). Esc on the sheet only clears the box, it never releases capture (`wr-fix/esc.mjs`). The sheet host starts below the header (`--camera-top`), so no pen point of the tablet can hit a header button (`wr-fix/hit.mjs`); the red "nothing written yet" line sits above the note line and clears itself. pen.log: layout / context dump once per session, one short map-open / map-closed per judged visit, 200 lines reserved for errors (`test/pen/log.test.ts`). No guard process exists: comments, the `contextState` fact and the log no longer claim one.

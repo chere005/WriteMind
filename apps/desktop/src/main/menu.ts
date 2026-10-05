@@ -203,7 +203,6 @@ export function buildMenu(options: MenuOptions): MenuItemConstructorOptions[] {
       checked: state.cameraId === TABLET_SOURCE,
       click: () => run(`camera:${TABLET_SOURCE}`),
     },
-    item("tabletGrab", "Grab Tablet to Sheet"),
     SEPARATOR,
     item("cameraOff", "Turn Camera Off", { enabled: state.cameraId !== null }),
     item("cameraRefresh", "Refresh Device List"),
