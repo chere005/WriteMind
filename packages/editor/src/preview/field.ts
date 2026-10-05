@@ -23,9 +23,10 @@
 import { RangeSet, StateField, type EditorState, type Extension, type Range as CMRange, type Transaction } from "@codemirror/state"
 import { Decoration, EditorView, WidgetType, type DecorationSet } from "@codemirror/view"
 import {
-  cellStatesSparse, end, firstCellFromBy, isMathFence, isStructuralLine, structuralLineStarts, toggleTodo, fenced,
-  fenceLanguage, type Block, type CellState, type PositionedBlock, type Range,
+  cellStatesSparse, end, firstCellFromBy, isMathFence, PREVIEW_BLOCK_GAP, isStructuralLine, structuralLineStarts, toggleTodo, fenced,
+  fenceLanguage, todoItem, type Block, type CellState, type PositionedBlock, type Range,
 } from "@writemind/core"
+import { awayField } from "./away"
 import { armedField } from "../seams"
 import { foldField, insideHidden } from "../fold"
 import { hullOf, notebook } from "../notebook"
@@ -47,7 +48,10 @@ export class BlockWidget extends WidgetType {
     return other.source === this.source && other.held === this.held && other.touching === this.touching
   }
 
-  override get estimatedHeight(): number { return estimatedHeight(this.block, this.source) }
+  // (A block touching the one above carries the page's gap as its own padding: the estimate has to, too.)
+  override get estimatedHeight(): number {
+    return estimatedHeight(this.block, this.source) + (this.touching ? PREVIEW_BLOCK_GAP : 0)
+  }
 
   override toDOM(view: EditorView): HTMLElement {
     const dom = renderBlock(this.block, this.source, { remeasure: () => view.requestMeasure() })
@@ -149,22 +153,36 @@ const none: Preview = {
 /** The blank lines between two cells are structure, not writing: the page draws them as a gap. */
 const gap = Decoration.line({ class: "wm-gap" })
 /** The ``` lines of a code block being typed in: there, but stepped back. */
-const fence = Decoration.line({ class: "wm-fence" })
+const fence = Decoration.line({ class: "wm-fence wm-fence-open" })
+const fenceClose = Decoration.line({ class: "wm-fence wm-fence-close" })
+/**
+ * A line of a list that is open for typing: set out like the drawn list's rows (the marker in the same column, the
+ * words where they were), so a list that opens moves nothing — the Mac draws its item editor OVER the rendered words
+ * for the same reason (0fdd031: "the row keeps its height and its baseline and nothing below it moves").
+ */
+const openItem = Decoration.line({ class: "wm-pv-open-li" })
+/** …and a reminder that is done stays struck through while its list is open. */
+const openDone = Decoration.line({ class: "wm-pv-open-li wm-pv-open-done" })
+/** The number of a numbered item, in the drawn list's marker column. */
+const openNumber = Decoration.mark({ class: "wm-pv-open-num" })
+const LISTS = new Set<Block["kind"]>(["bullets", "dashes", "numbered", "todos"])
 
 const selectionOf = (state: EditorState): Range[] =>
   state.selection.ranges.map((r) => ({ location: r.from, length: r.to - r.from }))
 
 const isArmed = (state: EditorState): boolean => (state.field(armedField, false) ?? null) !== null
 
-/** The cells that are not closed, for this state of the note. */
+/** The cells that are not closed, for this state of the note (none while the caret is put away). */
 function openCells(state: EditorState, cells: readonly PositionedBlock[]): Map<number, CellState> {
+  if (state.field(awayField, false)) return new Map()
   const holding = state.field(holdingField, false) ?? false
   return cellStatesSparse(cells, (cell) => cell.range, selectionOf(state), holding, isArmed(state))
 }
 
 /** An empty block with the caret in it says what it is for: where, or -1. */
 function waitingAt(state: EditorState, cells: readonly PositionedBlock[]): number {
-  if (isArmed(state) || state.selection.ranges.length !== 1 || !state.selection.main.empty) return -1
+  if (isArmed(state) || state.field(awayField, false) || state.selection.ranges.length !== 1
+    || !state.selection.main.empty) return -1
   const at = state.selection.main.head
   const row = state.doc.lineAt(at)
   if (row.length !== 0 || isStructuralLine(state.doc, row.number)) return -1
@@ -193,7 +211,16 @@ function entriesIn(state: EditorState, cells: readonly PositionedBlock[], states
         const first = doc.lineAt(cell.range.location)
         lines.push(fence.range(first.from))
         const last = doc.lineAt(Math.max(cell.range.location, end(cell.range)))
-        if (last.number > first.number && /^\s*```\s*$/.test(last.text)) lines.push(fence.range(last.from))
+        if (last.number > first.number && /^\s*```\s*$/.test(last.text)) lines.push(fenceClose.range(last.from))
+      } else if (LISTS.has(cell.block.kind) && cell.range.length > 0) {
+        const last = doc.lineAt(end(cell.range)).number
+        for (let n = doc.lineAt(cell.range.location).number; n <= last; n++) {
+          const line = doc.line(n)
+          const indent = /^[ \t]*/.exec(line.text)![0].length
+          lines.push((todoItem(line.text.slice(indent))?.done ? openDone : openItem).range(line.from))
+          const number = /^\d{1,4}[.)](?= )/.exec(line.text.slice(indent))
+          if (number) lines.push(openNumber.range(line.from + indent, line.from + indent + number[0].length))
+        }
       }
       continue
     }

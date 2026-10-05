@@ -25,7 +25,8 @@
  */
 
 import type { Block } from "../markdown/parser"
-import { codeTokens, languageFrom, type CodeTokenKind } from "../markdown/code"
+import { codeTokens, type CodeTokenKind } from "../markdown/code"
+import { colouring } from "../eval/evaluator"
 import { INLINE_MATH_CSS, isMathFence } from "../math/typesetter"
 import { escapeHtml, inlineHtml, mathHtml, PAPER_HEX } from "./inline"
 
@@ -73,7 +74,7 @@ const CODE_COLOUR: Record<CodeTokenKind, string> = {
 
 /** Code with its tokens in colour. The tokens' ranges are UTF-16 offsets into `body`. */
 export function codeHtml(body: string, fence: string | null): string {
-  const language = languageFrom(fence) ?? "plain"
+  const language = colouring(fence) ?? "plain"
   const tokens = language === "plain" ? [] : codeTokens(body, language).sort((a, b) => a.range.location - b.range.location)
   let out = ""
   let at = 0

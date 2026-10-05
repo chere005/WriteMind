@@ -24,21 +24,22 @@ import {
   type DecorationSet, type ViewUpdate,
 } from "@codemirror/view"
 import {
-  codeTokens, firstCellFromBy, headingLevel, languageFrom, toggleTodo, todoItem,
+  codeTokens, firstCellFromBy, headingLevel, colouring, toggleTodo, todoItem,
   type Block, type CodeToken, type CodeTokenKind, type MarkerStructure, type Range,
 } from "@writemind/core"
 import { applyEdit, hullOf, notebook } from "./notebook"
-import { marksAway } from "./rendered"
+import { marksAway, renderedField } from "./rendered"
 
-/** A round bullet where the file has `- `. */
+/** A round bullet where the file has `- ` (or `+ `), a dash where it has `* ` — the Mac's `BulletGlyphs`. */
 class BulletWidget extends WidgetType {
+  constructor(readonly glyph: string) { super() }
   override toDOM(): HTMLElement {
     const dot = document.createElement("span")
     dot.className = "wm-bullet"
-    dot.textContent = "•"
+    dot.textContent = this.glyph
     return dot
   }
-  override eq(): boolean { return true }
+  override eq(other: BulletWidget): boolean { return other.glyph === this.glyph }
   override ignoreEvent(): boolean { return false }
 }
 
@@ -59,7 +60,15 @@ class TodoWidget extends WidgetType {
       const line = view.state.doc.lineAt(view.posAtDOM(box))
       const change = toggleTodo(view.state.doc.toString(),
         { location: line.from, length: line.length }, 0)
-      if (change) applyEdit(view, change)
+      if (!change) return
+      // On the rendered page a tick is one character for one and the caret stays where it was typing (Mac 0fdd031:
+      // a box and a caret share a row there); on the markdown side the caret goes to the box, as it always has.
+      if (view.state.field(renderedField, false)) {
+        view.dispatch({
+          changes: { from: change.range.location, to: change.range.location + change.range.length, insert: change.replacement },
+          userEvent: "input.preview.tick",
+        })
+      } else applyEdit(view, change)
     }
     return box
   }
@@ -71,7 +80,8 @@ const HEADING_MARKS = [1, 2, 3, 4, 5, 6].map((n) => Decoration.line({ class: `wm
 const faded = Decoration.mark({ class: "wm-marker" })
 const quoted = Decoration.line({ class: "wm-quote" })
 const codeLine = Decoration.line({ class: "wm-code-line", attributes: { spellcheck: "false" } })
-const bulletMark = Decoration.replace({ widget: new BulletWidget() })
+const bulletMark = Decoration.replace({ widget: new BulletWidget("•") })
+const dashMark = Decoration.replace({ widget: new BulletWidget("–") })
 const todoMarks = {
   open: Decoration.replace({ widget: new TodoWidget(false) }),
   done: Decoration.replace({ widget: new TodoWidget(true) }),
@@ -345,7 +355,8 @@ function build(state: EditorState, from: number, to: number): { all: DecorationS
     // The colours: the body is everything after the opening fence's line. The tokens of a block are worked out
     // once (the block is the same object until it is edited) and only those on the page are decorated.
     if (last.number > first.number) {
-      const language = languageFrom(cell.block.language)
+      // An evaluation cell (`eval python`) is coloured for its language too (core/eval colouring).
+      const language = colouring(cell.block.language)
       if (language && language !== "plain") {
         const bodyStart = first.to + 1
         let tokens = tokenCache.get(cell.block)
@@ -373,7 +384,9 @@ function build(state: EditorState, from: number, to: number): { all: DecorationS
     if (level > 0) {
       entries.push({ from: line.from, to: line.from, deco: HEADING_MARKS[level - 1]!, kind: 0, atomic: false })
       const hashes = /^[ \t]*#+ ?/.exec(text)![0]
-      entries.push({ from: line.from, to: line.from + hashes.length, deco: faded, kind: 1, atomic: true })
+      // On the rendered page the hashes are FURNITURE (Mac 0fdd031): put away even on the caret's line.
+      const furniture = state.field(renderedField, false)
+      entries.push({ from: line.from, to: line.from + hashes.length, deco: furniture ? hidden : faded, kind: 1, atomic: true })
       inlineSpans(text.slice(hashes.length), line.from + hashes.length, entries)
       continue
     }
@@ -407,7 +420,9 @@ function build(state: EditorState, from: number, to: number): { all: DecorationS
       // the file has to be showing so it can be edited.
       const at = line.from + indent
       entries.push({
-        from: at, to: at + 2, deco: touches(state, at, at + 2) ? faded : bulletMark, kind: 1, atomic: true,
+        // (On the rendered page it is furniture, and drawn even there: preview/furniture.ts keeps the caret out.)
+        from: at, to: at + 2, kind: 1, atomic: true,
+        deco: touches(state, at, at + 2) && !state.field(renderedField, false) ? faded : rest[0] === "*" ? dashMark : bulletMark,
       })
       inlineSpans(rest.slice(2), at + 2, entries)
       continue
@@ -497,7 +512,8 @@ class Decorator {
    */
   private patch(update: ViewUpdate): boolean {
     const { state, startState, changes } = update
-    if (marksAway(state) !== marksAway(startState)) return false
+    if (marksAway(state) !== marksAway(startState)
+      || state.field(renderedField, false) !== startState.field(renderedField, false)) return false
     const hull = hullOf(changes)
     const doc = state.doc
     const regionFrom = doc.lineAt(Math.min(hull.from, doc.length)).from
@@ -538,7 +554,9 @@ class Decorator {
       if (!this.patch(update)) this.rebuild(update.view)
       return
     }
-    if (marksAway(update.state) !== marksAway(update.startState)) {
+    // (The rendered page draws a line's furniture differently, so switching it is a rebuild even when the marks were away.)
+    if (marksAway(update.state) !== marksAway(update.startState)
+      || update.state.field(renderedField, false) !== update.startState.field(renderedField, false)) {
       this.rebuild(update.view)
       return
     }

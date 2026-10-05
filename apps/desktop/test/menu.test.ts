@@ -29,11 +29,24 @@ describe("the application menu is the Mac's", () => {
     ])
   })
 
-  it("File: New Note, Close Tab, Open Notes Folder, Export, Quit", () => {
+  // Mac e8b3266: Save (⌘S), and ONE Export… (⌘E) whose panel asks PDF or Project (no submenu).
+  it("File: New Note, Close Tab, Open Notes Folder, Save, Export…, Quit", () => {
     expect(labels(sub(menu(), "File"))).toEqual([
-      "New Note", "-", "Close Tab", "-", "Open Notes Folder", "-", "Export", "-", "Quit",
+      "New Note", "-", "Close Tab", "-", "Open Notes Folder", "-", "Save", "Export…", "-", "Quit",
     ])
-    expect(labels(sub(sub(menu(), "File"), "Export"))).toEqual(["PDF…"])
+    const file = (state: Partial<MenuState>, folders = project.folders) => sub(menu(state, "win32", folders), "File")
+    expect(file({}).find((one) => one.label === "Save")!.enabled).toBe(false)
+    expect(file({ hasNote: true }).find((one) => one.label === "Save")!.enabled).toBe(true)
+    // Export… with no note still exports the project; with no note and no folders there is nothing to make.
+    expect(file({}).find((one) => one.label === "Export…")!.enabled).toBe(true)
+    expect(file({}, []).find((one) => one.label === "Export…")!.enabled).toBe(false)
+    expect(file({ hasNote: true }, []).find((one) => one.label === "Export…")!.enabled).toBe(true)
+  })
+
+  it("Help: Keyboard Shortcuts (F1), then About", () => {
+    const help = sub(menu().map((one) => (one.role === "help" ? { ...one, label: "Help" } : one)), "Help")
+    expect(labels(help)).toEqual(["Keyboard Shortcuts", "-", "About WriteMind"])
+    expect(help[0]!.accelerator).toBe("F1")
   })
 
   it("Project: the name, Add Folder, Remove Folder, Save, Save As, Open, New", () => {
@@ -74,20 +87,21 @@ describe("the application menu is the Mac's", () => {
 
   // The markers are their own switch (the Mac's showMarkers), independent of the preview toggle.
   it("View: the markers label follows the markers, not the preview mode", () => {
-    expect(labels(sub(menu({ rendered: true, markers: true }), "View"))[4]).toBe("Hide Markdown Markers")
-    expect(labels(sub(menu({ rendered: false, markers: false }), "View"))[4]).toBe("Show Markdown Markers")
+    expect(labels(sub(menu({ rendered: true, markers: true }), "View"))[5]).toBe("Hide Markdown Markers")
+    expect(labels(sub(menu({ rendered: false, markers: false }), "View"))[5]).toBe("Show Markdown Markers")
   })
 
   it("View: the toggles read as the Mac's do, in both states", () => {
-    expect(labels(sub(menu({ camera: true }), "View")).slice(0, 5)).toEqual([
-      "Hide Notes Sidebar", "Show Markdown Preview", "Hide Video", "Hide Notes Pane", "Hide Markdown Markers",
+    expect(labels(sub(menu({ camera: true }), "View")).slice(0, 6)).toEqual([
+      "Hide Notes Sidebar", "Show Markdown Preview", "Hide Video", "Draw", "Hide Notes Pane", "Hide Markdown Markers",
     ])
-    const flipped = menu({ sidebar: false, rendered: true, camera: false, editorPane: false, markers: false })
-    expect(labels(sub(flipped, "View")).slice(0, 5)).toEqual([
-      "Show Notes Sidebar", "Show Markdown Editor", "Show Video", "Show Notes Pane", "Show Markdown Markers",
+    const flipped = menu({ sidebar: false, rendered: true, camera: false, editorPane: false, markers: false, penDown: true })
+    expect(labels(sub(flipped, "View")).slice(0, 6)).toEqual([
+      "Show Notes Sidebar", "Show Markdown Editor", "Show Video", "Stop Drawing", "Show Notes Pane", "Show Markdown Markers",
     ])
-    expect(labels(sub(menu(), "View")).slice(5, 10)).toEqual([
-      "-", "Fold Section", "Unfold Section", "Fold All Sections", "Unfold All Sections",
+    // Mac e8b3266: the caret's own Fold / Unfold Section are gone; Collapse Subsections (⌘;) folds what is under it.
+    expect(labels(sub(menu(), "View")).slice(6, 10)).toEqual([
+      "-", "Collapse Subsections", "Fold All Sections", "Unfold All Sections",
     ])
   })
 
@@ -98,7 +112,7 @@ describe("the application menu is the Mac's", () => {
       "Dots List", "Quote", "-",
       "Decrease Indentation", "Increase Indentation", "-",
       "Split Cell", "Merge Cells", "-",
-      "Duplicate Cell", "Delete Cell", "Move Cell Up", "Move Cell Down", "-",
+      "Duplicate Cell", "-", "Evaluation Cell", "Delete Cell", "Move Cell Up", "Move Cell Down", "-",
       "Move Section Up", "Move Section Down",
     ])
     expect(labels(sub(menu({ listStyle: "To-do" }), "Format"))).toContain("To-do List")
@@ -121,13 +135,28 @@ describe("the application menu is the Mac's", () => {
 
   it("Input Devices: the cameras with a tick on the live one, the Tablet source, Turn Camera Off, Refresh", () => {
     const none = sub(menu(), "Input Devices")
-    expect(labels(none)).toEqual(["No cameras found", "-", "Tablet", "-", "Turn Camera Off", "Refresh Device List"])
+    expect(labels(none)).toEqual(["No cameras found", "-", "Tablet", "-", "Turn Camera Off", "-", "Aspect Ratio", "Refresh Device List"])
     expect(none[4]!.enabled).toBe(false)
     const some = sub(menu({ cameras: [{ id: "x", name: "Desk" }, { id: "y", name: "Phone" }], cameraId: "y" }),
       "Input Devices")
-    expect(labels(some)).toEqual(["Desk", "Phone", "-", "Tablet", "-", "Turn Camera Off", "Refresh Device List"])
-    expect(some.map((one) => one.checked)).toEqual([false, true, undefined, false, undefined, undefined, undefined])
+    expect(labels(some)).toEqual(["Desk", "Phone", "-", "Tablet", "-", "Turn Camera Off", "-", "Aspect Ratio", "Refresh Device List"])
+    expect(some.map((one) => one.checked)).toEqual([false, true, undefined, false, undefined, undefined, undefined, undefined, undefined])
     expect(some[5]!.enabled).toBe(true)
+  })
+
+  // Mac commit c98c067: Input Devices ▸ Aspect Ratio, every shape in the Mac's order, ticked like the cameras.
+  it("Input Devices ▸ Aspect Ratio: Free and the ratios both ways up, the one in use ticked", () => {
+    const shapes = sub(sub(menu(), "Input Devices"), "Aspect Ratio")
+    expect(labels(shapes)).toEqual(["Free — as the camera sends it", "1:1", "4:3", "3:4", "3:2", "2:3", "16:9", "9:16"])
+    expect(shapes.filter((one) => one.checked).map((one) => one.label)).toEqual(["Free — as the camera sends it"])
+    const tall = sub(sub(menu({ cameraAspect: "threeFour" }), "Input Devices"), "Aspect Ratio")
+    expect(tall.filter((one) => one.checked).map((one) => one.id)).toEqual(["cameraAspect:threeFour"])
+    const asked: string[] = []
+    const clicked = sub(sub(buildMenu({
+      platform: "win32", state: initialMenuState, project, run: (id) => asked.push(id),
+    }), "Input Devices"), "Aspect Ratio")
+    ;(clicked[7]!.click as () => void)()
+    expect(asked).toEqual(["cameraAspect:nineSixteen"])
   })
 
   it("NOTHING goes full screen: no menu item, no role, no Ctrl+Alt+T command (Sean never asked for it)", () => {
@@ -170,10 +199,12 @@ describe("the application menu is the Mac's", () => {
   it("the Mac's chords land where the mapping says", () => {
     const view = sub(menu({ camera: true }), "View")
     const key = (label: string) => view.find((one) => one.label === label)!.accelerator
-    expect(key("Hide Notes Sidebar")).toBe("CmdOrCtrl+Alt+S")
-    expect(key("Hide Video")).toBe("CmdOrCtrl+Alt+C")
-    expect(key("Hide Notes Pane")).toBe("CmdOrCtrl+Alt+E")
-    expect(key("Show Markdown Preview")).toBe("CmdOrCtrl+Shift+P")
+    // Mac e8b3266: ⌘K, ⌘Y (Ctrl+Shift+Y: Ctrl+Y is Redo on a PC), ⌘T, ⌘P; the notes pane has no key.
+    expect(key("Hide Notes Sidebar")).toBe("CmdOrCtrl+K")
+    expect(key("Hide Video")).toBe("CmdOrCtrl+Shift+Y")
+    expect(key("Hide Notes Pane")).toBeUndefined()
+    expect(key("Show Markdown Preview")).toBe("CmdOrCtrl+T")
+    expect(key("Draw")).toBe("CmdOrCtrl+P")
     const format = sub(menu(), "Format")
     const fk = (label: string) => format.find((one) => one.label === label)!.accelerator
     expect(fk("Split Cell")).toBe("Ctrl+D")
@@ -181,7 +212,7 @@ describe("the application menu is the Mac's", () => {
     expect(fk("Duplicate Cell")).toBe("Ctrl+Shift+D")
     expect(fk("Title")).toBe("CmdOrCtrl+1")
     expect(fk("Body Text")).toBe("CmdOrCtrl+7")
-    expect(sub(menu({}, "darwin"), "View")[0]!.accelerator).toBe("Ctrl+Cmd+S")
+    expect(sub(menu({ camera: true }, "darwin"), "View")[2]!.accelerator).toBe("Cmd+Y")
   })
 })
 
@@ -212,8 +243,9 @@ describe("the key table", () => {
   })
 
   it("finds the page's commands by key and leaves the editor's alone", () => {
-    expect(commandForKey(event("s", { ctrlKey: true, altKey: true }), "win32")?.id).toBe("toggleSidebar")
-    expect(commandForKey(event("P", { ctrlKey: true, shiftKey: true }), "win32")?.id).toBe("toggleMode")
+    expect(commandForKey(event("k", { ctrlKey: true }), "win32")?.id).toBe("toggleSidebar")
+    expect(commandForKey(event("t", { ctrlKey: true }), "win32")?.id).toBe("toggleMode")
+    expect(commandForKey(event("s", { ctrlKey: true, altKey: true }), "win32")).toBeNull()
     expect(commandForKey(event("A", { ctrlKey: true, shiftKey: true }), "win32")?.id).toBe("addFolder")
     // Bold is CodeMirror's key; the page must not run it as well.
     expect(commandForKey(event("b", { ctrlKey: true }), "win32")).toBeNull()

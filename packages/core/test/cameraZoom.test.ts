@@ -115,26 +115,33 @@ describe("a box round the whole picture", () => {
   })
 })
 
+// SectionBoxGestureTests (WriteMindTests/CameraZoomTests.swift, as changed by Mac commit 0edfc08).
 describe("what a gesture on the camera picture means", () => {
-  it("a real drag leaves its box alone", () => {
-    expect(boxAction(40, 3, 1)).toBe("keep")
-    expect(boxAction(0, -30, 1)).toBe("keep")
+  it("a drag leaves its box alone", () => {
+    expect(boxAction(40, 3, 1, true)).toBe("keep")
+    expect(boxAction(0, -30, 1, false)).toBe("keep")
   })
 
-  it("a click clears and two take the whole picture", () => {
-    expect(boxAction(0, 0, 1)).toBe("clear")
-    expect(boxAction(2, 2, 1)).toBe("clear")   // a shaky hand is still a click
-    expect(boxAction(0, 0, 2)).toBe("whole")
-    expect(boxAction(0, 0, 3)).toBe("whole")
+  it("one click clears the box and, with no box, takes the whole picture", () => {
+    expect(boxAction(0, 0, 1, true)).toBe("clear")
+    expect(boxAction(2, 2, 1, true)).toBe("clear")   // two points of wobble is still a click
+    // The gesture the double-click used to be: the capture buttons only appear once something is
+    // boxed, so without this the whole frame could only be had by dragging a box round it.
+    expect(boxAction(0, 0, 1, false)).toBe("whole")
   })
 
-  it("the slack is four points", () => {
+  // Sean, 2026-09-21: "doubleclick the camera to make the whole window the camera.. double click again to exit".
+  it("two clicks fill the window whatever is boxed", () => {
+    expect(boxAction(0, 0, 2, false)).toBe("fullWindow")
+    expect(boxAction(0, 0, 2, true)).toBe("fullWindow")
+    expect(boxAction(0, 0, 3, false)).toBe("fullWindow")
+  })
+
+  it("four points of slack, so a click stays a click", () => {
     expect(isBoxDrag(3.9, 3.9)).toBe(false)
     expect(isBoxDrag(4, 0)).toBe(true)
-  })
-
-  it("a double click is not read as a drag even if the hand moves", () => {
-    expect(boxAction(3, 1, 2)).toBe("whole")
+    // A double-click that wobbled three points is still a double-click.
+    expect(boxAction(3, 1, 2, true)).toBe("fullWindow")
   })
 })
 

@@ -16,7 +16,7 @@
 
 import {
   darkerThanPaper, EDGE_INSET, findPage, inkVector, isPlausiblePage, marks, pageBox, quadFromPixels, resolveShape, shapeSize,
-  writingBox, writingMask, type Rect, type Size,
+  thinnedWriting, writingBox, writingMask, type Rect, type Size,
 } from "@writemind/core"
 import { grayOf, measuredPage, straightened, type Corners } from "./capturePipeline"
 import type { CaptureMode } from "./cameraSettings"
@@ -195,9 +195,13 @@ export async function takePicture(options: TakeOptions): Promise<Taken> {
     }
   }
 
-  // THE WRITING, lifted off the whole page; only the box's part of it comes in.
+  // THE WRITING, lifted off the whole page; only the box's part of it comes in. CLEAN, THIN, THEN CLEAN AGAIN
+  // (Mac commits 159e0f6, 6685cb1): a capture lands the size the viewfinder showed it, so the faithful trace came in
+  // too heavy beside the note's text; it is thinned to a third of its own measured stroke, and the stray printed dots
+  // the thinning shrinks under the speck limit go with it.
   const gray = work.getContext("2d", { willReadFrequently: true })!.getImageData(0, 0, work.width, work.height)
-  const found = marks(darkerThanPaper(grayOf(gray.data, work.width * work.height), work.width, work.height), work.width, work.height)
+  const cleaned = marks(darkerThanPaper(grayOf(gray.data, work.width * work.height), work.width, work.height), work.width, work.height)
+  const found = thinnedWriting(cleaned)
   const mask = writingMask(found)
   const inked = writingBox(found, 6, region ? section : undefined)
   if (!inked) return { trouble: region ? "No writing found in that section." : "No writing found on the page. Move the notebook into the frame and try again." }

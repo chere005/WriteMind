@@ -9,7 +9,7 @@ for (const top of m) { console.log("\n== " + top.label); console.log(text(top.su
 const names = m.map((t) => t.label)
 ok("top-level order", JSON.stringify(names.slice(0, 8)) === JSON.stringify(["File", "Project", "Edit", "View", "Format", "Insert", "Pen", "Input Devices"]), names.join())
 const sub = (l) => m.find((t) => t.label === l).submenu
-ok("sidebar item has Ctrl+Alt+S", sub("View").find((i) => /Notes Sidebar/.test(i.label)).accelerator === "CmdOrCtrl+Alt+S")
+ok("sidebar item has Ctrl+K (the Mac's ⌘K)", sub("View").find((i) => /Notes Sidebar/.test(i.label)).accelerator === "CmdOrCtrl+K")
 ok("Close Tab enabled with a note open", sub("File").find((i) => i.label === "Close Tab").enabled)
 ok("Split Cell enabled with a note open", sub("Format").find((i) => i.label === "Split Cell").enabled)
 finish()

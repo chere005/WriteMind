@@ -15,6 +15,7 @@
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
+import { createPortal } from "react-dom"
 import {
   applyMatrix, matrixOf, angleAbout, attachableAt, baseBounds, baseCenter, basePoints, bounds, boundsOf, connectorPaths,
   copiedItems, cornerRadius, cropRect, cropped, dashPattern, distance, emptyDrawing, hitTest, idsTouching,
@@ -302,6 +303,24 @@ export function Canvas({
   const overlayReset = useRef(true)
   /** The overlay holds a rubber band (marquee, ghost, arrow preview) that must be cleared. */
   const overlayShapes = useRef(false)
+  // A SCROLL REPAINTED BOTH LAYERS EVERY FRAME, blank or not (perf lane, 2026-10-05): clearing and re-uploading two
+  // window-sized canvases on each scroll step cost a dropped frame on most wheel steps, in a note with no drawing at
+  // all. A layer that holds nothing is left alone; and an object's bounds (for the culling below) are worked out
+  // once per object and pane size, not for every object on every scroll frame.
+  //
+  // THE COMMITTED INK SCROLLS WITH THE WORDS. The base layer used to stay put over the page and be painted again,
+  // shifted, on every scroll frame: with ink on the screen that was a dropped frame on nearly every wheel step
+  // (195 of ~740 frames over 240 steps, against 51 with the layer hidden), and the ink trailed the words by a frame
+  // while they moved. ANY change to it per frame cost the same (a CSS transform did too). So the base canvas lives
+  // INSIDE the editor's scroller, three panes tall (the BAND: a pane above and one below the page), and the browser
+  // scrolls it with the words; it is painted again only when the page leaves the band, about once a pane. It never
+  // reaches past the words' own end, so it cannot lengthen the page. (The live stroke stays on the overlay, which
+  // does not move.)
+  const basePainted = useRef(true)
+  const overlayInk = useRef(true)
+  const boundsCache = useRef(new WeakMap<CanvasItem, { width: number; height: number; rect: Rect }>())
+  /** Where the base canvas is in the scroller (document pixels), for which canvas, at what density and width. */
+  const band = useRef<{ top: number; height: number; width: number; ratio: number; element: HTMLCanvasElement } | null>(null)
   const frame = useRef<number | null>(null)
   const renderRef = useRef<() => void>(() => {})
 
@@ -319,27 +338,70 @@ export function Canvas({
     const w = Math.floor(now.size.width * ratio)
     const h = Math.floor(now.size.height * ratio)
     const scrolled = scrollRef.current
+    // The base canvas's stretch of the note: the band, when it is in the scroller (see `band`), else the page.
+    let paintTop = scrolled
+    let paintHeight = now.size.height
+    let paintWidth = now.size.width
+    if (scroller && element.parentElement === scroller) {
+      const pane = now.size.height
+      const was = band.current
+      if (baseDirty.current || !was || was.element !== element || was.ratio !== ratio
+        || scrolled < was.top || scrolled + pane > was.top + was.height) {
+        // (Layout is read only here: when something changed, or about once a pane of scrolling.)
+        const content = scroller.querySelector<HTMLElement>(".cm-content")
+        const end = Math.max(pane, content ? content.offsetTop + content.offsetHeight : pane)
+        const width = Math.min(now.size.width, scroller.clientWidth || now.size.width)
+        const fits = was !== null && was.element === element && was.ratio === ratio && was.width === width
+          && scrolled >= was.top && scrolled + pane <= was.top + was.height && was.top + was.height <= end
+        if (!fits) {
+          const from = Math.max(0, Math.min(scrolled - pane, end - 3 * pane))
+          const tall = Math.max(1, Math.min(3 * pane, end - from), scrolled + pane - from)
+          band.current = { top: from, height: tall, width, ratio, element }
+          element.style.top = `${from}px`
+          element.style.height = `${tall}px`
+          element.style.width = `${width}px`
+          baseDirty.current = true
+        }
+      }
+      paintTop = band.current!.top
+      paintHeight = band.current!.height
+      paintWidth = band.current!.width
+    }
     // Setting a canvas's size clears it AND reallocates its backing store:
     // only when it really changed.
-    if (element.width !== w || element.height !== h) {
-      element.width = w; element.height = h; baseDirty.current = true
+    const bw = Math.floor(paintWidth * ratio)
+    const bh = Math.floor(paintHeight * ratio)
+    if (element.width !== bw || element.height !== bh) {
+      element.width = bw; element.height = bh; baseDirty.current = true; basePainted.current = false
     }
     if (top.width !== w || top.height !== h) {
-      top.width = w; top.height = h; overlayReset.current = true
+      top.width = w; top.height = h; overlayReset.current = true; overlayInk.current = false
     }
 
     if (baseDirty.current) {
       baseDirty.current = false
-      const context = element.getContext("2d")!
-      context.setTransform(1, 0, 0, 1, 0, 0)
-      context.clearRect(0, 0, element.width, element.height)
-      context.setTransform(ratio, 0, 0, ratio, 0, -scrolled * ratio)
-      const view = { top: scrolled - 40, bottom: scrolled + now.size.height + 40 }
+      const view = { top: paintTop - 40, bottom: paintTop + paintHeight + 40 }
+      const shown: CanvasItem[] = []
       for (const item of now.drawing.items) {
         if (isHidden(item)) continue
         // Objects wholly off the screen are not painted at all.
-        const where = bounds(item, now.size)
+        let known = boundsCache.current.get(item)
+        if (!known || known.width !== now.size.width || known.height !== now.size.height) {
+          known = { width: now.size.width, height: now.size.height, rect: bounds(item, now.size) }
+          boundsCache.current.set(item, known)
+        }
+        const where = known.rect
         if (where.y + where.height < view.top || where.y > view.bottom) continue
+        shown.push(item)
+      }
+      const context = element.getContext("2d")!
+      if (shown.length > 0 || now.box || basePainted.current) {
+        context.setTransform(1, 0, 0, 1, 0, 0)
+        context.clearRect(0, 0, element.width, element.height)
+        basePainted.current = shown.length > 0 || !!now.box
+      }
+      context.setTransform(ratio, 0, 0, ratio, 0, -paintTop * ratio)
+      for (const item of shown) {
         paint(context, item, now.size, () => { baseDirty.current = true; schedule() },
           editingBox.current)
       }
@@ -362,6 +424,7 @@ export function Canvas({
         overlayReset.current = false
       }
       context.setTransform(ratio, 0, 0, ratio, 0, -scrolled * ratio)
+      overlayInk.current = true
       if (g.pressures) {
         // A pen stroke is drawn as it is committed: a smooth line of varying width, piece by piece.
         // `overlayDrawn` counts the pieces already down.
@@ -419,9 +482,14 @@ export function Canvas({
       overlayDrawn.current = 0
       overlayReset.current = false
       overlayShapes.current = true
+      overlayInk.current = true
+    } else if (!overlayInk.current) {
+      // Blank already: nothing to clear (a scroll used to clear it every frame).
+      overlayReset.current = false
     } else if (overlayDrawn.current > 0 || overlayReset.current || overlayShapes.current) {
       context.setTransform(1, 0, 0, 1, 0, 0)
       context.clearRect(0, 0, top.width, top.height)
+      overlayInk.current = false
       overlayDrawn.current = 0
       overlayReset.current = false
       overlayShapes.current = false
@@ -485,13 +553,26 @@ export function Canvas({
     if (!scroller) return
     const onScroll = () => {
       scrollRef.current = scroller.scrollTop
-      baseDirty.current = true
+      // Ink in the scroller moves with it; the render looks at whether the page left the band.
+      if (canvas.current?.parentElement !== scroller) baseDirty.current = true
       overlayReset.current = true
       schedule()
     }
     onScroll()
     scroller.addEventListener("scroll", onScroll, { passive: true })
-    return () => scroller.removeEventListener("scroll", onScroll)
+    // The words shrinking (the band may not pass their end) or narrowing (a scroll bar came) put the band out: it
+    // is worked out again. (Not on every change of height: the editor refines its heights while it scrolls.)
+    const content = scroller.querySelector<HTMLElement>(".cm-content")
+    const words = content ? new ResizeObserver(() => {
+      const was = band.current
+      if (!was) return
+      const pane = latest.current.size.height
+      const end = Math.max(pane, content!.offsetTop + content!.offsetHeight)
+      const width = Math.min(latest.current.size.width, scroller.clientWidth || latest.current.size.width)
+      if (was.top + was.height > end || was.width !== width) { baseDirty.current = true; schedule() }
+    }) : null
+    if (content) words!.observe(content)
+    return () => { scroller.removeEventListener("scroll", onScroll); words?.disconnect() }
   }, [scroller, schedule])
 
   // The wheel (and a touchpad's two-finger scroll) over the layer: while the pen is down the
@@ -1536,7 +1617,10 @@ export function Canvas({
   return (
     <div className="wm-canvas" ref={host}
          style={{ pointerEvents: grabs ? "auto" : "none", cursor: eraserOn ? "cell" : selectOn ? "crosshair" : cursorFor(mode, placing, command) }}>
-      <canvas ref={canvas} style={{ width: size.width, height: size.height }} />
+      {/* The committed ink, in the scroller so it scrolls with the words (`band`); over the page when there is none. */}
+      {scroller
+        ? createPortal(<canvas ref={canvas} className="wm-ink" style={INK_IN_SCROLLER} />, scroller)
+        : <canvas ref={canvas} className="wm-ink" style={{ width: size.width, height: size.height }} />}
       <canvas ref={overlay}
               style={{ width: size.width, height: size.height, pointerEvents: "none" }} />
       <div className="wm-handles">
@@ -1548,6 +1632,13 @@ export function Canvas({
     </div>
   )
 }
+
+/**
+ * The committed-ink canvas inside the editor's scroller: over the words and the editor's own layers (its caret is
+ * 150), never taking a click, and never wider than the scroller's inside (a canvas wider than that would give the
+ * page a sideways scroll bar). Its top, height and width are the band's, set by the render.
+ */
+const INK_IN_SCROLLER = { position: "absolute", left: 0, top: 0, maxWidth: "100%", pointerEvents: "none", zIndex: 200 } as const
 
 /** A connector's route in view points. */
 const pixelRoute = (connector: ConnectorItem, size: Size): Point[] =>

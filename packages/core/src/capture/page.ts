@@ -204,8 +204,20 @@ export function shapeSize(shape: PageShape, portrait: boolean): Size {
   return portrait ? { width: SHORT_SIDE, height: long } : { width: long, height: SHORT_SIDE }
 }
 
-/** A page takes this much of the pane's shorter way. */
-export const PAGE_FRACTION = 0.42
+/**
+ * A PAGE LANDS THE SIZE THE VIEWFINDER SHOWS IT — filling the pane, give or take the margin that keeps its
+ * handles off the edges (Sean, 2026-09-22: "the drawing and image when selected from the camera are too small..
+ * they should be the size you can see in the output viewer"; Mac commit 32ad5e1, `NotebookCapture.pageFraction`).
+ *
+ * It was 0.42, from "make the selection smaller" (Sean, 2026-09-18) when 60% covered the note — so this is a
+ * reversal. What changed underneath it: a capture no longer pushes the text about (nothing on the drawing layer
+ * moves the text), so a big picture costs the note nothing.
+ *
+ * Still ONE number for every capture (the camera's and the tablet sheet's): two photographs of the same notebook
+ * come out the same size whether they were taken from a foot away or three. Matching the viewfinder EXACTLY would
+ * make every capture a different size, which is the thing the remembered page shape exists to prevent.
+ */
+export const PAGE_FRACTION = 0.9
 
 /**
  * Where a capture goes, as fractions of the pane. A whole page fits inside

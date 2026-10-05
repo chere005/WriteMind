@@ -16,22 +16,28 @@ import { cellOffsetAt } from "../seams"
 import { renderedField, setRendered } from "../rendered"
 import { previewField } from "./field"
 import { holdingField, setHolding } from "./hold"
+import { awayField } from "./away"
+import { furniture } from "./furniture"
 import { previewKeys } from "./keys"
 import { previewTheme } from "./theme"
 
 export { holdingField, setHolding } from "./hold"
+export { awayField, putAway } from "./away"
+export { furnitureAt, reminderAt } from "./furniture"
 export { followLink } from "./follow"
 export { previewField, BlockWidget } from "./field"
 export { previewReturn, previewBackspace, previewKeys } from "./keys"
 export { renderBlock, caretAt, pictureSource } from "./render"
 
 /** The rendered page's extensions. Inert until `setRendered` turns the page on. */
-export const preview: Extension = [holdingField, Prec.high(previewField), previewTheme, previewKeys]
+export const preview: Extension = [holdingField, awayField, furniture, Prec.high(previewField), previewTheme, previewKeys]
 
 /** The cell at the top of the window, as its offset — what the two modes agree on. */
 export function topCell(view: EditorView): number | null {
-  // (`topRow`'s rule — the last cell that starts at or above the fold, a line of tolerance — by search.)
-  return cellOffsetAt(view, view.scrollDOM.scrollTop + 8)
+  // (`topRow`'s rule — the last cell that starts at or above the fold, a line of tolerance — by search. And a pixel
+  // more: the page's gaps are a blank line of the markdown side, 21.75px, so a cell scrolled to sit 8px down sits a
+  // fraction below that, and was missed for the cell above it — every switch walked the page back a cell.)
+  return cellOffsetAt(view, view.scrollDOM.scrollTop + 9)
 }
 
 /**

@@ -1,0 +1,48 @@
+/* Help ▸ Keyboard Shortcuts (KeyList.tsx): the shared .modal, wider, its list in two columns. */
+.modal.key-list {
+  width: min(760px, calc(100vw - 32px));
+  max-height: calc(100vh - 64px);
+  display: flex;
+  flex-direction: column;
+  outline: none;
+}
+.modal.key-list .key-groups {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  columns: 2 300px;
+  column-gap: 28px;
+  margin: 0 0 12px;
+  padding-right: 4px;
+}
+.modal.key-list .key-group {
+  break-inside: avoid;
+  margin: 0 0 12px;
+}
+.modal.key-list h4 {
+  margin: 0 0 4px;
+  padding-bottom: 3px;
+  border-bottom: 1px solid var(--wm-rule);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--wm-soft);
+}
+.modal.key-list table { width: 100%; border-collapse: collapse; }
+.modal.key-list td { padding: 2px 0; vertical-align: baseline; }
+.modal.key-list .key-name { color: var(--wm-text); padding-right: 10px; }
+.modal.key-list .key-keys { text-align: right; white-space: nowrap; }
+.modal.key-list .chord { display: inline-flex; gap: 3px; }
+.modal.key-list kbd {
+  display: inline-block;
+  min-width: 18px;
+  padding: 0 5px;
+  border: 1px solid var(--wm-rule);
+  border-bottom-width: 2px;
+  border-radius: 4px;
+  background: var(--wm-page);
+  color: var(--wm-text);
+  font: 11px/17px ui-monospace, "Cascadia Mono", Consolas, monospace;
+  text-align: center;
+}

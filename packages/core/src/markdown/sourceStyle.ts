@@ -10,8 +10,10 @@
  * coloured, maths is set apart.
  */
 
-import { range, type Range } from "../text/range"
+import { end, lineRange, range, type Range } from "../text/range"
+import { todoItem } from "./parser"
 import { codeTokens, languageFrom, type CodeTokenKind } from "./code"
+import { colouring } from "../eval/evaluator"
 import { MATH_INLINE_PREFIX, isMathFence } from "../math/typesetter"
 
 export type SourceKind =
@@ -100,7 +102,7 @@ export function sourceStyleRuns(source: string): SourceRun[] {
       if (fence === null) {
         const language = trimmedLine.slice(3).replace(/^[ \t]+|[ \t]+$/g, "")
         fence = isMathFence(language) ? "mathFence" : "codeFence"
-        fenceLanguage = isMathFence(language) ? null : languageFrom(language)
+        fenceLanguage = isMathFence(language) ? null : colouring(language)
         fenceBodyStart = offset
       } else {
         closeFence(Math.max(fenceBodyStart, start - 1))
@@ -401,4 +403,164 @@ export function inlineSegments(source: string): InlineSegment[] {
     out.push({ from: start, to: index, text: source.slice(start, index), ...flags(start) })
   }
   return out
+}
+
+// MARK: - Furniture: what the open block on the rendered page has to be read and not typed
+
+/**
+ * What, in the markdown of the block open on the RENDERED page, is FURNITURE:
+ * there to be read, and not to be typed. Ported from
+ * `WriteMind/Editor/CellFurniture.swift` (Mac 0fdd031).
+ *
+ * Sean, 2026-09-21: "when in wysiwyg mode, don't show the markdown characters
+ * for header, only edit the text in a reminders list or bullet list". The
+ * markdown side shows a line's markers back the moment the caret lands on it,
+ * and is right to: there the markers ARE the text. On the rendered page they
+ * are not, and a block opened there must look like the block that was clicked.
+ *
+ * - `reserved`: the head of a line the caret may not enter. Every marker is in
+ *   here, drawn or not — hidden characters the caret can still be put among
+ *   are worse than visible ones (the key that looks like it types in front of
+ *   the words types between two hashes instead).
+ * - `hidden`: drawn as nothing — a heading's hashes, and the `- ` and the
+ *   brackets of a reminder, which the box stands in for.
+ * - `glyphs`: drawn as something else — a reminder's `[` is the box.
+ *
+ * A bullet is in neither of the last two (it is drawn as a round bullet, and a
+ * list with no marker is not a list), but it is reserved all the same. Read off
+ * the runs `sourceStyleRuns` already found, so there is one answer to "what is
+ * a heading"; only the reminder's box is scanned for, and that asks
+ * `todoItem` what a reminder is.
+ */
+export interface FurnitureReading {
+  reserved: Range[]
+  hidden: Range[]
+  /** By the offset of the character drawn as something else: what it is drawn as. */
+  glyphs: Map<number, string>
+}
+
+/** U+25A1 WHITE SQUARE and U+2611 BALLOT BOX WITH CHECK (the Mac's pair: U+2610 is missing from its system font). */
+export const EMPTY_BOX = "□"
+export const TICKED_BOX = "☑"
+
+export const furnitureIsEmpty = (reading: FurnitureReading): boolean =>
+  reading.reserved.length === 0 && reading.hidden.length === 0 && reading.glyphs.size === 0
+
+export function cellFurniture(source: string, runs: SourceRun[] = sourceStyleRuns(source)): FurnitureReading {
+  const reading: FurnitureReading = { reserved: [], hidden: [], glyphs: new Map() }
+  // A heading's hashes: gone, and no-go.
+  for (const marker of headingMarkers(runs, source)) {
+    reading.hidden.push(marker)
+    reading.reserved.push(marker)
+  }
+  // A list's marker: drawn as it always was, and no-go.
+  for (const run of runs) {
+    if (run.kind !== "listMarker" || run.range.length <= 0 || end(run.range) > source.length) continue
+    reading.reserved.push(run.range)
+  }
+  // A reminder's box — the marker, the brackets and what is between them — is one piece, drawn as one character.
+  for (const line of furnitureLines(source)) {
+    const box = reminderBox(line, source)
+    if (!box) continue
+    reading.hidden.push(box.marker, range(box.state, 1), range(box.close, 1))
+    reading.glyphs.set(box.open, box.ticked ? TICKED_BOX : EMPTY_BOX)
+    reading.reserved.push(range(line.location, box.end - line.location))
+  }
+  return reading
+}
+
+/**
+ * The `### ` at the head of a line: a marker run that STARTS its line and is
+ * hashes followed by one space. Nothing else looks like that — a fence is its
+ * whole line, and every inline pair is inside one.
+ */
+export function headingMarkers(runs: SourceRun[], source: string): Range[] {
+  const out: Range[] = []
+  for (const run of runs) {
+    if (run.kind !== "marker" || run.range.length < 2 || end(run.range) > source.length) continue
+    if (lineRange(source, run.range.location).location !== run.range.location) continue
+    const body = source.slice(run.range.location, end(run.range))
+    if (!body.endsWith(" ") || !/^#+$/.test(body.slice(0, -1))) continue
+    out.push(run.range)
+  }
+  return out
+}
+
+/** Where a reminder's box is on one line, in the note's own offsets. */
+export interface ReminderBox {
+  /** The `- ` in front of the brackets — hidden, because the box is the marker on a reminder. */
+  marker: Range
+  /** `[`, drawn as the box. */
+  open: number
+  /** What is between the brackets — the tick, or the space. */
+  state: number
+  /** `]`. */
+  close: number
+  /** Past the box and the space after it: where the words start, and where the caret lands. */
+  end: number
+  ticked: boolean
+}
+
+/** The reminder's box on the line `line` (a line range, newline and all), or null for a line that is not one. */
+export function reminderBox(line: Range, source: string): ReminderBox | null {
+  if (line.length <= 0 || end(line) > source.length) return null
+  const body = source.slice(line.location, end(line)).replace(/^\n+|\n+$/g, "")
+  const indent = /^[ \t]*/.exec(body)![0]
+  const item = todoItem(body.slice(indent.length))
+  if (!item) return null
+  // `todoItem` has said the line is `<marker>[<state>]` with a two-character marker; these offsets follow from that
+  // and are the ones `toggleTodo` counts.
+  const start = line.location + indent.length
+  const open = start + 2
+  const close = open + 2
+  if (close >= end(line)) return null
+  // The space after the box belongs to the box; a reminder with no words yet has no space to take.
+  const after = close + 1
+  const stop = after < end(line) && source[after] === " " ? after + 1 : after
+  return { marker: range(start, 2), open, state: open + 1, close, end: stop, ticked: item.done }
+}
+
+/** Every line of `source`, newline and all (an empty last line is not one). */
+export function furnitureLines(source: string): Range[] {
+  const out: Range[] = []
+  let start = 0
+  while (start < source.length) {
+    const line = lineRange(source, start)
+    if (line.length <= 0) break
+    out.push(line)
+    start = end(line)
+  }
+  return out
+}
+
+/**
+ * Where the caret really goes when it is put at `selection`: out of any piece
+ * of furniture, out of its FRONT (a prefix has only the start of the line to
+ * its left), and past ALL of it — a reminder's `- ` is furniture as a list
+ * marker and the whole `- [ ] ` as a box, and stopping after the first left
+ * the caret between the dash and the bracket. A real selection is left as it
+ * was made. (`MarkerHiding.outside` on the Mac.)
+ */
+export function outsideFurniture(selection: Range, furniture: readonly Range[]): Range {
+  if (selection.length !== 0) return selection
+  let location = selection.location
+  // Each turn moves strictly forward and a piece can only be used once, so this cannot spin.
+  for (let turn = 0; turn <= furniture.length; turn++) {
+    let furthest = -1
+    for (const piece of furniture) {
+      if (piece.length > 0 && location >= piece.location && location < end(piece)) furthest = Math.max(furthest, end(piece))
+    }
+    if (furthest < 0) break
+    location = furthest
+  }
+  return range(location, 0)
+}
+
+/**
+ * A backspace with the caret just behind a piece of furniture takes the WHOLE
+ * piece: `## ` off a heading, so it stops being one, rather than one space and
+ * a heading that quietly became a paragraph beginning `##`.
+ */
+export function furnitureBehind(caret: number, furniture: readonly Range[]): Range | null {
+  return furniture.find((piece) => piece.length > 0 && end(piece) === caret) ?? null
 }

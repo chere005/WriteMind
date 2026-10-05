@@ -19,6 +19,7 @@ import {
   toggleList, toggleQuote, type Heading, type ListStyle,
 } from "../markdown/formatting"
 import { insertBlock } from "./editing"
+import { evaluatorFence, evaluatorTitle, type Evaluator } from "../eval/evaluator"
 
 export type CellKind =
   /** A paragraph — the default, and what an ordinary click on the bar arms. */
@@ -27,6 +28,13 @@ export type CellKind =
   | { kind: "list"; style: ListStyle }
   | { kind: "quote" }
   | { kind: "code" }
+  /**
+   * A cell the note RUNS (Mac 29149b9; Sean, 2026-09-22: "if the input cursor is horizontal, hitting cmd+9 puts a
+   * new evaluation cell at that position"). A fenced block like any other here — the `eval ` prefix on its info
+   * string is the whole difference — so it needs no second block builder, only its own fence. Deliberately NOT in
+   * KIND_GROUPS: five environments would swamp the + menu for a cell its own key (Ctrl+9) already makes.
+   */
+  | { kind: "evaluation"; evaluator: Evaluator }
 
 /** A rung of the ladder as a kind — Body Text being the plain paragraph. */
 export function kindForHeading(level: Heading): CellKind {
@@ -41,6 +49,7 @@ export function kindName(kind: CellKind): string {
     case "list": return `${listTitle(kind.style)} List`
     case "quote": return "Quote"
     case "code": return "Code Block"
+    case "evaluation": return `${evaluatorTitle(kind.evaluator)} Evaluation Cell`
   }
 }
 
@@ -48,6 +57,7 @@ export function sameKind(a: CellKind, b: CellKind): boolean {
   if (a.kind !== b.kind) return false
   if (a.kind === "heading" && b.kind === "heading") return a.level === b.level
   if (a.kind === "list" && b.kind === "list") return a.style === b.style
+  if (a.kind === "evaluation" && b.kind === "evaluation") return a.evaluator === b.evaluator
   return true
 }
 
@@ -85,6 +95,9 @@ export function opening(kind: CellKind, markdown: string, caret: number): Edit |
       return toggleQuote(markdown, selection)
     case "code":
       return codeBlock(markdown, selection)
+    case "evaluation":
+      // The same fenced block the Insert menu writes, with the info string that makes it one the note runs.
+      return codeBlock(markdown, selection, evaluatorFence(kind.evaluator))
   }
 }
 

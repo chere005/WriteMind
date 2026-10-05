@@ -16,6 +16,7 @@ import { GAP_HEIGHT, seams, structuralLines, plusTarget, type CellBox, type Seam
 import { firstCellFromBy, picked } from "./selection"
 import { positioned, type Block } from "../markdown/parser"
 import { fenced } from "../markdown/formatting"
+import { reminderBox } from "../markdown/sourceStyle"
 import {
   edit, end, lineRange, range, replacing, substring, type Edit, type Range,
 } from "../text/range"
@@ -26,8 +27,33 @@ import {
 export const PREVIEW_TOP_INSET = 22
 /** The page's left and right margin, the same both sides. */
 export const PREVIEW_SIDE_INSET = 28
-/** The ONE gap between two cells — the same everywhere, whatever the cells are. */
+/**
+ * The FLOOR under a seam — "enough to put the pointer in" — and nothing more since Mac 0cde812: the air between two
+ * cells is `PREVIEW_BLOCK_GAP`.
+ */
 export const PREVIEW_GAP_HEIGHT = GAP_HEIGHT
+/** One line of the markdown side: 15px set at a line height of 1.45 (the notebook theme's). */
+export const SOURCE_LINE_HEIGHT = 15 * 1.45
+/** The space the markdown side adds between lines on top of that: none — the 1.45 is all of it. */
+export const SOURCE_LINE_SPACING = 0
+/** The size the markdown side sets code at, a little under the body. */
+export const SOURCE_CODE_SIZE = 14.2
+/**
+ * THE AIR BETWEEN TWO CELLS ON THE PAGE, which is the other side's rhythm and not a number of this page's own (Mac
+ * 0cde812; Sean, 2026-09-22: "make the spacing more uniform.. it's ok on markdown mode but in rendered mode things
+ * get scrunched together"). The markdown side puts a blank line of the note between two cells, and the spacing round
+ * it; the page used to stack them `PREVIEW_GAP_HEIGHT` apart, a third of that.
+ */
+export const PREVIEW_BLOCK_GAP = SOURCE_LINE_HEIGHT + SOURCE_LINE_SPACING
+/**
+ * The air above and below a drawn code block: HALF THE TEXT IT HOLDS, so the box hugs the code (Mac e66379c; Sean,
+ * 2026-09-22: "there shouldn't be so much padding in the cells themselves, it should be about the size of the text a
+ * little bigger"). It used to be a whole source line, so that a code cell was as tall on both sides; nothing depended
+ * on that — the two modes come back to the same cell by its offset, never by a measurement.
+ */
+export const PREVIEW_CODE_PADDING = Math.round(SOURCE_CODE_SIZE / 2)
+/** And either side of it. */
+export const PREVIEW_CODE_SIDE_PADDING = 12
 /** All of the tail seam under the last cell, so there is somewhere to put a cell down there. */
 export const PREVIEW_TAIL_HEIGHT = 80 + PREVIEW_TOP_INSET + PREVIEW_GAP_HEIGHT
 /** How tall the insertion mark itself is. */
@@ -65,6 +91,21 @@ export function topRow(positions: Map<number, PreviewPlace>, scroll: number): nu
 }
 
 /**
+ * Whether a place on the page is in front of the reader right now (Mac b98a7a5, `PreviewLayout.onScreen`): asked
+ * before the page is moved for a cursor put somewhere from OUTSIDE it — the bar under an answer a run has just
+ * written — so a one-line answer does not jerk the note under somebody who can already see it. A `margin` off each
+ * edge, because a place a point inside the fold is on screen by arithmetic and not by eye; a window nobody has
+ * measured yet holds nothing.
+ */
+export function previewOnScreen(y: number, scroll: number, height: number, margin = 24): boolean {
+  if (height <= margin * 2) return false
+  return y >= scroll + margin && y <= scroll + height - margin
+}
+
+/** Where a place that is NOT on screen is carried to (not jumped): this far down the window (Mac b98a7a5). */
+export const PREVIEW_LANDING = 0.8
+
+/**
  * The seams of the rendered page, measured off a stack of blocks instead of
  * off the glyphs: the same model the markdown pane uses, so a seam means the
  * same thing on both sides.
@@ -75,7 +116,7 @@ export function topRow(positions: Map<number, PreviewPlace>, scroll: number): nu
  * is seam.
  */
 export function previewSeams(rows: PreviewRow[], noteLength: number, pageHeight: number): Seam[] {
-  const places = previewPositions(rows, PREVIEW_GAP_HEIGHT, PREVIEW_TOP_INSET + PREVIEW_GAP_HEIGHT)
+  const places = previewPositions(rows, PREVIEW_BLOCK_GAP, PREVIEW_TOP_INSET + PREVIEW_GAP_HEIGHT)
   const cells: CellBox[] = []
   for (const row of rows) {
     const place = places.get(row.id)
@@ -432,4 +473,129 @@ export function backspaceInEmptyBlock(markdown: string, caret: number):
     markdown: out.markdown,
     caret: out.previous ? Math.min(end(out.previous), out.markdown.length) : 0,
   }
+}
+
+// MARK: - One reminder of a checklist at a time (Mac `ListEditing.swift`, 0fdd031)
+
+/**
+ * One reminder of a task list, as offsets in the note. `text` is the WORDS and
+ * nothing else — everything before them is the box and its marker, which on
+ * the rendered page is a live checkbox and not something to be typed (Sean,
+ * 2026-09-21: "when modifying a checklist.. the checkboxes remain in tact and
+ * just the text part of the list becomes editable, one at a time").
+ */
+export interface Reminder {
+  /** The whole line, newline and all. */
+  line: Range
+  /** Just the words. */
+  text: Range
+  /** The character between the brackets — what a tick replaces. */
+  box: number
+  ticked: boolean
+}
+
+/**
+ * Every reminder inside `cell`, in order. Lines that are not reminders are
+ * skipped rather than counted — the rule `toggleTodo` follows, so the tick and
+ * the editing agree about which reminder is the third one (ONE WALK).
+ */
+export function remindersIn(cell: Range, text: string): Reminder[] {
+  const out: Reminder[] = []
+  let start = Math.max(0, cell.location)
+  const stop = Math.min(end(cell), text.length)
+  while (start < stop) {
+    const line = lineRange(text, start)
+    if (line.length <= 0) break
+    const found = reminderOnLine(line, text)
+    if (found) out.push(found)
+    start = end(line)
+  }
+  return out
+}
+
+/** The reminder on one line (a line range, newline and all), or null when that line is not one. */
+export function reminderOnLine(line: Range, text: string): Reminder | null {
+  const box = reminderBox(line, text)
+  if (!box) return null
+  // `box.end` is past the box and the space after it: the words.
+  const bare = end(line) - (substring(text, line).endsWith("\n") ? 1 : 0)
+  return { line, text: range(box.end, Math.max(0, bare - box.end)), box: box.state, ticked: box.ticked }
+}
+
+/** The reminder whose WORDS start where `words` does — how an open item is found again after the note has changed. */
+export function reminderForText(words: Range, text: string): Reminder | null {
+  if (words.location > text.length) return null
+  const line = lineRange(text, Math.min(words.location, Math.max(text.length - 1, 0)))
+  const found = reminderOnLine(line, text)
+  return found && found.text.location === words.location ? found : null
+}
+
+/** The reminder on the line above `line`, when that line is one too. */
+export function previousReminder(line: Range, text: string): Reminder | null {
+  if (line.location <= 0) return null
+  return reminderOnLine(lineRange(text, line.location - 1), text)
+}
+
+/** The reminder on the line below `line`, when that line is one too. */
+export function nextReminder(line: Range, text: string): Reminder | null {
+  if (end(line) >= text.length || !substring(text, line).endsWith("\n")) return null
+  return reminderOnLine(lineRange(text, end(line)), text)
+}
+
+/**
+ * The marker this line carries with its box UNTICKED — what the next reminder
+ * starts with. A new task is not a done one (the answer `listContinuation`
+ * gives too).
+ */
+export function freshMarker(line: Range, text: string): string | null {
+  const box = reminderBox(line, text)
+  if (!box || box.end > text.length) return null
+  const head = text.slice(line.location, box.end)
+  const at = box.state - line.location
+  if (at < 0 || at >= head.length) return null
+  return head.slice(0, at) + " " + head.slice(at + 1)
+}
+
+/**
+ * RETURN inside an item: what is behind the caret (`head`) stays, what is in
+ * front of it (`tail`) becomes the next reminder, and that is the one open
+ * afterwards. `item` is the item's words.
+ */
+export function splitReminder(markdown: string, item: Range, head: string, tail: string):
+  { markdown: string; editing: Range } | null {
+  if (end(item) > markdown.length) return null
+  const line = lineRange(markdown, item.location)
+  const marker = freshMarker(line, markdown)
+  if (marker === null) return null
+  const updated = replacing(markdown, item, head + "\n" + marker + tail)
+  return { markdown: updated, editing: range(item.location + head.length + 1 + marker.length, tail.length) }
+}
+
+/**
+ * BACKSPACE in an item with nothing in it: the item goes, and the one above it
+ * is open at its end. `editing` is null when there was no reminder above — the
+ * caller takes the whole cell away instead.
+ */
+export function removeEmptyReminder(markdown: string, item: Range): { markdown: string; editing: Range | null } | null {
+  if (end(item) > markdown.length || item.length !== 0) return null
+  const line = lineRange(markdown, item.location)
+  const above = previousReminder(line, markdown)
+  const updated = replacing(markdown, line, "")
+  return { markdown: updated, editing: above ? range(end(above.text), 0) : null }
+}
+
+/**
+ * BACKSPACE at the start of an item that is NOT empty: its words join the end
+ * of the one above, and the caret sits at the seam between what was there and
+ * what has arrived. Null when there is nothing above to join to.
+ */
+export function joinPreviousReminder(markdown: string, item: Range): { markdown: string; editing: Range } | null {
+  if (end(item) > markdown.length) return null
+  const line = lineRange(markdown, item.location)
+  const above = previousReminder(line, markdown)
+  if (!above) return null
+  const words = substring(markdown, item)
+  // Everything from the end of the words above to the end of this item goes, and the words come back on that line.
+  const cut = range(end(above.text), end(item) - end(above.text))
+  return { markdown: replacing(markdown, cut, words), editing: range(end(above.text), 0) }
 }

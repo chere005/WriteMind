@@ -18,6 +18,8 @@ import {
 import { ALL_KINDS, KIND_GROUPS, kindName, openCell, type CellKind, type ListStyle, type Seam } from "@writemind/core"
 import { textTimeline } from "./editTimeline"
 import { historyOf, stashText, takeText } from "./noteHistory"
+import { evaluationCells, evalHost } from "@writemind/editor"
+import { evalHostOfApp } from "./evalHost"
 import "./editor.css"
 
 export interface NotebookHandle { view: EditorView | null }
@@ -106,6 +108,9 @@ export function Notebook({ file, text, version, restore, rendered: showRendered,
       hiddenMarkerDeletion,
       find,
       cellBrackets,
+      // Evaluation cells: Shift+Enter runs one (in the shell, main/eval), Ctrl+9 makes one, the In/Out marks.
+      evaluationCells,
+      evalHost.of(evalHostOfApp),
       mathRendering,
       linkTrigger((_editor, caret) => linkRef.current?.(file, caret)),
       linkClicks((href) => followRef.current?.(file, href)),

@@ -8,7 +8,7 @@ try {
   await send("Emulation.setDeviceMetricsOverride", { width: 1280, height: 720, deviceScaleFactor: 1.5, mobile: false })
   await sleep(800)
   ok("the page reports a device pixel ratio of 1.5", (await js(`devicePixelRatio`)) === 1.5)
-  const backing = async () => js(`(()=>{const c=document.querySelector('.wm-canvas canvas');const r=c.getBoundingClientRect();return {w:c.width,h:c.height,cssW:r.width,cssH:r.height}})()`)
+  const backing = async () => js(`(()=>{const c=document.querySelector('.wm-ink');const r=c.getBoundingClientRect();return {w:c.width,h:c.height,cssW:r.width,cssH:r.height}})()`)
   let b = await backing()
   ok("the canvas has 1.5 backing pixels per CSS pixel", Math.abs(b.w / b.cssW - 1.5) < 0.02 && Math.abs(b.h / b.cssH - 1.5) < 0.02, JSON.stringify(b))
 

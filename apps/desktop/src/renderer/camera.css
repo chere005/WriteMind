@@ -1,5 +1,22 @@
 /* The camera pane: the picture, the box dragged on it, the stand-ins for a picture that is not there. */
 
+/* The viewfinder: the pane, or the shape picked in Input Devices > Aspect Ratio centred in it. The picture, the box
+   and the corners are laid out inside it. A shaped one has the pane's black round it, the same black as the
+   letterbox bars, so a chosen shape looks like the picture and not like a window with a hole in it. */
+.camera .viewfinder { position: absolute; }
+.camera.shaped { background: #000; }
+
+/* The picture fills the window (double-click it): a faint way out over the top-left corner, and the corner's own
+   buttons step aside for it. The app's window only, never the display. */
+.camera.full-window { border-left: 0; }
+.camera.full-window .camera-top { left: 52px; }
+.camera .full-window-exit {
+  position: absolute; z-index: 5; top: 10px; left: 12px; width: 28px; height: 28px; padding: 0; border-radius: 50%;
+  border: 1px solid rgba(255, 255, 255, 0.3); background: rgba(0, 0, 0, 0.35); color: rgba(255, 255, 255, 0.9);
+  font-size: 12px; font-weight: 600; line-height: 26px; text-align: center; cursor: pointer;
+}
+.camera .full-window-exit:hover { background: rgba(0, 0, 0, 0.6); }
+
 /* The stage holds the video and everything that turns and zooms with it. */
 .camera .stage { position: absolute; inset: 0; overflow: hidden; background: #000; }
 .camera .stage .zoomer { position: absolute; inset: 0; transform-origin: 50% 50%; }

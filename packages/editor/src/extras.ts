@@ -11,7 +11,7 @@ import {
   type Range, type SpanStyle,
 } from "@writemind/core"
 import { applyEdit, atBar, notebook } from "./notebook"
-import { setArmedType } from "./seams"
+import { openArmed, setArmedType } from "./seams"
 import { followLink } from "./preview/follow"
 
 const selection = (view: EditorView): Range => {
@@ -89,7 +89,8 @@ export const extraKeys: Extension = keymap.of([
  * that is tagged already when the caret is not in one.
  */
 export const tagFence = (language: string): Command => (view) => {
-  if (atBar(view)) { view.dispatch({ effects: setArmedType.of({ kind: "code" }) }); view.focus(); return true }
+  // At a bar the block is made there, now (Mac 0fdd031), and then tagged like any block the caret is in.
+  if (atBar(view)) { view.dispatch({ effects: setArmedType.of({ kind: "code" }) }); openArmed(view, "") }
   const head = view.state.selection.main.head
   const cell = notebook(view.state).cells.find((c) =>
     c.block.kind === "code" && head >= c.range.location && head <= c.range.location + c.range.length)

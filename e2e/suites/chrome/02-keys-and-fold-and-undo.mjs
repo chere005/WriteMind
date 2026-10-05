@@ -24,10 +24,9 @@ await key(".", { code: "Period", vk: 190, ctrl: true }); await sleep(200)
 ok("and once more to the cell", (await js(`${view}.state.sliceDoc(${view}.state.selection.main.from, ${view}.state.selection.main.to)`)).length > 4)
 
 await caretAt("Head", 1)
-await key("ArrowLeft", { code: "ArrowLeft", vk: 37, ctrl: true, alt: true }); await sleep(300)
-ok("Ctrl+Alt+Left folds the section the caret is in", (await js(`document.querySelectorAll('.wm-folded').length`)) === 1)
-await key("ArrowRight", { code: "ArrowRight", vk: 39, ctrl: true, alt: true }); await sleep(300)
-ok("Ctrl+Alt+Right unfolds it", (await js(`document.querySelectorAll('.wm-folded').length`)) === 0)
+// Mac e8b3266: the caret's own fold keys are gone; Ctrl+; folds what is UNDER the caret's section, never the section itself.
+await key(";", { code: "Semicolon", vk: 186, ctrl: true }); await sleep(300)
+ok("Ctrl+; never folds the section the caret is in (Head has nothing under it)", (await js(`document.querySelectorAll('.wm-folded').length`)) === 0)
 await key("ArrowLeft", { code: "ArrowLeft", vk: 37, ctrl: true, alt: true, shift: true }); await sleep(300)
 ok("Ctrl+Alt+Shift+Left folds them all", (await js(`document.querySelectorAll('.wm-folded').length`)) >= 1)
 await key("ArrowRight", { code: "ArrowRight", vk: 39, ctrl: true, alt: true, shift: true }); await sleep(300)

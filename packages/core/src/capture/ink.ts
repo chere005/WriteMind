@@ -250,6 +250,87 @@ export function inkMask(gray: Uint8Array, width: number, height: number, options
   return writingMask(marks(raw, width, height, options))
 }
 
+// MARK: - How heavy traced writing comes out (Mac commits 159e0f6, 6685cb1)
+
+/**
+ * HOW MUCH OF ITS OWN WIDTH A TRACED STROKE KEEPS (`NotebookCapture.strokeKeep`). Sean, 2026-09-22: "the scale is
+ * correct, but the thickness of the writing is too thick". A capture lands at more than twice the size it used to
+ * (`PAGE_FRACTION`) and the trace is faithful, so the pen arrived twice as heavy beside the note's text. A THIRD:
+ * half of it was still heavy, said twice the same day.
+ */
+export const STROKE_KEEP = 0.35
+
+/**
+ * How thin a stroke is ever allowed to get, in mask pixels (`NotebookCapture.strokeFloor`). Under about this a
+ * pencil line comes apart into dots, and a capture with holes in it is worse than a heavy one — so a stroke already
+ * at the floor is left exactly as it was.
+ */
+export const STROKE_FLOOR = 2.0
+
+/**
+ * THE INK'S MEAN STROKE WIDTH, in mask pixels: twice the area over the boundary (`NotebookCapture.strokeWidth`).
+ * For anything long and thin that IS its width, whatever shape it is — a long run of pixels has two long sides and
+ * two short ends, so the ends fall out of the ratio. Measured rather than assumed, because a fine pencil and a
+ * marker are four times apart and one number eroded off both would break the first and barely touch the second.
+ */
+export function inkStrokeWidth(mask: Uint8Array, width: number, height: number): number {
+  const inked = (x: number, y: number): boolean => x >= 0 && y >= 0 && x < width && y < height && mask[y * width + x] !== 0
+  let area = 0, boundary = 0
+  for (let y = 0; y < height; y++) {
+    for (let x = 0; x < width; x++) {
+      if (!mask[y * width + x]) continue
+      area += 1
+      if (!inked(x - 1, y)) boundary += 1
+      if (!inked(x + 1, y)) boundary += 1
+      if (!inked(x, y - 1)) boundary += 1
+      if (!inked(x, y + 1)) boundary += 1
+    }
+  }
+  return boundary > 0 ? 2 * area / boundary : 0
+}
+
+/**
+ * The ink, thinned to `keep` of its measured width — one pixel off every side per pass, so a stroke loses two of
+ * its width each time (`NotebookCapture.thinned`). Nothing is thinned past `floor`, and a stroke already at or under
+ * it is returned untouched (the same array) rather than eroded to nothing.
+ */
+export function thinnedInk(mask: Uint8Array, width: number, height: number,
+  keep = STROKE_KEEP, floor = STROKE_FLOOR): Uint8Array {
+  const measured = inkStrokeWidth(mask, width, height)
+  const target = Math.max(floor, measured * keep)
+  // Swift's `.rounded()` is half away from zero; for a positive count that is Math.round, and a negative one is no pass.
+  const passes = Math.round((measured - target) / 2)
+  if (!(passes > 0)) return mask
+  let ink = Uint8Array.from(mask)
+  for (let pass = 0; pass < passes; pass++) {
+    const before = ink
+    ink = Uint8Array.from(before)
+    const inked = (x: number, y: number): boolean => x >= 0 && y >= 0 && x < width && y < height && before[y * width + x] !== 0
+    for (let y = 0; y < height; y++) {
+      for (let x = 0; x < width; x++) {
+        if (!before[y * width + x]) continue
+        if (!inked(x - 1, y) || !inked(x + 1, y) || !inked(x, y - 1) || !inked(x, y + 1)) ink[y * width + x] = 0
+      }
+    }
+  }
+  return ink
+}
+
+/**
+ * The writing as the TRACE takes it: CLEAN, THIN, THEN CLEAN AGAIN (the `.ink` case of `NotebookCapture.capture`,
+ * Mac commit 6685cb1). `cleaned` is the first pass's marks (specks, the printed grid and the page's edge already
+ * dropped), which is what the stroke width is measured off — measuring the raw ink would be measuring the dots as
+ * much as the pen. The second pass is there BECAUSE of the thinning: a printed dot that got past the lattice is a few
+ * pixels across, and the erosion leaves it under the speck limit, so the dots that survived the grid search come out
+ * in the wash (Sean, 2026-09-22: "now some of the background dots are getting picked up by mistake").
+ */
+export function thinnedWriting(cleaned: Marks, options: { minimumSize?: number; minimumArea?: number; keepEdges?: boolean } = {}): Marks {
+  const thin = thinnedInk(writingMask(cleaned), cleaned.width, cleaned.height)
+  return marks(thin, cleaned.width, cleaned.height, {
+    minimumSize: options.minimumSize ?? 7, minimumArea: options.minimumArea ?? 20, keepEdges: options.keepEdges,
+  })
+}
+
 /**
  * The writing's box with a little room round it, kept inside the page — the
  * writing inside `within` only (page pixels, top-left origin), when there is

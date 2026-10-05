@@ -19,9 +19,15 @@
  * THE MAPPING FROM THE MAC. ⌘ becomes Ctrl. The Mac's ⌃ shortcuts keep what
  * the editor already used on Windows (⌃D split, ⌃M merge, ⌃⇧D duplicate,
  * ⌃⇧↑/↓ move cell) — except where Ctrl alone would collide with Windows:
- * the ⌃⌘ pair (sidebar, video, notes pane) and the ⌥⌘ pair (markers,
- * refresh, drawing undo, folding) become Ctrl+Alt. `docs/KEYS.md` lists the
- * lot.
+ * the ⌥⌘ chords (refresh, drawing undo, folding) become Ctrl+Alt, and ⌘Y
+ * (the video) is Ctrl+Shift+Y because Ctrl+Y is Redo on a PC.
+ *
+ * ONE LIST OF EVERY KEY (the Mac's `Shortcut`, 2026-09-21: Sean asked for
+ * ⌘S, ⌘P, ⌘E, ⌘T, ⌘Y, ⌘K and ⌘; "unless there's conflicts with those?"):
+ * this table is it. `test/keyList.test.ts` holds it to the rule that no two
+ * commands want one chord, that the editor's keymaps bind no menu chord
+ * outside it, and that `docs/KEYS.md` and Help ▸ Keyboard Shortcuts
+ * (`shared/keyList.ts`) list exactly these keys.
  */
 
 export type Owner = "editor" | "history" | "page" | "main"
@@ -49,11 +55,14 @@ export const COMMANDS: CommandDef[] = [
   c("newNote", "New Note", "page", "CmdOrCtrl+N"),
   c("closeTab", "Close Tab", "page", "CmdOrCtrl+W"),
   c("openFolder", "Open Notes Folder", "page", "CmdOrCtrl+Shift+O"),
-  c("exportPDF", "PDF…", "page"),
+  // ⌘S, the key every app has: what is pending (the note and its drawing) is written now.
+  c("save", "Save", "page", "CmdOrCtrl+S"),
+  // One command; PDF or Project is chosen in the save panel (main/exportFile.ts).
+  c("export", "Export…", "page", "CmdOrCtrl+E"),
   // Project
   c("addFolder", "Add Folder to Project…", "main", "CmdOrCtrl+Shift+A"),
-  // The Mac gives Save Project ⌃⌘S, the very chord it gives the sidebar; here
-  // the sidebar keeps Ctrl+Alt+S and the project takes the Save As chord.
+  // ⇧⌘S on the Mac too, since 2026-09-21: ⌃⌘S was the sidebar's as well, and
+  // a chord claimed twice goes to the first menu, so this one could not be pressed.
   c("saveProject", "Save Project", "main", "CmdOrCtrl+Shift+S"),
   c("saveProjectAs", "Save Project As…", "main"),
   c("openProject", "Open Project…", "main"),
@@ -72,16 +81,22 @@ export const COMMANDS: CommandDef[] = [
   // F3 / Shift+F3 here: Ctrl+G is Group on the drawing layer (the Mac's ⌃G; its find next is ⌘G, which is Ctrl on a PC).
   c("findNext", "Find Next", "page", "F3", "Cmd+G"),
   c("findPrevious", "Find Previous", "page", "Shift+F3", "Shift+Cmd+G"),
-  c("useSelectionForFind", "Use Selection for Find", "page", "CmdOrCtrl+E"),
+  // No key: Ctrl+E is Export (Sean's ⌘E, 2026-09-21).
+  c("useSelectionForFind", "Use Selection for Find", "page"),
   c("jumpToSelection", "Jump to Selection", "page", "CmdOrCtrl+J"),
-  // View
-  c("toggleSidebar", "Hide Notes Sidebar", "page", "CmdOrCtrl+Alt+S", "Ctrl+Cmd+S"),
-  c("toggleMode", "Show Markdown Preview", "page", "CmdOrCtrl+Shift+P"),
-  c("toggleCamera", "Hide Video", "page", "CmdOrCtrl+Alt+C", "Ctrl+Cmd+C"),
-  c("toggleEditorPane", "Hide Notes Pane", "page", "CmdOrCtrl+Alt+E", "Ctrl+Cmd+E"),
-  c("toggleMarkers", "Show Markdown Markers", "page", "CmdOrCtrl+Alt+M", "Alt+Cmd+M"),
-  c("foldSection", "Fold Section", "page", "CmdOrCtrl+Alt+Left", "Alt+Cmd+Left"),
-  c("unfoldSection", "Unfold Section", "page", "CmdOrCtrl+Alt+Right", "Alt+Cmd+Right"),
+  // View. ⌘K, ⌘T, ⌘Y, ⌘P (Sean, 2026-09-21), MOVED rather than added: two keys
+  // for one action is two things to remember and one of them always the wrong one.
+  c("toggleSidebar", "Hide Notes Sidebar", "page", "CmdOrCtrl+K"),
+  c("toggleMode", "Show Markdown Preview", "page", "CmdOrCtrl+T"),
+  c("toggleCamera", "Hide Video", "page", "CmdOrCtrl+Shift+Y", "Cmd+Y"),
+  // The pen goes up or comes down: the same writer as Pen ▸ Pen Down (Ctrl+Alt+1, the ExpressKeys' chord).
+  c("togglePen", "Draw", "page", "CmdOrCtrl+P"),
+  // No key on these two (Sean, 2026-09-21: "get rid of ^cmd+e and opt+cmd+m"); the commands stay.
+  c("toggleEditorPane", "Hide Notes Pane", "page"),
+  c("toggleMarkers", "Show Markdown Markers", "page"),
+  // ⌘; folds what is UNDER the cells in play, never the cell itself; one key both ways.
+  // It replaces the caret's own Fold / Unfold Section keys (⌥⌘← / ⌥⌘→), which are gone.
+  c("collapseSubsections", "Collapse Subsections", "page", "CmdOrCtrl+;"),
   c("foldAll", "Fold All Sections", "page", "CmdOrCtrl+Alt+Shift+Left", "Alt+Shift+Cmd+Left"),
   c("unfoldAll", "Unfold All Sections", "page", "CmdOrCtrl+Alt+Shift+Right", "Alt+Shift+Cmd+Right"),
   // Format
@@ -97,7 +112,11 @@ export const COMMANDS: CommandDef[] = [
   c("splitCell", "Split Cell", "editor", "Ctrl+D"),
   c("mergeCells", "Merge Cells", "editor", "Ctrl+M"),
   c("duplicateCell", "Duplicate Cell", "editor", "Ctrl+Shift+D"),
-  c("deleteCell", "Delete Cell", "editor", "Ctrl+Backspace"),
+  // The Mac's ⌘9: an evaluation cell here (main/eval runs it; Shift+Enter in the cell, which is NOT a menu key —
+  // an accelerator would take Shift+Enter from every field in the app).
+  c("evaluationCell", "Evaluation Cell", "editor", "CmdOrCtrl+9"),
+  // No key (Sean, 2026-09-21: "backspace is enough to delete the selected cell so no need for ^+backspace").
+  c("deleteCell", "Delete Cell", "editor"),
   c("moveCellUp", "Move Cell Up", "editor", "Ctrl+Shift+Up"),
   c("moveCellDown", "Move Cell Down", "editor", "Ctrl+Shift+Down"),
   c("moveSectionUp", "Move Section Up", "editor", "Ctrl+Up", "Ctrl+Cmd+Up"),
@@ -126,6 +145,8 @@ export const COMMANDS: CommandDef[] = [
   // Input Devices
   c("cameraOff", "Turn Camera Off", "page"),
   c("cameraRefresh", "Refresh Device List", "page", "CmdOrCtrl+Alt+R", "Alt+Cmd+R"),
+  // Help: every key in one list (shared/keyList.ts). F1 is a PC's help key; the Mac's is ⌘?.
+  c("keyList", "Keyboard Shortcuts", "page", "F1", "Shift+Cmd+/"),
 ]
 
 const byId = new Map(COMMANDS.map((command) => [command.id, command]))
@@ -239,6 +260,8 @@ export interface MenuState {
   codeLanguage: string | null
   cameras: { id: string; name: string }[]
   cameraId: string | null
+  /** Input Devices ▸ Aspect Ratio: the shape of the viewfinder (`CameraAspect`'s stored name; "free" when none). */
+  cameraAspect?: string
   /** The pen is down (✎ lit), the Erase and Select tools are on, the pen writes whatever the mode. */
   penDown: boolean
   penErase: boolean

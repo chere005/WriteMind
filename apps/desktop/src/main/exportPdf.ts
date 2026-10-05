@@ -1,5 +1,5 @@
 /**
- * File ▸ Export ▸ PDF… — the note as it is read, on paper (the Mac's
+ * File ▸ Export… as PDF — the note as it is read, on paper (the Mac's
  * `ExportMenu` and `NoteExport`). The page plan and the look of the cells are
  * `@writemind/core`'s `export/*`; this is the part that needs Chromium: a
  * window nobody sees measures the cells, the sheets are planned from those
@@ -91,7 +91,17 @@ export async function renderNotePdf(request: Omit<ExportRequest, "title" | "note
   }
 }
 
-/** Ask where it goes, then write it. The default is the note's own name in Documents. */
+/** The note's PDF, written to `file`: what File ▸ Export… does once the panel has said PDF (exportFile.ts). Throws on failure. */
+export async function writeNotePdf(file: string, request: Omit<ExportRequest, "title" | "noteFile">,
+  mediaFile: (name: string) => string, pictureUrl: (name: string) => string | null = () => null): Promise<void> {
+  const { pdf } = await renderNotePdf(request, mediaFile, pictureUrl)
+  await fs.writeFile(file, pdf)
+}
+
+/**
+ * PDF only, the panel asking nothing (the `export:pdf` channel, kept for the end-to-end scripts that render a
+ * note without the menu). Ask where it goes, then write it. The default is the note's own name in Documents.
+ */
 export async function exportNotePdf(request: ExportRequest, deps: ExportDeps): Promise<string | null> {
   const parent = deps.window
   if (!parent) return null

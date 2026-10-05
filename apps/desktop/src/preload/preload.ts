@@ -6,6 +6,7 @@
 
 import { contextBridge, ipcRenderer } from "electron"
 import { PEN_CHANNELS, type PenApi } from "../shared/pen"
+import { EVAL_CHANNELS, type EvalApi } from "../shared/eval"
 
 /** window.wm.pen: the tablet pen's feed (shared/pen.ts PenApi; every channel name is spelled once there). The E2E hooks exist only under WRITEMIND_E2E. */
 const listen = <T>(channel: string, listener: (payload: T) => void): (() => void) => {
@@ -79,6 +80,8 @@ const api = {
   ocrStatus: () => ipcRenderer.invoke("ocr:status"),
   askForCamera: () => ipcRenderer.invoke("camera:ask"),
   exportPDF: (request: unknown) => ipcRenderer.invoke("export:pdf", request),
+  /** File ▸ Export…: one save panel, PDF or Project chosen in it; null when no note is open (project only). */
+  exportFile: (request: unknown) => ipcRenderer.invoke("export:file", request),
   duplicateNote: (file: string) => ipcRenderer.invoke("note:duplicate", file),
   /** What the application menu needs to know (a note open, the sidebar shown, ...). */
   setMenuState: (state: unknown) => ipcRenderer.invoke("menu:state", state),
@@ -94,6 +97,12 @@ const api = {
   },
   /** The tablet pen's native feed (main/pen/*): see PenApi in shared/pen.ts. */
   pen,
+  /** Evaluation cells (shared/eval.ts): run ONE cell, on Shift+Enter in it, and nothing else. */
+  evaluate: {
+    run: (request) => ipcRenderer.invoke(EVAL_CHANNELS.run, request),
+    cancel: (id) => ipcRenderer.invoke(EVAL_CHANNELS.cancel, id),
+    tools: () => ipcRenderer.invoke(EVAL_CHANNELS.tools),
+  } satisfies EvalApi,
   /** End-to-end scripts only (WRITEMIND_E2E): read the menu bar and press an item. */
   ...(process.env.WRITEMIND_E2E ? {
     e2eMenu: () => ipcRenderer.invoke("e2e:menu"),

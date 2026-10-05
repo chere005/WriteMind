@@ -31,7 +31,7 @@
  */
 
 import {
-  EditorSelection, RangeSetBuilder, StateField, type EditorState, type Extension, type Text,
+  EditorSelection, RangeSetBuilder, StateField, type ChangeDesc, type EditorState, type Extension, type Text,
 } from "@codemirror/state"
 import {
   Decoration, EditorView, ViewPlugin, WidgetType,
@@ -487,18 +487,49 @@ function blockDecorations(blocks: TypesetBlock[]): DecorationSet {
   return builder.finish()
 }
 
-interface Typeset { blocks: TypesetBlock[]; decorations: DecorationSet }
+export interface Typeset { blocks: TypesetBlock[]; decorations: DecorationSet }
 const sameBlocks = (a: TypesetBlock[], b: TypesetBlock[]): boolean =>
   a.length === b.length && a.every((one, i) => one.from === b[i]!.from && one.to === b[i]!.to && one.source === b[i]!.source)
 
+/**
+ * The blocks' decorations before an edit, CARRIED THROUGH IT, when the edit drew nothing new: every block is where the
+ * mapping puts it, with the same maths. Null when anything else changed (a block's words, a fence made or broken, a
+ * block shown as source), and the decorations are made again.
+ *
+ * EVERY KEYSTROKE MADE EVERY BLOCK OF THE NOTE AGAIN (perf lane, 2026-10-05): a block's position moves with any edit
+ * above it, so the old "same blocks?" test failed on nearly every keystroke and a new widget was made for every
+ * ```wl block in the note; CodeMirror then compared the old set with the new one from end to end. A mapped set shares
+ * its untouched parts with the old one, so that comparison skips them.
+ */
+export function carriedBlocks(before: Typeset, changes: ChangeDesc, blocks: TypesetBlock[]): DecorationSet | null {
+  if (blocks.length !== before.blocks.length) return null
+  const decorations = before.decorations.map(changes)
+  let i = 0
+  for (const cursor = decorations.iter(); cursor.value; cursor.next(), i++) {
+    const block = blocks[i]
+    if (!block || cursor.from !== block.from || cursor.to !== block.to || block.source !== before.blocks[i]!.source) return null
+  }
+  return i === blocks.length ? decorations : null
+}
+
+/** The blocks of a state as the field holds them (exported for the tests). */
+export function typesetOf(state: EditorState, before?: { value: Typeset; changes: ChangeDesc }): Typeset {
+  const blocks = typesetBlocks(state)
+  const carried = before ? carriedBlocks(before.value, before.changes, blocks) : null
+  return { blocks, decorations: carried ?? blockDecorations(blocks) }
+}
+
 const blockField = StateField.define<Typeset>({
-  create: (state) => { const blocks = typesetBlocks(state); return { blocks, decorations: blockDecorations(blocks) } },
+  create: (state) => typesetOf(state),
   update(value, transaction) {
     if (!transaction.docChanged && !transaction.selection) return value
     // A caret that moves between lines of prose changes nothing here: the decorations are rebuilt only when the
     // set of blocks being drawn is not the one before.
-    const blocks = typesetBlocks(transaction.state)
-    return sameBlocks(blocks, value.blocks) && !transaction.docChanged ? value : { blocks, decorations: blockDecorations(blocks) }
+    if (!transaction.docChanged) {
+      const blocks = typesetBlocks(transaction.state)
+      return sameBlocks(blocks, value.blocks) ? value : { blocks, decorations: blockDecorations(blocks) }
+    }
+    return typesetOf(transaction.state, { value, changes: transaction.changes })
   },
   provide: (field) => [
     EditorView.decorations.from(field, (value) => value.decorations),

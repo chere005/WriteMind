@@ -64,6 +64,10 @@ declare global {
         noteFile: string; title: string; markdown: string; drawing: string | null
         pane: { width: number; height: number }
       }): Promise<string | null>
+      exportFile(request: {
+        noteFile: string; title: string; markdown: string; drawing: string | null
+        pane: { width: number; height: number }
+      } | null): Promise<{ format: import("@writemind/core").ExportFormat; file: string } | null>
       duplicateNote(file: string): Promise<string>
       setMenuState(state: import("../shared/commands").MenuState): Promise<void>
       runMain(id: string): Promise<void>
@@ -76,6 +80,8 @@ declare global {
       e2eSetBounds?(bounds: unknown): Promise<void>
       /** The tablet pen's native feed (shared/pen.ts PenApi); present on every platform, `available: false` off Windows. */
       pen: import("../shared/pen").PenApi
+      /** Evaluation cells (shared/eval.ts): run one cell on Shift+Enter, take a run back, where the tools are. */
+      evaluate: import("../shared/eval").EvalApi
       onNotesChanged(listener: () => void): () => void
       onFlushRequest(listener: () => Promise<void> | void): () => void
       onEdit(listener: (which: "undo" | "redo") => void): () => void

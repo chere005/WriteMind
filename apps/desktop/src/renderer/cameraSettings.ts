@@ -6,6 +6,9 @@
  * conveniences: every read and write is guarded, and the pane works without them.
  */
 
+import { useSyncExternalStore } from "react"
+import { parseCameraAspect, type CameraAspect } from "@writemind/core"
+
 /** What a capture brings in: the writing, the whole page, the raw picture. */
 export type CaptureMode = "ink" | "page" | "raw"
 
@@ -42,6 +45,27 @@ export const rememberedShape = (): number | null => {
   return typeof value === "number" && Number.isFinite(value) && value >= 1 ? value : null
 }
 export const rememberShape = (ratio: number): void => write("notebookPageShape", ratio)
+
+/**
+ * THE SHAPE OF THE VIEWFINDER (Input Devices ▸ Aspect Ratio; Mac commit c98c067, `AppState.cameraAspect`).
+ * Remembered, like the turn and the zoom beside it: the shape you photograph pages in is a property of your
+ * notebook, not of this launch. One value the menu ticks and the pane lays itself out by, so a small store.
+ */
+let aspectNow: CameraAspect = parseCameraAspect(read<unknown>("cameraAspect", "free"))
+const aspectListeners = new Set<() => void>()
+export const cameraAspect = (): CameraAspect => aspectNow
+export function setCameraAspect(next: CameraAspect): void {
+  const safe = parseCameraAspect(next)
+  if (safe === aspectNow) return
+  aspectNow = safe
+  write("cameraAspect", safe)
+  aspectListeners.forEach((listener) => listener())
+}
+const subscribeAspect = (listener: () => void): (() => void) => {
+  aspectListeners.add(listener)
+  return () => { aspectListeners.delete(listener) }
+}
+export const useCameraAspect = (): CameraAspect => useSyncExternalStore(subscribeAspect, cameraAspect)
 
 /** The box the pane is zoomed into, in fractions of the pane (unzoomed picture), or null. */
 export interface ZoomBox { x: number; y: number; width: number; height: number }

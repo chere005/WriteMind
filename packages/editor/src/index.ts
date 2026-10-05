@@ -30,3 +30,6 @@ export {
 } from "./preview"
 export { cellBoxes } from "./seams"
 export { mathRendering, mathElement, mathDOM, installMathStyles, showsSource, MATH_CSS, MATHML_NS } from "./math"
+export {
+  evaluationCells, evalHost, evalField, evaluationCell, runCell, evaluatesHere, groupsIn, type EvalHost,
+} from "./eval/index"

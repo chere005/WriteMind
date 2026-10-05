@@ -267,7 +267,17 @@ class SeamLayer {
     return event.clientX - box.left
   }
 
+  /**
+   * The bracket column is not the page's to answer for (Mac 17f0f82: "one owner and one answer for every place the
+   * pointer can be"). The seams run under it, so without this a pointer over a bracket also lit a faint bar and set
+   * the row-resize cursor on the page under the gutter's hand, and a press there could arm the bar at either end.
+   */
+  private inGutter(event: MouseEvent): boolean {
+    return event.target instanceof Element && event.target.closest(".wm-gutter") !== null
+  }
+
   private move = (event: MouseEvent) => {
+    if (this.inGutter(event)) { this.leave(); return }
     const seam = seamAtY(this.view, this.y(event))
     const offset = seam ? seam.offset : null
     if (offset !== this.hovered) { this.hovered = offset; this.draw() }
@@ -278,14 +288,14 @@ class SeamLayer {
   }
 
   private leave = () => {
+    if (this.view.scrollDOM.style.cursor !== "") this.view.scrollDOM.style.cursor = ""
     if (this.hovered === null) return
     this.hovered = null
-    this.view.scrollDOM.style.cursor = ""
     this.draw()
   }
 
   private press = (event: MouseEvent) => {
-    if (event.button !== 0) return
+    if (event.button !== 0 || this.inGutter(event)) return
     const seam = seamAtY(this.view, this.y(event))
     if (!seam) return
     if (onPlus(this.x(event), this.y(event), seam, PLUS_LEADING)) {
@@ -385,7 +395,7 @@ function rewrite(view: EditorView, markdown: string, caret: number): void {
 }
 
 /** Open the cell an armed bar stands for, with `written` already in it. */
-function openArmed(view: EditorView, written: string): boolean {
+export function openArmed(view: EditorView, written: string): boolean {
   const armed = view.state.field(armedField, false) ?? null
   if (armed === null) return false
   const kind = view.state.field(armedTypeField, false) ?? { kind: "text" as const }

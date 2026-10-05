@@ -61,7 +61,8 @@ export function useUndo(options: Options): void {
       // A label being typed has its own undo.
       if (event.target instanceof Element && event.target.closest("input, textarea")) return
       const k = event.key.toLowerCase()
-      const which = k === "z" ? (event.shiftKey ? "redo" : "undo") : k === "y" && !event.metaKey ? "redo" : null
+      // Ctrl+Y, not Ctrl+Shift+Y: that is View ▸ Show / Hide Video (the Mac's ⌘Y, shared/commands.ts).
+      const which = k === "z" ? (event.shiftKey ? "redo" : "undo") : k === "y" && !event.metaKey && !event.shiftKey ? "redo" : null
       if (!which) return
       run(which)
       event.preventDefault(); event.stopPropagation()

@@ -5,12 +5,14 @@ const press = (key: string, mods: { ctrl?: boolean; shift?: boolean; alt?: boole
   key, ctrlKey: mods.ctrl === true, shiftKey: mods.shift === true, altKey: mods.alt === true, metaKey: false,
 })
 
-// The Mac's text view has a find bar (usesFindBar): ⌘F, ⌘G / ⇧⌘G, ⌘E, ⌥⌘F, ⌘J. See docs/KEYS.md.
+// The Mac's text view has a find bar (usesFindBar): ⌘F, ⌘G / ⇧⌘G, ⌥⌘F, ⌘J (⌘E is Export). See docs/KEYS.md.
 describe("the find keys", () => {
-  it("Ctrl+F finds, Ctrl+H replaces, Ctrl+E takes the selection, Ctrl+J jumps to it", () => {
+  // Ctrl+E is Export… since Mac e8b3266 (Sean's ⌘E); Use Selection for Find keeps its menu item and no key.
+  it("Ctrl+F finds, Ctrl+H replaces, Ctrl+J jumps to the selection, Ctrl+E is Export", () => {
     expect(commandForKey(press("f", { ctrl: true }), "win32")?.id).toBe("find")
     expect(commandForKey(press("h", { ctrl: true }), "win32")?.id).toBe("findReplace")
-    expect(commandForKey(press("e", { ctrl: true }), "win32")?.id).toBe("useSelectionForFind")
+    expect(commandForKey(press("e", { ctrl: true }), "win32")?.id).toBe("export")
+    expect(shown("useSelectionForFind", "win32")).toBe("")
     expect(commandForKey(press("j", { ctrl: true }), "win32")?.id).toBe("jumpToSelection")
   })
 

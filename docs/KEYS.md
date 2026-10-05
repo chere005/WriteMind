@@ -18,7 +18,7 @@ press would run twice. Each command names its owner instead:
 |---|---|---|
 | `editor` | CodeMirror's keymap (`packages/editor/src/keys.ts`, `extras.ts`). The page stands down because the key arrives `defaultPrevented`. | the Format menu, Select Next / All Occurrences, Code Block |
 | `history` | `useUndo` (the words and the drawing share one Undo) | Undo, Redo |
-| `page` | `useChrome` in the page | File, View, Insert, Undo/Redo Drawing, Expand Selection, Input Devices |
+| `page` | `useChrome` in the page | File, View, Insert, Pen, Undo/Redo Drawing, Expand Selection, Find, Input Devices, Help |
 | `main` | `useChrome`, which hands it to the main process (dialogs, the project file) | Project menu |
 
 A **menu click** sends `menu:command` to the page (or runs in the main process
@@ -31,71 +31,130 @@ Do not use `role: "windowMenu"` or `role: "viewMenu"`: their Minimize
 accelerators and collide with Merge Cells, Close Tab and Insert Image. The test
 `menu.test.ts` fails if a role other than a known-safe one appears.
 
-## The mapping
+## Every key (Help ▸ Keyboard Shortcuts, F1)
 
-| Command | Mac | Windows / Linux |
-|---|---|---|
-| New Note | ⌘N | Ctrl+N |
-| Close Tab | ⌘W | Ctrl+W |
-| Open Notes Folder | ⇧⌘O | Ctrl+Shift+O |
-| Add Folder to Project… | ⇧⌘A | Ctrl+Shift+A |
-| Save Project | ⌃⌘S (also the sidebar's!) | Ctrl+Shift+S |
-| Undo / Redo | ⌘Z / ⇧⌘Z | Ctrl+Z / Ctrl+Y (Ctrl+Shift+Z too): ONE timeline per note, the words and the drawing together — Undo takes back exactly the most recent edit, whichever it was; Redo brings back the one undone last. Both keys are always swallowed outside a text field (the browser's own undo of the page must never run behind CodeMirror) |
-| Undo / Redo Drawing | ⌥⌘Z / ⇧⌥⌘Z | Ctrl+Alt+Z / Ctrl+Alt+Shift+Z: the drawing's own pair, whatever was edited last |
-| Expand Selection | ⌘. | Ctrl+. |
-| Select Next Occurrence | ⌘D | Alt+D |
-| Select All Occurrences | ⌃⌘G | Alt+Shift+D |
-| Hide/Show Notes Sidebar | ⌃⌘S | Ctrl+Alt+S |
-| Markdown Preview / Editor | ⇧⌘P | Ctrl+Shift+P |
-| Hide/Show Video | ⌃⌘C | Ctrl+Alt+C |
-| Hide/Show Notes Pane | ⌃⌘E | Ctrl+Alt+E |
-| Hide / Show Markdown Markers (View) | ⌥⌘M | Ctrl+Alt+M: the Mac's chord, kept. Independent of the preview |
-| Find… / Find and Replace… | ⌘F / ⌥⌘F | Ctrl+F / Ctrl+H (the Mac's chord is also bound) |
-| Find Next / Previous | ⌘G / ⇧⌘G | F3 / Shift+F3 (Ctrl+G is Group on the drawing layer); Enter / Shift+Enter in the bar |
-| Use Selection for Find | ⌘E | Ctrl+E |
-| Fold / Unfold Section | ⌥⌘← / ⌥⌘→ | Ctrl+Alt+Left / Right |
-| Fold / Unfold All Sections | ⇧⌥⌘← / ⇧⌥⌘→ | Ctrl+Alt+Shift+Left / Right |
-| Title … Body (heading ladder) | ⌘1 … ⌘7 | Ctrl+1 … Ctrl+7 |
-| Bold / Italic / Underline | ⌘B / ⌘I / ⌘U | Ctrl+B / Ctrl+I / Ctrl+U |
-| Strikethrough | ⇧⌘X | Ctrl+Shift+X |
-| List | ⇧⌘L | Ctrl+Shift+L |
-| Quote | ⌃⌘Q | Ctrl+Q |
-| Decrease / Increase Indentation | ⌘[ / ⌘] | Ctrl+[ / Ctrl+] |
-| Split / Merge Cell | ⌃D / ⌃M | Ctrl+D / Ctrl+M |
-| Duplicate Cell | ⌃⇧D | Ctrl+Shift+D |
-| Delete Cell | ⌃⌫ | Ctrl+Backspace |
-| Move Cell Up / Down | ⌃⇧↑ / ⌃⇧↓ | Ctrl+Shift+Up / Down |
-| Move Section Up / Down | ⌃⌘↑ / ⌃⌘↓ | Ctrl+Up / Ctrl+Down |
-| Insert Image… | ⇧⌘I | Ctrl+Shift+I |
-| Code Block | ⌘8 | Ctrl+8 |
-| Maths… (port-only key; the Mac opens it from the bar) | — | Ctrl+Shift+M |
-| Refresh Device List | ⌥⌘R | Ctrl+Alt+R |
+ONE LIST, the Mac's README table and `Shortcut` enum (Mac e8b3266, 2026-09-21: Sean asked for ⌘S, ⌘P, ⌘E,
+⌘T, ⌘Y, ⌘K and ⌘; "unless there's conflicts with those?"; "document the keystrokes in the readme"). This
+table is `shared/keyList.ts` row for row, and **`apps/desktop/test/keyList.test.ts` fails** when a key moves,
+is added or is taken away until this table says so too; the same test holds the list to the menu bar, fails
+on any chord two commands want, and fails when the editor's keymaps bind a menu chord outside
+`shared/commands.ts`. Help ▸ Keyboard Shortcuts (F1) shows the same rows in the app. The Mac column is the
+Mac app's own chord; "—" is a port-only key.
+
+| Menu | Command | Windows / Linux | Mac |
+|---|---|---|---|
+| File | New Note | Ctrl+N | ⌘N |
+| File | Close Tab | Ctrl+W | ⌘W |
+| File | Open Notes Folder | Ctrl+Shift+O | ⇧⌘O |
+| File | Save | Ctrl+S | ⌘S |
+| File | Export… | Ctrl+E | ⌘E |
+| Project | Add Folder to Project… | Ctrl+Shift+A | ⇧⌘A |
+| Project | Save Project | Ctrl+Shift+S | ⇧⌘S |
+| Edit | Undo | Ctrl+Z | ⌘Z |
+| Edit | Redo | Ctrl+Y | ⇧⌘Z |
+| Edit | Undo Drawing | Ctrl+Alt+Z | ⌥⌘Z |
+| Edit | Redo Drawing | Ctrl+Alt+Shift+Z | ⌥⇧⌘Z |
+| Edit | Expand Selection | Ctrl+. | ⌘. |
+| Edit | Select Next Occurrence | Alt+D | ⌘D |
+| Edit | Select All Occurrences | Alt+Shift+D | ⇧⌘D |
+| Edit | Find… | Ctrl+F | ⌘F |
+| Edit | Find and Replace… | Ctrl+H | ⌥⌘F |
+| Edit | Find Next | F3 | ⌘G |
+| Edit | Find Previous | Shift+F3 | ⇧⌘G |
+| Edit | Jump to Selection | Ctrl+J | ⌘J |
+| View | Show / Hide Notes Sidebar | Ctrl+K | ⌘K |
+| View | Markdown Preview / Editor | Ctrl+T | ⌘T |
+| View | Show / Hide Video | Ctrl+Shift+Y | ⌘Y |
+| View | Draw / Stop Drawing | Ctrl+P | ⌘P |
+| View | Collapse Subsections | Ctrl+; | ⌘; |
+| View | Fold All Sections | Ctrl+Alt+Shift+Left | ⌥⇧⌘← |
+| View | Unfold All Sections | Ctrl+Alt+Shift+Right | ⌥⇧⌘→ |
+| Format | Title | Ctrl+1 | ⌘1 |
+| Format | Chapter | Ctrl+2 | ⌘2 |
+| Format | Author | Ctrl+3 | ⌘3 |
+| Format | Section | Ctrl+4 | ⌘4 |
+| Format | Subsection | Ctrl+5 | ⌘5 |
+| Format | Subsubsection | Ctrl+6 | ⌘6 |
+| Format | Body Text | Ctrl+7 | ⌘7 |
+| Format | Bold | Ctrl+B | ⌘B |
+| Format | Italic | Ctrl+I | ⌘I |
+| Format | Underline | Ctrl+U | ⌘U |
+| Format | Strikethrough | Ctrl+Shift+X | ⇧⌘X |
+| Format | List | Ctrl+Shift+L | ⇧⌘L |
+| Format | Quote | Ctrl+Q | ⌃⌘Q |
+| Format | Decrease Indentation | Ctrl+[ | ⌘[ |
+| Format | Increase Indentation | Ctrl+] | ⌘] |
+| Format | Split Cell | Ctrl+D | ⌃D |
+| Format | Merge Cells | Ctrl+M | ⌃M |
+| Format | Duplicate Cell | Ctrl+Shift+D | ⌃⇧D |
+| Format | Evaluation Cell | Ctrl+9 | ⌘9 |
+| Format | Move Cell Up | Ctrl+Shift+Up | ⌃⇧↑ |
+| Format | Move Cell Down | Ctrl+Shift+Down | ⌃⇧↓ |
+| Format | Move Section Up | Ctrl+Up | ⌃⌘↑ |
+| Format | Move Section Down | Ctrl+Down | ⌃⌘↓ |
+| Insert | Image… | Ctrl+Shift+I | ⇧⌘I |
+| Insert | Maths… | Ctrl+Shift+M | — |
+| Insert | Code Block | Ctrl+8 | ⌘8 |
+| Pen | Pen Down / Up | Ctrl+Alt+1 | — |
+| Pen | Erase Tool | Ctrl+Alt+2 | — |
+| Pen | Select Tool | Ctrl+Alt+3 | — |
+| Pen | Pen Always Draws | Ctrl+Alt+8 | — |
+| Pen | Next Colour | Ctrl+Alt+4 | — |
+| Pen | Previous Colour | Ctrl+Alt+5 | — |
+| Pen | Wider Line | Ctrl+Alt+6 | — |
+| Pen | Thinner Line | Ctrl+Alt+7 | — |
+| Pen | Delete Selection | Ctrl+Alt+9 | — |
+| Pen | Clear Selection | Ctrl+Alt+0 | — |
+| Pen | Send Writing | Ctrl+Alt+W | — |
+| Pen | Send Page | Ctrl+Alt+Shift+W | — |
+| Pen | Clear Sheet | Ctrl+Alt+X | — |
+| Input Devices | Refresh Device List | Ctrl+Alt+R | ⌥⌘R |
+| Help | Keyboard Shortcuts | F1 | — |
 
 Notes, so nobody "fixes" them:
 
-- **Save Project** is ⌃⌘S on the Mac, the very chord the sidebar has. Both
-  cannot be Ctrl+Alt+S here; the sidebar keeps it (it is on the toolbar's first
-  button) and the project takes the Save-As chord.
-- **Delete / Duplicate / Move Cell keys act on the cells whose brackets are
-  held**, and decline otherwise (Ctrl+Backspace is also "delete word"). The
-  *menu* items act on the held cells, or on the cell the caret is in when none
-  is held — the Mac's `selectedCells`.
-- **Ctrl+Alt+letter is AltGr** on layouts that have one; Windows then sends
-  Ctrl+Alt with a typed character. The chord still arrives as Ctrl+Alt, but if
-  a layout makes a letter unusable, change it in `shared/commands.ts` and the
-  menu, tooltips and handler follow.
-- **Ctrl+Alt+Arrows** are the screen-rotation hot keys of some Intel graphics
-  drivers; where those are on, fold from the menu.
-- **Markdown Markers** (Ctrl+Alt+M) and **Markdown Preview** (Ctrl+Shift+P) are two independent switches, as on the Mac
-  (`showMarkers` and `mode`): the markers are about the markdown side (hidden, the `**`, the `#`, a link's URL are put
-  away on every line but the caret's and the file is untouched; the choice is remembered); the preview draws every block but
-  the one being written in. Both labels flip (Hide / Show Markdown Markers; Show Markdown Preview / Editor).
-- **Format ▸ List and Ctrl+Shift+L** both write the style the list button's chevron picked (dots `- `, dashes `* `,
-  numbers `1. `, to-dos `- [ ] `), and the choice is remembered.
+- **⌘Y is Ctrl+Shift+Y**, not Ctrl+Y: Ctrl+Y is Redo on a PC (and the ExpressKey layouts suggest it). Redo is
+  also Ctrl+Shift+Z, the Mac's own chord (useUndo hears both; only Ctrl+Y is listed).
+- **Ctrl+E is Export…** (Sean's ⌘E). Edit ▸ Find ▸ Use Selection for Find, which had it, keeps no key.
+- **Ctrl+T, Ctrl+K, Ctrl+Shift+Y, Ctrl+P MOVED** these commands (they were Ctrl+Shift+P, Ctrl+Alt+S,
+  Ctrl+Alt+C, and none): the Mac moved them rather than adding a second key, "two keys for one action is two
+  things to remember".
+- **No key any more** (Sean, 2026-09-21): Hide/Show Notes Pane (was Ctrl+Alt+E), Hide/Show Markdown Markers
+  (was Ctrl+Alt+M), Delete Cell (was Ctrl+Backspace: Backspace / Delete over held cells already takes them, and
+  Ctrl+Backspace over held cells still does, as the same key, not a menu chord). The commands stay in the menus.
+- **Fold / Unfold Section** (Ctrl+Alt+Left / Right, the caret's OWN section) are gone, as on the Mac.
+  **Collapse Subsections (Ctrl+;)** folds what is UNDER the held cells (or the caret's cell) and never the cell
+  itself; pressed again with all of it folded, it opens it. Fold / Unfold All keep their chords.
+- **Draw / Stop Drawing (Ctrl+P)** and **Pen ▸ Pen Down (Ctrl+Alt+1)** are the same writer: Ctrl+P is the
+  Mac's ⌘P, Ctrl+Alt+1 is the chord the tablet's ExpressKeys type (see below), kept so a set-up tablet keeps
+  working.
+- **Save (Ctrl+S)** writes what is pending now — the note and its drawing (the Mac's `flushPendingSave`); the
+  note is otherwise saved half a second after the last keystroke. **Save Project** is Ctrl+Shift+S, ⇧⌘S on
+  the Mac too since it stopped sharing ⌃⌘S with the sidebar.
+- **Export… (Ctrl+E)** is one save panel: its "Save as type" list is PDF or Project (the Mac's Format popup);
+  with no note open only Project is offered. A project export is the folders and nothing else, a copy: the
+  open project keeps its own file (Project ▸ Save Project As… is the one that moves it).
+- **Select Next / All Occurrences** are Alt+D / Alt+Shift+D: the Mac's ⌘D / ⇧⌘D would be Ctrl+D / Ctrl+Shift+D,
+  which are Split Cell and Duplicate Cell here (the Mac's ⌃D, ⌃⇧D).
+- **Delete / Duplicate / Move Cell keys act on the cells whose brackets are held**, and decline otherwise. The
+  *menu* items act on the held cells, or on the cell the caret is in when none is held — the Mac's
+  `selectedCells`.
+- **Ctrl+Alt+letter is AltGr** on layouts that have one; Windows then sends Ctrl+Alt with a typed character. The
+  chord still arrives as Ctrl+Alt, but if a layout makes a letter unusable, change it in `shared/commands.ts` and
+  the menu, tooltips, handler, Help list and the test follow (and this table must be changed to match).
+- **Ctrl+Alt+Arrows** are the screen-rotation hot keys of some Intel graphics drivers; where those are on, fold
+  from the menu.
+- **Markdown Markers** (View menu, no key) and **Markdown Preview** (Ctrl+T) are two independent switches, as on
+  the Mac (`showMarkers` and `mode`): the markers are about the markdown side (hidden, the `**`, the `#`, a link's
+  URL are put away on every line but the caret's and the file is untouched; the choice is remembered); the
+  preview draws every block but the one being written in. Both labels flip (Hide / Show Markdown Markers; Show
+  Markdown Preview / Editor).
+- **Format ▸ List and Ctrl+Shift+L** both write the style the list button's chevron picked (dots `- `, dashes
+  `* `, numbers `1. `, to-dos `- [ ] `), and the choice is remembered.
 
 ## The rendered page (Write in the preview)
 
-Ctrl+Shift+P (or the sidebar's document button). Everything in the table above works on the block that is
+Ctrl+T (or the sidebar's document button). Everything in the table above works on the block that is
 open; these are the keys that only mean something here (`packages/editor/src/preview/keys.ts`), and every
 one of them declines on the markdown side:
 
@@ -103,14 +162,27 @@ one of them declines on the markdown side:
 |---|---|
 | click a drawn block | opens it in place, the caret where the word was clicked; a click on a to-do's box ticks it (one character written, nothing opens); a click on a drawn link goes to it |
 | Return | starts the next block (what is behind the caret stays, what is in front becomes the next block); in a list, a to-do list, a numbered list or a quote it carries the list on, and on an empty item it ends the list; in code it is a newline. Over held cells it does nothing |
-| Backspace | in a block with nothing in it, takes the block away (and the blank lines holding it apart) and lands at the end of the block before; at a bar it takes the bar back and writes nothing |
+| Backspace | in a block with nothing in it, takes the block away (and the blank lines holding it apart) and lands at the end of the block before; at a bar it takes the bar back and writes nothing. At the start of a to-do's words it joins them to the to-do above (caret at the seam), in an EMPTY to-do it takes that to-do away (caret at the end of the one above; the only to-do takes its block), and at the top of a to-do list with words it does nothing — the box is never deleted by the key (Mac 0fdd031). Just behind a heading's `## ` or a list's `1. ` / `- ` it takes the whole marker (a nested item loses a level first) |
+| Delete | at the end of a to-do's words, joins the next to-do's words on (port addition: the editor's own Delete would pull the next box in as text); at a bar, as Backspace |
+| Home / Left | the caret never stands in a heading's hashes, a bullet, a number or a to-do's box on this page: Home and a click on the left edge land on the first word; Left from the first word steps over the marker to the line above |
 | Up / Down | inside a block, its lines; off its top or bottom, onto the bar beside it (the caret hides, the bar is the cursor); again, into the next block at its start (up: the block above, at its end). Off the first/last block they arm the bar above/under the note |
 | Shift+Up / Shift+Down | off the edge of a block, extend the selection a whole block at a time |
 | Page Up / Page Down (+ Shift) | the window moves a page and the caret goes to the block at the same height |
-| Escape | at a bar, takes it back (the caret returns to the block above); over held cells, lets go of them |
+| Escape | at a bar, takes it back (the caret returns to the block above); over held cells, lets go of them; in an open block, closes it — the block is drawn again and the caret is put away (Mac `move(.out)`); the next arrow, Home or End only brings the caret back where it was, a character goes in where it was |
 | a character at a bar | opens a block there with that character in it; Return opens an empty one; the + on the bar chooses the kind first |
+| Ctrl+1…7, Ctrl+Shift+L, Ctrl+Q (quote), Ctrl+8 and the list / quote / code buttons at a bar | MAKES that kind of block at the bar now, its marker in and the caret where the words go (Mac 0fdd031); bold, indent and the other commands with no kind still do nothing at a bar |
 | a character over held cells | replaces them |
 | Alt-click on the words of a link | follows it from inside an open block (a plain click puts the caret in it) |
+
+## Evaluation cells (both modes; Mac 0bf52b5 … 859aa6c)
+
+| Key | What it does |
+|---|---|
+| Shift+Enter in an evaluation cell (```` ```eval python ````, `eval wl`, `eval c`, `eval c++`, `eval rust`) | runs THAT cell: the answer goes under it as an ```` ```out ```` cell (replacing the last one), and the bar is left under the answer. Anywhere else Shift+Enter is what it always was. Not a menu key, on purpose (an accelerator would take Shift+Enter from every field) |
+| Ctrl+9 (Format ▸ Evaluation Cell) | at a bar: a new evaluation cell there, caret inside. In a fenced cell: that cell becomes one, keeping its code. Anywhere else: a new one after the caret's cell. The environment is Wolfram until one has been picked from a cell's mark, then the last one picked |
+| a click on the mark left of an unrun cell (`WL ▾`, `PY ▾`, …), or on the language under a cell's `In[n]` | the environment menu ("not installed" beside a tool this machine has not got); picking one rewrites the fence |
+| a click on the spinner under a running cell's mark | stops the run (the child and what it started are killed) |
+| Ctrl+Z after a run | takes the answer out (it is its own undo step) |
 
 ## The maths palette (Insert ▸ Maths…, the ƒ(x) button)
 
@@ -247,8 +319,8 @@ A press on the words lets go of the pick, which gives the keys back.
 | Divider between the notes and the video (when it has the keyboard: Tab to it) | Left / Right | the video 24 px wider / narrower |
 | same | Home, or double-click | back to the Mac default share (720 : 420) |
 | A sidebar or tab menu, the Folder menu | Up / Down, Enter, Escape, Right / Left | move, choose, close, open / close a submenu; the caret returns to the notes |
-| The font-and-colour and pen popovers | Escape, or a click anywhere else | close |
-| Ctrl+Alt+S / Ctrl+Alt+C / Ctrl+Alt+E | | Hide or Show the sidebar / the video / the notes pane (never both panes) |
+| The font-and-colour popover, the Pen popover (the Pen chip), the sheet's Paper menu | Escape, or a click anywhere else | close |
+| Ctrl+K / Ctrl+Shift+Y | | Hide or Show the sidebar / the video (the notes pane: View menu, no key; never both panes) |
 | A tab | middle click | closes it |
 | The tab row | wheel | walks along the tabs |
 
@@ -257,6 +329,8 @@ A press on the words lets go of the pick, which gives the keys back.
 | Where | Key | Does |
 |---|---|---|
 | The viewfinder | drag | a dashed box over the part to bring in (with a pen too) |
-| same | click, double-click | one click puts the box away; two draw a box round the whole picture |
+| same | click | one click puts the box away; with no box, it draws a box round the whole picture (the gesture the double-click used to be) |
+| same | double-click | the picture fills the WINDOW (sidebar and notes out of sight; never the display, never full screen); double-click again, or the faint ✕ over its top-left corner, to come back. Hiding the video leaves it too. Not remembered across a launch (Mac commit 0edfc08) |
 | same | Esc | puts the box away, and lets go of Resize by Square when it is armed |
 | Input Devices | Ctrl+Alt+R | Refresh Device List (the other camera commands are menu items) |
+| Input Devices ▸ Aspect Ratio | menu, no key | the viewfinder's shape: Free, 1:1, 4:3, 3:4, 3:2, 2:3, 16:9, 9:16 (ticked; remembered) (Mac commit c98c067) |

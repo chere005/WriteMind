@@ -23,7 +23,7 @@ import { codeTypingKeys } from "./codeTyping"
 import { extraKeys } from "./extras"
 import { setHolding } from "./preview/hold"
 import { applyEdit, atBar, notebookField } from "./notebook"
-import { setArmedType } from "./seams"
+import { openArmed, setArmedType } from "./seams"
 import { backspaceMayOutdent } from "./windowed"
 
 const selection = (view: EditorView): Range => {
@@ -42,14 +42,18 @@ export const wrap = (open: string, close = open): Command =>
   run((text, where) => toggleWrap(text, where, open, close))
 
 /**
- * At a bar on the rendered page a command that makes a KIND of block names it
- * instead (Cmd-1 there means what Title on the + means): the next thing typed
- * opens a block of that kind and nothing is written until it is.
+ * At a bar on the rendered page a command that makes a KIND of block MAKES that
+ * block there, now (Mac 0fdd031; Sean, 2026-09-21: "if i click on something like
+ * a style, or a bullet list, or a quoted section, etc.. it should create a cell
+ * at the position of the bar ready for that type of input"): its marker in, the
+ * caret where the words go, the bar gone. A command that acts ON a cell still
+ * does nothing at a bar (`applyEdit`).
  */
 export const nameKind = (kind: CellKind, command: Command): Command => (view) => {
   if (!atBar(view)) return command(view)
   view.dispatch({ effects: setArmedType.of(kind) })
-  // A button on the bar has the keyboard; what is typed next goes to the bar, so the page takes it back.
+  openArmed(view, "")
+  // A button on the bar has the keyboard; the cell it made is where the typing goes.
   view.focus()
   return true
 }

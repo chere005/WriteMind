@@ -22,8 +22,15 @@ import { Prompt, type PromptSpec } from "./Prompt"
 import { canTrashSection, flatten, newlySeen, rowKeys, sectionAt } from "./sidebarTree"
 import type { ProjectInfo, Section } from "./wm"
 
+/**
+ * How tall the two icons on the add row are — one number, so they cannot be different heights (Mac 2ea0dcb; Sean:
+ * "make the new note and new section icons the same height"). Both shapes are drawn from the top of the box to its
+ * bottom: the folder used to stop half a pixel short at each end, a point shorter than the page beside it.
+ */
+const ADD_ICON_HEIGHT = 13
+
 const PageIcon = () => (
-  <svg width="11" height="13" viewBox="0 0 11 13" fill="none" aria-hidden>
+  <svg width="11" height={ADD_ICON_HEIGHT} viewBox="0 0 11 13" fill="none" aria-hidden>
     <rect x="0.5" y="0.5" width="10" height="12" rx="2" stroke="currentColor"
           strokeDasharray="2.5 2" />
     <path d="M5.5 3.8v5M3 6.3h5" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" />
@@ -31,11 +38,11 @@ const PageIcon = () => (
 )
 
 const FolderIcon = () => (
-  <svg width="15" height="13" viewBox="0 0 15 13" fill="none" aria-hidden>
-    <path d="M0.5 3.2V11a1 1 0 0 0 1 1h9" stroke="currentColor" />
-    <path d="M0.5 3.2V2a1 1 0 0 1 1-1h3l1.4 1.6h4.6a1 1 0 0 1 1 1v2"
+  <svg width="15" height={ADD_ICON_HEIGHT} viewBox="0 0 15 13" fill="none" aria-hidden>
+    <path d="M0.5 3.2V11.5a1 1 0 0 0 1 1h9" stroke="currentColor" />
+    <path d="M0.5 3.2V1.5a1 1 0 0 1 1-1h3l1.4 1.6h4.6a1 1 0 0 1 1 1v2"
           stroke="currentColor" />
-    <path d="M12 7.2v4.4M9.8 9.4h4.4" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" />
+    <path d="M12 7.6v4.4M9.8 9.8h4.4" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" />
   </svg>
 )
 

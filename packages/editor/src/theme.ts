@@ -7,6 +7,16 @@
 
 import { EditorView } from "@codemirror/view"
 
+/**
+ * The page's side margins: where every line's box starts and ends. The selection, the held cells and the hover's
+ * promise are all drawn between these two and nowhere else, so they line up with each other and with the words.
+ */
+export const PAGE_LEFT = 30
+export const PAGE_RIGHT = 34
+
+/** The brackets' colour at rest: the Mac's tertiary label colour, which reads in either theme. */
+const BRACKET = "color-mix(in srgb, var(--wm-text) 26%, transparent)"
+
 export const notebookTheme = EditorView.theme({
   "&": {
     fontSize: "15px",
@@ -21,7 +31,7 @@ export const notebookTheme = EditorView.theme({
     position: "relative",
   },
   ".cm-content": {
-    padding: "16px 34px 240px 30px",
+    padding: `16px ${PAGE_RIGHT}px 240px ${PAGE_LEFT}px`,
     caretColor: "var(--wm-text)",
   },
   ".cm-line": { padding: "0 2px" },
@@ -34,6 +44,23 @@ export const notebookTheme = EditorView.theme({
   "&.cm-focused > .cm-scroller > .cm-selectionLayer .cm-selectionBackground, .cm-selectionLayer .cm-selectionBackground": {
     backgroundColor: "var(--wm-selection)",
   },
+  // CodeMirror draws a selection's middle lines from the content's padding edge to the far side of it — out to the
+  // window's left edge and under the brackets. Clipped to the lines' own boxes (the layer is as wide as the page and
+  // the clip as tall as any note), it runs from the margin to the margin.
+  ".cm-selectionLayer": {
+    width: "100%",
+    clipPath: `polygon(${PAGE_LEFT}px 0, calc(100% - ${PAGE_RIGHT}px) 0, calc(100% - ${PAGE_RIGHT}px) 100000000px, ${PAGE_LEFT}px 100000000px)`,
+  },
+  // Held cells are drawn as cells (`heldLines` in brackets.ts; the rendered page lights its blocks): the selection's
+  // own rectangles stay out of it, and so do the carets CodeMirror puts at the end of every range (a selection on
+  // the Mac has no insertion point).
+  "&.wm-holding .cm-selectionLayer, &.wm-holding .cm-cursorLayer": { display: "none" },
+  ".cm-line.wm-held": { backgroundColor: "var(--wm-selection)" },
+  // One box, not a stack of strips: at 1.5x two lines meet on a fractional pixel and a hairline of page showed
+  // between them. A shadow the line's own colour reaches over the join without moving anything.
+  ".cm-line.wm-held:not(.wm-held-last)": { boxShadow: "0 1px 0 var(--wm-selection)" },
+  ".cm-line.wm-held-first": { borderTopLeftRadius: "4px", borderTopRightRadius: "4px" },
+  ".cm-line.wm-held-last": { borderBottomLeftRadius: "4px", borderBottomRightRadius: "4px" },
   ".cm-cursor, .cm-dropCursor": { borderLeft: "2px solid var(--wm-text)", marginLeft: "-1px" },
   ".cm-activeLine": { backgroundColor: "transparent" },
 
@@ -80,7 +107,9 @@ export const notebookTheme = EditorView.theme({
   ".wm-code-line": {
     fontFamily: "ui-monospace, SFMono-Regular, Menlo, Consolas, 'DejaVu Sans Mono', monospace",
     fontSize: "14.2px",
-    backgroundColor: "var(--wm-code-bg)",
+    // See-through, so a selection (drawn under the lines) shows in code as it does everywhere else: an opaque
+    // background hid it. The text colour at 5.5% is the code-background token's own shade in both themes.
+    backgroundColor: "color-mix(in srgb, var(--wm-text) 5.5%, transparent)",
   },
 
   ".wm-seams, .wm-gutter": {
@@ -109,16 +138,30 @@ export const notebookTheme = EditorView.theme({
     backgroundColor: "var(--wm-page)",
   },
 
-  ".wm-gutter": { right: "0", width: "22px", pointerEvents: "auto" },
+  // The column is the gutter's alone: it sets the hand over a bracket and the arrow beside one (`bracketAt`), so
+  // a bracket's own box — narrower than what a click reaches — says nothing about the pointer.
+  ".wm-gutter": { right: "0", width: "22px", pointerEvents: "auto", cursor: "default" },
+  // The Mac's weights: a cell 1.1, a section 1.5; under the pointer +0.6, lit +1.2. Border-box, so a heavier line
+  // grows inward and the ticks stay on the first and last lines of the cell.
   ".wm-bracket": {
     position: "absolute",
-    borderTop: "1.1px solid var(--wm-rule)",
-    borderRight: "1.1px solid var(--wm-rule)",
-    borderBottom: "1.1px solid var(--wm-rule)",
-    cursor: "pointer",
+    boxSizing: "border-box",
+    borderTop: `1.1px solid ${BRACKET}`,
+    borderRight: `1.1px solid ${BRACKET}`,
+    borderBottom: `1.1px solid ${BRACKET}`,
   },
-  ".wm-bracket:hover": { borderColor: "var(--wm-accent)" },
   ".wm-bracket-group": { borderWidth: "1.5px" },
+  ".wm-bracket.wm-bracket-hover": { borderColor: "var(--wm-accent)", borderWidth: "1.7px" },
+  ".wm-bracket-group.wm-bracket-hover": { borderWidth: "2.1px" },
+  // The promise a hover makes: over the words (it is faint), under the bars (they are cursors).
+  ".wm-wash": { position: "absolute", top: "0", left: "0", right: "0", pointerEvents: "none" },
+  ".wm-wash-cell": {
+    position: "absolute",
+    left: `${PAGE_LEFT}px`,
+    right: `${PAGE_RIGHT}px`,
+    borderRadius: "4px",
+    backgroundColor: "color-mix(in srgb, var(--wm-accent) 12%, transparent)",
+  },
   ".wm-bracket-folded": { borderStyle: "dashed", backgroundColor: "var(--wm-rule)" },
   ".wm-folded": {
     color: "var(--wm-faint)",
@@ -137,5 +180,6 @@ export const notebookTheme = EditorView.theme({
   ".wm-tok-number": { color: "var(--wm-tok-number, #e65100)" },
   ".wm-tok-function": { color: "var(--wm-tok-function, #1565c0)" },
   ".wm-tok-symbol": { color: "var(--wm-tok-symbol, #6a4c93)" },
-  ".wm-bracket-lit": { borderColor: "var(--wm-accent)", borderWidth: "2px" },
+  ".wm-bracket.wm-bracket-lit": { borderColor: "var(--wm-accent)", borderWidth: "2.3px" },
+  ".wm-bracket-group.wm-bracket-lit": { borderWidth: "2.7px" },
 })

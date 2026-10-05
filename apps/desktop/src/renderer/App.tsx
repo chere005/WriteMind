@@ -11,7 +11,7 @@ import { EditorView } from "@codemirror/view"
 import { findNextMatch, revealAt } from "@writemind/editor"
 import {
   anchorOffset, bounds as itemBounds, capturePlacedCentre, decodeDrawing, emptyDrawing, insertBlock, insertionPointBelow,
-  languageTitle, listTitle, makeNote, newID, noTransform, parseLink, placedCentre, PRESET_COLOURS, readDrawing,
+  languageTitle, listTitle, makeNote, newID, noTransform, parseCameraAspect, parseLink, placedCentre, PRESET_COLOURS, readDrawing,
   resolveLinkTarget, shifted, textFingerprint, writeDrawing,
   type CanvasItem, type CodeLanguage, type Drawing, type ListStyle, type Note, type Placement,
 } from "@writemind/core"
@@ -27,6 +27,7 @@ import { TabBar } from "./TabBar"
 import { Notebook, type ViewState } from "./Notebook"
 import { LinkBanner, type LinkRequest } from "./LinkBanner"
 import { FindBar, type FindRequest } from "./FindBar"
+import { KeyList } from "./KeyList"
 import { Sidebar, SidebarBar } from "./Sidebar"
 import { TopBar, TOOL_GROUPS, type ToolGroupId } from "./TopBar"
 import { runEditorCommand } from "./editorCommands"
@@ -36,6 +37,7 @@ import { registerPenHandlers, runPenCommand } from "./penActions"
 import { cycleColour, stepWidth, PEN_WIDTHS } from "./penButtons"
 import { setPenLook } from "./penCursor"
 import { CAMERA_OFF, shown, TABLET_SOURCE } from "../shared/commands"
+import { setCameraAspect, useCameraAspect } from "./cameraSettings"
 import { joinPath, folderOf, notesIn } from "./paths"
 import { useSession } from "./useSession"
 import { MATH_OPEN_EVENT } from "./MathPalette"
@@ -111,6 +113,8 @@ export function App() {
   const [linking, setLinking] = useState<LinkRequest | null>(null)
   // Find in the note (the Mac's find bar); `lastQuery` is what Find Next goes on looking for with the bar away.
   const [finding, setFinding] = useState<FindRequest | null>(null)
+  /** Help ▸ Keyboard Shortcuts is up (KeyList.tsx). */
+  const [showKeys, setShowKeys] = useState(false)
   const lastQuery = useRef("")
   // The rendered page: the same editor with the markdown's marks put away.
   const [rendered, setRendered] = useState(false)
@@ -122,6 +126,10 @@ export function App() {
   const [showCamera, setShowCamera] = useState(true)
   // View > Hide Notes Pane: either pane can be put away, never both.
   const [showEditor, setShowEditor] = useState(true)
+  // THE PICTURE ON ITS OWN, filling the WINDOW (double-click it; Mac commit 0edfc08). Never the display. Not
+  // remembered across a launch, the same rule the two panes follow.
+  const [cameraFullWindow, setCameraFullWindow] = useState(false)
+  const aspect = useCameraAspect()
   // Sidebar edit mode: duplicate and trash on every row.
   const [editing, setEditing] = useState(false)
   // The toolbar's sections that are put away, and what the list and code
@@ -1035,7 +1043,14 @@ export function App() {
   /** Either pane can be put away, never both (`AppState` keeps at least one up). */
   const toggleCameraPane = () => {
     if (showCamera && !showEditor) setShowEditor(true)
+    // Hiding the video leaves full-window behind it.
+    if (showCamera) setCameraFullWindow(false)
     setShowCamera(!showCamera)
+  }
+  /** Filling the window with a pane that had been put away would be a black rectangle with no way out: it comes back. */
+  const toggleCameraFullWindow = () => {
+    setCameraFullWindow((was) => !was)
+    setShowCamera(true)
   }
   const toggleEditorPane = () => {
     if (showEditor && !showCamera) setShowCamera(true)
@@ -1055,6 +1070,8 @@ export function App() {
   }), [toggleMode])
 
   const run = (id: string) => {
+    // Input Devices ▸ Aspect Ratio: the shape of the viewfinder (cameraSettings.ts, CameraPane's viewfinder).
+    if (id.startsWith("cameraAspect:")) { setCameraAspect(parseCameraAspect(id.slice("cameraAspect:".length))); return }
     if (id.startsWith("camera:")) {
       const pick = id.slice("camera:".length)
       const next = pick.startsWith("unknown-") ? null : pick
@@ -1071,17 +1088,21 @@ export function App() {
       case "newNote": void newNote(targetFolder()); return
       case "closeTab": if (current) void close(current); return
       case "openFolder": void window.wm.revealNotes(); return
-      case "exportPDF":
+      // Ctrl+S: what is pending (the note and its drawing) is written now (the Mac's flushPendingSave).
+      case "save": if (current) void flushNow(false); return
+      // Ctrl+E: one panel, and PDF or Project is chosen in it (main/exportFile.ts). With no note open, the project.
+      case "export":
         // The text as it is in the editor, not as it is on disk: what is on screen is "this note".
-        if (current) {
-          void window.wm.exportPDF({
-            noteFile: current, title: title.replace(/\.(md|markdown|txt)$/i, ""),
-            markdown: textRef.current, drawing: writeDrawing(drawingRef.current),
-            // The pane the ink was placed against: its last real size when the notes pane is put away.
-            pane: currentPane(view, lastPane),
-          })
-        }
+        void window.wm.exportFile(current ? {
+          noteFile: current, title: title.replace(/\.(md|markdown|txt)$/i, ""),
+          markdown: textRef.current, drawing: writeDrawing(drawingRef.current),
+          // The pane the ink was placed against: its last real size when the notes pane is put away.
+          pane: currentPane(view, lastPane),
+        } : null)
         return
+      // Ctrl+P: the same writer as Pen ▸ Pen Down and the pen button.
+      case "togglePen": runPenCommand("penToggle"); return
+      case "keyList": setShowKeys((was) => !was); return
       case "undoDrawing": {
         const back = history.undo(drawingRef.current)
         if (back) changeDrawing(back)
@@ -1158,6 +1179,7 @@ export function App() {
       codeLanguage: codeLanguage === "plain" ? null : languageTitle(codeLanguage),
       cameras,
       cameraId: sourceId,
+      cameraAspect: aspect,
       penDown: mode === "pen",
       penErase: penTools.eraser,
       penSelect: penTools.selectTool,
@@ -1180,8 +1202,9 @@ export function App() {
   const title = current ? current.split(/[\\/]/).pop() ?? "" : ""
 
   return (
-    <div className={`app${platform?.platform === "darwin" ? " mac" : ""}${showEditor ? "" : " no-editor"}`}>
-      {showSidebar && (
+    <div className={`app${platform?.platform === "darwin" ? " mac" : ""}${showEditor && !cameraFullWindow ? "" : " no-editor"}`}>
+      {/* The picture filling the window puts the sidebar out of sight, not away: it comes back as it was. */}
+      {showSidebar && (<div style={{ display: cameraFullWindow ? "none" : "contents" }}>
         <Sidebar
           root={root}
           openNote={current}
@@ -1216,8 +1239,8 @@ export function App() {
             />
           )}
         />
-      )}
-      <div className="pane" style={showEditor ? undefined : { display: "none" }}>
+      </div>)}
+      <div className="pane" style={showEditor && !cameraFullWindow ? undefined : { display: "none" }}>
         <TabBar platform={kind} open={open} current={current}
                 onSelect={(note) => { void openNote(note) }} onClose={close} onCloseOthers={closeOthers}
                 onNew={() => { void newNote(targetFolder()) }} onReveal={(path) => { void window.wm.reveal(path) }} />
@@ -1298,7 +1321,7 @@ export function App() {
           </div>
         )}
       </div>
-      {showCamera && showEditor && <PaneDivider sidebar={showSidebar} />}
+      {showCamera && showEditor && !cameraFullWindow && <PaneDivider sidebar={showSidebar} />}
       {showCamera && (
         <CameraPane
           platform={platform}
@@ -1306,18 +1329,22 @@ export function App() {
           penWidth={penWidth}
           pane={currentPane(view, lastPane)}
           onCapture={(capture) => { void addCapture(capture) }}
-          onHide={() => setShowCamera(false)}
+          // The Mac's toggleCameraPane: the notes come back and full-window is left behind with the video.
+          onHide={toggleCameraPane}
           preferred={cameraPick}
           cameras={cameras}
           onPickSource={(id) => run(`camera:${id}`)}
           onRefreshCameras={() => { void refreshCameras() }}
           onActiveCamera={setActiveCamera}
-          showEditor={showEditor}
+          showEditor={showEditor || cameraFullWindow}
           onToggleEditor={toggleEditorPane}
           onReadText={readCameraText}
           note={current}
+          fullWindow={cameraFullWindow}
+          onFullWindow={toggleCameraFullWindow}
         />
       )}
+      {showKeys && <KeyList platform={kind} onClose={() => setShowKeys(false)} />}
     </div>
   )
 }

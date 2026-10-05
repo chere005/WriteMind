@@ -12,11 +12,11 @@ import type { EditorView } from "@codemirror/view"
 import {
   BOLD, ITALIC, STRIKE, UNDERLINE_CLOSE, UNDERLINE_OPEN, HEADING_LADDER, blockContaining,
   deleteCell, duplicateCell, editsOver, expand, fenceOf, mergeCells, moveCell, moveSection,
-  splitCell,
+  splitCell, subsections, subsectionsFolding,
   type CodeLanguage, type Edit, type Heading, type ListStyle, type Range,
 } from "@writemind/core"
 import {
-  applyEdit, fence, foldAll, heading, heldCells, indentLines, list, outdentLines, quote,
+  applyEdit, evaluationCell, fence, foldAll, foldedKeys, heading, heldCells, indentLines, list, outdentLines, quote,
   sectionAtCaret, selectAllOccurrences, selectNext, tagFence, toggleFold, unfoldAll, wrap,
 } from "@writemind/editor"
 import { EditorSelection } from "@codemirror/state"
@@ -106,6 +106,7 @@ export function runEditorCommand(view: EditorView, id: string, options: EditorOp
     case "splitCell": edit(view, (text, where) => splitCell(text, where)); return true
     case "mergeCells": edit(view, (text, where) => mergeCells(text, where)); return true
     case "duplicateCell": onCells(view, (span, text) => duplicateCell(span, text)); return true
+    case "evaluationCell": evaluationCell(view); return true
     case "deleteCell": onCells(view, (span, text) => deleteCell(span, text)); return true
     case "moveCellUp": onCells(view, (span, text) => moveCell(span, true, text)); return true
     case "moveCellDown": onCells(view, (span, text) => moveCell(span, false, text)); return true
@@ -122,6 +123,15 @@ export function runEditorCommand(view: EditorView, id: string, options: EditorOp
     case "unfoldSection": {
       const section = sectionAtCaret(view.state)
       if (section) toggleFold(view, section.key, false)
+      return true
+    }
+    // Ctrl+; (the Mac's ⌘;): fold what is under the held cells (or the caret's), never the cells themselves;
+    // all of it folded already → open it again.
+    case "collapseSubsections": {
+      const keys = subsections(cellsToAct(view), view.state.doc.toString())
+      if (keys.length === 0) return true
+      const fold = subsectionsFolding(keys, new Set(foldedKeys(view.state)))
+      for (const key of keys) toggleFold(view, key, fold)
       return true
     }
     case "foldAll": foldAll(view); return true

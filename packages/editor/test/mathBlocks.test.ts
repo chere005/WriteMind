@@ -1,6 +1,6 @@
 import { EditorState } from "@codemirror/state"
 import { describe, expect, it } from "vitest"
-import { typesetBlocks } from "../src/math"
+import { carriedBlocks, typesetBlocks, typesetOf, type Typeset } from "../src/math"
 
 /**
  * Which ```wl blocks are drawn as maths, as a function of the document and the caret (no view needed). Port-only:
@@ -68,5 +68,61 @@ describe("a ```wl block is typeset unless that would hide words", () => {
     expect(typesetBlocks(state(`${F}swift\nlet x = 1\n${F}\nz`))).toEqual([])
     expect(typesetBlocks(state(`${F}wl\n${F}\nz`))).toEqual([])
     expect(typesetBlocks(state(`${F}wl\nIntegrate[\n${F}\nz`))).toEqual([])
+  })
+})
+
+/** The widgets of a block field's value, in order, with where they are. */
+const drawn = (value: Typeset) => {
+  const out: { from: number; to: number; widget: unknown }[] = []
+  for (const cursor = value.decorations.iter(); cursor.value; cursor.next()) out.push({ from: cursor.from, to: cursor.to, widget: cursor.value.spec.widget })
+  return out
+}
+
+describe("a keystroke carries the drawn blocks through it instead of making them again (perf lane)", () => {
+  const doc = `top words\n\n${F}wl\nPi\n${F}\n\nmiddle\n\n${F}wl\nE^2\n${F}\n\nend`
+  const start = state(doc, 3)
+  const before = typesetOf(start)
+
+  it("typing in the prose above moves every block and keeps its widget", () => {
+    const tr = start.update({ changes: { from: 3, insert: "xyz" }, selection: { anchor: 6 } })
+    const after = typesetOf(tr.state, { value: before, changes: tr.changes })
+    expect(drawn(after).map((d) => d.widget)).toEqual(drawn(before).map((d) => d.widget))
+    expect(drawn(after).every((d, i) => d.widget === drawn(before)[i]!.widget)).toBe(true)
+    expect(drawn(after).map((d) => [d.from, d.to])).toEqual(typesetBlocks(tr.state).map((b) => [b.from, b.to]))
+    expect(carriedBlocks(before, tr.changes, typesetBlocks(tr.state))).not.toBeNull()
+  })
+
+  it("a line break at a block's edge leaves every block where the note has it (carried, or made again)", () => {
+    const fence = doc.indexOf(F)
+    const closingEnd = doc.indexOf(F, doc.indexOf("Pi")) + 3
+    for (const at of [fence, closingEnd]) {
+      const tr = start.update({ changes: { from: at, insert: "\n" }, selection: { anchor: 0 } })
+      const after = typesetOf(tr.state, { value: before, changes: tr.changes })
+      expect(drawn(after).map((d) => [d.from, d.to])).toEqual(typesetBlocks(tr.state).map((b) => [b.from, b.to]))
+    }
+  })
+
+  it("typing in the prose between and below the blocks carries them too", () => {
+    for (const word of ["middle", "end"]) {
+      const at = doc.indexOf(word) + 2
+      const tr = start.update({ changes: { from: at, insert: "q" }, selection: { anchor: at + 1 } })
+      const after = typesetOf(tr.state, { value: before, changes: tr.changes })
+      expect(drawn(after).map((d) => [d.from, d.to])).toEqual(typesetBlocks(tr.state).map((b) => [b.from, b.to]))
+      expect(drawn(after).every((d, i) => d.widget === drawn(before)[i]!.widget)).toBe(true)
+    }
+  })
+
+  it("changing a block's maths, or breaking its fence, makes the blocks again", () => {
+    const pi = doc.indexOf("Pi")
+    const edit = start.update({ changes: { from: pi, to: pi + 2, insert: "Tau" }, selection: { anchor: 0 } })
+    const after = typesetOf(edit.state, { value: before, changes: edit.changes })
+    expect(after.blocks.map((b) => b.source)).toEqual(["Tau", "E^2"])
+    expect(drawn(after)[0]!.widget).not.toBe(drawn(before)[0]!.widget)
+    expect(drawn(after).map((d) => [d.from, d.to])).toEqual(after.blocks.map((b) => [b.from, b.to]))
+    const closing = doc.indexOf(F, pi) + 3
+    const broken = start.update({ changes: { from: closing, insert: " words" }, selection: { anchor: 0 } })
+    const gone = typesetOf(broken.state, { value: before, changes: broken.changes })
+    expect(gone.blocks.map((b) => b.source)).toEqual(["E^2"])
+    expect(drawn(gone).map((d) => [d.from, d.to])).toEqual(gone.blocks.map((b) => [b.from, b.to]))
   })
 })

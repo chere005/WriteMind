@@ -99,15 +99,25 @@ export function composeZoom(dragged: Rect, current: Rect | null, pane: Size): Re
 /** Four points of slack, so a click stays a click. */
 export const isBoxDrag = (dx: number, dy: number): boolean => Math.max(Math.abs(dx), Math.abs(dy)) >= 4
 
-export type BoxAction = "keep" | "clear" | "whole"
+export type BoxAction = "keep" | "clear" | "whole" | "fullWindow"
 
 /**
- * What the end of a gesture means: a drag leaves its box alone; one click
- * clears it; two take the whole picture. The second click of a double arrives
- * as its own event, so the first has already cleared by then — which is what
- * makes the clearing instant.
+ * What the end of a gesture means (`SectionBox.action`, Mac commit 0edfc08). A
+ * drag leaves its box alone. TWO CLICKS FILL THE WINDOW WITH THE PICTURE and two
+ * more put it back (Sean, 2026-09-21: "doubleclick the camera to make the whole
+ * window the camera.. double click again to exit"). One click clears a box, and
+ * — with no box to clear — takes the whole picture, which is the gesture the
+ * double-click used to be: the capture buttons only appear once something is
+ * boxed, so without it the only way to photograph the whole frame was to drag a
+ * box round all of it by hand.
+ *
+ * The second click of a double arrives as its own event, so the first has
+ * already done its half by then — which is what makes the clearing instant.
+ * (The window filled is the app's own window, never the display: nothing in
+ * this app goes full screen.)
  */
-export function boxAction(dx: number, dy: number, clicks: number): BoxAction {
+export function boxAction(dx: number, dy: number, clicks: number, hasBox: boolean): BoxAction {
   if (isBoxDrag(dx, dy)) return "keep"
-  return clicks >= 2 ? "whole" : "clear"
+  if (clicks >= 2) return "fullWindow"
+  return hasBox ? "clear" : "whole"
 }

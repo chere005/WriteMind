@@ -1,5 +1,5 @@
 // Folding a section: double-click on its bracket, the + marker, the caret steps over what is hidden,
-// the keys (Ctrl+Alt+arrows) and the View menu's Fold All / Unfold All. (Was wm/fold.mjs and chrome2.mjs.)
+// the keys (Ctrl+Alt+Shift+arrows, Ctrl+;) and the View menu's Fold All / Unfold All. (Was wm/fold.mjs and chrome2.mjs.)
 import { ok, finish, js, sleep, freshNote, setDoc, doc, setSel, sel, key, click, dblclick, brackets, centerOf, menuClick, VIEW, shot } from "../../lib/harness.mjs"
 
 await freshNote()
@@ -43,10 +43,9 @@ ok("clicking the marker opens it", (await lines()).includes("body one"), await l
 
 // 5. the keys
 await setSel(1)
-await key("ArrowLeft", { ctrl: true, alt: true }); await sleep(300)
-ok("Ctrl+Alt+Left folds the section the caret is in", (await folds()) === 1)
-await key("ArrowRight", { ctrl: true, alt: true }); await sleep(300)
-ok("Ctrl+Alt+Right unfolds it", (await folds()) === 0)
+// Mac e8b3266: the caret's own fold keys are gone; Ctrl+; folds what is UNDER the caret's section, never the section itself.
+await key(";", { code: "Semicolon", vk: 186, ctrl: true }); await sleep(300)
+ok("Ctrl+; never folds the section the caret is in (Head has nothing under it)", (await folds()) === 0)
 await key("ArrowLeft", { ctrl: true, alt: true, shift: true }); await sleep(300)
 ok("Ctrl+Alt+Shift+Left folds them all", (await folds()) >= 1)
 await key("ArrowRight", { ctrl: true, alt: true, shift: true }); await sleep(300)

@@ -27,16 +27,16 @@
  * (no camera selected, access off, unavailable, starting).
  */
 
-import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react"
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react"
 import {
-  boxAction, composeZoom, displayedFrame, isBoxDrag, placement, regionOf, unzoomedPoint, unzoomedRect,
+  boxAction, composeZoom, displayedFrame, fitAspect, isBoxDrag, placement, regionOf, unzoomedPoint, unzoomedRect,
   zoomedPoint, zoomedRect, zoomOffset, zoomScale, type Rect, type Size,
 } from "@writemind/core"
 import { bandUnder, chartFromLabelled, chartSummary, type Corners } from "./capturePipeline"
 import { detectPage, takePicture } from "./cameraTake"
 import {
   normalRotation, rememberedRotation, rememberedShape, rememberedZoom, rememberRotation, rememberShape, rememberZoom,
-  type CaptureMode, type Rotation, type ZoomBox,
+  useCameraAspect, type CaptureMode, type Rotation, type ZoomBox,
 } from "./cameraSettings"
 import { idleProblem } from "./cameraDevices"
 import { useCameraStream } from "./useCameraStream"
@@ -81,6 +81,13 @@ interface Props {
   note?: string | null
   /** The words read out of a box, for the note. */
   onReadText?(lines: string[]): void
+  /**
+   * The picture fills the WINDOW (Mac commit 0edfc08): a double-click on the picture asks for it and again for the
+   * way back, and so does the faint × drawn over the top-left corner while it is on. The app's own window only,
+   * never the display: nothing in this app goes full screen.
+   */
+  fullWindow?: boolean
+  onFullWindow?(): void
 }
 
 type CornerName = keyof Corners
@@ -103,6 +110,7 @@ export type CameraAction = "turn-left" | "turn-right" | "original-size" | "resiz
 export function CameraPane({
   platform, penColour, penWidth = 2, pane, onCapture, onHide, preferred,
   cameras = [], onPickSource, onRefreshCameras, onActiveCamera, showEditor = true, onToggleEditor, onReadText, note = null,
+  fullWindow = false, onFullWindow,
 }: Props) {
   /** The open note NOW (a capture remembers the one it was taken in). */
   const noteRef = useRef<string | null>(note)
@@ -153,7 +161,18 @@ export function CameraPane({
   /** Armed to drag the box the pane zooms into. */
   const [zooming, setZooming] = useState(false)
   const [reader, setReader] = useState(false)
-  const [size, setSize] = useState<Size>({ width: 0, height: 0 })
+  /** The pane as the divider makes it. */
+  const [outer, setOuter] = useState<Size>({ width: 0, height: 0 })
+  /**
+   * THE VIEWFINDER IS THE SHAPE THAT WAS ASKED FOR (Input Devices ▸ Aspect Ratio, Mac commit c98c067), centred in
+   * the pane. Everything below is measured against `size` and not against the pane, so the box you drag, the zoom
+   * and what the capture brings in all go on meaning what they meant, inside the rectangle instead of inside the
+   * pane. `free` hands the pane straight back, which is what this was before there was a choice. The tablet's sheet
+   * has its own shape (the tablet's) and is not a viewfinder.
+   */
+  const aspect = useCameraAspect()
+  const size = useMemo<Size>(() => (tablet ? outer : fitAspect(aspect, outer)), [tablet, aspect, outer])
+  const finder = { x: (outer.width - size.width) / 2, y: (outer.height - size.height) / 2 }
 
   useEffect(() => { void ocrAvailable().then(setReader) }, [])
   useEffect(() => { onActiveCamera?.(stream.status === "running" ? stream.deviceId : null) }, [onActiveCamera, stream.status, stream.deviceId])
@@ -164,7 +183,7 @@ export function CameraPane({
     if (!element) return
     const measure = () => {
       const rect = element.getBoundingClientRect()
-      setSize((was) => (was.width === rect.width && was.height === rect.height ? was : { width: rect.width, height: rect.height }))
+      setOuter((was) => (was.width === rect.width && was.height === rect.height ? was : { width: rect.width, height: rect.height }))
     }
     measure()
     const observer = new ResizeObserver(measure)
@@ -210,9 +229,10 @@ export function CameraPane({
     })()
     : undefined
 
+  /** A point on screen in the viewfinder's own points (the viewfinder is the pane, or the shape centred in it). */
   const at = (event: { clientX: number; clientY: number }): { x: number; y: number } => {
     const rect = host.current!.getBoundingClientRect()
-    return { x: event.clientX - rect.left, y: event.clientY - rect.top }
+    return { x: event.clientX - rect.left - finder.x, y: event.clientY - rect.top - finder.y }
   }
 
   // MARK: turning the picture
@@ -241,6 +261,8 @@ export function CameraPane({
   }, [turn])
 
   useEffect(() => { if (stream.status !== "running") { setBox(null); setZooming(false) } }, [stream.status])
+  // A box drawn in a viewfinder of another shape is somewhere else in this one.
+  useEffect(() => { setBox(null) }, [aspect])
   // Escape lets go of a zoom that was armed (and of a box that was drawn).
   useEffect(() => {
     if (!zooming && !box) return
@@ -493,15 +515,22 @@ export function CameraPane({
       }
       return
     }
-    // A drag leaves its box alone; one click clears it; two take the whole picture.
+    // A drag leaves its box alone; one click clears a box, or with no box takes the whole picture; two fill the
+    // window with the picture, and two more put it back (`boxAction`, Mac commit 0edfc08).
     let clicks = 1
     const before = lastClick.current
     if (before && event.timeStamp - before.time < 450 && Math.hypot(point.x - before.x, point.y - before.y) < 8) clicks = 2
     lastClick.current = isBoxDrag(point.x - start.x, point.y - start.y) || clicks === 2
       ? null : { time: event.timeStamp, x: point.x, y: point.y }
-    const action = boxAction(point.x - start.x, point.y - start.y, clicks)
+    const action = boxAction(point.x - start.x, point.y - start.y, clicks, box !== null)
     if (action === "clear") setBox(null)
     else if (action === "whole") setBox(wholePictureBox())
+    else if (action === "fullWindow") {
+      // The first click of the double already did its half (took the whole picture, or cleared a box); the box it
+      // left is measured against the pane as it was, so it goes with the change of size. (The Mac keeps it.)
+      setBox(null)
+      onFullWindow?.()
+    }
   }
 
   // The header (it wraps to two rows in a narrow pane) must never sit on the tablet sheet: the whole tablet maps onto the sheet, so a pen tap
@@ -524,6 +553,8 @@ export function CameraPane({
     return () => window.clearTimeout(timer)
   }, [trouble])
   useEffect(() => { setTrouble(null) }, [box])
+  // What the camera said about its last capture is not about the tablet's sheet (or the other way round).
+  useEffect(() => { setRead(null); setTrouble(null) }, [tablet])
 
   // MARK: what the pane says when there is no picture
 
@@ -533,8 +564,10 @@ export function CameraPane({
 
   const choose = (id: string) => { onPickSource?.(id); setAttempt((was) => was + 1) }
 
+  const shaped = !tablet && aspect !== "free"
   return (
-    <div className={`camera${zooming ? " zooming" : ""}`} ref={host}
+    <div className={`camera${zooming ? " zooming" : ""}${shaped ? " shaped" : ""}${fullWindow ? " full-window" : ""}`} ref={host}
+         data-aspect={tablet ? undefined : aspect}
          onPointerDown={pictureDown} onPointerMove={pictureMove} onPointerUp={pictureUp}
          onPointerCancel={() => { drag.current = null; setDragging(false) }}>
       {tablet
@@ -544,7 +577,10 @@ export function CameraPane({
                          onEdited={() => { edited((was) => was + 1); setTrouble(null) }} />
         )
         : (
-          // The video element is always here (so the stream can be let go of cleanly); it is only SEEN once it is running.
+          // THE VIEWFINDER: the pane, or the shape asked for centred in it. The picture, the box and the corners are
+          // all laid out in it and measured against it.
+          <div className="viewfinder" style={{ left: finder.x, top: finder.y, width: size.width, height: size.height }}>
+          {/* The video element is always here (so the stream can be let go of cleanly); it is only SEEN once it is running. */}
           <div className="stage" style={{ visibility: running ? "visible" : "hidden" }}>
             <div className="zoomer" style={stageStyle}>
               <video ref={video} muted playsInline data-turn={rotation}
@@ -553,15 +589,14 @@ export function CameraPane({
                        : { width: size.width, height: size.height, transform: `translate(-50%, -50%) rotate(${rotation}deg)` }} />
             </div>
           </div>
-        )}
-      {!tablet && box && running && (
+      {box && running && (
         <div className="box-clip">
           <div className={`box${zooming ? " zoom" : ""}`} style={{
             left: box.x, top: box.y, width: box.width, height: box.height,
           }} />
         </div>
       )}
-      {!tablet && box && running && !zooming && !dragging && box.width > 8 && box.height > 8 && (
+      {box && running && !zooming && !dragging && box.width > 8 && box.height > 8 && (
         <div className="box-choices" data-busy={busy ? "1" : "0"}
              style={{
                left: Math.min(Math.max(box.x + box.width / 2, 150), Math.max(size.width - 150, 150)),
@@ -578,8 +613,7 @@ export function CameraPane({
           )}
         </div>
       )}
-      {zooming && running && <div className="zoom-hint">Drag a box - the pane shows that much</div>}
-      {!tablet && straighten && running && (
+      {straighten && running && (
         <>
           <svg className="quad" width="100%" height="100%">
             <polygon points={CORNER_NAMES.map((name) => `${corner(name).x},${corner(name).y}`).join(" ")} />
@@ -606,6 +640,16 @@ export function CameraPane({
                  }} />
           ))}
         </>
+      )}
+          </div>
+        )}
+      {zooming && running && <div className="zoom-hint">Drag a box - the pane shows that much</div>}
+      {fullWindow && (
+        // The way out he asked for, drawn ON the picture: the window is the picture, so there is no bar to put it on.
+        <button className="full-window-exit" data-camera="leave-full-window" aria-label="Leave Full-Window Video"
+                title="Back to the notes - double-clicking the picture does it too"
+                onPointerDown={(event) => event.stopPropagation()} onPointerUp={(event) => event.stopPropagation()}
+                onClick={() => onFullWindow?.()}>{"✕"}</button>
       )}
       {showPlaceholder && problem && (
         <div className="placeholder" data-problem={problem.kind} onPointerDown={(event) => event.stopPropagation()}>

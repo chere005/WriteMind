@@ -12,7 +12,7 @@
  */
 
 import type { MenuItemConstructorOptions } from "electron"
-import { HEADING_LADDER, headingName } from "@writemind/core"
+import { CAMERA_ASPECTS, cameraAspectTitle, HEADING_LADDER, headingName } from "@writemind/core"
 import { acceleratorFor, HEADING_COMMANDS, TABLET_SOURCE, type MenuState } from "../shared/commands"
 
 
@@ -56,7 +56,10 @@ export function buildMenu(options: MenuOptions): MenuItemConstructorOptions[] {
     SEPARATOR,
     item("openFolder", "Open Notes Folder"),
     SEPARATOR,
-    { label: "Export", submenu: [item("exportPDF", "PDF…", { enabled: state.hasNote })] },
+    item("save", "Save", { enabled: state.hasNote }),
+    // One item; PDF or Project is chosen in the save panel (exportFile.ts). Nothing to make
+    // without a note or a folder (the Mac: `store.selectedNote == nil && store.folders.isEmpty`).
+    item("export", "Export…", { enabled: state.hasNote || project.folders.length > 0 }),
     ...(platform === "darwin" ? [] : [SEPARATOR, { role: "quit" as const, label: "Quit" }]),
   ]
 
@@ -112,11 +115,12 @@ export function buildMenu(options: MenuOptions): MenuItemConstructorOptions[] {
     item("toggleSidebar", state.sidebar ? "Hide Notes Sidebar" : "Show Notes Sidebar"),
     item("toggleMode", state.rendered ? "Show Markdown Editor" : "Show Markdown Preview"),
     item("toggleCamera", state.camera ? "Hide Video" : "Show Video"),
+    item("togglePen", state.penDown ? "Stop Drawing" : "Draw"),
     item("toggleEditorPane", state.editorPane ? "Hide Notes Pane" : "Show Notes Pane"),
     item("toggleMarkers", state.markers ? "Hide Markdown Markers" : "Show Markdown Markers"),
     SEPARATOR,
-    item("foldSection", "Fold Section"),
-    item("unfoldSection", "Unfold Section"),
+    // What is UNDER the cells in play, never the cell itself (the caret's own Fold / Unfold Section are gone).
+    item("collapseSubsections", "Collapse Subsections"),
     item("foldAll", "Fold All Sections"),
     item("unfoldAll", "Unfold All Sections"),
     // No Toggle Full Screen: nothing in this app goes full screen (Sean's rule).
@@ -142,6 +146,9 @@ export function buildMenu(options: MenuOptions): MenuItemConstructorOptions[] {
     item("mergeCells", "Merge Cells", { enabled: state.hasNote }),
     SEPARATOR,
     item("duplicateCell", "Duplicate Cell", { enabled: state.hasNote }),
+    // The Mac's order: a divider, then ⌘9 Evaluation Cell above Delete Cell (WriteMindApp.swift FormatMenu).
+    SEPARATOR,
+    item("evaluationCell", "Evaluation Cell", { enabled: state.hasNote }),
     item("deleteCell", "Delete Cell", { enabled: state.hasNote }),
     item("moveCellUp", "Move Cell Up", { enabled: state.hasNote }),
     item("moveCellDown", "Move Cell Down", { enabled: state.hasNote }),
@@ -205,6 +212,19 @@ export function buildMenu(options: MenuOptions): MenuItemConstructorOptions[] {
     },
     SEPARATOR,
     item("cameraOff", "Turn Camera Off", { enabled: state.cameraId !== null }),
+    SEPARATOR,
+    // THE VIEWFINDER'S SHAPE (Mac commit c98c067: "aspect ratio control should be in the video input dropdown").
+    // Ticked the way the cameras above are, because it is the same kind of choice: what am I pointing this at.
+    {
+      label: "Aspect Ratio",
+      submenu: CAMERA_ASPECTS.map((choice): MenuItemConstructorOptions => ({
+        id: `cameraAspect:${choice}`,
+        label: choice === "free" ? "Free — as the camera sends it" : cameraAspectTitle(choice),
+        type: "checkbox",
+        checked: (state.cameraAspect ?? "free") === choice,
+        click: () => run(`cameraAspect:${choice}`),
+      })),
+    },
     item("cameraRefresh", "Refresh Device List"),
   ]
 
@@ -230,7 +250,11 @@ export function buildMenu(options: MenuOptions): MenuItemConstructorOptions[] {
     { label: "Window", submenu: windowItems },
     {
       role: "help",
-      submenu: [{ id: "about", label: "About WriteMind", click: () => run("about") }],
+      submenu: [
+        item("keyList", "Keyboard Shortcuts"),
+        SEPARATOR,
+        { id: "about", label: "About WriteMind", click: () => run("about") },
+      ],
     },
   ]
 }

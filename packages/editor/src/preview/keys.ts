@@ -12,7 +12,12 @@
 
 import { EditorSelection, Prec, type Extension } from "@codemirror/state"
 import { EditorView, keymap, type Command } from "@codemirror/view"
-import { backspaceInEmptyBlock, end, minimalChange, returnInBlock, touchingRuns, type Edit } from "@writemind/core"
+import {
+  backspaceInEmptyBlock, end, furnitureBehind, minimalChange, outdentForBackspace, returnInBlock, touchingRuns,
+  type Edit,
+} from "@writemind/core"
+import { awayField, putAway } from "./away"
+import { furnitureAt, reminderAt } from "./furniture"
 import { insideHidden } from "../fold"
 import { firstCellReaching } from "../seams"
 import { openBlock, press } from "./field"
@@ -53,6 +58,9 @@ export const previewBackspace: Command = (view) => {
   if (!on(view) || barUp(view)) return false
   const { ranges, main } = view.state.selection
   if (ranges.length !== 1 || !main.empty) return false
+  // (Only a caret on an empty line can be in an empty block: the whole note is not made a string for every key.)
+  const line = view.state.doc.lineAt(main.head)
+  if (line.text.trim().length !== 0) return reminderBackspace(view) || furnitureBackspace(view)
   const text = view.state.doc.toString()
   const out = backspaceInEmptyBlock(text, main.head)
   if (!out) return false
@@ -64,6 +72,137 @@ export const previewBackspace: Command = (view) => {
     scrollIntoView: true,
     userEvent: "input.preview.remove",
   })
+  return true
+}
+
+/**
+ * Backspace at the start of a reminder's words (Mac 0fdd031, `ListEditing`): a checklist is edited one item at a
+ * time with its boxes intact, so the key never takes a box. In an EMPTY item the item goes and the caret ends the
+ * one above (the only item of a list takes the block with it); in one with words they join the end of the item
+ * above, the caret at the seam — and at the top of a list, with nothing to join to, nothing happens (a box is unmade
+ * with the list buttons, as on the Mac).
+ */
+const reminderBackspace: Command = (view) => {
+  const state = view.state
+  const main = state.selection.main
+  const item = reminderAt(state, main.head)
+  if (!item || main.head !== item.text.location) return false
+  const doc = state.doc
+  const line = doc.lineAt(main.head)
+  const above = line.number > 1 ? reminderAt(state, doc.line(line.number - 1).from) : null
+  const apply = (changes: { from: number; to: number; insert?: string }, caret: number, userEvent: string) =>
+    view.dispatch({
+      changes, selection: EditorSelection.cursor(caret), effects: armSeam.of(null), scrollIntoView: true, userEvent,
+    })
+  if (item.text.length > 0) {
+    if (above) apply({ from: end(above.text), to: main.head }, end(above.text), "delete.preview.join")
+    return true
+  }
+  if (above) {
+    // The line goes with the newline in front of it, so the last item of a note leaves no empty line behind.
+    apply({ from: doc.line(line.number - 1).to, to: line.to }, end(above.text), "delete.preview.item")
+    return true
+  }
+  const below = line.number < doc.lines ? reminderAt(state, doc.line(line.number + 1).from) : null
+  if (below) {
+    // The first item of a list: it goes, and the caret starts the one that takes its place.
+    apply({ from: line.from, to: line.to + 1 }, below.text.location - (line.length + 1), "delete.preview.item")
+    return true
+  }
+  // The only item: the block goes, the way Backspace in an empty block takes it.
+  const text = doc.toString()
+  const emptied = text.slice(0, line.from) + text.slice(line.to)
+  const out = backspaceInEmptyBlock(emptied, line.from)
+  view.dispatch({
+    changes: minimalChange(text, out ? out.markdown : emptied),
+    selection: EditorSelection.cursor(out ? out.caret : line.from),
+    effects: armSeam.of(null),
+    scrollIntoView: true,
+    userEvent: "input.preview.remove",
+  })
+  return true
+}
+
+/**
+ * Backspace just behind a piece of furniture takes the WHOLE piece (`MarkerHiding.furnitureBehind`): `1. ` off a
+ * numbered item, `## ` off a heading — rather than one space, and a heading that quietly became a paragraph
+ * beginning `##`. A nested item loses a level first, the ordinary behaviour of the key on a list.
+ */
+const furnitureBackspace: Command = (view) => {
+  const state = view.state
+  const main = state.selection.main
+  const piece = furnitureBehind(main.head, furnitureAt(state, main.head))
+  if (!piece) return false
+  const line = state.doc.lineAt(main.head)
+  if (outdentForBackspace(line.text, { location: main.head - line.from, length: 0 })) return false
+  view.dispatch({
+    changes: { from: piece.location, to: end(piece) },
+    selection: EditorSelection.cursor(piece.location),
+    scrollIntoView: true,
+    userEvent: "delete.preview.furniture",
+  })
+  return true
+}
+
+/**
+ * Delete at the end of a reminder's words joins the next item's words on: the port's mirror of the join above (the
+ * editor's own Delete would pull the next box up into these words as text).
+ */
+const reminderDelete: Command = (view) => {
+  if (!on(view) || barUp(view)) return false
+  const state = view.state
+  const { ranges, main } = state.selection
+  if (ranges.length !== 1 || !main.empty) return false
+  const item = reminderAt(state, main.head)
+  if (!item || main.head !== end(item.text)) return false
+  const line = state.doc.lineAt(main.head)
+  if (line.number >= state.doc.lines) return false
+  const next = reminderAt(state, state.doc.line(line.number + 1).from)
+  if (!next) return false
+  view.dispatch({
+    changes: { from: main.head, to: next.text.location },
+    selection: EditorSelection.cursor(main.head),
+    scrollIntoView: true,
+    userEvent: "delete.preview.join",
+  })
+  return true
+}
+
+/**
+ * Left from the start of the words steps over the furniture in front of them: the caret may not stand in it, and the
+ * editor's own arrow would stop there and be put straight back.
+ */
+const leftOverFurniture: Command = (view) => {
+  if (!on(view) || barUp(view)) return false
+  const { ranges, main } = view.state.selection
+  if (ranges.length !== 1 || !main.empty) return false
+  const pieces = furnitureAt(view.state, main.head)
+  if (!furnitureBehind(main.head, pieces)) return false
+  let front = main.head
+  for (const piece of pieces) if (piece.location < front && end(piece) >= front) front = piece.location
+  if (front <= 0) return true
+  view.dispatch({ selection: EditorSelection.cursor(front - 1), scrollIntoView: true, userEvent: "select" })
+  return true
+}
+
+/**
+ * Escape in an open block puts the caret away, and the block is drawn again (the Mac's `move(.out)`); the next key
+ * or click brings it back where it was. A popover of the app's has the key first.
+ */
+const putCaretAway: Command = (view) => {
+  if (!on(view) || barUp(view) || view.state.field(awayField, false)) return false
+  if (view.dom.ownerDocument.querySelector(".style-pop, .float-menu, .context-menu, .kind-menu")) return false
+  view.dispatch({ selection: EditorSelection.cursor(view.state.selection.main.head), effects: putAway.of(true) })
+  return true
+}
+
+/**
+ * The first arrow (or Home, End) after Escape only brings the caret back where it was, and opens its block again:
+ * measured while the block was drawn, the editor's own step would have jumped the whole block.
+ */
+const comeBack: Command = (view) => {
+  if (!on(view) || !view.state.field(awayField, false)) return false
+  view.dispatch({ effects: putAway.of(false), scrollIntoView: true })
   return true
 }
 
@@ -150,6 +289,18 @@ const vertical = (down: boolean): Command => (view) => {
   const index = all.findIndex((cell) => cell.range.length > 0 && main.head >= cell.range.location
     && main.head <= end(cell.range))
   let target: number | null = null
+  // In an open code block the ``` lines are shut to a strip of padding, too thin for the editor's own arrow to land
+  // on: up from the first line of code (down from the last) is onto the fence, which opens for its language.
+  if (index >= 0 && all[index]!.block.kind === "code") {
+    const line = doc.lineAt(main.head)
+    const next = down ? (line.number < doc.lines ? doc.line(line.number + 1) : null) : (line.number > 1 ? doc.line(line.number - 1) : null)
+    const cell = all[index]!.range
+    if (next && /^\s*```/.test(next.text) && next.from >= cell.location && next.from <= end(cell)
+      && !/^\s*```/.test(line.text)) {
+      view.dispatch({ selection: EditorSelection.cursor(Math.min(next.from + (main.head - line.from), next.to)), scrollIntoView: true })
+      return true
+    }
+  }
   if (index >= 0) {
     const run = runs[index]!
     const first = cells[run.first]!.location
@@ -298,11 +449,15 @@ const typingOverHeld = EditorView.inputHandler.of((view, _from, _to, typed) => {
 
 export const previewKeys: Extension = [Prec.highest(typingOverHeld), marginPresses, Prec.highest(keymap.of([
   { key: "Enter", run: previewReturn },
-  { key: "Escape", run: (view) => leaveBar(view) || releaseHeld(view) },
-  { key: "Delete", run: leaveBar },
+  { key: "Escape", run: (view) => leaveBar(view) || releaseHeld(view) || putCaretAway(view) },
+  { key: "Delete", run: (view) => leaveBar(view) || reminderDelete(view) },
+  { key: "ArrowLeft", run: (view) => comeBack(view) || leftOverFurniture(view) },
+  { key: "ArrowRight", run: comeBack },
+  { key: "Home", run: comeBack },
+  { key: "End", run: comeBack },
   { key: "Backspace", run: (view) => leaveBar(view) || previewBackspace(view) },
-  { key: "ArrowUp", run: (view) => stepFromBar(true)(view) || vertical(false)(view) },
-  { key: "ArrowDown", run: (view) => stepFromBar(false)(view) || vertical(true)(view) },
+  { key: "ArrowUp", run: (view) => comeBack(view) || stepFromBar(true)(view) || vertical(false)(view) },
+  { key: "ArrowDown", run: (view) => comeBack(view) || stepFromBar(false)(view) || vertical(true)(view) },
   { key: "Shift-ArrowUp", run: extendVertical(false) },
   { key: "Shift-ArrowDown", run: extendVertical(true) },
   { key: "PageUp", run: page(false, false) },

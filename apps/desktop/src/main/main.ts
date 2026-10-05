@@ -33,9 +33,12 @@ import { followFolders, nodePorts } from "./watcher"
 import { isPdfPicture, readPdfPicture, svgDataUrl } from "./pdfPicture"
 import { PROJECT_COMMANDS, projectInfo, runProjectCommand, type ProjectChange } from "./projectCommands"
 import { startPenSubsystem, type PenSubsystem } from "./pen/subsystem"
-import { exportNotePdf, type ExportRequest } from "./exportPdf"
+import { exportNotePdf, writeNotePdf, type ExportRequest } from "./exportPdf"
+import { exportFile } from "./exportFile"
 import { rememberWindow, windowPlacement } from "./windowMemory"
 import { installPerfProbe } from "./perfProbe"
+import { registerEval } from "./eval/ipc"
+import type { Runner as EvalRunner } from "./eval/runner"
 import { MIN_WINDOW } from "../shared/layout"
 
 const here = path.dirname(fileURLToPath(import.meta.url))
@@ -134,6 +137,8 @@ async function tellFolders(): Promise<void> {
 
 /** The pen subsystem: the manager over Wintab and the window pen. Built once, inside a try/catch (subsystem.ts). */
 let pen: PenSubsystem | null = null
+/** Evaluation cells' runner (main/eval): every child it started is killed on quit and when the window closes. */
+let evalRunner: EvalRunner | null = null
 
 // MARK: - The application menu
 
@@ -435,6 +440,8 @@ app.whenReady().then(async () => {
     return ocr.request({ id: String(request.id), source, ...(languages.length > 0 ? { languages } : {}) })
   })
   ipcMain.handle("ocr:cancel", (_event, id: string) => { ocr.cancel(String(id)) })
+  // Evaluation cells: run ONE cell on a press, take a run back, say where the tools are (main/eval).
+  evalRunner = registerEval(ipcMain)
   /** What the reader is, what it can read, and how to add Japanese - for the diagnostics. */
   ipcMain.handle("ocr:status", async () => ({
     ...(await readerFor(here)), probe: await windowsOcr(here), addJapanese: ADD_JAPANESE_OCR, busy: ocr.busy, reads: ocr.started,
@@ -452,8 +459,8 @@ app.whenReady().then(async () => {
     return { bytes: await fs.readFile(file), extension: path.extname(file) }
   })
 
-  // File ▸ Export ▸ PDF… (exportPdf.ts): the note on US Letter, the way the Mac prints it.
-  ipcMain.handle("export:pdf", async (_event, request: ExportRequest) => {
+  // The note on US Letter, the way the Mac prints it (exportPdf.ts).
+  const printedPictures = async (request: ExportRequest) => {
     // The pictures are looked for in every project folder first (the printer asks for them synchronously).
     // (a Mac notebook's traced capture is a PDF: it is printed as the SVG of its paths, read here because the
     // printer asks for a picture's address synchronously)
@@ -466,10 +473,24 @@ app.whenReady().then(async () => {
         if (picture) drawn.set(name, svgDataUrl(picture.svg))
       }
     }
-    return exportNotePdf(request, {
-      window, askSave, mediaFile: (name) => mediaPath(notesRoot(), name), pictureUrl: (name) => drawn.get(name) ?? null,
-    })
-  })
+    return {
+      mediaFile: (name: string) => mediaPath(notesRoot(), name),
+      pictureUrl: (name: string) => drawn.get(name) ?? null,
+    }
+  }
+  ipcMain.handle("export:pdf", async (_event, request: ExportRequest) =>
+    exportNotePdf(request, { window, askSave, ...(await printedPictures(request)) }))
+  // File ▸ Export… (exportFile.ts): one panel, PDF or Project chosen in it; null when no note is open.
+  ipcMain.handle("export:file", async (_event, request: ExportRequest | null) =>
+    exportFile(request, {
+      window, askSave, documents: app.getPath("documents"),
+      project: () => ({ name: project.name, project: project.project }),
+      writePdf: async (file, note) => {
+        const pictures = await printedPictures(note)
+        await writeNotePdf(file, note, pictures.mediaFile, pictures.pictureUrl)
+      },
+      report: async (parent, message, detail) => { await dialog.showMessageBox(parent, { type: "warning", message, detail }) },
+    }))
 
   // THE APP'S OWN MENU (menu.ts). The page tells the shell what the menu
   // needs to know — a note open, the sidebar shown — and hears the clicks.
@@ -546,10 +567,11 @@ app.whenReady().then(async () => {
   })
 })
 
-app.on("before-quit", () => { pen?.dispose(); void project?.remember(projectStateFile()) })
-app.on("will-quit", () => { pen?.dispose() })
+app.on("before-quit", () => { pen?.dispose(); evalRunner?.cancelAll(); void project?.remember(projectStateFile()) })
+app.on("will-quit", () => { pen?.dispose(); evalRunner?.cancelAll() })
 
 app.on("window-all-closed", () => {
   folderWatch.stop()
+  evalRunner?.cancelAll()
   if (process.platform !== "darwin") app.quit()
 })

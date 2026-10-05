@@ -1,7 +1,8 @@
 import { describe, expect, it } from "vitest"
 import {
   arming, backspaceInEmptyBlock, touchingRuns, cellKey, cellStates, keepsNewlines, opened, previewPlusTarget,
-  previewPositions, previewSeams, PREVIEW_GAP_HEIGHT, PREVIEW_SIDE_INSET, PREVIEW_TAIL_HEIGHT,
+  previewPositions, previewSeams, PREVIEW_GAP_HEIGHT, PREVIEW_SIDE_INSET, PREVIEW_TAIL_HEIGHT, PREVIEW_BLOCK_GAP,
+  PREVIEW_CODE_PADDING, SOURCE_CODE_SIZE, SOURCE_LINE_HEIGHT, SOURCE_LINE_SPACING, previewOnScreen,
   PREVIEW_TOP_INSET, returnInBlock, seamAt, seamKey, stillHeld, topRow, type PreviewRow, type SeamID,
 } from "../src"
 import { positioned } from "../src/markdown/parser"
@@ -20,6 +21,26 @@ const kinds = (note: string): string[] => positioned(note).map(({ block }) =>
 
 /** Transcribed from `WriteMindTests/PreviewLayoutTests.swift` (CellBracketTests, TopCellTests, CellSpacingTests). */
 describe("where the rendered page puts each cell", () => {
+  // Mac b98a7a5: the page moves for a finished cell only when it has to.
+  it("does not scroll to a place already in front of the reader", () => {
+    expect(previewOnScreen(400, 0, 800)).toBe(true)
+    expect(previewOnScreen(900, 600, 800)).toBe(true)
+    expect(previewOnScreen(900, 0, 800)).toBe(false) // below the fold
+    expect(previewOnScreen(100, 600, 800)).toBe(false) // above it
+  })
+
+  it("does not count the very edges of the window", () => {
+    expect(previewOnScreen(1, 0, 800)).toBe(false)
+    expect(previewOnScreen(799, 0, 800)).toBe(false)
+    expect(previewOnScreen(24, 0, 800)).toBe(true)
+    expect(previewOnScreen(776, 0, 800)).toBe(true)
+  })
+
+  it("shows nothing in a window with no height yet", () => {
+    expect(previewOnScreen(10, 0, 0)).toBe(false)
+    expect(previewOnScreen(10, 0, 30)).toBe(false)
+  })
+
   const rows = (heights: number[]): PreviewRow[] => heights.map((height, id) => ({ id, height }))
 
   it("gives every cell its place in order", () => {
@@ -35,13 +56,35 @@ describe("where the rendered page puts each cell", () => {
     expect(places.get(1)!.top).toBe(20)
   })
 
-  it("makes every gap the same small one", () => {
+  it("keeps the seam floor small, and the page in the markdown side's rhythm (Mac 0cde812)", () => {
     expect(PREVIEW_GAP_HEIGHT).toBeLessThanOrEqual(10)
-    expect(PREVIEW_GAP_HEIGHT).toBeGreaterThan(0)
+    expect(PREVIEW_GAP_HEIGHT).toBeGreaterThan(0) // the pointer still has to fit in it
+    // A blank line of the note and the spacing round it — what separates two cells on the other side.
+    expect(PREVIEW_BLOCK_GAP).toBeCloseTo(SOURCE_LINE_HEIGHT + SOURCE_LINE_SPACING, 3)
+    expect(PREVIEW_BLOCK_GAP).toBeGreaterThan(PREVIEW_GAP_HEIGHT * 2) // it was a third of a line apart
+  })
+
+  it("makes every gap between cells that same one", () => {
     const places = previewPositions([{ id: 1, height: 40 }, { id: 2, height: 120 }, { id: 3, height: 18 }],
-      PREVIEW_GAP_HEIGHT, PREVIEW_TOP_INSET)
-    expect(places.get(2)!.top - places.get(1)!.bottom).toBeCloseTo(PREVIEW_GAP_HEIGHT, 3)
-    expect(places.get(3)!.top - places.get(2)!.bottom).toBeCloseTo(PREVIEW_GAP_HEIGHT, 3)
+      PREVIEW_BLOCK_GAP, PREVIEW_TOP_INSET)
+    expect(places.get(2)!.top - places.get(1)!.bottom).toBeCloseTo(PREVIEW_BLOCK_GAP, 3)
+    expect(places.get(3)!.top - places.get(2)!.bottom).toBeCloseTo(PREVIEW_BLOCK_GAP, 3)
+  })
+})
+
+/** Transcribed from `WriteMindTests/PreviewLayoutTests.swift` (CodeCellHeightTests, Mac e66379c). */
+describe("a drawn code cell is a box round its code", () => {
+  const rendered = (bodyLines: number) => bodyLines * SOURCE_LINE_HEIGHT + 2 * PREVIEW_CODE_PADDING
+
+  it("hugs the code it holds", () => {
+    expect(rendered(1)).toBeLessThan(SOURCE_LINE_HEIGHT * 2) // a little bigger than one line
+    expect(rendered(1)).toBeGreaterThan(SOURCE_LINE_HEIGHT) // and not tighter than the text
+  })
+
+  it("pads by half the text rather than a whole source line", () => {
+    expect(PREVIEW_CODE_PADDING).toBeCloseTo(Math.round(SOURCE_CODE_SIZE / 2), 3)
+    // THE OLD CONTRACT, GIVEN UP ON PURPOSE: a code cell as tall on both sides. Nothing depended on it.
+    expect(PREVIEW_CODE_PADDING).toBeLessThan(SOURCE_LINE_HEIGHT / 2)
   })
 })
 
@@ -94,7 +137,7 @@ describe("the cell at the top of the window", () => {
 describe("the seams of the rendered page", () => {
   const page: PreviewRow[] = [{ id: 0, height: 40 }, { id: 12, height: 60 }, { id: 30, height: 20 }]
   const top = PREVIEW_TOP_INSET + PREVIEW_GAP_HEIGHT
-  const places = () => previewPositions(page, PREVIEW_GAP_HEIGHT, top)
+  const places = () => previewPositions(page, PREVIEW_BLOCK_GAP, top)
 
   it("has a seam above every cell and one under the last", () => {
     const out = previewSeams(page, 44, 600)
@@ -112,7 +155,9 @@ describe("the seams of the rendered page", () => {
     const out = previewSeams(page, 44, 600)
     expect(out[1]!.top).toBe(places().get(0)!.bottom)
     expect(out[1]!.bottom).toBe(places().get(12)!.top)
-    expect(out[1]!.bottom - out[1]!.top).toBeCloseTo(PREVIEW_GAP_HEIGHT, 3)
+    // The other side's rhythm, not the eight points a pointer needs to fit in a seam (Mac 0cde812).
+    expect(out[1]!.bottom - out[1]!.top).toBeCloseTo(PREVIEW_BLOCK_GAP, 3)
+    expect(PREVIEW_BLOCK_GAP).toBeGreaterThan(PREVIEW_GAP_HEIGHT)
   })
 
   it("runs the tail to the bottom of the page", () => {

@@ -4,7 +4,7 @@
  * Retry for the system mapping. Nothing else.
  */
 
-import { useState } from "react"
+import { useEffect, useRef, useState } from "react"
 import { useOnScreen } from "./useOnScreen"
 import { setButton, setPenDraws, setPressure, usePenSettings } from "./penSettings"
 import { ACTION_CHOICES, ACTION_WORDS, SLOTS, SLOT_NAMES } from "./penButtons"
@@ -32,12 +32,27 @@ export function PenMenu() {
   const live = usePenLive()
   const [open, setOpen] = useState(false)
   const pop = useOnScreen<HTMLDivElement>(open)
+  const root = useRef<HTMLSpanElement | null>(null)
+  // Like the app's other popovers (PaperMenu, the video menu): a click anywhere else or Esc puts it away. Esc goes
+  // first and stops there, so the same press does not also let go of a box or a tool.
+  useEffect(() => {
+    if (!open) return
+    const away = (event: PointerEvent) => { if (!root.current?.contains(event.target as Node)) setOpen(false) }
+    const key = (event: KeyboardEvent) => {
+      if (event.key !== "Escape") return
+      event.preventDefault(); event.stopPropagation()
+      setOpen(false)
+    }
+    window.addEventListener("pointerdown", away, true)
+    window.addEventListener("keydown", key, true)
+    return () => { window.removeEventListener("pointerdown", away, true); window.removeEventListener("keydown", key, true) }
+  }, [open])
   const held = heldAction(live)
   const heldName = heldSlot(live) && held && held !== "none" ? ACTION_WORDS[held] : null
   const summary = SLOTS.filter((slot) => slot !== "tipAlt")
     .map((slot) => `${SLOT_NAMES[slot]}: ${ACTION_WORDS[settings.buttons[slot]]}`).join(". ")
   return (
-    <span className="pen-menu">
+    <span className="pen-menu" ref={root}>
       <button className={`icon-button pen-chip pen-${settings.seen}${open ? " on" : ""}`} data-pen="chip"
               title={`${WORDS[settings.seen]} ${summary}.${settings.eraser ? " Erase tool is on." : ""}${settings.selectTool ? " Select tool is on." : ""}${heldName ? ` Button held now: ${heldName}.` : ""}`}
               onClick={() => setOpen((was) => !was)}>

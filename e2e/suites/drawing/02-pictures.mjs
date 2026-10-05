@@ -12,8 +12,8 @@ await js(`window.__png = async () => {
   x.fillStyle = '#3030e0'; x.fillRect(0,150,200,150); x.fillStyle = '#e0e030'; x.fillRect(200,150,200,150);
   const blob = await new Promise(r => c.toBlob(r, 'image/png')); return new File([blob], 'quad.png', { type: 'image/png' }) }`)
 
-/** The colour painted on the base canvas at a document point. */
-const pixelAt = (px, py) => js(`(() => { const c = document.querySelector('.wm-canvas canvas'); const r = c.width / c.getBoundingClientRect().width; const d = c.getContext('2d').getImageData(Math.round(${px}*r), Math.round(${py}*r), 1, 1).data; return [d[0], d[1], d[2], d[3]] })()`)
+/** The colour painted on the base canvas at a document point (the canvas is a band of the note in the scroller, from its `offsetTop`). */
+const pixelAt = (px, py) => js(`(() => { const c = document.querySelector('.wm-ink'); const r = c.width / c.getBoundingClientRect().width; const d = c.getContext('2d').getImageData(Math.round(${px}*r), Math.round((${py} - c.offsetTop)*r), 1, 1).data; return [d[0], d[1], d[2], d[3]] })()`)
 const near = (p, q) => p.slice(0, 3).every((v, i) => Math.abs(v - q[i]) < 40)
 
 // Paste (Ctrl+V's event), as the clipboard would deliver it.

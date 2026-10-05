@@ -11,7 +11,7 @@
  */
 
 import {
-  bulletItem, codeTokens, dashItem, fenceLanguage, fenced, inlineSegments, isMathFence, languageFrom,
+  bulletItem, codeTokens, dashItem, fenceLanguage, fenced, inlineSegments, isMathFence, colouring,
   numberedItem, todoItem,
   type Block, type InlineSegment,
 } from "@writemind/core"
@@ -240,7 +240,7 @@ function codeBlock(source: string, context: RenderContext): HTMLElement {
 
   const holder = make("div", "wm-pv wm-pv-code")
   const pre = make("pre", undefined, holder)
-  const known = languageFrom(language)
+  const known = colouring(language)
   const tokens = known && known !== "plain" ? codeTokens(body, known) : []
   let at = 0
   const plain = (to: number) => {
@@ -286,12 +286,14 @@ export function renderBlock(block: Block, source: string, context: RenderContext
 export function estimatedHeight(block: Block, source: string): number {
   const lines = source.split("\n").length
   switch (block.kind) {
-    case "heading": return ({ 1: 36, 2: 30, 3: 25, 4: 22, 5: 21, 6: 23 } as Record<number, number>)[block.level] ?? 24
+    // (The rendered ladder, 28/22/18/16/15/17, at its line heights.)
+    case "heading": return ({ 1: 34, 2: 28, 3: 26, 4: 23, 5: 22, 6: 25 } as Record<number, number>)[block.level] ?? 24
     case "paragraph": return Math.max(1, Math.ceil(source.length / 85)) * 22
     case "quote": return Math.max(1, Math.ceil(source.length / 80)) * 22
-    case "bullets": case "dashes": case "todos": case "numbered": return lines * 26
-    case "code": return Math.max(1, lines - 2) * 20 + 28
-    case "rule": return 18
+    case "bullets": case "dashes": case "todos": case "numbered": return lines * 22
+    // Its lines at the code size, and half that size of padding top and bottom (Mac e66379c).
+    case "code": return Math.max(1, lines - 2) * 20.6 + 14
+    case "rule": return 9
     case "blank": return lines * 22
   }
 }

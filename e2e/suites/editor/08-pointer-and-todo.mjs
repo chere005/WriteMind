@@ -19,11 +19,11 @@ ok("a click on a done box opens it", (await doc()).includes("- [ ] done thing"))
 ok("the note is otherwise untouched by the ticking", (await doc()) === D.replace("- [x] done thing", "- [ ] done thing"))
 
 // ---- the rendered page by key
-await key("p", { ctrl: true, shift: true })
+await key("t", { ctrl: true })
 await waitFor("document.querySelector('.cm-editor').classList.contains('wm-rendered')", 4000); await sleep(300)
-ok("Ctrl+Shift+P shows the rendered page", await js(`document.querySelector('.cm-editor').classList.contains('wm-rendered')`))
+ok("Ctrl+T shows the rendered page", await js(`document.querySelector('.cm-editor').classList.contains('wm-rendered')`))
 await shot("rendered")
-await key("p", { ctrl: true, shift: true })
+await key("t", { ctrl: true })
 await waitFor("!document.querySelector('.cm-editor').classList.contains('wm-rendered')", 4000); await sleep(300)
 ok("and again goes back to the markdown", !(await js(`document.querySelector('.cm-editor').classList.contains('wm-rendered')`)))
 
