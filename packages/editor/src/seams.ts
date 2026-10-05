@@ -16,9 +16,10 @@ import {
 } from "@codemirror/state"
 import { Decoration, EditorView, ViewPlugin, keymap, type ViewUpdate } from "@codemirror/view"
 import {
-  arm, GAP_HEIGHT, onPlus, openCell, plus, seamAt, seams, type CellBox, type CellKind, type Seam,
+  armIn, end, firstCellFromBy, GAP_HEIGHT, onPlus, openCell, plus, seamAt, seams, type CellBox, type CellKind,
+  type PositionedBlock, type Seam,
 } from "@writemind/core"
-import { insideHidden } from "./fold"
+import { hiddenNow, insideHidden } from "./fold"
 import { notebook } from "./notebook"
 
 /** Arm a seam by hand — the two ends of the page, which no caret can name. */
@@ -42,8 +43,9 @@ export const armedField = StateField.define<number | null>({
     // has left the bar.
     const length = transaction.state.doc.length
     const standing = value !== null && (value === 0 || value === length) ? value : null
-    return arm({ location: head.from, length: head.to - head.from },
-      transaction.state.doc.toString(), standing)
+    // (The note is not turned into a string for this: it runs on every caret move and every keystroke.)
+    return armIn({ location: head.from, length: head.to - head.from }, transaction.state.doc,
+      () => notebook(transaction.state).cells, standing)
   },
 })
 
@@ -88,6 +90,145 @@ export function pageSeams(view: EditorView): Seam[] {
   })
 }
 
+// MARK: - Seams one place at a time
+//
+// `pageSeams` measures EVERY cell (a `lineBlockAt` pair each: 4 ms in a 2 MB note) and the layer asked for it on the
+// first pointer move or press after every edit — a double-click on a bracket cost a seam measurement of the whole
+// note. A seam is the space between two cells, and its box is a function of those two cells' boxes alone, so the
+// ones near a point are made from the cells near it.
+
+/** The next cell (`dir` 1) or the one before (`dir` -1) that is on show, or -1 / `cells.length` past the ends. */
+function shownBeyond(view: EditorView, cells: readonly PositionedBlock[], from: number, dir: 1 | -1): number {
+  let i = from + dir
+  while (i >= 0 && i < cells.length && insideHidden(view.state, cells[i]!.range)) {
+    // A closed section hides a run of cells: jump past all of it.
+    const at = cells[i]!.range.location
+    const hidden = hiddenNow(view.state).find((r) => at > r.location && at < end(r))
+    if (!hidden) { i += dir; continue }
+    i = dir > 0 ? firstCellFromBy(cells, end(hidden) + 1, (c) => c.range) : firstCellFromBy(cells, hidden.location, (c) => c.range) - 1
+  }
+  return i
+}
+
+const boxOf = (view: EditorView, cell: PositionedBlock): CellBox => {
+  const length = view.state.doc.length
+  const from = Math.min(cell.range.location, length)
+  const to = Math.min(Math.max(cell.range.location, cell.range.location + cell.range.length - 1), length)
+  const pad = view.documentPadding.top
+  return { top: view.lineBlockAt(from).top + pad, bottom: view.lineBlockAt(to).bottom + pad, offset: cell.range.location }
+}
+
+/**
+ * The seams round the cell at `index` (two cells on show either side of it): what `pageSeams` answers there, and
+ * no others. The seams at the ends of the page are only included when the window reaches the first or last cell.
+ */
+export function seamsAround(view: EditorView, index: number): Seam[] {
+  const cells = notebook(view.state).cells
+  const length = view.state.doc.length
+  const pageBottom = Math.max(view.contentHeight, view.scrollDOM.clientHeight)
+  const none = () => seams({ cells: [], pageTop: 0, pageBottom, noteLength: length, firstCellTop: GAP_HEIGHT })
+  if (cells.length === 0) return none()
+  // The centre is a cell on show: this one, or the nearest before it, or the first after.
+  let centre = Math.min(Math.max(index, 0), cells.length - 1)
+  if (insideHidden(view.state, cells[centre]!.range)) {
+    const before = shownBeyond(view, cells, centre, -1)
+    centre = before >= 0 ? before : shownBeyond(view, cells, centre, 1)
+  }
+  if (centre < 0 || centre >= cells.length) return none()
+  const window: number[] = [centre]
+  let low = centre
+  let high = centre
+  for (let k = 0; k < 2; k++) {
+    const b = shownBeyond(view, cells, low, -1)
+    if (b >= 0) { window.unshift(b); low = b }
+    const a = shownBeyond(view, cells, high, 1)
+    if (a < cells.length) { window.push(a); high = a }
+  }
+  const startsPage = shownBeyond(view, cells, low, -1) < 0
+  const endsPage = shownBeyond(view, cells, high, 1) >= cells.length
+  const made = seams({
+    cells: window.map((i) => boxOf(view, cells[i]!)),
+    pageTop: 0,
+    pageBottom,
+    noteLength: length,
+    firstCellTop: GAP_HEIGHT,
+  })
+  // (The first of `made` is "the page above the first cell" and the last is "the page below the last": true of the
+  // window's ends only when the window's ends are the page's.)
+  return made.slice(startsPage ? 0 : 1, endsPage ? made.length : made.length - 1)
+}
+
+/**
+ * The index of the last cell whose top is at or above `y` (the page's own coordinates), by search over the cells'
+ * own boxes. (Not `lineBlockAtHeight`: where the page has not been laid out CodeMirror estimates, and the estimate
+ * for "which line is at this height" is not the inverse of the one for "where is this line" — it was several cells out.)
+ */
+function cellIndexAtY(view: EditorView, y: number): number {
+  const cells = notebook(view.state).cells
+  const length = view.state.doc.length
+  const pad = view.documentPadding.top
+  let low = 0
+  let high = cells.length
+  while (low < high) {
+    const middle = (low + high) >> 1
+    const top = view.lineBlockAt(Math.min(cells[middle]!.range.location, length)).top + pad
+    if (top <= y) low = middle + 1
+    else high = middle
+  }
+  return Math.max(0, low - 1)
+}
+
+/**
+ * The cell on show at height `y` of the page — the last one whose top is at or above it, else the first on show —
+ * as its offset. What the two modes agree on when you switch (`topCell`), without measuring every cell.
+ */
+export function cellOffsetAt(view: EditorView, y: number): number | null {
+  const cells = notebook(view.state).cells
+  if (cells.length === 0) return null
+  let index = cellIndexAtY(view, y)
+  if (insideHidden(view.state, cells[index]!.range)) {
+    const before = shownBeyond(view, cells, index, -1)
+    index = before >= 0 ? before : shownBeyond(view, cells, index, 1)
+  }
+  return index >= 0 && index < cells.length ? cells[index]!.range.location : null
+}
+
+/** The offset of the first cell on show that reaches down to `y` (its bottom at or below it), or null if none does. */
+export function firstCellReaching(view: EditorView, y: number): number | null {
+  const cells = notebook(view.state).cells
+  const length = view.state.doc.length
+  const pad = view.documentPadding.top
+  let low = 0
+  let high = cells.length
+  while (low < high) {
+    const middle = (low + high) >> 1
+    const cell = cells[middle]!
+    const to = Math.min(Math.max(cell.range.location, cell.range.location + cell.range.length - 1), length)
+    if (view.lineBlockAt(to).bottom + pad >= y) high = middle
+    else low = middle + 1
+  }
+  if (low >= cells.length) return null
+  if (insideHidden(view.state, cells[low]!.range)) low = shownBeyond(view, cells, low, 1)
+  return low < cells.length ? cells[low]!.range.location : null
+}
+
+/** The seam at height `y` of the page, or null for a point that is on a cell. */
+export function seamAtY(view: EditorView, y: number): Seam | null {
+  return seamAt(y, seamsAround(view, cellIndexAtY(view, y)))
+}
+
+/** The seam that opens a cell at `offset` (a cell's start, or the note's end), or null. */
+export function seamAtOffset(view: EditorView, offset: number): Seam | null {
+  const cells = notebook(view.state).cells
+  let index = firstCellFromBy(cells, offset, (c) => c.range)
+  if (index < cells.length && cells[index]!.range.location !== offset) return null
+  if (index >= cells.length) {
+    if (offset !== view.state.doc.length) return null
+    index = cells.length - 1
+  }
+  return seamsAround(view, index).find((seam) => seam.offset === offset) ?? null
+}
+
 /** The cursor is the bar, so no caret blinks anywhere else while it is up. */
 const hideCaret = EditorView.theme({
   // visibility, not display: the base theme sets display on a focused editor's
@@ -98,21 +239,13 @@ const hideCaret = EditorView.theme({
 class SeamLayer {
   readonly dom: HTMLElement
   private hovered: number | null = null
-  private cache: Seam[] = []
-  private stale = true
   private drawn = ""
 
   /**
-   * The seams are measured once per document and geometry, not once per
-   * keystroke: nothing is drawn for them unless one is armed or hovered, and
-   * only then does anybody ask where they are.
+   * Nothing is drawn for the seams unless one is armed or hovered, and then only the seams at that place are
+   * measured (`seamsAround`) — never all of them.
    */
-  private get all(): Seam[] {
-    if (this.stale) { this.cache = pageSeams(this.view); this.stale = false }
-    return this.cache
-  }
-
-  invalidate(): void { this.stale = true }
+  invalidate(): void { /* (nothing is kept: see `seamsAround`) */ }
 
   constructor(private readonly view: EditorView, private readonly onPlusPressed: (seam: Seam) => void) {
     this.dom = document.createElement("div")
@@ -135,7 +268,7 @@ class SeamLayer {
   }
 
   private move = (event: MouseEvent) => {
-    const seam = seamAt(this.y(event), this.all)
+    const seam = seamAtY(this.view, this.y(event))
     const offset = seam ? seam.offset : null
     if (offset !== this.hovered) { this.hovered = offset; this.draw() }
     // The + is a button, so it takes the pointing hand — the same cursor
@@ -153,7 +286,7 @@ class SeamLayer {
 
   private press = (event: MouseEvent) => {
     if (event.button !== 0) return
-    const seam = seamAt(this.y(event), this.all)
+    const seam = seamAtY(this.view, this.y(event))
     if (!seam) return
     if (onPlus(this.x(event), this.y(event), seam, PLUS_LEADING)) {
       event.preventDefault()
@@ -180,8 +313,11 @@ class SeamLayer {
     const armed = this.view.state.field(armedField, false) ?? null
     const marked = armed ?? this.hovered
     if (marked === null && this.hovered === null) {
-      // Nothing to show: no measuring, and no DOM unless there was some.
+      // Nothing to show: no measuring, and no DOM unless there was some. The layer is
+      // as tall as the page only while it is drawing — left at the height of a longer
+      // note it would keep the scroll area open under a shorter one.
       if (this.drawn !== "") { this.dom.textContent = ""; this.drawn = "" }
+      if (this.dom.style.height !== "0px") this.dom.style.height = "0px"
       return
     }
     const height = `${this.view.contentHeight}px`
@@ -196,15 +332,14 @@ class SeamLayer {
       this.dom.appendChild(line)
     }
 
-    const armedSeam = armed === null ? null : this.all.find((seam) => seam.offset === armed) ?? null
-    const hoveredSeam = this.hovered === null ? null
-      : this.all.find((seam) => seam.offset === this.hovered) ?? null
+    const armedSeam = armed === null ? null : seamAtOffset(this.view, armed)
+    const hoveredSeam = this.hovered === null ? null : seamAtOffset(this.view, this.hovered)
     if (armedSeam) bar(armedSeam, false)
     // The faint bar shows even when a solid one is drawn elsewhere (Sean,
     // 2026-09-21), so the pointer always says where a click would go.
     if (hoveredSeam && hoveredSeam.offset !== armedSeam?.offset) bar(hoveredSeam, true)
 
-    const markedSeam = this.all.find((seam) => seam.offset === marked)
+    const markedSeam = marked === armed ? armedSeam : marked === this.hovered ? hoveredSeam : null
     if (markedSeam) {
       const rect = plus(markedSeam.line, PLUS_LEADING)
       const dot = document.createElement("div")
@@ -300,6 +435,10 @@ export function seamLayer(onPlusPressed: (view: EditorView, seam: Seam) => void)
       measure = { key: "wm-seams", read: () => null, write: () => this.layer.draw() }
       constructor(view: EditorView) {
         this.layer = new SeamLayer(view, (seam) => onPlusPressed(view, seam))
+        // End-to-end scripts (their preload adds e2ePerf) hold the local seams to the whole-page ones: C:/CLAUDIO/agents/e2e/e3/seams-local.mjs.
+        if ((globalThis as { wm?: { e2ePerf?: unknown } }).wm?.e2ePerf) {
+          (view as unknown as { __wmSeams: unknown }).__wmSeams = { pageSeams: () => pageSeams(view), seamAtY: (y: number) => seamAtY(view, y), seamAtOffset: (o: number) => seamAtOffset(view, o), around: (i: number) => seamsAround(view, i), indexAtY: (y: number) => cellIndexAtY(view, y) }
+        }
       }
       update(update: ViewUpdate) {
         // Positions are document-relative, so a scroll moves nothing here;

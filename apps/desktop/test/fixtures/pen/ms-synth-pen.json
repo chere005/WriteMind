@@ -1,0 +1,375 @@
+{
+ "note": "REAL: Windows 10 19045 raw input device \\?Microsoft HID RID\u0000D_0002\u0001, caps via HidP_GetCaps/ValueCaps/ButtonCaps, layout via probeLayout (HidP_SetUsageValue diff). Captured 2026-10-03.",
+ "device": {
+  "name": "\\\\?\\Microsoft HID RID\\000D_0002\\1",
+  "vid": 0,
+  "pid": 0
+ },
+ "caps": {
+  "usage": 2,
+  "usagePage": 13,
+  "inputReportByteLength": 16,
+  "outputReportByteLength": 0,
+  "featureReportByteLength": 0,
+  "numberLinkCollectionNodes": 2,
+  "numberInputButtonCaps": 5,
+  "numberInputValueCaps": 7,
+  "valueCaps": [
+   {
+    "page": 1,
+    "reportId": 1,
+    "link": 1,
+    "linkUsage": 32,
+    "linkPage": 13,
+    "isRange": false,
+    "isAbsolute": true,
+    "hasNull": false,
+    "bitSize": 16,
+    "reportCount": 1,
+    "unitsExp": 14,
+    "units": 17,
+    "logicalMin": 0,
+    "logicalMax": 32000,
+    "physicalMin": 0,
+    "physicalMax": 300,
+    "usageMin": 48,
+    "usageMax": 48
+   },
+   {
+    "page": 1,
+    "reportId": 1,
+    "link": 1,
+    "linkUsage": 32,
+    "linkPage": 13,
+    "isRange": false,
+    "isAbsolute": true,
+    "hasNull": false,
+    "bitSize": 16,
+    "reportCount": 1,
+    "unitsExp": 14,
+    "units": 17,
+    "logicalMin": 0,
+    "logicalMax": 32000,
+    "physicalMin": 0,
+    "physicalMax": 300,
+    "usageMin": 49,
+    "usageMax": 49
+   },
+   {
+    "page": 13,
+    "reportId": 1,
+    "link": 1,
+    "linkUsage": 32,
+    "linkPage": 13,
+    "isRange": false,
+    "isAbsolute": true,
+    "hasNull": false,
+    "bitSize": 16,
+    "reportCount": 1,
+    "unitsExp": 0,
+    "units": 0,
+    "logicalMin": 0,
+    "logicalMax": 1024,
+    "physicalMin": 0,
+    "physicalMax": 0,
+    "usageMin": 48,
+    "usageMax": 48
+   },
+   {
+    "page": 13,
+    "reportId": 1,
+    "link": 1,
+    "linkUsage": 32,
+    "linkPage": 13,
+    "isRange": false,
+    "isAbsolute": true,
+    "hasNull": false,
+    "bitSize": 8,
+    "reportCount": 1,
+    "unitsExp": 0,
+    "units": 0,
+    "logicalMin": -90,
+    "logicalMax": 90,
+    "physicalMin": 0,
+    "physicalMax": 0,
+    "usageMin": 61,
+    "usageMax": 61
+   },
+   {
+    "page": 13,
+    "reportId": 1,
+    "link": 1,
+    "linkUsage": 32,
+    "linkPage": 13,
+    "isRange": false,
+    "isAbsolute": true,
+    "hasNull": false,
+    "bitSize": 8,
+    "reportCount": 1,
+    "unitsExp": 0,
+    "units": 0,
+    "logicalMin": -90,
+    "logicalMax": 90,
+    "physicalMin": 0,
+    "physicalMax": 0,
+    "usageMin": 62,
+    "usageMax": 62
+   },
+   {
+    "page": 13,
+    "reportId": 1,
+    "link": 1,
+    "linkUsage": 32,
+    "linkPage": 13,
+    "isRange": false,
+    "isAbsolute": true,
+    "hasNull": false,
+    "bitSize": 16,
+    "reportCount": 1,
+    "unitsExp": 0,
+    "units": 0,
+    "logicalMin": 0,
+    "logicalMax": 360,
+    "physicalMin": 0,
+    "physicalMax": 0,
+    "usageMin": 65,
+    "usageMax": 65
+   },
+   {
+    "page": 13,
+    "reportId": 1,
+    "link": 0,
+    "linkUsage": 2,
+    "linkPage": 13,
+    "isRange": false,
+    "isAbsolute": true,
+    "hasNull": false,
+    "bitSize": 32,
+    "reportCount": 1,
+    "unitsExp": 0,
+    "units": 0,
+    "logicalMin": 0,
+    "logicalMax": 65535,
+    "physicalMin": 0,
+    "physicalMax": 0,
+    "usageMin": 86,
+    "usageMax": 86
+   }
+  ],
+  "buttonCaps": [
+   {
+    "page": 13,
+    "reportId": 1,
+    "link": 1,
+    "isRange": false,
+    "isAbsolute": true,
+    "usageMin": 66,
+    "usageMax": 66
+   },
+   {
+    "page": 13,
+    "reportId": 1,
+    "link": 1,
+    "isRange": false,
+    "isAbsolute": true,
+    "usageMin": 50,
+    "usageMax": 50
+   },
+   {
+    "page": 13,
+    "reportId": 1,
+    "link": 1,
+    "isRange": false,
+    "isAbsolute": true,
+    "usageMin": 68,
+    "usageMax": 68
+   },
+   {
+    "page": 13,
+    "reportId": 1,
+    "link": 1,
+    "isRange": false,
+    "isAbsolute": true,
+    "usageMin": 60,
+    "usageMax": 60
+   },
+   {
+    "page": 13,
+    "reportId": 1,
+    "link": 1,
+    "isRange": false,
+    "isAbsolute": true,
+    "usageMin": 69,
+    "usageMax": 69
+   }
+  ],
+  "nodes": [
+   {
+    "index": 0,
+    "usage": 2,
+    "page": 13,
+    "parent": 0,
+    "children": 1,
+    "type": 1
+   },
+   {
+    "index": 1,
+    "usage": 32,
+    "page": 13,
+    "parent": 0,
+    "children": 0,
+    "type": 0
+   }
+  ]
+ },
+ "layout": {
+  "usagePage": 13,
+  "usage": 2,
+  "hasReportIds": true,
+  "reports": [
+   {
+    "reportId": 1,
+    "byteLength": 16,
+    "values": [
+     {
+      "page": 1,
+      "usage": 48,
+      "link": 1,
+      "bitOffset": 8,
+      "bitSize": 16,
+      "signed": false,
+      "logicalMin": 0,
+      "logicalMax": 32000,
+      "physicalMin": 0,
+      "physicalMax": 300,
+      "units": 17,
+      "unitsExp": 14,
+      "hasNull": false
+     },
+     {
+      "page": 1,
+      "usage": 49,
+      "link": 1,
+      "bitOffset": 24,
+      "bitSize": 16,
+      "signed": false,
+      "logicalMin": 0,
+      "logicalMax": 32000,
+      "physicalMin": 0,
+      "physicalMax": 300,
+      "units": 17,
+      "unitsExp": 14,
+      "hasNull": false
+     },
+     {
+      "page": 13,
+      "usage": 48,
+      "link": 1,
+      "bitOffset": 42,
+      "bitSize": 16,
+      "signed": false,
+      "logicalMin": 0,
+      "logicalMax": 1024,
+      "physicalMin": 0,
+      "physicalMax": 0,
+      "units": 0,
+      "unitsExp": 0,
+      "hasNull": false
+     },
+     {
+      "page": 13,
+      "usage": 61,
+      "link": 1,
+      "bitOffset": 61,
+      "bitSize": 8,
+      "signed": true,
+      "logicalMin": -90,
+      "logicalMax": 90,
+      "physicalMin": 0,
+      "physicalMax": 0,
+      "units": 0,
+      "unitsExp": 0,
+      "hasNull": false
+     },
+     {
+      "page": 13,
+      "usage": 62,
+      "link": 1,
+      "bitOffset": 69,
+      "bitSize": 8,
+      "signed": true,
+      "logicalMin": -90,
+      "logicalMax": 90,
+      "physicalMin": 0,
+      "physicalMax": 0,
+      "units": 0,
+      "unitsExp": 0,
+      "hasNull": false
+     },
+     {
+      "page": 13,
+      "usage": 65,
+      "link": 1,
+      "bitOffset": 77,
+      "bitSize": 16,
+      "signed": false,
+      "logicalMin": 0,
+      "logicalMax": 360,
+      "physicalMin": 0,
+      "physicalMax": 0,
+      "units": 0,
+      "unitsExp": 0,
+      "hasNull": false
+     },
+     {
+      "page": 13,
+      "usage": 86,
+      "link": 0,
+      "bitOffset": 93,
+      "bitSize": 32,
+      "signed": false,
+      "logicalMin": 0,
+      "logicalMax": 65535,
+      "physicalMin": 0,
+      "physicalMax": 0,
+      "units": 0,
+      "unitsExp": 0,
+      "hasNull": false
+     }
+    ],
+    "buttons": [
+     {
+      "page": 13,
+      "usage": 66,
+      "link": 1,
+      "bitOffset": 40
+     },
+     {
+      "page": 13,
+      "usage": 50,
+      "link": 1,
+      "bitOffset": 41
+     },
+     {
+      "page": 13,
+      "usage": 68,
+      "link": 1,
+      "bitOffset": 58
+     },
+     {
+      "page": 13,
+      "usage": 60,
+      "link": 1,
+      "bitOffset": 59
+     },
+     {
+      "page": 13,
+      "usage": 69,
+      "link": 1,
+      "bitOffset": 60
+     }
+    ]
+   }
+  ]
+ }
+}

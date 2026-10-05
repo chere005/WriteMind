@@ -8,7 +8,7 @@
  */
 
 import { useEffect, useState, useSyncExternalStore } from "react"
-import { describeArea, fallbackInfo, physicalRect, type DisplayInfo, type PhysicalRect } from "./padGeometry"
+import { describeArea, fallbackInfo, physicalRect, type DisplayInfo, type PhysicalRect } from "./tabletPage"
 
 // MARK: - The frame that flashes round the sheet
 
@@ -40,8 +40,8 @@ export async function currentSheetArea(): Promise<PhysicalRect | null> {
   return physicalRect({ x: box.left, y: box.top, width: box.width, height: box.height }, info)
 }
 
-/** What the person is told. In Pad mode there is nothing to define. */
-export function TabletAreaHelp({ inPad = false }: { inPad?: boolean }) {
+/** What the person is told: the rectangle to give the driver's "Click to define". */
+export function TabletAreaHelp() {
   const [area, setArea] = useState<PhysicalRect | null>(null)
   const [looked, setLooked] = useState(false)
   const look = async () => { setArea(await currentSheetArea()); setLooked(true) }
@@ -50,34 +50,27 @@ export function TabletAreaHelp({ inPad = false }: { inPad?: boolean }) {
     <div className="area-help" data-pen="area">
       <p><b>Tablet area.</b> The tablet driver (not WriteMind) decides which part of the
         screen the tablet covers, and WriteMind cannot change that.</p>
-      {inPad ? (
-        <p>Pad mode is for the default mapping: the <b>whole tablet</b> maps to the <b>whole
-          screen</b>, and this window now shows only the sheet, so the whole tablet is the sheet.</p>
+      <p>To use only the sheet, keep the Tablet showing and, in Wacom Tablet Properties ▸
+        Mapping ▸ Screen Area ▸ <b>Portion of screen</b> ▸ <b>Click to define</b>, click the two
+        corners of this rectangle (use <b>Show area</b> to outline it):</p>
+      {area ? (
+        <p className="area-numbers">
+          Top-left <b>{area.x}, {area.y}</b> · bottom-right <b>{area.right}, {area.bottom}</b><br />
+          <span>{describeArea(area)}</span>
+        </p>
       ) : (
-        <>
-          <p>To use only the sheet, keep the Tablet showing and, in Wacom Tablet Properties ▸
-            Mapping ▸ Screen Area ▸ <b>Portion of screen</b> ▸ <b>Click to define</b>, click the two
-            corners of this rectangle (use <b>Show area</b> to outline it):</p>
-          {area ? (
-            <p className="area-numbers">
-              Top-left <b>{area.x}, {area.y}</b> · bottom-right <b>{area.right}, {area.bottom}</b><br />
-              <span>{describeArea(area)}</span>
-            </p>
-          ) : (
-            <p className="hint">{looked
-              ? "The sheet is not showing. Pick Input Devices ▸ Tablet to see its rectangle here."
-              : "…"}</p>
-          )}
-          <p className="area-buttons">
-            <button className="icon-button" data-pen="area-show" style={{ width: "auto", padding: "0 8px" }}
-                    onClick={() => { void look(); flashAreaFrame() }}>Show area</button>
-            <button className="icon-button" data-pen="area-refresh" style={{ width: "auto", padding: "0 8px" }}
-                    onClick={() => { void look() }}>Measure again</button>
-          </p>
-          <p className="hint">Measure again after moving or resizing the window. Or use <b>Pad</b>
-            (Ctrl+Alt+T) to make the whole tablet the sheet with no setup.</p>
-        </>
+        <p className="hint">{looked
+          ? "The sheet is not showing. Pick Input Devices ▸ Tablet to see its rectangle here."
+          : "…"}</p>
       )}
+      <p className="area-buttons">
+        <button className="icon-button" data-pen="area-show" style={{ width: "auto", padding: "0 8px" }}
+                onClick={() => { void look(); flashAreaFrame() }}>Show area</button>
+        <button className="icon-button" data-pen="area-refresh" style={{ width: "auto", padding: "0 8px" }}
+                onClick={() => { void look() }}>Measure again</button>
+      </p>
+      <p className="hint">Measure again after moving or resizing the window. Or use <b>Grab</b>
+        to make the whole tablet the sheet with no setup.</p>
     </div>
   )
 }

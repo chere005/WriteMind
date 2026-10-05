@@ -8,7 +8,7 @@
  */
 
 import { insertNewlineAndIndent } from "@codemirror/commands"
-import { EditorSelection } from "@codemirror/state"
+import { EditorSelection, Facet } from "@codemirror/state"
 import type { Extension } from "@codemirror/state"
 import { EditorView, keymap, type Command } from "@codemirror/view"
 import {
@@ -16,11 +16,15 @@ import {
   editsOver, movingCells, pasteCell,
   caretLine, codeBlock, indent, listContinuation, mergeCells, moveSection, outdent,
   outdentForBackspace, setHeading, splitCell, substring, toggleList, toggleQuote, toggleWrap,
-  type Edit, type Heading, type ListStyle, type Range,
+  kindForHeading, type CellKind, type Edit, type Heading, type ListStyle, type Range,
 } from "@writemind/core"
 import { heldCells } from "./brackets"
+import { codeTypingKeys } from "./codeTyping"
 import { extraKeys } from "./extras"
-import { applyEdit, notebookField } from "./notebook"
+import { setHolding } from "./preview/hold"
+import { applyEdit, atBar, notebookField } from "./notebook"
+import { setArmedType } from "./seams"
+import { backspaceMayOutdent } from "./windowed"
 
 const selection = (view: EditorView): Range => {
   const main = view.state.selection.main
@@ -37,14 +41,39 @@ const run = (make: (text: string, where: Range) => Edit | null): Command => (vie
 export const wrap = (open: string, close = open): Command =>
   run((text, where) => toggleWrap(text, where, open, close))
 
+/**
+ * At a bar on the rendered page a command that makes a KIND of block names it
+ * instead (Cmd-1 there means what Title on the + means): the next thing typed
+ * opens a block of that kind and nothing is written until it is.
+ */
+export const nameKind = (kind: CellKind, command: Command): Command => (view) => {
+  if (!atBar(view)) return command(view)
+  view.dispatch({ effects: setArmedType.of(kind) })
+  // A button on the bar has the keyboard; what is typed next goes to the bar, so the page takes it back.
+  view.focus()
+  return true
+}
+
 export const heading = (level: Heading): Command =>
-  run((text, where) => setHeading(text, where, level))
+  nameKind(kindForHeading(level), run((text, where) => setHeading(text, where, level)))
 
 export const list = (style: ListStyle): Command =>
-  run((text, where) => toggleList(text, where, style))
+  nameKind({ kind: "list", style }, run((text, where) => toggleList(text, where, style)))
 
-export const quote: Command = run((text, where) => toggleQuote(text, where))
-export const fence: Command = run((text, where) => codeBlock(text, where))
+/**
+ * The style Format ▸ List writes: the one the chevron beside the list button
+ * picked (the Mac's bulletStyle, which ⇧⌘L reads too). The app gives
+ * the editor a function so the key always asks the CURRENT choice.
+ */
+export const listStyleSource = Facet.define<() => ListStyle, () => ListStyle>({
+  combine: (sources) => sources[0] ?? (() => "dots"),
+})
+
+/** The list key: the chevron's style, read at the moment of the press. */
+const chosenList: Command = (view) => list(view.state.facet(listStyleSource)())(view)
+
+export const quote: Command = nameKind({ kind: "quote" }, run((text, where) => toggleQuote(text, where)))
+export const fence: Command = nameKind({ kind: "code" }, run((text, where) => codeBlock(text, where)))
 export const indentLines: Command = run((text, where) => indent(text, where))
 export const outdentLines: Command = run((text, where) => outdent(text, where))
 export const splitTheCell: Command = run((text, where) => splitCell(text, where))
@@ -54,7 +83,9 @@ export const moveDown: Command = run((text, where) => moveSection(text, where, f
 
 /** Backspace inside a line's prefix takes a level off; anywhere else it is a backspace. */
 const backspaceOutdents: Command = (view) => {
-  const change = outdentForBackspace(view.state.doc.toString(), selection(view))
+  const where = selection(view)
+  if (where.length !== 0 || !backspaceMayOutdent(view.state, where.location)) return false
+  const change = outdentForBackspace(view.state.doc.toString(), where)
   if (!change) return false
   applyEdit(view, change)
   return true
@@ -64,18 +95,18 @@ const backspaceOutdents: Command = (view) => {
 const carryTheListOn: Command = (view) => {
   const main = view.state.selection.main
   if (!main.empty) return false
-  const text = view.state.doc.toString()
-  const line = caretLine(text, main.from)
-  const body = substring(text, line).replace(/\n$/, "")
-  if (main.from !== line.location + body.length) return false
+  // The line the caret is in, from the document's own lines (not a string made of the whole note for every Return).
+  const line = view.state.doc.lineAt(main.from)
+  const body = line.text
+  if (main.from !== line.from + body.length) return false
   const next = listContinuation(body)
   if (next === null) return false
   if (next === "") {
     // An empty item: Return ends the list rather than adding to it.
     applyEdit(view, {
-      range: { location: line.location, length: body.length },
+      range: { location: line.from, length: body.length },
       replacement: "",
-      selection: { location: line.location, length: 0 },
+      selection: { location: line.from, length: 0 },
     })
     return true
   }
@@ -97,7 +128,7 @@ const baseKeys: Extension = keymap.of([
   { key: "Mod-i", run: wrap(ITALIC), preventDefault: true },
   { key: "Mod-u", run: wrap(UNDERLINE_OPEN, UNDERLINE_CLOSE), preventDefault: true },
   { key: "Shift-Mod-x", run: wrap(STRIKE), preventDefault: true },
-  { key: "Shift-Mod-l", run: list("dots"), preventDefault: true },
+  { key: "Shift-Mod-l", run: chosenList, preventDefault: true },
   { key: "Ctrl-Mod-q", run: quote, preventDefault: true },
   { key: "Mod-1", run: heading(1) },
   { key: "Mod-2", run: heading(2) },
@@ -149,6 +180,8 @@ function applyEdits(view: EditorView, edits: Edit[], keep: "caret" | "cells"): v
     selection: keep === "cells"
       ? EditorSelection.create(ranges)
       : EditorSelection.create([ranges[0]!]),
+    // Cells left selected are cells held: say so, so the rendered page keeps them drawn.
+    effects: keep === "cells" ? setHolding.of(true) : [],
     scrollIntoView: true,
   })
   view.focus()
@@ -277,7 +310,7 @@ export const cellKeys: Extension = [
 ]
 
 /** Cell commands first, so a held cell gets Delete before the editor's own. */
-export const notebookKeys: Extension = [cellKeys, baseKeys, extraKeys]
+export const notebookKeys: Extension = [cellKeys, codeTypingKeys, baseKeys, extraKeys]
 
 /** Move the held cells one place — what dragging a held bracket does. */
 export const moveHeldCells = (view: EditorView, up: boolean): boolean => moveHeld(up)(view)

@@ -21,13 +21,26 @@
  * until the page-finding lands, because that changes what the user does.
  */
 
+/** Which reader is behind `handwritingOCR`. */
+export type OcrEngine = "vision" | "windows" | "tesseract"
+
 export interface Capabilities {
   /** Reading handwriting off a captured page into markdown. */
   handwritingOCR: boolean
   /**
-   * Finding the page in the camera's view by itself. Nowhere yet: the
-   * macOS helper answers the question, but nothing undoes the perspective
-   * with the answer, so the box is dragged by hand on every platform.
+   * WHICH reader: Vision on a Mac, `Windows.Media.Ocr` on Windows (nothing to
+   * install for the user's own languages), tesseract if it is on the PATH.
+   * Null when there is none.
+   */
+  ocrEngine: OcrEngine | null
+  /** Whether that reader can read Japanese here (Windows needs its optional Japanese OCR capability). */
+  japaneseOCR: boolean
+  /**
+   * Finding the page in the camera's view by itself. EVERYWHERE since
+   * 2026-10-03: the Mac's Vision does it for the Mac app, and `findPage`
+   * (capture/findPage.ts, plain arrays) does it on every platform, with the
+   * perspective undone by `warpToPage` - so the page is found and squared up
+   * with nothing installed.
    */
   findsThePage: boolean
   /** A camera at all. */
@@ -38,14 +51,20 @@ export interface Capabilities {
 
 /** What the shell found on this machine. */
 export interface Helpers {
-  /** `wm-vision` on macOS, `tesseract` anywhere. */
+  /** `wm-vision` on macOS, Windows' own OCR engine on Windows, `tesseract` anywhere. */
   ocr: boolean
+  /** Which of them answered. */
+  engine?: OcrEngine | null
+  /** Whether the reader has Japanese. */
+  japanese?: boolean
 }
 
 export function capabilitiesFor(_platform: string, helpers: Helpers = { ocr: false }): Capabilities {
   return {
     handwritingOCR: helpers.ocr,
-    findsThePage: false,
+    ocrEngine: helpers.ocr ? (helpers.engine ?? null) : null,
+    japaneseOCR: helpers.ocr && helpers.japanese === true,
+    findsThePage: true,
     camera: true,
     pdfExport: true,
   }

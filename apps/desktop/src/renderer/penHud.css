@@ -1,0 +1,21 @@
+/* The pen chip and the Capture switch (PenHud.tsx). The chip's colour is its severity (decided in main). */
+.pen-hud-wrap { position: relative; display: inline-flex; align-items: center; gap: 4px; }
+.pen-hud {
+  align-self: center; padding: 1px 8px; font-size: 11px; line-height: 18px; border-radius: 9px; border: 1px solid transparent;
+  background: rgba(0, 0, 0, 0.45); color: #e8e8ea; cursor: pointer; white-space: nowrap; max-width: 320px; overflow: hidden; text-overflow: ellipsis;
+}
+.pen-hud.ok { background: #2f7d4f; }
+.pen-hud.wait { background: #6b7280; }
+.pen-hud.warn { background: #b7791f; }
+.pen-hud.error { background: #c0392b; }
+.pen-hud.off { background: rgba(107, 114, 128, 0.55); }
+.pen-hud-pop {
+  position: absolute; top: 28px; right: 0; z-index: 8; width: min(340px, 80vw); padding: 10px 12px; font-size: 12px; line-height: 1.4; text-align: left;
+  background: var(--wm-chrome); color: var(--wm-text); border: 1px solid var(--wm-rule); border-radius: 8px; box-shadow: 0 8px 24px var(--wm-shadow);
+}
+.pen-hud-pop p { margin: 0 0 6px; }
+.pen-hud-pop .hint { color: var(--wm-faint); }
+.pen-hud-buttons { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+.pen-hud-buttons .icon-button { width: auto; padding: 0 8px; font-size: 11px; }
+/* While capture is on a pen drag cannot pan or scroll a pane whose pen events the gate has swallowed (the OS arrow is hidden by html.pen-active, as before, and the in-app ring shows the pen). */
+html.pen-capture .stack, html.pen-capture .tablet, html.pen-capture .sidebar, html.pen-capture .camera { touch-action: none; }

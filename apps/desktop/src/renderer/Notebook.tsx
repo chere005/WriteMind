@@ -11,18 +11,26 @@ import { EditorView, drawSelection, rectangularSelection } from "@codemirror/vie
 import { history, historyKeymap, defaultKeymap, standardKeymap } from "@codemirror/commands"
 import { keymap } from "@codemirror/view"
 import {
-  cellBrackets, folding, foldField, foldedKeys, linkClicks, linkTrigger, notebookDecorations, notebookKeys,
-  notebookState, notebookTheme, rendered, renderedField, seamExtensions, setArmedType, armSeam,
-  setFolds, setRendered,
+  cellBrackets, folding, foldField, foldedKeys, linkClicks, linkTrigger, mathRendering, notebookDecorations, notebookKeys,
+  notebookState, notebookTheme, textConventions, pasteHtmlAsText, hiddenMarkerDeletion, find, preview, rendered, renderedField, markersField, seamExtensions, setArmedType, armSeam,
+  setFolds, setPreview, setRendered, setMarkers, listStyleSource, revealAt,
 } from "@writemind/editor"
-import { ALL_KINDS, KIND_GROUPS, kindName, openCell, type CellKind, type Seam } from "@writemind/core"
-import { mathRendering } from "./mathView"
+import { ALL_KINDS, KIND_GROUPS, kindName, openCell, type CellKind, type ListStyle, type Seam } from "@writemind/core"
+import { textTimeline } from "./editTimeline"
+import { historyOf, stashText, takeText } from "./noteHistory"
 import "./editor.css"
 
 export interface NotebookHandle { view: EditorView | null }
 
 /** What the session remembers about a note's view of itself. */
-export interface ViewState { caret: number; collapsed: string[] }
+export interface ViewState {
+  caret: number
+  collapsed: string[]
+  /** A selection to come back with: from here to `caret` (a link just written is selected, as on the Mac). */
+  anchor?: number
+  /** Open any closed section that hides the caret (a link landed in it). */
+  reveal?: boolean
+}
 
 interface Props {
   /** The note's path: a change here is a different document, not an edit. */
@@ -32,9 +40,14 @@ interface Props {
   version: number
   /** Where the caret was and what was closed, when the note was last open. */
   restore?: ViewState | null
-  /** The rendered page: the same editor with the markdown's marks put away. */
+  /** The rendered page: every block drawn but the one being written in (see `preview` in the editor package). */
   rendered?: boolean
-  onChange(text: string): void
+  /** View ▸ Hide / Show Markdown Markers (default shown): put away on the markdown side, apart from the rendered page. */
+  markers?: boolean
+  /** The style Format ▸ List and its key write (the chevron beside the list button). */
+  listStyle?: ListStyle
+  /** The document changed: its words as a function (a snapshot), so a keystroke does not copy the whole note. */
+  onChange(text: () => string): void
   onReady(view: EditorView): void
   /** The caret moved, or a section was opened or closed. */
   onViewState?(file: string, state: ViewState): void
@@ -44,7 +57,7 @@ interface Props {
   onFollow?(file: string, href: string): void
 }
 
-export function Notebook({ file, text, version, restore, rendered: showRendered, onChange, onReady,
+export function Notebook({ file, text, version, restore, rendered: showRendered, markers: showMarkers, listStyle, onChange, onReady,
   onViewState, onLink, onFollow }: Props) {
   const host = useRef<HTMLDivElement | null>(null)
   const view = useRef<EditorView | null>(null)
@@ -60,6 +73,10 @@ export function Notebook({ file, text, version, restore, rendered: showRendered,
   restoreRef.current = restore
   const renderedRef = useRef(showRendered)
   renderedRef.current = showRendered
+  const markersRef = useRef(showMarkers)
+  markersRef.current = showMarkers
+  const listRef = useRef<ListStyle>(listStyle ?? "dots")
+  listRef.current = listStyle ?? "dots"
   const [menu, setMenu] = useState<{ x: number; y: number; seam: Seam } | null>(null)
   // The right-click menu: Windows has no native one in this shell, and a page
   // you cannot right-click Copy/Paste on feels broken on that platform.
@@ -71,6 +88,9 @@ export function Notebook({ file, text, version, restore, rendered: showRendered,
     if (!host.current) return
     const extensions: Extension[] = [
       history(),
+      // Every edit of the words is numbered on the note's clock, so one Undo
+      // can take back the words and the drawing in the order they were made.
+      textTimeline(historyOf(file).clock),
       drawSelection(),
       // Several cells held at once are several ranges; without this CodeMirror
       // collapses them to the last.
@@ -81,7 +101,10 @@ export function Notebook({ file, text, version, restore, rendered: showRendered,
       notebookState,
       folding,
       rendered,
+      listStyleSource.of(() => listRef.current),
       notebookDecorations,
+      hiddenMarkerDeletion,
+      find,
       cellBrackets,
       mathRendering,
       linkTrigger((_editor, caret) => linkRef.current?.(file, caret)),
@@ -90,11 +113,18 @@ export function Notebook({ file, text, version, restore, rendered: showRendered,
         const box = editor.contentDOM.getBoundingClientRect()
         setMenu({ x: box.left + 24, y: box.top + seam.line - editor.scrollDOM.scrollTop + 8, seam })
       }),
+      // The rendered page: blocks drawn, the open one styled markdown; Return, Backspace, arrows.
+      preview,
       notebookKeys,
+      textConventions,
+      pasteHtmlAsText,
       keymap.of([...standardKeymap, ...historyKeymap, ...defaultKeymap]),
       notebookTheme,
       EditorView.updateListener.of((update) => {
-        if (update.docChanged) latest.current(update.state.doc.toString())
+        if (update.docChanged) {
+          const snapshot = update.state.doc
+          latest.current(() => snapshot.toString())
+        }
         // The session keeps the caret and what was closed, per note.
         const foldsMoved = update.state.field(foldField) !== update.startState.field(foldField)
         if (update.selectionSet || foldsMoved || update.docChanged) {
@@ -106,24 +136,32 @@ export function Notebook({ file, text, version, restore, rendered: showRendered,
       }),
     ]
     const editor = new EditorView({
-      state: EditorState.create({ doc: text, extensions }),
+      // A note coming back to the front finds its undo where it was left.
+      state: takeText(file, text) ?? EditorState.create({ doc: text, extensions }),
       parent: host.current,
     })
     // A note coming back where it was left: its closed sections, and its caret.
     const back = restoreRef.current
-    const effects: StateEffect<unknown>[] = [setRendered.of(renderedRef.current === true)]
+    const effects: StateEffect<unknown>[] = [setRendered.of(renderedRef.current === true), setMarkers.of(markersRef.current !== false)]
     if (back && back.collapsed.length > 0) effects.push(setFolds.of(back.collapsed))
-    editor.dispatch({
-      effects,
-      ...(back ? { selection: { anchor: Math.min(Math.max(0, back.caret), editor.state.doc.length) } } : {}),
-    })
+    editor.dispatch({ effects })
+    // A link that lands in a closed section opens it first (before the caret goes in, or it would step out).
+    if (back?.reveal) revealAt(editor, Math.min(Math.max(0, back.caret), editor.state.doc.length))
+    if (back) {
+      editor.dispatch({
+        selection: {
+          anchor: Math.min(Math.max(0, back.anchor ?? back.caret), editor.state.doc.length),
+          head: Math.min(Math.max(0, back.caret), editor.state.doc.length),
+        },
+      })
+    }
     if (back && back.caret > 0) {
       editor.dispatch({ effects: EditorView.scrollIntoView(editor.state.selection.main.head, { y: "center" }) })
     }
     view.current = editor
     onReady(editor)
     editor.focus()
-    return () => { editor.destroy(); view.current = null }
+    return () => { stashText(file, editor.state); editor.destroy(); view.current = null }
     // A new FILE is a new document; text arriving from outside is handled
     // below, so this must not run for every keystroke.
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -141,15 +179,22 @@ export function Notebook({ file, text, version, restore, rendered: showRendered,
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [text, version])
 
-  // The rendered page and the markdown are one editor in two dresses, so
-  // the toggle changes how it is drawn and nothing about where anything is.
+  // The rendered page and the markdown are one document in two dresses, so
+  // the toggle changes how it is drawn and nothing about where anything is:
+  // the cell at the top of the window is put back at the top of the other side.
   useEffect(() => {
     const editor = view.current
     if (!editor) return
-    if (editor.state.field(renderedField) !== (showRendered === true)) {
-      editor.dispatch({ effects: setRendered.of(showRendered === true) })
-    }
+    if (editor.state.field(renderedField) !== (showRendered === true)) setPreview(editor, showRendered === true)
   }, [showRendered, file])
+
+  // View ▸ Hide / Show Markdown Markers: the marks on the lines the caret is not in.
+  useEffect(() => {
+    const editor = view.current
+    if (!editor) return
+    const want = showMarkers !== false
+    if (editor.state.field(markersField) !== want) editor.dispatch({ effects: setMarkers.of(want) })
+  }, [showMarkers, file])
 
   // Escape puts either menu away and gives the keyboard back to the page.
   useEffect(() => {

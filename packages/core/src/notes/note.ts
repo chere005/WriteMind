@@ -32,6 +32,9 @@ export function stripInlineMarkup(line: string): string {
     if (hashes.length <= 6) out = out.slice(hashes.length).trim()
   }
   for (const marker of ["**", "__", "<u>", "</u>", "`", "~~"]) out = out.split(marker).join("")
+  // Port-only: the tags `/link` and the T menu write (`<a id="wm-…"></a>`, `<mark …>`, `<span style=…>`) are
+  // not words either; the Mac showed them raw in the row's second line.
+  out = out.replace(/<a id="[^"]*"><\/a>/g, "").replace(/<\/?(?:mark|span)\b[^>]*>/g, "")
   if (out.startsWith("- ") || out.startsWith("* ") || out.startsWith("> ")) out = out.slice(2)
   return out
 }

@@ -9,7 +9,7 @@
  */
 
 import { clamped, edit, end, range, substring, union, type Edit, type Range } from "../text/range"
-import { heading as headingOf } from "../markdown/parser"
+import { heading as headingOf, type LineSource, type PositionedBlock } from "../markdown/parser"
 
 /**
  * The author line (level 6) groups nothing: it sits under a title the way a
@@ -120,15 +120,75 @@ export function sections(text: string): Section[] {
   return result
 }
 
+/**
+ * The same sections as `sections(text)`, worked out from the note's parsed cells and its lines instead of from its
+ * text: a heading line is exactly a heading CELL (the parser and the outline read fences the same way), so nothing
+ * has to be lexed again, and only the lines at the edges of a section are read. This is what the editor keeps up
+ * to date on every keystroke (`sections` stays for callers that only have a string; a differential test holds the
+ * two together on thousands of random notes).
+ */
+export function sectionsFromCells(cells: readonly PositionedBlock[], doc: LineSource): Section[] {
+  const result: Section[] = []
+  const open: number[] = []
+  const titles = new Map<string, number>()
+  /** Where the last line with writing in it ends, as far as the cells have got: a cell ends at its last written line. */
+  let written = 0
+
+  /** A group ends on the line before the heading that closes it, and its content on the last written line before that. */
+  const close = (index: number, closingAt: number, contentEnd: number) => {
+    const start = result[index]!.range.location
+    result[index]!.range = range(start, closingAt - 1 - start)
+    result[index]!.contentEnd = contentEnd
+  }
+
+  for (const cell of cells) {
+    const block = cell.block
+    if (block.kind === "blank") continue
+    if (block.kind !== "heading") { written = end(cell.range); continue }
+    if (block.level < LEAF_LEVEL) {
+      while (open.length > 0 && result[open[open.length - 1]!]!.level >= block.level) {
+        close(open[open.length - 1]!, cell.range.location, written)
+        open.pop()
+      }
+    }
+    const count = (titles.get(block.text) ?? 0) + 1
+    titles.set(block.text, count)
+    const key = count === 1 ? block.text : `${block.text}#${count}`
+    result.push({
+      key, title: block.text, level: block.level, depth: open.length,
+      headingRange: cell.range, range: cell.range, contentEnd: end(cell.range),
+    })
+    written = end(cell.range)
+    if (block.level < LEAF_LEVEL) open.push(result.length - 1)
+  }
+  if (open.length > 0) {
+    // What is still open ends with the note. Its last written line is found in the lines themselves: the last
+    // cell can be an unclosed fence, whose trailing blank lines are not writing but are in its range.
+    let last = doc.lines
+    while (last > 1 && doc.line(last).text.trim().length === 0) last--
+    const tail = doc.line(last).to
+    while (open.length > 0) close(open.pop()!, doc.length + 1, tail)
+  }
+  return result
+}
+
 /** The innermost section the caret is in, or null before the first heading. */
 export function sectionContaining(caret: number, all: Section[]): Section | null {
-  let best: Section | null = null
-  for (const section of all) {
-    if (section.range.location <= caret && caret <= end(section.range)) {
-      if (!best || section.depth > best.depth) best = section
-    }
+  // The sections are in the order of their headings, and a section that contains the caret and starts after another
+  // that does is nested in it — so the LAST section (in that order) that starts at or before the caret and still
+  // reaches it is the innermost. Binary search for where "starts at or before the caret" ends, then walk back.
+  let low = 0
+  let high = all.length
+  while (low < high) {
+    const middle = (low + high) >> 1
+    if (all[middle]!.range.location <= caret) low = middle + 1
+    else high = middle
   }
-  return best
+  for (let index = low - 1; index >= 0; index--) {
+    const section = all[index]!
+    if (caret <= end(section.range)) return section
+  }
+  return null
 }
 
 /**

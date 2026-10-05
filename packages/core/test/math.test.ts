@@ -187,3 +187,62 @@ describe("calculus typesetting", () => {
     expect(new Set(MATH_TEMPLATES.map((t) => t.id)).size, "ids are unique").toBe(MATH_TEMPLATES.length)
   })
 })
+
+/**
+ * Beyond the Swift tests: the properties they rely on without saying so —
+ * what the printer writes the parser reads back to the same tree, for every
+ * template the palette offers — and the corners of the grammar a note meets.
+ */
+describe("WL round trip and grammar corners", () => {
+  it("every template survives print then parse unchanged", () => {
+    for (const t of MATH_TEMPLATES) {
+      const wl = templateWL(t, initialValues(t))
+      const tree = parseWL(wl)
+      expect(tree, `${t.id}: ${wl}`).not.toBeNull()
+      expect(parseWL(canonicalWL(wl)), `${t.id}: ${wl}`).toEqual(tree)
+      expect(canonicalWL(canonicalWL(wl)), `${t.id} is not idempotent`).toBe(canonicalWL(wl))
+    }
+  })
+
+  it("a minus sign takes a power with it: -x^2 is -(x^2)", () => {
+    expect(parseWL("-x^2")).toEqual({ kind: "negate", operand: binary("^", sym("x"), num("2")) })
+    expect(parseWL("(-x)^2")).toEqual(binary("^", { kind: "negate", operand: sym("x") }, num("2")))
+    expect(canonicalWL("-x^2")).toBe("-x^2")
+    expect(canonicalWL("(-x)^2")).toBe("(-x)^2")
+  })
+
+  it("subtraction associates to the left", () => {
+    expect(parseWL("a - b - c")).toEqual(binary("-", binary("-", sym("a"), sym("b")), sym("c")))
+    expect(canonicalWL("a-(b-c)")).toBe("a - (b - c)")
+  })
+
+  it("numbers, strings and heads that are not symbols", () => {
+    expect(parseWL(".5")).toEqual(num(".5"))
+    expect(parseWL("3.14 r")).toEqual(binary("*", num("3.14"), sym("r")))
+    expect(parseWL("\"FromAbove\"")).toEqual({ kind: "text", value: "FromAbove" })
+    expect(parseWL("f[x][y]")).toEqual(call(call(sym("f"), [sym("x")]), [sym("y")]))
+    expect(parseWL("f[]")).toEqual(call(sym("f"), []))
+    expect(parseWL("{}")).toEqual(list([]))
+  })
+
+  it("relations and rules", () => {
+    expect(parseWL("x -> 0")).toEqual(binary("->", sym("x"), num("0")))
+    expect(parseWL("a == b")).toEqual(binary("==", sym("a"), sym("b")))
+    expect(canonicalWL("a<=b")).toBe("a <= b")
+  })
+
+  it("junk is not an expression", () => {
+    for (const bad of ["", "   ", ")", "x )", "f[x", "1 +* 2", "{,}", "[x]"]) {
+      expect(parseWL(bad), JSON.stringify(bad)).toBeNull()
+    }
+  })
+
+  it("the glyph tables answer for every spelling a note might use", () => {
+    expect(mathGlyph("\\[Theta]")).toBe("θ")
+    expect(mathGlyph("\\[CapitalOmega]")).toBe("Ω")
+    expect(mathGlyph("\\[NoSuchName]")).toBe("NoSuchName")
+    expect(mathGlyph("Infinity")).toBe("∞")
+    expect(mathGlyph("x")).toBe("x")
+    expect(mathGlyph("constructor"), "a table lookup must not find Object's own members").toBe("constructor")
+  })
+})

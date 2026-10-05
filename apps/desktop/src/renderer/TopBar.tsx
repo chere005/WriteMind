@@ -16,7 +16,7 @@
 
 import type { EditorView } from "@codemirror/view"
 import {
-  CODE_LANGUAGES, languageTitle, LIST_STYLES, listTitle, MARK_KINDS, NODE_KINDS,
+  CODE_LANGUAGES, languageTitle, LIST_STYLES, listTitle, MARK_KINDS, MARK_MENU_KINDS, NODE_KINDS,
   PRESET_COLOURS, shapeTitle, HEADING_LADDER, headingName,
   type CodeLanguage, type Heading, type ListStyle, type Placement, type ShapeKind, type SpanStyle,
 } from "@writemind/core"
@@ -179,7 +179,11 @@ export function TopBar({
   }, [menu])
 
   const place = (value: string) => {
-    if (value === "line" || value === "arrow" || value === "both") {
+    if (value === "tool") {
+      // The Mac's "Draw arrows between nodes": stays armed, and a drag from
+      // anywhere draws a line that attaches to the nodes at its ends.
+      onPlace(placing?.kind === "line" && placing.tool ? null : { kind: "line", start: "none", end: "arrow", tool: true })
+    } else if (value === "line" || value === "arrow" || value === "both") {
       onPlace({
         kind: "line",
         start: value === "both" ? "arrow" : "none",
@@ -291,9 +295,11 @@ export function TopBar({
       <Group id="maths" collapsed={away("maths")} onCollapse={(c) => onCollapse("maths", c)}>
         <MathPalette view={editor} />
       </Group>
+      {/* Put away, the section is one icon -- but Insert > Maths... (Ctrl+Shift+M) still opens the palette. */}
+      {away("maths") && <MathPalette view={editor} showButton={false} />}
 
       <Group id="flowchart" collapsed={away("flowchart")} onCollapse={(c) => onCollapse("flowchart", c)}>
-        <select className={`icon-button bar-select narrow${placing?.kind === "shape" && NODE_KINDS.includes(placing.shape) ? " on" : ""}`}
+        <select className={`icon-button bar-select narrow${(placing?.kind === "shape" && NODE_KINDS.includes(placing.shape)) || (placing?.kind === "line" && placing.tool) ? " on" : ""}`}
                 disabled={off} value=""
                 title={tip("Shapes", "", "Flow-chart shapes, and arrows between them — pick one, then click where it goes")}
                 onChange={(event) => { place(event.target.value); event.currentTarget.value = "" }}>
@@ -305,6 +311,7 @@ export function TopBar({
             <option value="arrow">Arrow</option>
             <option value="both">Both Ways</option>
             <option value="line">Line</option>
+            <option value="tool">{placing?.kind === "line" && placing.tool ? "✓ Arrow tool (drag between nodes)" : "Arrow tool (drag between nodes)"}</option>
           </optgroup>
         </select>
         <select className={`icon-button bar-select narrow${placing?.kind === "shape" && MARK_KINDS.includes(placing.shape) ? " on" : ""}`}
@@ -312,7 +319,12 @@ export function TopBar({
                 title={tip("Marks", "", "Check marks, crosses, stars, arrows — the things drawn all the time")}
                 onChange={(event) => { place(event.target.value); event.currentTarget.value = "" }}>
           <option value="" disabled>Marks</option>
-          {MARK_KINDS.map((kind) => <option key={kind} value={kind}>{shapeTitle(kind)}</option>)}
+          {MARK_MENU_KINDS.map((kind) => <option key={kind} value={kind}>{shapeTitle(kind)}</option>)}
+          <optgroup label="Lines">
+            <option value="arrow">Arrow</option>
+            <option value="both">Both Ways</option>
+            <option value="line">Line</option>
+          </optgroup>
         </select>
       </Group>
 

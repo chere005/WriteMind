@@ -244,14 +244,21 @@ export const templatesIn = (group: MathGroup): MathTemplate[] =>
 export function insertMath(text: string, selection: Range, wl: string, display: boolean): Edit {
   const where = clamped(selection, text.length)
   let body: string
+  let caret = 0
   if (display) {
     const before = where.location > 0 ? text.slice(0, where.location) : ""
     const after = text.slice(end(where))
     const lead = before === "" || before.endsWith("\n") ? "" : "\n"
     const tail = after.startsWith("\n") ? "" : "\n"
     body = lead + mathBlock(wl) + tail
+    // PORT-ONLY. The caret goes to the line AFTER the block. The Mac leaves it at the end of the inserted
+    // text, which, when the text already had a line break there (the caret on a blank line, or at the end of
+    // a line with more below), is the END OF THE CLOSING FENCE LINE: its source pane is always on show, so
+    // nothing is lost there, but here the page is the source, and anything typed on that line is part of the
+    // fence line, which the typeset block replaces whole. The words vanished from the page.
+    if (tail === "") caret = 1
   } else {
     body = mathInline(wl)
   }
-  return edit(where, body, range(where.location + body.length, 0))
+  return edit(where, body, range(where.location + body.length + caret, 0))
 }

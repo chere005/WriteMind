@@ -15,7 +15,7 @@
  */
 
 import { end, lineRange, substring, type Range } from "../text/range"
-import { positioned } from "../markdown/parser"
+import { linesOf, positioned, type LineSource, type PositionedBlock } from "../markdown/parser"
 
 export interface Seam {
   /** Document points, the coordinates the cells were handed in. */
@@ -197,6 +197,44 @@ export function structuralLines(source: string): Range[] {
 }
 
 /**
+ * Whether line `n` (1-based) of a document held as lines is a blank one in the sense of `structuralLines`: a line
+ * exists for each newline and for a last piece with something in it — the empty piece after a closing newline is
+ * no line — and it is blank when it has nothing but white space.
+ */
+export function isBlankLine(doc: LineSource, n: number): boolean {
+  if (n < 1 || n > doc.lines) return false
+  const line = doc.line(n)
+  if (n === doc.lines && line.to === line.from) return false
+  return line.text.trim().length === 0
+}
+
+/**
+ * Whether line `n` is one of the lines `structuralLines` answers with: a blank line that is the first or the last of
+ * its run (a run of one or two is all structure). It reads the line and the two beside it and nothing else.
+ */
+export function isStructuralLine(doc: LineSource, n: number): boolean {
+  return isBlankLine(doc, n) && !(isBlankLine(doc, n - 1) && isBlankLine(doc, n + 1))
+}
+
+/**
+ * The start of every structural line from `fromPos` to `toPos` (a differential test holds it to
+ * `structuralLines` on the whole of thousands of random notes): what the rendered page draws as the gaps between
+ * its blocks, asked of one stretch of the note instead of all of it.
+ */
+export function structuralLineStarts(doc: LineSource, fromPos: number, toPos: number): number[] {
+  const out: number[] = []
+  if (doc.length === 0) return out
+  const first = doc.lineAt(Math.min(Math.max(fromPos, 0), doc.length)).number
+  const last = doc.lineAt(Math.min(Math.max(toPos, 0), doc.length)).number
+  for (let n = first; n <= last; n++) {
+    if (!isStructuralLine(doc, n)) continue
+    const from = doc.line(n).from
+    if (from >= fromPos && from <= toPos) out.push(from)
+  }
+  return out
+}
+
+/**
  * The seam an empty selection is sitting IN, as the offset a cell would be
  * opened at — null when the caret is in a cell and the ordinary caret
  * belongs there.
@@ -211,22 +249,43 @@ export function structuralLines(source: string): Range[] {
  * which leaves the caret at the first character of the cell BELOW.
  */
 export function arm(caret: Range, markdown: string, current: number | null): number | null {
-  // A selection of anything at all is not a caret in a seam.
+  // Cheap first: this runs on every caret move. A caret that is not alone, or is already the armed offset, or is
+  // at either end of the note, never needs the note read at all.
   if (caret.length !== 0) return null
   const offset = caret.location
   if (current !== null && current === offset) return current
   if (offset <= 0 || offset >= markdown.length) return null
-  // Cheap first: this runs on every caret move. Only a caret on a blank
-  // line can be in a seam.
-  const line = lineRange(markdown, offset)
-  if (offset >= end(line) || substring(markdown, line).trim().length !== 0) return null
-  // And only the first and last blank line of a run separate two cells.
-  if (!structuralLines(markdown).some((r) => offset >= r.location && offset < end(r))) return null
-  const blocks = positioned(markdown)
+  return armIn(caret, linesOf(markdown), () => positioned(markdown), current)
+}
+
+/**
+ * `arm` over a document that is already held as lines and cells (the editor's): the same answer, but only the
+ * lines at the caret are read and the cells are searched, not rebuilt — it runs on EVERY caret move, and used to
+ * turn the whole note into a string and parse it twice each time the caret landed on a blank line.
+ */
+export function armIn(caret: Range, doc: LineSource, cells: () => readonly PositionedBlock[], current: number | null): number | null {
+  // A selection of anything at all is not a caret in a seam.
+  if (caret.length !== 0) return null
+  const offset = caret.location
+  if (current !== null && current === offset) return current
+  if (offset <= 0 || offset >= doc.length) return null
+  // Only a caret on a blank line can be in a seam.
+  const here = doc.lineAt(offset)
+  if (here.text.trim().length !== 0) return null
+  // And only the first and last blank line of a run separate two cells (`structuralLines`).
+  if (isBlankLine(doc, here.number - 1) && isBlankLine(doc, here.number + 1)) return null
+  const blocks = cells()
   // And a blank line INSIDE a cell is not a space between two: a fenced
   // block is the one cell that can hold an empty line of its own.
-  if (blocks.some((block) => block.range.location < offset && offset < end(block.range))) return null
-  return blocks.find((block) => block.range.location >= offset)?.range.location ?? markdown.length
+  let low = 0
+  let high = blocks.length
+  while (low < high) {
+    const middle = (low + high) >> 1
+    if (blocks[middle]!.range.location < offset) low = middle + 1
+    else high = middle
+  }
+  if (low > 0 && offset < end(blocks[low - 1]!.range)) return null
+  return blocks[low]?.range.location ?? doc.length
 }
 
 /** How wide the + is drawn: a ten-point dot with a cross cut in it. */

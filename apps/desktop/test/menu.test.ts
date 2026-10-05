@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest"
 import type { MenuItemConstructorOptions } from "electron"
 import {
-  COMMANDS, acceleratorFor, commandForKey, initialMenuState, matches, type MenuState,
+  COMMANDS, acceleratorFor, commandById, commandForKey, initialMenuState, matches, type MenuState,
 } from "../src/shared/commands"
 import { buildMenu } from "../src/main/menu"
 
@@ -61,6 +61,7 @@ describe("the application menu is the Mac's", () => {
     expect(labels(sub(menu(), "Edit"))).toEqual([
       "Undo", "Redo", "Undo Drawing", "Redo Drawing", "-", "role:cut", "role:copy", "role:paste",
       "role:selectAll", "-", "Expand Selection", "Select Next Occurrence", "Select All Occurrences",
+      "-", "Find",
     ])
   })
 
@@ -71,13 +72,19 @@ describe("the application menu is the Mac's", () => {
     expect([on[2]!.enabled, on[3]!.enabled]).toEqual([true, true])
   })
 
+  // The markers are their own switch (the Mac's showMarkers), independent of the preview toggle.
+  it("View: the markers label follows the markers, not the preview mode", () => {
+    expect(labels(sub(menu({ rendered: true, markers: true }), "View"))[4]).toBe("Hide Markdown Markers")
+    expect(labels(sub(menu({ rendered: false, markers: false }), "View"))[4]).toBe("Show Markdown Markers")
+  })
+
   it("View: the toggles read as the Mac's do, in both states", () => {
     expect(labels(sub(menu({ camera: true }), "View")).slice(0, 5)).toEqual([
-      "Hide Notes Sidebar", "Show Markdown Preview", "Hide Video", "Hide Notes Pane", "Show Markdown Markers",
+      "Hide Notes Sidebar", "Show Markdown Preview", "Hide Video", "Hide Notes Pane", "Hide Markdown Markers",
     ])
-    const flipped = menu({ sidebar: false, rendered: true, camera: false, editorPane: false, markers: true })
+    const flipped = menu({ sidebar: false, rendered: true, camera: false, editorPane: false, markers: false })
     expect(labels(sub(flipped, "View")).slice(0, 5)).toEqual([
-      "Show Notes Sidebar", "Show Markdown Editor", "Show Video", "Show Notes Pane", "Hide Markdown Markers",
+      "Show Notes Sidebar", "Show Markdown Editor", "Show Video", "Show Notes Pane", "Show Markdown Markers",
     ])
     expect(labels(sub(menu(), "View")).slice(5, 10)).toEqual([
       "-", "Fold Section", "Unfold Section", "Fold All Sections", "Unfold All Sections",
@@ -107,29 +114,35 @@ describe("the application menu is the Mac's", () => {
     expect(sub(menu(), "File").find((one) => one.label === "Close Tab")!.enabled).toBe(false)
   })
 
-  it("Insert: Image…, Text Box, a separator, Code Block (named for its language)", () => {
-    expect(labels(sub(menu(), "Insert"))).toEqual(["Image…", "Text Box", "-", "Code Block"])
-    expect(labels(sub(menu({ codeLanguage: "Python" }), "Insert"))).toEqual(["Image…", "Text Box", "-", "Python Block"])
+  it("Insert: Image…, Text Box, Maths… (port-only key), a separator, Code Block (named for its language)", () => {
+    expect(labels(sub(menu(), "Insert"))).toEqual(["Image…", "Text Box", "Maths…", "-", "Code Block"])
+    expect(labels(sub(menu({ codeLanguage: "Python" }), "Insert"))).toEqual(["Image…", "Text Box", "Maths…", "-", "Python Block"])
   })
 
   it("Input Devices: the cameras with a tick on the live one, the Tablet source, Turn Camera Off, Refresh", () => {
     const none = sub(menu(), "Input Devices")
-    expect(labels(none)).toEqual(["No cameras found", "-", "Tablet", "Tablet Pad (Full Screen)", "-", "Turn Camera Off", "Refresh Device List"])
+    expect(labels(none)).toEqual(["No cameras found", "-", "Tablet", "Grab Tablet to Sheet", "-", "Turn Camera Off", "Refresh Device List"])
     expect(none[5]!.enabled).toBe(false)
     const some = sub(menu({ cameras: [{ id: "x", name: "Desk" }, { id: "y", name: "Phone" }], cameraId: "y" }),
       "Input Devices")
-    expect(labels(some)).toEqual(["Desk", "Phone", "-", "Tablet", "Tablet Pad (Full Screen)", "-", "Turn Camera Off", "Refresh Device List"])
+    expect(labels(some)).toEqual(["Desk", "Phone", "-", "Tablet", "Grab Tablet to Sheet", "-", "Turn Camera Off", "Refresh Device List"])
     expect(some.map((one) => one.checked)).toEqual([false, true, undefined, false, undefined, undefined, undefined, undefined])
     expect(some[6]!.enabled).toBe(true)
   })
 
-  it("Tablet Pad has a key (Ctrl+Alt+T), and the item turns into Exit while the pad is up", () => {
-    const off = sub(menu(), "Input Devices").find((one) => one.id === "tabletPad")!
-    expect(off.accelerator).toBe("CmdOrCtrl+Alt+T")
-    expect(off.registerAccelerator).toBe(false)
-    const on = sub(menu({ pad: true }), "Input Devices").find((one) => one.id === "tabletPad")!
-    expect(on.label).toBe("Exit Tablet Pad")
-    expect(commandForKey({ key: "t", ctrlKey: true, altKey: true, shiftKey: false, metaKey: false }, "win32")?.id).toBe("tabletPad")
+  it("NOTHING goes full screen: no menu item, no role, no Ctrl+Alt+T command (Sean never asked for it)", () => {
+    const every = (items: MenuItemConstructorOptions[]): MenuItemConstructorOptions[] =>
+      items.flatMap((one) => [one, ...every((one.submenu ?? []) as MenuItemConstructorOptions[])])
+    for (const dev of [false, true]) {
+      const all = every(buildMenu({ platform: "win32", state: initialMenuState, project, dev, run: () => {} }))
+      for (const one of all) {
+        expect(String(one.role ?? "").toLowerCase(), one.label).not.toContain("fullscreen")
+        expect(String(one.label ?? "").toLowerCase(), one.label).not.toMatch(/full.?screen|pad/)
+        expect(one.id ?? "", one.label).not.toBe("tabletPad")
+      }
+    }
+    expect(commandForKey({ key: "t", ctrlKey: true, altKey: true, shiftKey: false, metaKey: false }, "win32")).toBeNull()
+    expect(commandById("tabletPad")).toBeUndefined()
   })
 
   it("shows the keys and registers none of them (one press is one action)", () => {
@@ -146,7 +159,7 @@ describe("the application menu is the Mac's", () => {
       items.flatMap((one) => [one, ...every((one.submenu ?? []) as MenuItemConstructorOptions[])])
     const roles = new Set(every(menu({}, "win32")).map((one) => one.role).filter(Boolean))
     for (const role of roles) {
-      expect(["cut", "copy", "paste", "selectAll", "quit", "togglefullscreen", "toggleDevTools", "help"])
+      expect(["cut", "copy", "paste", "selectAll", "quit", "toggleDevTools", "help"])
         .toContain(role)
     }
     const dev = every(buildMenu({ platform: "win32", state: initialMenuState, project, dev: true, run: () => {} }))

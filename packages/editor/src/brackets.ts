@@ -14,12 +14,13 @@
 import { EditorSelection, type Extension } from "@codemirror/state"
 import { EditorView, ViewPlugin, type ViewUpdate } from "@codemirror/view"
 import {
-  anchor as liveAnchor, between, cellAt, cellDepth, cellsOf, covers, holds, sameRange, toggling,
-  type Range, type Section,
+  anchor as liveAnchor, between, cellAt, cellDepth, cellsOf, covers, firstCellFromBy, holdsSortedBy, sameRange, toggling,
+  type PositionedBlock, type Range, type Section,
 } from "@writemind/core"
 import { notebook, selectedRanges } from "./notebook"
 import { foldField, insideHidden, toggleFold } from "./fold"
 import { moveHeldCells } from "./keys"
+import { setHolding } from "./preview/hold"
 
 export const GUTTER_WIDTH = 22
 const STEP = 5
@@ -44,12 +45,17 @@ interface Bracket {
 function brackets(view: EditorView): Bracket[] {
   const { cells, sections } = notebook(view.state)
   const selection = selectedRanges(view.state)
-  const ranges = cells.map((cell) => cell.range)
   const doc = view.state.doc
   const caret = view.state.selection.main
-  const caretCell = caret.empty
-    ? ranges.find((r) => caret.from >= r.location && caret.from < r.location + r.length) ?? null
-    : null
+  const cellRange = (cell: PositionedBlock): Range => cell.range
+  // The cell the caret is in — at the very end of its words too, which is
+  // where a caret sits after typing (the Mac's `block(containing:)`). Found by search: the cells are in order.
+  let caretCell: Range | null = null
+  if (caret.empty) {
+    const last = firstCellFromBy(cells, caret.from + 1, cellRange) - 1
+    const r = last >= 0 ? cells[last]!.range : null
+    if (r && r.length > 0 && caret.from <= r.location + r.length) caretCell = r
+  }
   const anySelection = selection.some((r) => r.length > 0)
 
   const box = (r: Range): { top: number; bottom: number } | null => {
@@ -63,31 +69,37 @@ function brackets(view: EditorView): Bracket[] {
   }
 
   // Only the brackets the viewport (and its margin) reaches are measured,
-  // drawn and tested for being held: the rest are off the page.
+  // drawn and tested for being held: the rest are off the page. The cells and the sections are in order of
+  // position, so the ones to look at are found by search and a walk — never by a pass over the whole note.
   const { from: viewFrom, to: viewTo } = view.viewport
   const reaches = (r: Range) => r.location <= viewTo && r.location + r.length >= viewFrom
+  const hidden = view.state.field(foldField)
 
   const out: Bracket[] = []
   for (const section of sections as Section[]) {
+    if (section.range.location > viewTo) break
     const stop = Math.min(Math.max(section.contentEnd, section.headingRange.location + section.headingRange.length),
       doc.length)
-    const r: Range = { location: section.range.location, length: Math.max(0, stop - section.range.location) }
-    if (r.length <= 0 || !reaches(r) || insideHidden(view.state, r)) continue
+    if (stop < viewFrom || stop <= section.range.location) continue
+    const r: Range = { location: section.range.location, length: stop - section.range.location }
+    if (insideHidden(view.state, r)) continue
     const where = box(r)
     if (!where) continue
-    const held = holds(r, ranges, selection)
+    const held = holdsSortedBy(r, cells, selection, cellRange)
     out.push({ key: `s:${section.key}`, depth: section.depth, ...where, selected: held, held, foldable: true,
-      section: section.key, folded: view.state.field(foldField).collapsed.has(section.key), range: r })
+      section: section.key, folded: hidden.collapsed.has(section.key), range: r })
   }
-  for (const cell of cells) {
+  for (let i = Math.max(0, firstCellFromBy(cells, viewFrom, cellRange) - 1); i < cells.length; i++) {
+    const cell = cells[i]!
+    if (cell.range.location > viewTo) break
     if (!reaches(cell.range) || insideHidden(view.state, cell.range)) continue
     const where = box(cell.range)
     if (!where) continue
-    const held = holds(cell.range, ranges, selection)
+    const held = holdsSortedBy(cell.range, cells, selection, cellRange)
     const lit = held || (!anySelection && caretCell !== null && sameRange(caretCell, cell.range))
     out.push({
       key: `cell:${cell.range.location}`,
-      depth: cellDepth(cell.range.location, sections) ,
+      depth: cellDepth(cell.range.location, sections),
       ...where, selected: lit, held, foldable: false, range: cell.range,
     })
   }
@@ -204,6 +216,8 @@ class Gutter {
       selection: EditorSelection.create(
         wanted.map((r) => EditorSelection.range(r.location, r.location + r.length)),
         wanted.length - 1),
+      // The cells are picked up (the rendered page keeps them drawn, and lit).
+      effects: setHolding.of(true),
     })
   }
 

@@ -18,7 +18,7 @@ press would run twice. Each command names its owner instead:
 |---|---|---|
 | `editor` | CodeMirror's keymap (`packages/editor/src/keys.ts`, `extras.ts`). The page stands down because the key arrives `defaultPrevented`. | the Format menu, Select Next / All Occurrences, Code Block |
 | `history` | `useUndo` (the words and the drawing share one Undo) | Undo, Redo |
-| `page` | `useChrome` in the page | File, View, Insert, Undo/Redo Drawing, Expand Selection, Input Devices (incl. Tablet Pad) |
+| `page` | `useChrome` in the page | File, View, Insert, Undo/Redo Drawing, Expand Selection, Input Devices (incl. Grab Tablet to Sheet) |
 | `main` | `useChrome`, which hands it to the main process (dialogs, the project file) | Project menu |
 
 A **menu click** sends `menu:command` to the page (or runs in the main process
@@ -40,8 +40,8 @@ accelerators and collide with Merge Cells, Close Tab and Insert Image. The test
 | Open Notes Folder | ⇧⌘O | Ctrl+Shift+O |
 | Add Folder to Project… | ⇧⌘A | Ctrl+Shift+A |
 | Save Project | ⌃⌘S (also the sidebar's!) | Ctrl+Shift+S |
-| Undo / Redo | ⌘Z / ⇧⌘Z | Ctrl+Z / Ctrl+Y (Ctrl+Shift+Z too) |
-| Undo / Redo Drawing | ⌥⌘Z / ⇧⌥⌘Z | Ctrl+Alt+Z / Ctrl+Alt+Shift+Z |
+| Undo / Redo | ⌘Z / ⇧⌘Z | Ctrl+Z / Ctrl+Y (Ctrl+Shift+Z too): ONE timeline per note, the words and the drawing together — Undo takes back exactly the most recent edit, whichever it was; Redo brings back the one undone last. Both keys are always swallowed outside a text field (the browser's own undo of the page must never run behind CodeMirror) |
+| Undo / Redo Drawing | ⌥⌘Z / ⇧⌥⌘Z | Ctrl+Alt+Z / Ctrl+Alt+Shift+Z: the drawing's own pair, whatever was edited last |
 | Expand Selection | ⌘. | Ctrl+. |
 | Select Next Occurrence | ⌘D | Alt+D |
 | Select All Occurrences | ⌃⌘G | Alt+Shift+D |
@@ -49,7 +49,10 @@ accelerators and collide with Merge Cells, Close Tab and Insert Image. The test
 | Markdown Preview / Editor | ⇧⌘P | Ctrl+Shift+P |
 | Hide/Show Video | ⌃⌘C | Ctrl+Alt+C |
 | Hide/Show Notes Pane | ⌃⌘E | Ctrl+Alt+E |
-| Markdown Markers | ⌥⌘M | Ctrl+Alt+M |
+| Hide / Show Markdown Markers (View) | ⌥⌘M | Ctrl+Alt+M: the Mac's chord, kept. Independent of the preview |
+| Find… / Find and Replace… | ⌘F / ⌥⌘F | Ctrl+F / Ctrl+H (the Mac's chord is also bound) |
+| Find Next / Previous | ⌘G / ⇧⌘G | F3 / Shift+F3 (Ctrl+G is Group on the drawing layer); Enter / Shift+Enter in the bar |
+| Use Selection for Find | ⌘E | Ctrl+E |
 | Fold / Unfold Section | ⌥⌘← / ⌥⌘→ | Ctrl+Alt+Left / Right |
 | Fold / Unfold All Sections | ⇧⌥⌘← / ⇧⌥⌘→ | Ctrl+Alt+Shift+Left / Right |
 | Title … Body (heading ladder) | ⌘1 … ⌘7 | Ctrl+1 … Ctrl+7 |
@@ -65,8 +68,9 @@ accelerators and collide with Merge Cells, Close Tab and Insert Image. The test
 | Move Section Up / Down | ⌃⌘↑ / ⌃⌘↓ | Ctrl+Up / Ctrl+Down |
 | Insert Image… | ⇧⌘I | Ctrl+Shift+I |
 | Code Block | ⌘8 | Ctrl+8 |
+| Maths… (port-only key; the Mac opens it from the bar) | — | Ctrl+Shift+M |
 | Refresh Device List | ⌥⌘R | Ctrl+Alt+R |
-| Tablet Pad (Full Screen) — enter / exit | ⌃⌘T | Ctrl+Alt+T |
+| Grab Tablet to Sheet — on / off (port-only) | — | Ctrl+Alt+G |
 
 Notes, so nobody "fixes" them:
 
@@ -83,9 +87,49 @@ Notes, so nobody "fixes" them:
   menu, tooltips and handler follow.
 - **Ctrl+Alt+Arrows** are the screen-rotation hot keys of some Intel graphics
   drivers; where those are on, fold from the menu.
-- **Markdown Markers** and **Markdown Preview** are one switch here: the port
-  has one dress for "no markers" (the rendered page), where the Mac has a
-  second, block-by-block preview as well.
+- **Markdown Markers** (Ctrl+Alt+M) and **Markdown Preview** (Ctrl+Shift+P) are two independent switches, as on the Mac
+  (`showMarkers` and `mode`): the markers are about the markdown side (hidden, the `**`, the `#`, a link's URL are put
+  away on every line but the caret's and the file is untouched; the choice is remembered); the preview draws every block but
+  the one being written in. Both labels flip (Hide / Show Markdown Markers; Show Markdown Preview / Editor).
+- **Format ▸ List and Ctrl+Shift+L** both write the style the list button's chevron picked (dots `- `, dashes `* `,
+  numbers `1. `, to-dos `- [ ] `), and the choice is remembered.
+
+## The rendered page (Write in the preview)
+
+Ctrl+Shift+P (or the sidebar's document button). Everything in the table above works on the block that is
+open; these are the keys that only mean something here (`packages/editor/src/preview/keys.ts`), and every
+one of them declines on the markdown side:
+
+| Key | Does |
+|---|---|
+| click a drawn block | opens it in place, the caret where the word was clicked; a click on a to-do's box ticks it (one character written, nothing opens); a click on a drawn link goes to it |
+| Return | starts the next block (what is behind the caret stays, what is in front becomes the next block); in a list, a to-do list, a numbered list or a quote it carries the list on, and on an empty item it ends the list; in code it is a newline. Over held cells it does nothing |
+| Backspace | in a block with nothing in it, takes the block away (and the blank lines holding it apart) and lands at the end of the block before; at a bar it takes the bar back and writes nothing |
+| Up / Down | inside a block, its lines; off its top or bottom, onto the bar beside it (the caret hides, the bar is the cursor); again, into the next block at its start (up: the block above, at its end). Off the first/last block they arm the bar above/under the note |
+| Shift+Up / Shift+Down | off the edge of a block, extend the selection a whole block at a time |
+| Page Up / Page Down (+ Shift) | the window moves a page and the caret goes to the block at the same height |
+| Escape | at a bar, takes it back (the caret returns to the block above); over held cells, lets go of them |
+| a character at a bar | opens a block there with that character in it; Return opens an empty one; the + on the bar chooses the kind first |
+| a character over held cells | replaces them |
+| Alt-click on the words of a link | follows it from inside an open block (a plain click puts the caret in it) |
+
+## The maths palette (Insert ▸ Maths…, the ƒ(x) button)
+
+Ctrl+Shift+M opens it (again, from inside it, puts it away) with the picked shape focused, even with the Maths
+section of the bar put away. Inside: **arrows** pick a shape (Left/Right one, Up/Down a row, PageUp/PageDown a
+group, Home/End the ends) and the form follows; **Tab / Shift+Tab** walk Slots, Wolfram Language line, the
+"On its own line" tick, Insert, and wrap; **Enter** inserts (as the tick says; not while an input method is
+composing), **Ctrl+Enter** inserts the other way, **Space** on the tick toggles it, **Esc** closes and gives the
+keyboard back to the note. This holds however the palette was opened (the key, a click on ƒ(x), the Insert menu)
+and after a click on a bare part of it (its heading hands the keyboard to the picked shape); only a click away
+from the palette puts it away. The Mac popover has none of these (it is mouse-first); the pane itself is the Mac's.
+
+**Typeset maths in the note (the mouse; `pressOnMaths` in `packages/editor/src/math.ts`):** a click puts the caret in the
+equation's source (the nearer end); a drag that starts on an equation selects from its near edge, so a drag across it
+selects it and it stays typeset; **Shift+click** extends the selection from where it was to the near edge of the
+equation (a selection that covers all of it leaves it typeset); a **right-click** selects the equation as a whole
+(unless a selection already covers it) and opens the page's menu with Cut and Copy live, so it never turns into its
+source under the menu; Ctrl/Cmd-click is the drawing layer's, as on words.
 
 ## The tablet sheet and the pen
 
@@ -99,15 +143,26 @@ Notes, so nobody "fixes" them:
 - **⌫ Erase** (toolbar pen group, and on the sheet): touch a stroke to rub it
   out; picking the ✎ pen or a shape tool turns it off.
 
-## Pad mode (the whole tablet is the sheet)
+## No full screen (Sean's rule)
 
-- **Ctrl+Alt+T** (also Input Devices ▸ Tablet Pad (Full Screen), and the **Pad** button on the
-  sheet pane) enters; the same key, the menu item (now "Exit Tablet Pad"), the strip's
-  **Exit Pad** or **Esc** leaves. Losing full screen any other way leaves too.
-- **Ctrl+Z / Ctrl+Y** in the pad are always the sheet's (nothing falls through to the note).
-- The strip comes down when the pen hovers at the top edge for about 0.4 s; it never shows
-  while a stroke is being written.
-- Ctrl+Alt+T is Ctrl+Alt+letter: AltGr on layouts that have one (see the note above).
+There is no full-screen mode of any kind. The old **Pad mode** (Ctrl+Alt+T, Input Devices ▸ Tablet Pad
+(Full Screen), the **Pad** button, the pen's "Tablet pad" ExpressKey suggestion) was removed on 2026-10-03,
+and so was View ▸ Toggle Full Screen. F11 / Win+Shift+Enter / a title-bar full-screen button do nothing: the
+window is created with `fullscreenable: false`. Ctrl+Alt+T is unassigned. If your Wacom ExpressKey still
+types it, nothing happens; remap it to Grab (Ctrl+Alt+G) or Send Writing (Ctrl+Alt+W).
+
+## Grab (the whole tablet is the sheet, notes still visible)
+
+- On by default whenever the **Tablet** source is showing and WriteMind is the window in front. The
+  **Grab: on/off** switch in the sheet pane header (and **Ctrl+Alt+G**, Input Devices ▸ Grab Tablet to
+  Sheet) turns it off for good, or back on.
+- **Esc** (in the notes window), **Ctrl+Alt+G** (a global key while grabbed, so an ExpressKey can type
+  it) or the strip's **Exit** let go until you come back to the window or press Grab again. Putting
+  another window in front, minimising, switching to a camera, hiding the pane or quitting also lets go.
+- The overlay's strip (Send Writing, Send Page, Box, Erase, Undo, Clear, colours, width, orientation,
+  Rotate ink, Exit) comes down when the pen hovers ~0.4 s at the sheet's top edge.
+- **Tablet orientation** dropdown (sheet pane header, Pen popover): Match screen / Landscape
+  (0°) / Portrait (90° clockwise) / Landscape flipped (180°) / Portrait flipped (270°), remembered.
 
 ## Pen buttons and ExpressKeys (port-only)
 
@@ -165,11 +220,48 @@ is AltGr the chord still means its physical key.
 | Clear Selection | Ctrl+Alt+0 |
 | Send Writing / Send Page | Ctrl+Alt+W / Ctrl+Alt+Shift+W |
 | Clear Sheet | Ctrl+Alt+X |
-| Tablet Pad | Ctrl+Alt+T (Pad mode's own) |
 | Undo / Redo | Ctrl+Z / Ctrl+Y |
 
 Suggested layouts (also in the popover, with copy buttons): 4 keys — Undo,
-Erase tool, Next colour, Pad; 6 keys — Undo, Redo, Erase, Next colour,
-Select, Pad; 8 keys — Undo, Redo, Erase, Select, Next colour, Wider, Delete
-selection, Pad. An ExpressKey set to a *modifier* (Ctrl, Shift, Alt) works
+Erase tool, Next colour, Send writing; 6 keys — Undo, Redo, Erase, Next colour,
+Select, Send writing; 8 keys — Undo, Redo, Erase, Select, Next colour, Wider, Delete
+selection, Send writing. An ExpressKey set to a *modifier* (Ctrl, Shift, Alt) works
 too: Ctrl = the marquee, Shift = extend, Alt = the Tip + Alt slot.
+
+## The drawing layer's own keys (heard by `Canvas.tsx`, not in the menu)
+
+They act only while something on the layer is picked up (the same rule as
+Backspace), in the capture phase, so the notebook's caret does not also move.
+A press on the words lets go of the pick, which gives the keys back.
+
+| Key | Does |
+|---|---|
+| Arrow keys / Shift+Arrow | nudge the picked objects 1 / 10 points (a burst is one undo) |
+| Ctrl+C / Ctrl+X / Ctrl+V | copy / cut / paste the picked objects (a paste lands 16 points down and right; from another note it is brought into view) |
+| Ctrl+G | group / ungroup (the Mac's ⌃G) |
+| Backspace / Delete | delete the picked objects |
+| Esc | closes the style bar (and puts an armed tool away), then lets go of the pick |
+| Alt+drag from a node | draws an attached arrow (the Mac's ⌥-drag) |
+| Shift while turning | 15 degree steps |
+| Ctrl+drag | the marquee (the Mac's ⌘-drag) |
+
+## The divider, the menus and the tabs (chrome)
+
+| Where | Key | Does |
+|---|---|---|
+| Divider between the notes and the video (when it has the keyboard: Tab to it) | Left / Right | the video 24 px wider / narrower |
+| same | Home, or double-click | back to the Mac default share (720 : 420) |
+| A sidebar or tab menu, the Folder menu | Up / Down, Enter, Escape, Right / Left | move, choose, close, open / close a submenu; the caret returns to the notes |
+| The font-and-colour and pen popovers | Escape, or a click anywhere else | close |
+| Ctrl+Alt+S / Ctrl+Alt+C / Ctrl+Alt+E | | Hide or Show the sidebar / the video / the notes pane (never both panes) |
+| A tab | middle click | closes it |
+| The tab row | wheel | walks along the tabs |
+
+## The camera pane (c2-camera-parity)
+
+| Where | Key | Does |
+|---|---|---|
+| The viewfinder | drag | a dashed box over the part to bring in (with a pen too) |
+| same | click, double-click | one click puts the box away; two draw a box round the whole picture |
+| same | Esc | puts the box away, and lets go of Resize by Square when it is armed |
+| Input Devices | Ctrl+Alt+R | Refresh Device List (the other camera commands are menu items) |

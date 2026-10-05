@@ -16,7 +16,7 @@ import type { Size } from "../drawing/geometry"
 import { newID, noTransform, type CanvasItem, type ConnectorItem, type ShapeItem } from "../drawing/model"
 import type { Rect, ShapeKind } from "../drawing/shapes"
 import {
-  FlowPlacement, isFlowNode, readFlow, type FlowWord,
+  defaultFlowSettings, findHoles, FlowPlacement, isFlowNode, readFlow, type FlowWord,
 } from "./flowGrouping"
 import type { Component } from "./ink"
 import { rectMidX, rectMidY } from "./rects"
@@ -55,8 +55,16 @@ export function namedShape(blob: Component, shortSide: number, lean: number): Sh
   }
 }
 
-/** The ink inside a box, as one component for the classifier to read. */
-export function componentOf(box: Rect, ink: Uint8Array, width: number, height: number): Component | null {
+/**
+ * The ink inside a box, as one component for the classifier to read.
+ *
+ * `excluding` are the boxes of the WORDS that are the box's label: the ink of
+ * a word written inside a node is the label, not the outline, and a classifier
+ * handed the two as one blob refuses a perfectly good rectangle (a labelled
+ * chart read as nothing at all once the reader gave the words). Beyond the Swift.
+ */
+export function componentOf(box: Rect, ink: Uint8Array, width: number, height: number,
+  excluding: Rect[] = []): Component | null {
   const x0 = Math.max(0, Math.trunc(box.x)), x1 = Math.min(width, Math.ceil(box.x + box.width))
   const y0 = Math.max(0, Math.trunc(box.y)), y1 = Math.min(height, Math.ceil(box.y + box.height))
   if (!(x1 > x0 && y1 > y0)) return null
@@ -65,6 +73,7 @@ export function componentOf(box: Rect, ink: Uint8Array, width: number, height: n
   for (let y = y0; y < y1; y++) {
     for (let x = x0; x < x1; x++) {
       if (!ink[y * width + x]) continue
+      if (excluding.some((word) => x >= word.x && x < word.x + word.width && y >= word.y && y < word.y + word.height)) continue
       pixels.push(y * width + x)
       if (x < minX) minX = x
       if (x > maxX) maxX = x
@@ -74,6 +83,22 @@ export function componentOf(box: Rect, ink: Uint8Array, width: number, height: n
   }
   if (maxX < 0 || pixels.length === 0) return null
   return { stride: width, minX, minY, maxX, maxY, pixels }
+}
+
+/**
+ * Whether the ink could hold a chart AT ALL: a node is a closed outline, so a
+ * page with no closed outline of a box's size cannot. Cheap (one flood fill),
+ * and what lets a text reader be asked only about pictures that need it - the
+ * words inside a node are needed to read it (ink written in a box otherwise
+ * reads as part of the outline), so the reader is asked BEFORE the chart is.
+ */
+export function mayHoldChart(ink: Uint8Array, width: number, height: number): boolean {
+  if (!(width > 8 && height > 8 && ink.length === width * height)) return false
+  const minSide = Math.max(6, defaultFlowSettings().minimumHoleSide * Math.min(width, height))
+  return findHoles(ink, width, height).some((hole) =>
+    Math.min(hole.box.width, hole.box.height) >= minSide / 3
+    && Math.max(hole.box.width, hole.box.height) >= minSide
+    && hole.area >= (minSide * minSide * defaultFlowSettings().minimumHoleArea) / 3)
 }
 
 /**
@@ -95,7 +120,7 @@ export function flowChartItems(ink: Uint8Array, width: number, height: number, w
   const kinds = new Map<number, ShapeKind>()
   sheet.nodes.forEach((node, index) => {
     if (!isFlowNode(node)) return
-    const blob = componentOf(node.box, ink, width, height)
+    const blob = componentOf(node.box, ink, width, height, node.words.map((w) => words[w]!.box))
     if (blob === null) return
     const kind = namedShape(blob, shortSide, node.skew)
     if (kind === null) return

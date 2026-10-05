@@ -1,26 +1,60 @@
 /**
  * The programs the app did not write, and whether this machine has them.
  *
- * ONE RULE, three platforms: a capability is a FILE BEING THERE. macOS has
- * `wm-vision`, the small Vision binary `tools/build-vision.sh` compiles
- * beside the app — nothing else reads handwriting as well. Everywhere else
- * (and on a Mac with no helper built) the app looks for `tesseract` on the
- * PATH, which Arch calls `tesseract` and `tesseract-data-eng`.
+ * ONE RULE, three platforms: a capability is a FILE BEING THERE (or a probe
+ * that works). macOS has `wm-vision`, the small Vision binary
+ * `tools/build-vision.sh` compiles beside the app — nothing else reads
+ * handwriting as well. WINDOWS has its own OCR engine (`Windows.Media.Ocr`),
+ * reached through `helpers/wm-ocr.ps1`: it needs nothing installed for the
+ * languages in the user's profile, and Japanese comes with an optional
+ * Windows capability (docs/OCR-WINDOWS.md). Everywhere else (and on a Mac
+ * with no helper built) the app looks for `tesseract` on the PATH, which
+ * Arch calls `tesseract` and `tesseract-data-eng`.
  *
- * Neither is a dependency: with neither installed the app runs exactly as
- * it does now and simply does not offer to read a picture.
+ * None is a dependency: with none installed the app runs exactly as it does
+ * now and simply does not offer to read a picture. Order of preference:
+ * Vision, then Windows' engine, then tesseract.
  */
 
 import { execFile } from "node:child_process"
-import { accessSync, constants } from "node:fs"
+import { accessSync, constants, existsSync } from "node:fs"
 import path from "node:path"
 import { promisify } from "node:util"
+import type { OcrEngine } from "@writemind/core"
 
 const run = promisify(execFile)
 
 export interface ReadLine {
   text: string
   confidence: number
+  /** The line's box as FRACTIONS of the picture, y down — when the reader says. */
+  x?: number
+  y?: number
+  width?: number
+  height?: number
+  /** Its words, boxed the same way — Windows' engine gives them. */
+  words?: { text: string; x: number; y: number; width: number; height: number }[]
+}
+
+/** What a reader gave back for one picture. */
+export interface Words {
+  lines: ReadLine[]
+  /** Which reader read it. */
+  engine?: OcrEngine
+  /** The language it read in (BCP-47), where the reader says. */
+  language?: string | null
+  /** Every language the reader has here, and whether Japanese is among them. */
+  installed?: string[]
+  japanese?: boolean
+}
+
+export interface ReadOptions {
+  /**
+   * BCP-47 tags to read in, in order. Without them: Japanese first when
+   * installed, kept when it found any, else the profile's languages.
+   */
+  languages?: string[]
+  signal?: AbortSignal
 }
 
 const isExecutable = (file: string): boolean => {
@@ -61,27 +95,166 @@ export function tesseract(): string | null {
   return null
 }
 
-/** Whether anything on this machine can read a picture's words. */
+// MARK: - Windows' own OCR engine
+
+/** What a spawned program answers with. Injectable so the error paths are testable without PowerShell. */
+export type Runner = (file: string, args: string[], options: {
+  signal?: AbortSignal
+  timeout?: number
+}) => Promise<{ stdout: string }>
+
+const spawnRunner: Runner = async (file, args, options) => {
+  const out = await run(file, args, {
+    ...(options.signal ? { signal: options.signal } : {}),
+    ...(options.timeout ? { timeout: options.timeout } : {}),
+    windowsHide: true, maxBuffer: 32 * 1024 * 1024, encoding: "utf8",
+  })
+  return { stdout: out.stdout }
+}
+
+/** The script that asks `Windows.Media.Ocr`, beside the other shipped helpers. */
+export function windowsOcrScript(here: string): string | null {
+  if (process.platform !== "win32") return null
+  const where = shipped(here, "../helpers/wm-ocr.ps1")
+  return existsSync(where) ? where : null
+}
+
+/** Windows PowerShell 5.1, which every Windows 10 and 11 has; the full path so a bad PATH cannot hide it. */
+export function powershell(): string {
+  const root = process.env.SystemRoot ?? "C:\\Windows"
+  const where = path.join(root, "System32", "WindowsPowerShell", "v1.0", "powershell.exe")
+  return existsSync(where) ? where : "powershell.exe"
+}
+
+/** How the Japanese reader is added — what a user with no Japanese OCR is told. */
+export const ADD_JAPANESE_OCR =
+  "Add-WindowsCapability -Online -Name Language.OCR~~~ja-JP~0.0.1.0   (an elevated PowerShell), "
+  + "or Settings > Time & Language > Language > Japanese > Language options > Optical character recognition"
+
+export interface OcrProbe {
+  /** An engine exists and has at least one language. */
+  ok: boolean
+  /** Every language it can read, BCP-47. */
+  installed: string[]
+  /** The language the user's profile would read in. */
+  profile: string | null
+  japanese: boolean
+  addJapanese: string
+  /** Why not, when it is not ok. */
+  reason?: string
+}
+
+const failedProbe = (reason: string): OcrProbe =>
+  ({ ok: false, installed: [], profile: null, japanese: false, addJapanese: ADD_JAPANESE_OCR, reason })
+
+const scriptArgs = (script: string, rest: string[]): string[] =>
+  ["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-File", script, ...rest]
+
+/** The error a script reports as JSON, wherever node put the output. */
+function scriptError(error: unknown): Error {
+  const stdout = (error as { stdout?: unknown }).stdout
+  if (typeof stdout === "string") {
+    try {
+      const said = JSON.parse(stdout) as { error?: unknown }
+      if (typeof said.error === "string") return new Error(said.error)
+    } catch { /* not JSON: fall through */ }
+  }
+  if ((error as { name?: string }).name === "AbortError" || (error as { code?: string }).code === "ABORT_ERR") {
+    return Object.assign(new Error("cancelled"), { name: "AbortError" })
+  }
+  return error instanceof Error ? error : new Error(String(error))
+}
+
+/** Ask the engine what it has. Never throws: a machine without one is a probe that says so. */
+export async function probeWindowsOcr(here: string, runner: Runner = spawnRunner): Promise<OcrProbe> {
+  const script = windowsOcrScript(here)
+  if (!script) return failedProbe("no wm-ocr.ps1 beside the app, or not Windows")
+  try {
+    const { stdout } = await runner(powershell(), scriptArgs(script, ["probe"]), { timeout: 20000 })
+    const said = JSON.parse(stdout) as Partial<OcrProbe> & { error?: string }
+    if (typeof said.error === "string") return failedProbe(said.error)
+    const installed = Array.isArray(said.installed)
+      ? said.installed.filter((tag): tag is string => typeof tag === "string") : []
+    return {
+      ok: installed.length > 0, installed,
+      profile: typeof said.profile === "string" ? said.profile : null,
+      japanese: said.japanese === true,
+      addJapanese: ADD_JAPANESE_OCR,
+      ...(installed.length === 0 ? { reason: "Windows has no OCR language for this user" } : {}),
+    }
+  } catch (error) {
+    return failedProbe(scriptError(error).message)
+  }
+}
+
+/** One picture through `Windows.Media.Ocr`. Throws what the engine said. */
+export async function readWithWindowsOcr(here: string, file: string, options: ReadOptions = {},
+  runner: Runner = spawnRunner): Promise<Words> {
+  const script = windowsOcrScript(here)
+  if (!script) throw new Error("no wm-ocr.ps1 beside the app, or not Windows")
+  const rest = ["read", file,
+    ...(options.languages && options.languages.length > 0 ? ["-Languages", options.languages.join(",")] : [])]
+  let stdout: string
+  try {
+    ;({ stdout } = await runner(powershell(), scriptArgs(script, rest),
+      { ...(options.signal ? { signal: options.signal } : {}), timeout: 60000 }))
+  } catch (error) {
+    throw scriptError(error)
+  }
+  const said = JSON.parse(stdout) as Words & { error?: string }
+  if (typeof said.error === "string") throw new Error(said.error)
+  return { ...said, engine: "windows" }
+}
+
+/** The probe, asked once per run of the app. */
+let probed: Promise<OcrProbe> | null = null
+export const windowsOcr = (here: string): Promise<OcrProbe> => (probed ??= probeWindowsOcr(here))
+/** Forget the answer (a test, or the user added a language and asked again). */
+export const forgetOcrProbe = (): void => { probed = null }
+
+// MARK: - Whichever reader there is
+
+/** Whether anything on this machine could read a picture's words, without asking (a file being there). */
 export const canRead = (here: string): boolean =>
-  visionHelper(here) !== null || tesseract() !== null
+  visionHelper(here) !== null || windowsOcrScript(here) !== null || tesseract() !== null
+
+/** Which reader will be used, and what it can do: the answer `capabilitiesFor` is given. */
+export async function readerFor(here: string):
+Promise<{ ocr: boolean; engine: OcrEngine | null; japanese: boolean }> {
+  if (visionHelper(here)) return { ocr: true, engine: "vision", japanese: true }
+  if (windowsOcrScript(here)) {
+    const probe = await windowsOcr(here)
+    if (probe.ok) return { ocr: true, engine: "windows", japanese: probe.japanese }
+  }
+  if (tesseract()) return { ocr: true, engine: "tesseract", japanese: false }
+  return { ocr: false, engine: null, japanese: false }
+}
 
 /**
- * The words in a picture, by whichever reader this machine has. Vision
- * gives a confidence per line and is the better reader by a distance;
- * tesseract gives text, so every line it finds counts as read.
+ * The words in a picture, by whichever reader this machine has. Vision gives
+ * a confidence per line and is the better reader by a distance; Windows'
+ * engine gives lines AND words, all boxed; tesseract gives text, so every
+ * line it finds counts as read.
  */
-export async function readWords(here: string, file: string): Promise<{ lines: ReadLine[] }> {
+export async function readWords(here: string, file: string, options: ReadOptions = {}): Promise<Words> {
   const vision = visionHelper(here)
   if (vision) {
-    const { stdout } = await run(vision, ["text", file])
-    return JSON.parse(stdout) as { lines: ReadLine[] }
+    const { stdout } = await run(vision, ["text", file], {
+      ...(options.signal ? { signal: options.signal } : {}), maxBuffer: 32 * 1024 * 1024,
+    })
+    return { ...(JSON.parse(stdout) as Words), engine: "vision" }
+  }
+  if (windowsOcrScript(here) && (await windowsOcr(here)).ok) {
+    return readWithWindowsOcr(here, file, options)
   }
   const other = tesseract()
   if (!other) return { lines: [] }
   // `--psm 6` reads a block of text rather than hunting for a layout,
   // which is what a captured chunk of writing is.
-  const { stdout } = await run(other, [file, "stdout", "--psm", "6"])
+  const { stdout } = await run(other, [file, "stdout", "--psm", "6"],
+    options.signal ? { signal: options.signal } : {})
   return {
+    engine: "tesseract",
     lines: stdout.split("\n").map((line) => line.trim()).filter((line) => line.length > 0)
       .map((text) => ({ text, confidence: 1 })),
   }

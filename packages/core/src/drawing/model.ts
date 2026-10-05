@@ -17,7 +17,7 @@
  */
 
 import { readPressures } from "./pen"
-import { defaultAspect,type Point, type ShapeKind } from "./shapes"
+import { defaultAspect, isShapeKind, type Point, type ShapeKind } from "./shapes"
 
 export interface ItemTransform {
   /** Fractions of the pane. */
@@ -174,6 +174,22 @@ export const isHidden = (item: CanvasItem): boolean =>
 export const visibleItems = (drawing: Drawing): CanvasItem[] =>
   drawing.items.filter((item) => !isHidden(item))
 
+/**
+ * The part of a pick that is still there to be picked: an id whose object was undone away, deleted, erased or
+ * put away (a picture read into words) is no pick at all, and keys must not be answered for it. The same Set
+ * comes back when every id is live, so a caller can tell by identity that nothing changed.
+ */
+export function stillPicked(drawing: Drawing, picked: Set<string>): Set<string> {
+  if (picked.size === 0) return picked
+  const live = new Set<string>()
+  for (const item of drawing.items) {
+    if (isHidden(item)) continue
+    const id = itemId(item)
+    if (picked.has(id)) live.add(id)
+  }
+  return live.size === picked.size ? picked : live
+}
+
 export function itemWithID(drawing: Drawing, id: string): CanvasItem | null {
   return drawing.items.find((item) => itemId(item) === id) ?? null
 }
@@ -224,122 +240,167 @@ const transformOf = (value: unknown): ItemTransform => {
 const groupOf = (value: unknown): string | null =>
   typeof value === "string" && value.length > 0 ? value : null
 
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+  typeof value === "object" && value !== null && !Array.isArray(value)
+
+/** A list that is a list: anything else (a file with "points": "x") is no list at all. */
+const list = (value: unknown): unknown[] => (Array.isArray(value) ? value : [])
+
+/** One of the words a field may hold, or the default when it holds any other. */
+const oneOf = <T extends string>(value: unknown, allowed: readonly T[], fallback: T): T =>
+  typeof value === "string" && (allowed as readonly string[]).includes(value) ? (value as T) : fallback
+
+const HEADS: readonly ConnectorHead[] = ["none", "arrow"]
+const LINES: readonly ConnectorLine[] = ["solid", "dashed", "dotted"]
+
+const strokeOf = (given: Record<string, unknown>): Stroke => {
+  const points = list(given.points)
+  return {
+    id: text(given.id, newID()),
+    colorHex: text(given.colorHex, "#1C1C1E"),
+    width: number(given.width, 3),
+    points: points.map((p) => point(p, { x: 0, y: 0 })),
+    pressures: readPressures(given.pressures, points.length),
+    transform: transformOf(given.transform),
+    group: groupOf(given.group),
+  }
+}
+
+/** What reading a sidecar found, beyond the drawing: whether anything had to be thrown away to make it. */
+export interface DecodedDrawing {
+  drawing: Drawing
+  /**
+   * The file had something in it and it was not all usable: it is not JSON (a truncated write), it is JSON of
+   * another shape, or some of its items were thrown away (null, not an object, a kind this build does not
+   * know). The next save would write the smaller drawing over it, so the caller keeps a copy first
+   * (Recovered, the same as a save that failed). A blank file, or one that read in full, is not damaged.
+   */
+  damaged: boolean
+  /** How many items were thrown away. */
+  dropped: number
+}
+
 /**
  * A sidecar read back, field by field, with a default for everything it has
  * not got — an older file must still open, and a decode that throws would
- * lose the whole drawing.
+ * lose the whole drawing. TOTAL: whatever the text holds (a BOM in front of
+ * it, null, a list where an object belongs, an item that is null, a stroke
+ * whose points are a string) this returns a drawing and never throws, because
+ * a throw here, in the middle of opening a note, used to leave the NEW note on
+ * screen with the PREVIOUS note's drawing (which the next stroke then saved
+ * into the new note's file).
  */
-export function readDrawing(json: string | null): Drawing {
-  if (!json) return emptyDrawing()
-  let parsed: { items?: unknown[]; strokes?: unknown[] }
+export function decodeDrawing(json: string | null): DecodedDrawing {
+  if (json === null || json.trim() === "") return { drawing: emptyDrawing(), damaged: false, dropped: 0 }
+  // Windows PowerShell 5.1 writes a byte-order mark with -Encoding UTF8.
+  const body = json.charCodeAt(0) === 0xfeff ? json.slice(1) : json
+  const lost = (): DecodedDrawing => ({ drawing: emptyDrawing(), damaged: true, dropped: 0 })
   try {
-    parsed = JSON.parse(json) as { items?: unknown[]; strokes?: unknown[] }
-  } catch {
-    return emptyDrawing()
-  }
-  const items: CanvasItem[] = []
+    const parsed: unknown = JSON.parse(body)
+    // null, a number, a list: JSON, but not a sidecar.
+    if (!isRecord(parsed)) return lost()
+    const items: CanvasItem[] = []
+    let dropped = 0
+    let damaged = false
+    if (parsed.items !== undefined && !Array.isArray(parsed.items)) damaged = true
+    if (parsed.strokes !== undefined && !Array.isArray(parsed.strokes)) damaged = true
 
-  // The oldest sidecars are a bare list of strokes, and they still open.
-  for (const raw of parsed.strokes ?? []) {
-    const given = raw as Record<string, unknown>
-    items.push({
-      kind: "stroke",
-      stroke: {
-        id: text(given.id, newID()),
-        colorHex: text(given.colorHex, "#1C1C1E"),
-        width: number(given.width, 3),
-        points: ((given.points as unknown[]) ?? []).map((p) => point(p, { x: 0, y: 0 })),
-        pressures: readPressures(given.pressures, ((given.points as unknown[]) ?? []).length),
-        transform: transformOf(given.transform),
-        group: groupOf(given.group),
-      },
-    })
-  }
-
-  for (const raw of parsed.items ?? []) {
-    const given = raw as Record<string, unknown>
-    const kind = text(given.kind, "")
-    if (kind === "stroke") {
-      items.push({
-        kind: "stroke",
-        stroke: {
-          id: text(given.id, newID()),
-          colorHex: text(given.colorHex, "#1C1C1E"),
-          width: number(given.width, 3),
-          points: ((given.points as unknown[]) ?? []).map((p) => point(p, { x: 0, y: 0 })),
-          pressures: readPressures(given.pressures, ((given.points as unknown[]) ?? []).length),
-          transform: transformOf(given.transform),
-          group: groupOf(given.group),
-        },
-      })
-    } else if (kind === "image") {
-      items.push({
-        kind: "image",
-        image: {
-          id: text(given.id, newID()),
-          file: text(given.file, ""),
-          center: point(given.center, { x: 0.5, y: 0.5 }),
-          width: number(given.width, 0.35),
-          aspect: number(given.aspect, 1),
-          transform: transformOf(given.transform),
-          hidden: given.hidden === true,
-          group: groupOf(given.group),
-        },
-      })
-    } else if (kind === "shape") {
-      const shapeKind = text(given.shapeKind ?? given.kindName, "rectangle") as ShapeKind
-      items.push({
-        kind: "shape",
-        shape: {
-          id: text(given.id, newID()),
-          kind: shapeKind,
-          center: point(given.center, { x: 0.5, y: 0.5 }),
-          width: number(given.width, 0.18),
-          aspect: number(given.aspect, defaultAspect(shapeKind)),
-          colorHex: text(given.colorHex, "#1C1C1E"),
-          lineWidth: number(given.lineWidth, 2),
-          fillHex: typeof given.fillHex === "string" ? given.fillHex : null,
-          label: text(given.label, ""),
-          transform: transformOf(given.transform),
-          group: groupOf(given.group),
-        },
-      })
-    } else if (kind === "connector") {
-      items.push({
-        kind: "connector",
-        connector: {
-          id: text(given.id, newID()),
-          start: point(given.start, { x: 0.3, y: 0.5 }),
-          end: point(given.end, { x: 0.7, y: 0.5 }),
-          startNode: groupOf(given.startNode),
-          endNode: groupOf(given.endNode),
-          startHead: (text(given.startHead, "none") as ConnectorHead),
-          endHead: (text(given.endHead, "arrow") as ConnectorHead),
-          line: (text(given.line, "solid") as ConnectorLine),
-          colorHex: text(given.colorHex, "#1C1C1E"),
-          lineWidth: number(given.lineWidth, 2),
-          transform: transformOf(given.transform),
-          bends: ((given.bends as unknown[]) ?? []).map((p) => point(p, { x: 0, y: 0 })),
-          // Present only when a hand dragged a segment, so a plain line
-          // reads back exactly as it was written.
-          ...(Array.isArray(given.overrides) && given.overrides.length > 0
-            ? {
-              overrides: (given.overrides as unknown[]).map((o) => {
-                const given2 = (o ?? {}) as Record<string, unknown>
-                return {
-                  index: number(given2.index, 0),
-                  vertical: given2.vertical === true,
-                  value: number(given2.value, 0),
-                }
-              }),
-            }
-            : {}),
-        },
-      })
+    // The oldest sidecars are a bare list of strokes, and they still open.
+    for (const raw of list(parsed.strokes)) {
+      if (!isRecord(raw) || list(raw.points).length === 0) { dropped++; continue }
+      items.push({ kind: "stroke", stroke: strokeOf(raw) })
     }
+
+    for (const raw of list(parsed.items)) {
+      if (!isRecord(raw)) { dropped++; continue }
+      const given = raw
+      const kind = text(given.kind, "")
+      if (kind === "stroke") {
+        // (A stroke with no points has no ink to draw, hit or save.)
+        if (list(given.points).length === 0) { dropped++; continue }
+        items.push({ kind: "stroke", stroke: strokeOf(given) })
+      } else if (kind === "image") {
+        items.push({
+          kind: "image",
+          image: {
+            id: text(given.id, newID()),
+            file: text(given.file, ""),
+            center: point(given.center, { x: 0.5, y: 0.5 }),
+            width: number(given.width, 0.35),
+            aspect: number(given.aspect, 1),
+            transform: transformOf(given.transform),
+            hidden: given.hidden === true,
+            group: groupOf(given.group),
+          },
+        })
+      } else if (kind === "shape") {
+        // A kind from a newer build (a hexagon, say) is not one we can draw: it comes in as a rectangle in
+        // the same box, with its words, rather than as a name the painter would throw on (which left every
+        // object after it unpainted, and still pickable).
+        const named = given.shapeKind ?? given.kindName
+        const shapeKind: ShapeKind = isShapeKind(named) ? named : "rectangle"
+        items.push({
+          kind: "shape",
+          shape: {
+            id: text(given.id, newID()),
+            kind: shapeKind,
+            center: point(given.center, { x: 0.5, y: 0.5 }),
+            width: number(given.width, 0.18),
+            aspect: number(given.aspect, defaultAspect(shapeKind)),
+            colorHex: text(given.colorHex, "#1C1C1E"),
+            lineWidth: number(given.lineWidth, 2),
+            fillHex: typeof given.fillHex === "string" ? given.fillHex : null,
+            label: text(given.label, ""),
+            transform: transformOf(given.transform),
+            group: groupOf(given.group),
+          },
+        })
+      } else if (kind === "connector") {
+        items.push({
+          kind: "connector",
+          connector: {
+            id: text(given.id, newID()),
+            start: point(given.start, { x: 0.3, y: 0.5 }),
+            end: point(given.end, { x: 0.7, y: 0.5 }),
+            startNode: groupOf(given.startNode),
+            endNode: groupOf(given.endNode),
+            startHead: oneOf(given.startHead, HEADS, "none"),
+            endHead: oneOf(given.endHead, HEADS, "arrow"),
+            line: oneOf(given.line, LINES, "solid"),
+            colorHex: text(given.colorHex, "#1C1C1E"),
+            lineWidth: number(given.lineWidth, 2),
+            transform: transformOf(given.transform),
+            bends: list(given.bends).map((p) => point(p, { x: 0, y: 0 })),
+            // Present only when a hand dragged a segment, so a plain line
+            // reads back exactly as it was written.
+            ...(Array.isArray(given.overrides) && given.overrides.length > 0
+              ? {
+                overrides: (given.overrides as unknown[]).map((o) => {
+                  const given2 = isRecord(o) ? o : {}
+                  return {
+                    index: number(given2.index, 0),
+                    vertical: given2.vertical === true,
+                    value: number(given2.value, 0),
+                  }
+                }),
+              }
+              : {}),
+          },
+        })
+      } else {
+        dropped++
+      }
+    }
+    return { drawing: { items }, damaged: damaged || dropped > 0, dropped }
+  } catch {
+    // Not reachable by any text the checks above let through, and kept anyway: this function's one promise
+    // is that it returns.
+    return lost()
   }
-  return { items }
 }
+
+/** The drawing alone (see decodeDrawing, which also says whether anything was thrown away). */
+export const readDrawing = (json: string | null): Drawing => decodeDrawing(json).drawing
 
 /** And written back, flat, with the kind named so the reader can tell them apart. */
 export function writeDrawing(drawing: Drawing): string {

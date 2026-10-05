@@ -13,6 +13,12 @@
  *
  * Palm rejection is the notes page's rule (`penNear`): a touch just after the
  * pen was near is a resting hand and is ignored.
+ *
+ * THE NATIVE PEN FEED (renderer/penFeed.ts) reaches this surface as ordinary pointer
+ * events: it dispatches real `PointerEvent`s with `pointerType: "pen"` on the element
+ * under the pen, so the handlers below are the only code path for the pen, the mouse
+ * and the feed alike. (The overlay-era `remap` / `external` / `ring` props and the
+ * `feed` handle are gone: the sheet is no longer drawn in a second window.)
  */
 
 import { forwardRef, useCallback, useEffect, useImperativeHandle, useRef, useState } from "react"
@@ -20,9 +26,8 @@ import type { Point, Rect, Size } from "@writemind/core"
 import { pressAction } from "./penButtons"
 import { penNear, penSettings, usePenSettings } from "./penSettings"
 import { setTabletUndo } from "./tabletFocus"
-import { fitRect } from "./padGeometry"
 import { useAreaFlash } from "./tabletArea"
-import { paintStrokes, SHEET_REF, strokeUnder, type InkStroke, type TabletPage } from "./tabletPage"
+import { fitRect, paintStrokes, SHEET_REF, strokeUnder, type InkStroke, type TabletPage } from "./tabletPage"
 
 export interface SurfaceHandle {
   undo(): void
@@ -44,8 +49,6 @@ interface Props {
   box: Rect | null
   /** The box changed (fractions of the sheet); `done` is the lift, when the Box tool lets go. */
   onBox(rect: Rect | null, done?: boolean): void
-  /** Ctrl+Z belongs to the sheet whenever this is showing (the full-screen pad), not only while hovered. */
-  ownsUndo?: boolean
   /** The page changed (a stroke, an erase, an undo): the buttons may need to update. */
   onEdited(): void
 }
@@ -59,7 +62,7 @@ type Gesture =
   | { kind: "box"; from: Point }
 
 export const TabletSurface = forwardRef<SurfaceHandle, Props>(function TabletSurface(
-  { page, colour, width, boxTool, box, onBox, ownsUndo = false, onEdited }, handle) {
+  { page, colour, width, boxTool, box, onBox, onEdited }, handle) {
   const host = useRef<HTMLDivElement | null>(null)
   const wrap = useRef<HTMLDivElement | null>(null)
   const [fit, setFit] = useState({ x: 0, y: 0, width: 0, height: 0 })
@@ -71,8 +74,8 @@ export const TabletSurface = forwardRef<SurfaceHandle, Props>(function TabletSur
   const frame = useRef<number | null>(null)
   const everything = useRef(true)
   const settings = usePenSettings()
-  const latest = useRef({ colour, width, boxTool, onBox, onEdited, page, ownsUndo })
-  latest.current = { colour, width, boxTool, onBox, onEdited, page, ownsUndo }
+  const latest = useRef({ colour, width, boxTool, onBox, onEdited, page })
+  latest.current = { colour, width, boxTool, onBox, onEdited, page }
 
   const toPixel = useCallback((point: Point): Point =>
     ({ x: point.x * size.current.width, y: point.y * size.current.height }), [])
@@ -132,6 +135,13 @@ export const TabletSurface = forwardRef<SurfaceHandle, Props>(function TabletSur
       schedule(true)
     }
     measure()
+    // The sheet's shape follows the tablet's orientation.
+    const unlisten = latest.current.page.onChange(() => {
+      const r = element.getBoundingClientRect()
+      const next = fitRect({ width: r.width, height: r.height }, latest.current.page.aspect)
+      if (Math.abs(next.width - size.current.width) > 0.5 || Math.abs(next.height - size.current.height) > 0.5) measure()
+      else schedule(true)
+    })
     const observer = new ResizeObserver(measure)
     observer.observe(element)
     // The display's scale can change under the sheet (150% on one monitor, 100% on the next, a
@@ -146,6 +156,7 @@ export const TabletSurface = forwardRef<SurfaceHandle, Props>(function TabletSur
     const onRatio = () => { measure(); watchRatio() }
     watchRatio()
     return () => {
+      unlisten()
       observer.disconnect()
       window.removeEventListener("resize", measure)
       ratio?.removeEventListener("change", onRatio)
@@ -164,8 +175,6 @@ export const TabletSurface = forwardRef<SurfaceHandle, Props>(function TabletSur
 
   useEffect(() => {
     setTabletUndo((which) => {
-      // In the full-screen pad the sheet is all there is: Ctrl+Z is its own, even with nothing to take back.
-      if (latest.current.ownsUndo) { act(which); return true }
       const focused = wrap.current !== null && wrap.current.contains(document.activeElement)
       return (hovered.current || focused) ? act(which) : false
     })
@@ -205,15 +214,15 @@ export const TabletSurface = forwardRef<SurfaceHandle, Props>(function TabletSur
     width: Math.abs(to.x - from.x), height: Math.abs(to.y - from.y),
   })
 
-  const down = (event: React.PointerEvent) => {
+  const down = (event: PointerEvent) => {
     if (event.pointerType === "touch" && penNear()) { event.preventDefault(); return }
     const pen = event.pointerType === "pen"
     if (!pen && event.button !== 0) return
     event.preventDefault()
     wrap.current?.focus({ preventScroll: true })
-    // Keep the stroke when the pen strays past the edge (a synthetic event has no pointer to capture).
+    // Keep the stroke when the pen strays past the edge (a synthetic event has no pointer to capture: the feed keeps the target itself).
     try { wrap.current?.setPointerCapture(event.pointerId) } catch { /* not an active pointer */ }
-    let action = pressAction(event.nativeEvent, penSettings())
+    let action = pressAction(event, penSettings())
     if (action === "draw" && latest.current.boxTool) action = "select"
     const { unit } = at(event)
     if (action === "erase") {
@@ -238,12 +247,12 @@ export const TabletSurface = forwardRef<SurfaceHandle, Props>(function TabletSur
     }
   }
 
-  const move = (event: React.PointerEvent) => {
+  const move = (event: PointerEvent) => {
     const g = gesture.current
     if (!g) return
     // A pen reports far more samples than frames: the coalesced ones are the real stroke.
-    const samples = event.nativeEvent.getCoalescedEvents?.() ?? []
-    const all = samples.length > 0 ? samples : [event.nativeEvent]
+    const samples = event.getCoalescedEvents?.() ?? []
+    const all = samples.length > 0 ? samples : [event]
     if (g.kind === "draw") {
       for (const sample of all) {
         g.stroke.points.push(at(sample).unit)
@@ -257,12 +266,14 @@ export const TabletSurface = forwardRef<SurfaceHandle, Props>(function TabletSur
     }
   }
 
-  const up = (event: React.PointerEvent) => {
+  const up = (event: PointerEvent) => {
     const g = gesture.current
     // The last samples are painted now, not left to a frame that will find no stroke.
     if (g?.kind === "draw") paint()
     gesture.current = null
-    if (wrap.current?.hasPointerCapture(event.pointerId)) wrap.current.releasePointerCapture(event.pointerId)
+    for (const owner of [wrap.current, host.current]) {
+      try { if (owner?.hasPointerCapture(event.pointerId)) owner.releasePointerCapture(event.pointerId) } catch { /* gone */ }
+    }
     if (!g) return
     if (g.kind === "draw") {
       latest.current.page.add(g.stroke)
@@ -283,7 +294,10 @@ export const TabletSurface = forwardRef<SurfaceHandle, Props>(function TabletSur
            style={{ cursor: erasing ? "cell" : "crosshair", left: fit.x, top: fit.y, width: fit.width, height: fit.height }}
            onPointerEnter={() => { hovered.current = true }}
            onPointerLeave={() => { hovered.current = false }}
-           onPointerDown={down} onPointerMove={move} onPointerUp={up} onPointerCancel={up}
+           onPointerDown={(event: React.PointerEvent) => down(event.nativeEvent)}
+           onPointerMove={(event: React.PointerEvent) => move(event.nativeEvent)}
+           onPointerUp={(event: React.PointerEvent) => up(event.nativeEvent)}
+           onPointerCancel={(event: React.PointerEvent) => up(event.nativeEvent)}
            onContextMenu={(event) => event.preventDefault()}>
         <canvas ref={canvas} style={{ width: "100%", height: "100%" }} />
         {box && (

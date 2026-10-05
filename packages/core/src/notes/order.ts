@@ -36,13 +36,30 @@ export function orderKey(folder: string, root: string): string {
  */
 export function arrange(order: NoteOrder, names: string[], folder: string, root: string): string[] {
   const wanted = order.folders[orderKey(folder, root)] ?? []
-  const remaining = [...names]
+  if (wanted.length === 0) return [...names]
+  // (One pass with a count per name instead of an `indexOf` and a `splice` for each remembered name: a folder of
+  // thousands of notes made this the slowest line of reading the tree. A name that is listed twice is taken once
+  // for each time it is remembered, as before.)
+  const left = new Map<string, number>()
+  for (const name of names) left.set(name, (left.get(name) ?? 0) + 1)
+  const taken = new Map<string, number>()
   const out: string[] = []
   for (const name of wanted) {
-    const at = remaining.indexOf(name)
-    if (at >= 0) out.push(remaining.splice(at, 1)[0]!)
+    const have = left.get(name) ?? 0
+    if (have === 0) continue
+    left.set(name, have - 1)
+    taken.set(name, (taken.get(name) ?? 0) + 1)
+    out.push(name)
   }
-  return [...out, ...remaining]
+  // What was not asked for keeps the order it came in; of a name listed twice, the later one is the one that stays.
+  const skip = new Map(taken)
+  const rest: string[] = []
+  for (const name of names) {
+    const n = skip.get(name) ?? 0
+    if (n > 0) { skip.set(name, n - 1); continue }
+    rest.push(name)
+  }
+  return [...out, ...rest]
 }
 
 export function setOrder(order: NoteOrder, names: string[], folder: string, root: string): NoteOrder {

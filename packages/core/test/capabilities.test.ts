@@ -25,9 +25,23 @@ describe("what this build can do", () => {
     }
   })
 
-  it("finds the page by itself nowhere yet, whatever is installed", () => {
+  it("says which reader is behind the capability, and whether it has Japanese", () => {
+    const windows = capabilitiesFor("win32", { ocr: true, engine: "windows", japanese: false })
+    expect(windows.ocrEngine).toBe("windows")
+    expect(windows.japaneseOCR).toBe(false)
+    expect(capabilitiesFor("win32", { ocr: true, engine: "windows", japanese: true }).japaneseOCR).toBe(true)
+    // No reader: no engine, and no Japanese however the helper was asked.
+    const none = capabilitiesFor("win32", { ocr: false, engine: "windows", japanese: true })
+    expect(none.ocrEngine).toBeNull()
+    expect(none.japaneseOCR).toBe(false)
+  })
+
+  // CHANGED 2026-10-03 (it was "finds the page by itself nowhere yet"): the port's own page finder
+  // (capture/findPage.ts) does it in plain arrays, so it is true on every platform and needs nothing installed.
+  it("finds the page by itself everywhere, whatever is installed", () => {
     for (const platform of platforms) {
-      expect(capabilitiesFor(platform, { ocr: true }).findsThePage).toBe(false)
+      expect(capabilitiesFor(platform, { ocr: true }).findsThePage).toBe(true)
+      expect(capabilitiesFor(platform, { ocr: false }).findsThePage).toBe(true)
     }
   })
 

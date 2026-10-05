@@ -1,0 +1,229 @@
+/*
+ * The window's own shape (the app shell): sizes the Mac's ContentView gives
+ * it, the divider between the notes and the video, and the sidebar's footer
+ * and menus. Loaded AFTER app.css, so where a rule here and one there are the
+ * same strength this one wins.
+ */
+
+/* The sidebar is 250 wide and stays that (ContentView: .frame(width: 250)). */
+.sidebar { width: 250px; flex: 0 0 250px; }
+
+/* The video's width is the divider's: --video-w is set on .app by PaneDivider.
+   Until it has measured, the Mac's 420 : 720 share. Notes keep the rest. */
+.camera { flex: 0 0 var(--video-w, 37%); min-width: 280px; }
+.pane { min-width: 0; }
+
+.pane-divider { position: relative; flex: 0 0 0; z-index: 8; outline: none; }
+.pane-divider::before {
+  content: "";
+  position: absolute;
+  top: 0; bottom: 0; left: -4px;
+  width: 9px;
+  cursor: col-resize;
+}
+.pane-divider::after {
+  content: "";
+  position: absolute;
+  top: 0; bottom: 0; left: -1px;
+  width: 3px;
+  background: var(--wm-accent);
+  opacity: 0;
+  transition: opacity 0.12s;
+  pointer-events: none;
+}
+.pane-divider:hover::after, .pane-divider.dragging::after, .pane-divider:focus-visible::after { opacity: 0.55; }
+
+/* While the divider is held the page does not select text under the pointer. */
+body:has(.pane-divider.dragging) { user-select: none; cursor: col-resize; }
+body:has(.pane-divider.dragging) iframe, body:has(.pane-divider.dragging) video { pointer-events: none; }
+
+/* The sidebar's footer: how many notes and folders, and the Folder menu. */
+.sidebar-footer {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 28px;
+  padding: 0 12px;
+  font-size: 11px;
+  color: var(--wm-soft);
+  border-top: 1px solid var(--wm-rule);
+  position: relative;
+  flex: none;
+}
+.sidebar-footer .spacer { flex: 1; }
+.folder-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 2px 6px;
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--wm-soft);
+  font-size: 11px;
+  cursor: pointer;
+}
+.folder-button:hover, .folder-button[aria-expanded="true"] { background: var(--wm-rule); color: var(--wm-text); }
+
+/* The list when there is nothing to list. */
+.sidebar-empty {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  padding: 16px;
+  text-align: center;
+  color: var(--wm-soft);
+  font-size: 12px;
+}
+.sidebar-empty svg { color: var(--wm-faint); }
+.sidebar-empty .title { font-size: 13px; }
+.sidebar-empty .path {
+  max-width: 100%;
+  overflow-wrap: anywhere;
+  color: var(--wm-faint);
+  font-size: 11px;
+}
+.sidebar-empty .why { color: var(--wm-soft); font-size: 11px; line-height: 1.4; }
+.sidebar-empty .buttons { display: flex; flex-wrap: wrap; gap: 6px; justify-content: center; }
+.sidebar-empty button {
+  padding: 4px 10px;
+  border: 1px solid var(--wm-rule);
+  border-radius: 5px;
+  background: var(--wm-page);
+  color: var(--wm-text);
+  font-size: 12px;
+  cursor: pointer;
+}
+.sidebar-empty button:hover { border-color: var(--wm-accent); color: var(--wm-accent); }
+
+/* The page's own menus: the sidebar's right-click and Folder menus. */
+.float-menu {
+  position: fixed;
+  z-index: 80;
+  min-width: 190px;
+  padding: 4px;
+  border-radius: 8px;
+  border: 1px solid var(--wm-rule);
+  background: var(--wm-chrome);
+  color: var(--wm-text);
+  box-shadow: 0 8px 24px var(--wm-shadow);
+  font-size: 12.5px;
+}
+.float-menu.sub { position: absolute; left: calc(100% - 2px); top: -5px; }
+.float-row { position: relative; }
+.float-menu button {
+  display: flex;
+  justify-content: space-between;
+  gap: 24px;
+  width: 100%;
+  text-align: left;
+  border: 0;
+  background: transparent;
+  padding: 5px 8px;
+  border-radius: 5px;
+  color: var(--wm-text);
+  cursor: default;
+  white-space: nowrap;
+}
+.float-menu button:hover:not(:disabled), .float-menu button:focus-visible:not(:disabled) {
+  background: var(--wm-accent-fill);
+  color: #fff;
+  outline: none;
+}
+.float-menu button:disabled { color: var(--wm-faint); }
+.float-menu .hint { color: var(--wm-faint); }
+.float-menu button:hover:not(:disabled) .hint, .float-menu button:focus-visible:not(:disabled) .hint { color: rgba(255, 255, 255, 0.8); }
+.float-menu hr { border: 0; border-top: 1px solid var(--wm-rule); margin: 4px 2px; }
+
+/*
+ * READABLE IN BOTH APPEARANCES. The Mac asks the system for its colours; here the two palettes are
+ * app.css's, and these are the corrections an audit of every text and icon in both (agents/e2e/p1/
+ * t-theme.mjs, WCAG contrast: 4.5:1 for words, 3:1 for icons) asked for:
+ *  - the "faint" grey the hints, snippets and counts are set in was 2.4:1 (light) and 2.8:1 (dark);
+ *  - the accent behind white words (the open note, a lit button, a hovered menu item) was 4.2:1 in
+ *    light and 2.5:1 in dark, where the accent is the pale blue that reads on the dark page — so
+ *    there is a second accent for FILLS, dark enough for white to sit on in dark mode.
+ */
+@media (prefers-color-scheme: light) {
+  :root { --wm-faint: #666670; --wm-accent: #2870bf; --wm-accent-fill: #2870bf; --wm-hover: #e6e6ea; }
+}
+@media (prefers-color-scheme: dark) {
+  :root { --wm-faint: #92929e; --wm-accent-fill: #2f6fb8; --wm-hover: #31323a; }
+}
+.icon-button.on, .note-row.open, .kind-menu button:hover, .math-foot button.default,
+.video-pop button:hover:not(:disabled), .context-menu button:hover:not(:disabled), .wm-style-btn.on,
+.link-banner { background: var(--wm-accent-fill); }
+.math-foot button.default, .wm-style-btn.on { border-color: var(--wm-accent-fill); }
+.note-row:hover:not(.open), .section-row:hover { background: var(--wm-hover); }
+.note-row.open .snippet, .note-row.open .count { color: rgba(255, 255, 255, 0.86); }
+.tab .close { opacity: 1; color: var(--wm-soft); }
+.tab .close:hover { color: var(--wm-text); }
+
+/* The font-and-colour popover's own controls: the browser's dark buttons are #6b6b6b with light words (4.4:1). */
+.style-pop .actions button, .style-pop input[type="number"], .style-pop select {
+  background: var(--wm-page);
+  color: var(--wm-text);
+  border: 1px solid var(--wm-rule);
+  border-radius: 5px;
+  font: inherit;
+}
+.style-pop .actions button { padding: 3px 12px; cursor: pointer; }
+.style-pop .actions button:hover { border-color: var(--wm-accent); }
+
+/* The tab row: the tabs walk along it, the + is a new note, the chevron lists what is open. */
+.tab-bar { align-items: stretch; height: 32px; }
+.tab-strip { display: flex; align-items: stretch; flex: 1 1 auto; min-width: 0; overflow: hidden; }
+.tab-strip > * { flex: none; }
+.tab { max-width: 190px; }
+.tab .name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tab.open .name { font-weight: 600; }
+.tab-new {
+  align-self: center;
+  width: 24px; height: 22px; margin: 0 4px 0 6px; padding: 0;
+  border: 0; border-radius: 5px;
+  background: var(--wm-hover); color: var(--wm-soft);
+  font-size: 15px; line-height: 1; cursor: pointer;
+}
+.tab-new:hover { color: var(--wm-text); background: var(--wm-rule); }
+.tab-bar .bar-divider { align-self: center; flex: none; }
+.tab-bar .tab-list { align-self: center; flex: none; width: 26px; margin: 0 4px 0 0; font-size: 13px; }
+
+/* The small dialogs: Rename, and the Trash's "are you sure". */
+.modal-backdrop {
+  position: fixed; inset: 0; z-index: 90;
+  display: flex; align-items: center; justify-content: center;
+  background: rgba(0, 0, 0, 0.28);
+}
+.modal {
+  width: min(360px, calc(100vw - 32px));
+  padding: 16px 18px 14px;
+  border: 1px solid var(--wm-rule);
+  border-radius: 10px;
+  background: var(--wm-chrome);
+  color: var(--wm-text);
+  box-shadow: 0 16px 48px var(--wm-shadow);
+  font-size: 13px;
+}
+.modal h3 { margin: 0 0 6px; font-size: 14px; font-weight: 600; }
+.modal p { margin: 0 0 10px; color: var(--wm-soft); line-height: 1.4; }
+.modal input[type="text"] {
+  width: 100%; margin: 0 0 12px; padding: 5px 8px;
+  border: 1px solid var(--wm-rule); border-radius: 6px;
+  background: var(--wm-page); color: var(--wm-text); font: inherit;
+}
+.modal input[type="text"]:focus { outline: 2px solid var(--wm-accent); outline-offset: -1px; }
+.modal p.problem { margin: 8px 0 0; color: #c0392b; font-size: 12px; }
+.modal .buttons { display: flex; justify-content: flex-end; gap: 8px; }
+.modal .buttons button {
+  min-width: 70px; padding: 4px 12px; border-radius: 6px; font: inherit; cursor: pointer;
+  border: 1px solid var(--wm-rule); background: var(--wm-page); color: var(--wm-text);
+}
+.modal .buttons button:focus-visible { outline: 2px solid var(--wm-accent); outline-offset: 1px; }
+.modal .buttons .default { background: var(--wm-accent-fill); border-color: var(--wm-accent-fill); color: #fff; }
+.modal .buttons .destructive { background: #c0392b; border-color: #c0392b; color: #fff; }
+.modal .buttons button:disabled { opacity: 0.5; cursor: default; }

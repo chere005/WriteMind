@@ -14,7 +14,7 @@ import {
 } from "@codemirror/state"
 import { Decoration, EditorView, WidgetType, type DecorationSet } from "@codemirror/view"
 import {
-  end, foldableKeys, hasBody, hiddenRange, sections, setFolded, snap, type Range, union,
+  end, foldableKeys, hasBody, hiddenRange, sectionContaining, setFolded, snap, type Range, union,
 } from "@writemind/core"
 import { notebook } from "./notebook"
 
@@ -125,14 +125,7 @@ export function unfoldAll(view: EditorView): void {
 
 /** The innermost section the caret is in, folded or not. */
 export function sectionAtCaret(state: EditorState) {
-  const caret = state.selection.main.head
-  let best: ReturnType<typeof sections>[number] | null = null
-  for (const section of notebook(state).sections) {
-    if (section.range.location <= caret && caret <= end(section.range)) {
-      if (!best || section.depth > best.depth) best = section
-    }
-  }
-  return best
+  return sectionContaining(state.selection.main.head, notebook(state).sections)
 }
 
 /**
@@ -155,12 +148,53 @@ const keepOutOfFolds = EditorView.updateListener.of((update) => {
     return EditorSelection.cursor(out.location)
   })
   if (moved) {
-    queueMicrotask(() => update.view.dispatch({ selection: EditorSelection.create(ranges, sel.mainIndex) }))
+    // (unless the selection has been moved again meanwhile: a link that opened the fold, for one)
+    queueMicrotask(() => {
+      if (update.view.state.selection !== sel) return
+      update.view.dispatch({ selection: EditorSelection.create(ranges, sel.mainIndex) })
+    })
   }
 })
 
 export const folding: Extension = [foldField, keepOutOfFolds]
 
 /** Whether a range starts inside what a closed section hides. */
-export const insideHidden = (state: EditorState, r: Range): boolean =>
-  state.field(foldField).hidden.some((h) => r.location > h.location && r.location < end(h))
+export function insideHidden(state: EditorState, r: Range): boolean {
+  // The hidden ranges are sorted and do not overlap: the only one that can hold the start of `r` is the last
+  // that begins before it, so this is a search and not a pass (it is asked of every bracket and seam drawn).
+  const hidden = state.field(foldField).hidden
+  let low = 0
+  let high = hidden.length
+  while (low < high) {
+    const middle = (low + high) >> 1
+    if (hidden[middle]!.location < r.location) low = middle + 1
+    else high = middle
+  }
+  return low > 0 && r.location < end(hidden[low - 1]!)
+}
+
+/**
+ * The closed sections that keep `pos` out of sight, so a link can land in a
+ * folded part: opening those (and no others) shows the place.
+ */
+export function foldsHiding(state: EditorState, pos: number): string[] {
+  const collapsed = state.field(foldField).collapsed
+  if (collapsed.size === 0) return []
+  const length = state.doc.length
+  return notebook(state).sections
+    .filter((section) => collapsed.has(section.key) && hasBody(section))
+    .filter((section) => {
+      const r = hiddenRange(section, length)
+      return r.length > 0 && pos > r.location && pos <= end(r)
+    })
+    .map((section) => section.key)
+}
+
+/** Open whichever closed sections hide `pos`. Returns whether any was opened. */
+export function revealAt(view: EditorView, pos: number): boolean {
+  const keys = foldsHiding(view.state, pos)
+  if (keys.length === 0) return false
+  const left = foldedKeys(view.state).filter((key) => !keys.includes(key))
+  view.dispatch({ effects: setFolds.of(left) })
+  return true
+}

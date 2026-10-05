@@ -188,7 +188,9 @@ button { font: inherit; color: inherit; }
   border-bottom: 1px solid var(--wm-rule);
   background: var(--wm-chrome);
   position: relative;
-  z-index: 5;
+  /* Above the pane divider (8): the bar's popovers (maths palette, menus) hang
+     below it and reach across the divider when the video pane is open. */
+  z-index: 9;
 }
 .top-bar > *, .pop-anchor { flex: none; }
 .top-bar .icon-button, .top-bar select { white-space: nowrap; }
@@ -404,16 +406,59 @@ button { font: inherit; color: inherit; }
 /* Whatever the renderer threw, where it can be read. */
 #wm-error {
   position: fixed;
-  left: 0;
-  right: 0;
-  bottom: 0;
+  top: 8px;
+  right: 8px;
   z-index: 100;
-  padding: 6px 12px;
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  max-width: min(560px, calc(100vw - 16px));
+  padding: 6px 6px 6px 12px;
+  border-radius: 6px;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.3);
   font-size: 11px;
   font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   color: #fff;
   background: #c0392b;
 }
+#wm-error .text { flex: 1; overflow-wrap: anywhere; user-select: text; }
+#wm-error .close {
+  flex: none;
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  border: 0;
+  border-radius: 3px;
+  font-size: 14px;
+  line-height: 16px;
+  color: #fff;
+  background: rgba(255, 255, 255, 0.18);
+  cursor: pointer;
+}
+#wm-error .close:hover { background: rgba(255, 255, 255, 0.34); }
+
+/* A save that could not be made, in words, at the foot of the notes pane (App.tsx `say`). */
+.save-problem {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 8px 4px 12px;
+  font-size: 11px;
+  color: #fff;
+  background: #b3412f;
+}
+.save-problem .text { flex: 1; min-width: 0; overflow-wrap: anywhere; user-select: text; }
+.save-problem button {
+  flex: none;
+  padding: 1px 8px;
+  border: 0;
+  border-radius: 3px;
+  font-size: 11px;
+  color: #fff;
+  background: rgba(255, 255, 255, 0.2);
+  cursor: pointer;
+}
+.save-problem button:hover { background: rgba(255, 255, 255, 0.36); }
 
 .camera .trouble {
   position: absolute;
@@ -446,60 +491,97 @@ button { font: inherit; color: inherit; }
   touch-action: none;
 }
 
-/* Maths: typeset in the notebook, and the palette that puts it there. */
-.wm-math { font-family: "Cambria Math", "STIX Two Math", "Times New Roman", serif; white-space: nowrap; }
-.wm-math-block { text-align: center; padding: 6px 0; cursor: text; }
+/* Maths: typeset in the notebook, and the palette that puts it there (the Mac's MathMenu). */
+/* The typeset maths itself (.wm-math, .wm-math-inline, .wm-math-block) is styled by @writemind/editor's math.ts. */
 .math-pop {
   position: fixed;
   z-index: 60;
-  width: 340px;
-  padding: 8px;
+  width: 420px;
+  box-sizing: border-box;
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  overflow-y: auto;
   border: 1px solid var(--wm-rule);
   border-radius: 8px;
   background: var(--wm-chrome);
   box-shadow: 0 8px 24px var(--wm-shadow);
   font-size: 12px;
 }
-.math-pop button, .math-pop input {
-  font: inherit;
-  color: var(--wm-text);
+.math-pop button, .math-pop input { font: inherit; color: var(--wm-text); }
+.math-head { display: flex; align-items: baseline; justify-content: space-between; }
+.math-heading { font-size: 15px; font-weight: 600; }
+.math-sub { font-size: 10px; color: var(--wm-soft); }
+/* One pane with everything in it, scrolled -- not a row of tabs to go hunting through. */
+.math-scroll { height: 176px; flex: none; overflow-y: auto; padding: 0 2px; scroll-padding-top: 22px; }
+.math-group {
+  position: sticky; top: 0; z-index: 1;
+  margin: 0; padding: 2px 0;
+  font-size: 10px; font-weight: 600; color: var(--wm-soft);
+  background: var(--wm-chrome);
 }
-.math-tabs { display: flex; flex-wrap: wrap; gap: 2px; margin-bottom: 6px; }
-.math-tabs button, .math-foot button {
-  padding: 2px 7px;
-  border: 0;
-  border-radius: 4px;
-  background: transparent;
-  color: var(--wm-soft);
-  cursor: pointer;
-}
-.math-tabs button.on, .math-tabs button:hover, .math-foot button:hover { background: var(--wm-accent); color: #fff; }
-.math-grid { display: grid; grid-template-columns: repeat(6, 1fr); gap: 3px; max-height: 190px; overflow: auto; }
+.math-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(42px, 1fr)); gap: 4px; padding-bottom: 4px; }
 .math-grid button {
-  height: 30px;
-  border: 1px solid var(--wm-rule);
-  border-radius: 4px;
-  background: var(--wm-page);
+  min-height: 24px;
+  padding: 0 3px;
+  border: 0;
+  border-radius: 5px;
+  background: color-mix(in srgb, var(--wm-text) 6%, transparent);
   cursor: pointer;
-  font-size: 13px;
+  font: 12px "Cambria Math", "STIX Two Math", Georgia, serif;
+  white-space: nowrap;
+  overflow: hidden;
 }
-.math-grid button:hover { border-color: var(--wm-accent); color: var(--wm-accent); }
-.math-form { display: flex; flex-direction: column; gap: 4px; }
-.math-title { font-weight: 600; color: var(--wm-soft); margin-bottom: 2px; }
-.math-form label { display: flex; align-items: center; gap: 6px; }
-.math-form label span { width: 96px; color: var(--wm-soft); }
-.math-pop input {
-  flex: 1;
+.math-grid button[data-long] { font-size: 10px; }
+.math-grid button.on { background: color-mix(in srgb, var(--wm-accent) 25%, transparent); }
+.math-grid button:hover { background: color-mix(in srgb, var(--wm-accent) 18%, transparent); }
+.math-grid button:focus-visible, .math-pop input:focus-visible, .math-foot button:focus-visible {
+  outline: 2px solid var(--wm-accent); outline-offset: 1px;
+}
+.math-form { display: grid; grid-template-columns: auto 1fr; gap: 6px 8px; align-items: center; }
+.math-form label { display: contents; }
+.math-form label span { text-align: right; color: var(--wm-soft); font-size: 11px; }
+.math-pop input[type="text"], .math-pop input:not([type]), .math-form input, .math-custom input {
   min-width: 0;
   padding: 3px 6px;
   border: 1px solid var(--wm-rule);
   border-radius: 4px;
   background: var(--wm-page);
+  font: 12px ui-monospace, Consolas, monospace;
 }
-.math-custom { margin-top: 6px; display: flex; }
-.math-foot { display: flex; align-items: center; gap: 6px; margin-top: 8px; min-height: 28px; }
-.math-preview { font-size: 15px; color: var(--wm-text); overflow: hidden; text-overflow: ellipsis; max-width: 150px; }
+.math-custom { display: flex; }
+.math-custom input { flex: 1; }
+.math-preview {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+  min-height: 52px;
+  padding: 8px;
+  font-size: 22px;
+  color: var(--wm-text);
+  border: 1px solid var(--wm-rule);
+  border-radius: 6px;
+  background: var(--wm-page);
+  overflow: auto;
+  font-family: "Cambria Math", "STIX Two Math", serif;
+}
+.math-preview[data-ok="0"] { font: 12px ui-monospace, Consolas, monospace; color: var(--wm-soft); white-space: pre-wrap; }
+.math-note { margin-top: -6px; font-size: 10px; color: var(--wm-soft); }
+.math-foot { display: flex; align-items: center; gap: 6px; }
 .math-foot .spacer { flex: 1; }
+.math-own { display: flex; align-items: center; gap: 5px; cursor: pointer; }
+.math-foot button {
+  padding: 3px 14px;
+  border: 1px solid var(--wm-rule);
+  border-radius: 5px;
+  background: transparent;
+  cursor: pointer;
+}
+.math-foot button.default { background: var(--wm-accent); border-color: var(--wm-accent); color: #fff; }
+.math-foot button:disabled { opacity: 0.4; cursor: default; }
+.math-keys { margin-top: -6px; font-size: 10px; color: var(--wm-soft); }
 
 /* ---------- Chrome: the bars, the sections of the text bar, edit mode ---------- */
 
@@ -673,35 +755,34 @@ html.pen-active .stack, html.pen-active .tablet { touch-action: none; }
 .area-details { margin: 8px 0 0; }
 .area-details summary { cursor: pointer; color: var(--wm-soft); }
 
-/* PAD MODE: only the sheet, full screen, and a strip that comes down from the top. */
-.pad { position: fixed; inset: 0; z-index: 9000; background: #000; }
-.pad .tablet-host { background: #000; }
-.pad-strip {
-  position: absolute; left: 0; right: 0; top: 0; z-index: 10;
-  display: flex; align-items: center; gap: 8px; padding: 8px 12px; flex-wrap: wrap;
-  background: rgba(30, 31, 34, 0.96); color: #e8e8ea; box-shadow: 0 4px 18px rgba(0, 0, 0, 0.5);
-  transform: translateY(-110%); transition: transform 0.14s ease-out; pointer-events: none;
-}
-.pad-strip.shown { transform: none; pointer-events: auto; }
-.pad-button {
-  min-height: 48px; min-width: 56px; padding: 0 16px; font-size: 15px; border-radius: 8px;
-  border: 1px solid rgba(255, 255, 255, 0.2); background: rgba(255, 255, 255, 0.1); cursor: pointer;
-}
-.pad-button:hover { background: rgba(255, 255, 255, 0.2); }
-.pad-button.on { background: var(--wm-accent); color: #fff; border-color: transparent; }
-.pad-button.primary { background: var(--wm-accent); color: #fff; font-weight: 600; border-color: transparent; }
-.pad-button.small { min-width: 48px; padding: 0 10px; font-size: 20px; }
-.pad-button.exit { background: #d9382c; border-color: transparent; color: #fff; }
-.pad-button:disabled { opacity: 0.4; cursor: default; }
-.pad-swatch { width: 40px; height: 40px; border-radius: 50%; border: 3px solid transparent; cursor: pointer; padding: 0; }
-.pad-swatch.on { border-color: #fff; box-shadow: 0 0 0 2px var(--wm-accent); }
-.pad-width { min-width: 28px; text-align: center; font-size: 16px; font-variant-numeric: tabular-nums; }
-.pad-sep { width: 1px; align-self: stretch; background: rgba(255, 255, 255, 0.2); margin: 4px 2px; }
-.pad-grow { flex: 1; }
-.pad-strip .pen-chip { min-height: 48px; font-size: 13px; padding: 0 12px; color: #e8e8ea; }
-.pad-strip .pen-pop { top: 100%; color: var(--wm-text); }
-.pad-toast {
-  position: absolute; left: 50%; bottom: 28px; transform: translateX(-50%); z-index: 11;
-  padding: 10px 18px; border-radius: 8px; font-size: 15px;
-  background: rgba(30, 31, 34, 0.95); color: #e8e8ea; pointer-events: none;
-}
+/* The ring that shows where the pen is on the sheet (Grab: the OS arrow is not where the sheet's pen is). */
+.sheet-ring { position: absolute; left: 0; top: 0; width: 0; height: 0; pointer-events: none; z-index: 3; }
+.sheet-ring::after { content: ""; position: absolute; left: calc(var(--ring) / -2); top: calc(var(--ring) / -2); width: var(--ring); height: var(--ring); box-sizing: border-box; border: 2px solid var(--ring-colour, #2D7DD2); border-radius: 50%; background: rgba(255,255,255,0.35); box-shadow: 0 0 0 1px #fff; }
+.sheet-ring.erase::after { border-color: #d9382c; border-radius: 3px; }
+.tablet-host.remapped, .tablet-host.remapped .tablet { cursor: none; }
+body:has(.tablet-host.remapped) .pen-cursor { display: none !important; }
+
+/* GRAB: the overlay window over the whole display. */
+html.grab-page, html.grab-page body { background: rgba(0, 0, 0, 0.01) !important; overflow: hidden; cursor: none; width: 100vw; height: 100vh; }
+html.grab-page #root { position: fixed; inset: 0; }
+.grab-root { position: fixed; inset: 0; touch-action: none; user-select: none; font: 12px system-ui, sans-serif; }
+.grab-sheet { position: absolute; box-shadow: 0 0 0 100vmax rgba(0, 0, 0, 0.16), 0 0 0 2px var(--wm-accent, #2D7DD2); overflow: hidden; }
+.grab-root.mouse .grab-sheet { box-shadow: 0 0 0 100vmax rgba(0, 0, 0, 0.05), 0 0 0 2px rgba(120, 130, 150, 0.9); }
+.grab-root.mouse .grab-sheet .tablet { opacity: 0.85; }
+.grab-sheet .tablet-host { position: absolute; inset: 0; }
+.grab-tag { position: absolute; right: 0; bottom: 0; padding: 1px 6px; font-size: 10px; background: rgba(0,0,0,0.55); color: #fff; pointer-events: none; z-index: 5; }
+.grab-strip { position: absolute; left: 0; right: 0; top: 0; display: flex; flex-wrap: wrap; gap: 4px; padding: 4px; background: rgba(28, 28, 30, 0.92); transform: translateY(-110%); transition: transform 0.12s; z-index: 6; }
+.grab-strip.shown { transform: none; }
+.grab-button { min-height: 28px; padding: 0 8px; border: 1px solid rgba(255,255,255,0.25); border-radius: 5px; background: rgba(255,255,255,0.1); color: #fff; font-size: 12px; }
+.grab-button.on { background: var(--wm-accent, #2D7DD2); border-color: transparent; }
+.grab-button.primary { background: var(--wm-accent, #2D7DD2); font-weight: 600; border-color: transparent; }
+.grab-button.exit { background: #d9382c; border-color: transparent; }
+.grab-button.small { min-width: 28px; font-size: 16px; padding: 0 6px; }
+.grab-button:disabled { opacity: 0.4; }
+.grab-swatch { width: 24px; height: 24px; border-radius: 50%; border: 2px solid transparent; padding: 0; }
+.grab-swatch.on { border-color: #fff; }
+.grab-toast { position: absolute; left: 50%; bottom: 8px; transform: translateX(-50%); padding: 4px 10px; border-radius: 6px; background: rgba(28,28,30,0.92); color: #fff; z-index: 7; pointer-events: none; }
+
+.grab-hud { align-self: center; padding: 1px 6px; font-size: 11px; border-radius: 4px; background: rgba(0,0,0,0.45); color: #e8e8ea; }
+.grab-hud.pen { background: var(--wm-accent, #2D7DD2); }
+.grab-hud.mouse { background: #6b7280; }

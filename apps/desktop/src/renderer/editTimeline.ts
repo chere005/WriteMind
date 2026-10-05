@@ -1,0 +1,245 @@
+/**
+ * ONE timeline of edits for a note: its words and its drawing.
+ *
+ * The words keep CodeMirror's history (it groups typing, maps selections and
+ * is the engine that knows how to take a change back), and the drawing keeps
+ * its snapshots (`DrawingHistory`). What they did not share was an ORDER: the
+ * old Undo guessed ("whichever was edited last, and keep going down it until
+ * it is empty") and an interleaving of word edits and drawing edits undid the
+ * wrong one. Here every edit, on either side, takes a stamp from the note's
+ * `EditClock`, and an Undo takes back whichever side's newest edit has the
+ * highest stamp — exactly the most recent edit, whatever it was. Redo is the
+ * mirror: the undone edit with the LOWEST stamp comes back first, which is the
+ * one that was undone last.
+ *
+ * CodeMirror's undo stack is opaque (typing is grouped inside it), so the
+ * stamps are kept in a state field that mirrors it: after every transaction
+ * the change in `undoDepth` says whether the history started a new event
+ * (push a stamp), joined the last one (refresh its stamp) or took one back
+ * (move a stamp to the redo side). An edit that follows another side's edit
+ * is annotated `isolateHistory("before")`, so typing never joins a group
+ * that a drawing edit has already come after.
+ *
+ * A new edit — on either side — kills every redo that was waiting, on both
+ * sides: a redo is only valid if it was undone AFTER the last new edit
+ * (`undoneAt > clock.lastEdit`), which needs no message between the two
+ * histories.
+ *
+ * Per note: each note has its own clock, its own drawing history, and (while
+ * its tab is behind another) its own editor state in `noteHistory.ts`.
+ */
+
+import { EditorState, StateField, Transaction, type Extension } from "@codemirror/state"
+import { isolateHistory, redo, undo, undoDepth, redoDepth } from "@codemirror/commands"
+import { bounds, itemId, type Drawing } from "@writemind/core"
+import type { DrawingHistory } from "./drawingHistory"
+
+/** The numbering of edits for ONE note. */
+export class EditClock {
+  private n = 0
+  private edited = 0
+  private counted = 0
+  private shared: { stamp: number; left: number; until: number } | null = null
+
+  /** The stamp of the newest new edit (0 before any). */
+  get lastEdit(): number { return this.edited }
+
+  /** How many edits have been made (a shared stamp still counts each one). */
+  get edits(): number { return this.counted }
+
+  /** The stamp for an edit being made now. */
+  edit(): number {
+    this.counted += 1
+    const now = typeof performance !== "undefined" ? performance.now() : Date.now()
+    if (this.shared && now < this.shared.until && this.shared.left > 0) {
+      this.shared.left -= 1
+      this.edited = Math.max(this.edited, this.shared.stamp)
+      return this.shared.stamp
+    }
+    this.shared = null
+    this.edited = ++this.n
+    return this.edited
+  }
+
+  /** A number for an Undo, to say when it happened relative to the edits. */
+  tick(): number { return ++this.n }
+
+  /**
+   * The next `edits` edits, on either side, are ONE edit: a picture read into
+   * words (the words go in AND the picture is put away) is taken back by a
+   * single Undo. Whatever is left unused after `ms` is let go.
+   */
+  together(edits = 2, ms = 2000): void {
+    const now = typeof performance !== "undefined" ? performance.now() : Date.now()
+    this.shared = { stamp: ++this.n, left: edits, until: now + ms }
+  }
+}
+
+interface Undone { stamp: number; at: number }
+/** `edits` is the clock's count of edits right after the words' own latest one. */
+interface Stamps { done: number[]; undone: Undone[]; edits: number }
+
+/** One field per clock (a note), however many times the editor is made for it. */
+const fields = new WeakMap<EditClock, { field: StateField<Stamps>; extension: Extension }>()
+
+/** The stamps of the words' undo and redo stacks, beside CodeMirror's own. */
+export function textTimeline(clock: EditClock): Extension {
+  const held = fields.get(clock)
+  if (held) return held.extension
+  const field = StateField.define<Stamps>({
+    create: () => ({ done: [], undone: [], edits: 0 }),
+    update(value, tr) {
+      // (An undone event whose net change was nothing leaves `docChanged` false.)
+      if (!tr.docChanged && !tr.isUserEvent("undo") && !tr.isUserEvent("redo")) return value
+      const before = undoDepth(tr.startState)
+      const after = undoDepth(tr.state)
+      if (tr.isUserEvent("undo")) {
+        if (value.done.length === 0) return value
+        const done = value.done.slice(0, -1)
+        // An event whose net change was nothing is not kept for Redo: it just goes.
+        const kept = redoDepth(tr.state) > redoDepth(tr.startState)
+        const undone = kept
+          ? [...value.undone, { stamp: value.done[value.done.length - 1]!, at: clock.tick() }] : value.undone
+        return reconcile({ ...value, done, undone }, tr.state)
+      }
+      if (tr.isUserEvent("redo")) {
+        if (value.undone.length === 0) return value
+        const done = [...value.done, value.undone[value.undone.length - 1]!.stamp]
+        return reconcile({ ...value, done, undone: value.undone.slice(0, -1) }, tr.state)
+      }
+      // Changes the history does not keep (a mapping only) are not edits.
+      if (tr.annotation(Transaction.addToHistory) === false) return value
+      const stamp = clock.edit()
+      const done = after === before && value.done.length > 0
+        ? [...value.done.slice(0, -1), stamp]   // joined into the last group
+        : [...value.done, stamp]                // a group of its own
+      // A new edit empties the redo side (CodeMirror does the same).
+      return reconcile({ done, undone: [], edits: clock.edits }, tr.state)
+    },
+  })
+  const extension: Extension = [
+    field,
+    // An edit that comes after an edit of the other side starts a group of
+    // its own: typing must not join a group that the drawing has since moved past.
+    EditorState.transactionExtender.of((tr) => {
+      if (!tr.docChanged || tr.annotation(Transaction.addToHistory) === false) return null
+      if (tr.isUserEvent("undo") || tr.isUserEvent("redo")) return null
+      const mine = tr.startState.field(field, false)
+      return mine && mine.edits !== clock.edits ? { annotations: isolateHistory.of("before") } : null
+    }),
+  ]
+  fields.set(clock, { field, extension })
+  return extension
+}
+
+/** Keep the mirror the length of the real stacks (the history trims its oldest in batches). */
+function reconcile(value: Stamps, state: EditorState): Stamps {
+  const depth = undoDepth(state)
+  const redoable = redoDepth(state)
+  let { done, undone } = value
+  const { edits } = value
+  if (done.length > depth) done = done.slice(done.length - depth)
+  while (done.length < depth) done = [0, ...done]
+  if (undone.length > redoable) undone = undone.slice(undone.length - redoable)
+  return { done, undone, edits }
+}
+
+/** The stamp of the edit an Undo would take back from the words, or null. */
+export function textUndoStamp(state: EditorState, clock: EditClock): number | null {
+  const held = fields.get(clock)
+  const value = held ? state.field(held.field, false) : undefined
+  if (!value || undoDepth(state) === 0) return null
+  return value.done.at(-1) ?? null
+}
+
+/** The stamp of the edit a Redo would bring back to the words, or null (none, or killed by a newer edit). */
+export function textRedoStamp(state: EditorState, clock: EditClock): number | null {
+  const held = fields.get(clock)
+  const value = held ? state.field(held.field, false) : undefined
+  const top = value?.undone.at(-1)
+  if (!top || redoDepth(state) === 0 || top.at <= clock.lastEdit) return null
+  return top.stamp
+}
+
+/** What the words are held in: an editor view, or anything with a state and a dispatch. */
+export interface TextHost {
+  readonly state: EditorState
+  dispatch(tr: Transaction): void
+}
+
+export interface Across {
+  clock: EditClock
+  /** The words; null when no note is open in an editor. */
+  text: TextHost | null
+  history: DrawingHistory
+  /** The drawing as it is now. */
+  current(): Drawing
+  /** Put a drawing back (saved like any other edit). */
+  apply(next: Drawing): void
+}
+
+export type Taken = "text" | "drawing" | "both" | null
+
+/**
+ * Undo or redo exactly one edit — the most recent one, the words' or the
+ * drawing's. Returns what was taken, or null when there was nothing.
+ *
+ * CodeMirror keeps an event whose net effect is nothing (typed a letter and
+ * took it back inside one group): undoing it changes no word on the page, and
+ * a key that visibly does nothing reads as broken. Such a step is not counted;
+ * the step after it is taken as well.
+ */
+export function stepAcross(which: "undo" | "redo", across: Across): Taken {
+  let last: Taken = null
+  for (let guard = 0; guard < 100; guard++) {
+    const before = across.text?.state.doc
+    const took = stepOnce(which, across)
+    if (took === null) return last
+    last = took
+    if (took === "text" && across.text && before && across.text.state.doc.eq(before)) continue
+    return took
+  }
+  return last
+}
+
+function stepOnce(which: "undo" | "redo", across: Across): Taken {
+  const { text, history, clock } = across
+  const words = text
+    ? (which === "undo" ? textUndoStamp(text.state, clock) : textRedoStamp(text.state, clock)) : null
+  const ink = which === "undo" ? history.undoStamp : history.redoStamp(clock)
+  if (words === null && ink === null) return null
+  const takeText = words !== null && (ink === null || (which === "undo" ? words >= ink : words <= ink))
+  const takeDrawing = ink !== null && (words === null || (which === "undo" ? ink >= words : ink <= words))
+  let took: Taken = null
+  if (takeDrawing) {
+    const next = which === "undo" ? history.undo(across.current()) : history.redo(across.current())
+    if (next) { across.apply(next); took = "drawing" }
+  }
+  if (takeText && text) {
+    const ok = (which === "undo" ? undo : redo)({ state: text.state, dispatch: (tr) => text.dispatch(tr) })
+    if (ok) took = took === "drawing" ? "both" : "text"
+  }
+  return took
+}
+
+/**
+ * Where the drawing changed between two states, as one box in document
+ * coordinates, or null when nothing differs. An Undo that changes something
+ * out of sight would look like a key that did nothing.
+ */
+export function changedBox(before: Drawing, after: Drawing, pane: { width: number; height: number }) {
+  const seen = new Map(before.items.map((item) => [itemId(item), item]))
+  const now = new Map(after.items.map((item) => [itemId(item), item]))
+  let box: { x: number; y: number; width: number; height: number } | null = null
+  const add = (item: Drawing["items"][number]) => {
+    const one = bounds(item, pane)
+    if (!box) { box = { ...one }; return }
+    const right = Math.max(box.x + box.width, one.x + one.width)
+    const bottom = Math.max(box.y + box.height, one.y + one.height)
+    box.x = Math.min(box.x, one.x); box.y = Math.min(box.y, one.y)
+    box.width = right - box.x; box.height = bottom - box.y
+  }
+  for (const [id, item] of now) if (seen.get(id) !== item) add(item)
+  for (const [id, item] of seen) if (!now.has(id)) add(item)
+  return box as { x: number; y: number; width: number; height: number } | null
+}

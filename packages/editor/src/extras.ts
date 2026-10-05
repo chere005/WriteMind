@@ -10,8 +10,9 @@ import {
   allOccurrences, applySpan, codeBlock, justTypedTrigger, selectNextOccurrence, substring, wordRange,
   type Range, type SpanStyle,
 } from "@writemind/core"
-import { applyEdit, notebook } from "./notebook"
-import { renderedField } from "./rendered"
+import { applyEdit, atBar, notebook } from "./notebook"
+import { setArmedType } from "./seams"
+import { followLink } from "./preview/follow"
 
 const selection = (view: EditorView): Range => {
   const main = view.state.selection.main
@@ -88,6 +89,7 @@ export const extraKeys: Extension = keymap.of([
  * that is tagged already when the caret is not in one.
  */
 export const tagFence = (language: string): Command => (view) => {
+  if (atBar(view)) { view.dispatch({ effects: setArmedType.of({ kind: "code" }) }); view.focus(); return true }
   const head = view.state.selection.main.head
   const cell = notebook(view.state).cells.find((c) =>
     c.block.kind === "code" && head >= c.range.location && head <= c.range.location + c.range.length)
@@ -103,16 +105,19 @@ export const tagFence = (language: string): Command => (view) => {
 }
 
 /**
- * A link is followed by a click on the rendered page, and by Alt-click on
- * the markdown (where a plain click has to be able to put the caret in it).
+ * A link is followed by a click on it where the rendered page DRAWS it (see
+ * `preview/`), and by Alt-click on the words of a link that are being edited
+ * — the markdown, or the block open on the rendered page — where a plain click
+ * has to be able to put the caret in them. `followLink` hands the drawn
+ * links the same way to go.
  */
 export function linkClicks(onOpen: (href: string) => void): Extension {
-  return EditorView.domEventHandlers({
+  return [followLink.of(onOpen), EditorView.domEventHandlers({
     mousedown(event, view) {
       const target = event.target as HTMLElement | null
       const link = target?.closest?.(".wm-link")
       if (!link) return false
-      if (!(view.state.field(renderedField, false) || event.altKey)) return false
+      if (!event.altKey) return false
       const pos = view.posAtDOM(link)
       const line = view.state.doc.lineAt(pos)
       const at = pos - line.from
@@ -127,5 +132,5 @@ export function linkClicks(onOpen: (href: string) => void): Extension {
       }
       return false
     },
-  })
+  })]
 }

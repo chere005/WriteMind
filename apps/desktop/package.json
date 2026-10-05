@@ -1,6 +1,6 @@
 {
   "name": "@writemind/desktop",
-  "version": "0.2.0",
+  "version": "0.3.0-preview.1",
   "private": true,
   "type": "module",
   "main": "out/main/main.mjs",
@@ -19,6 +19,7 @@
     "@codemirror/language": "^6.12.4",
     "@codemirror/state": "^6.7.5",
     "@codemirror/view": "^6.43.12",
+    "koffi": "^3.3.2",
     "react": "^19.3.0",
     "react-dom": "^19.3.0"
   },

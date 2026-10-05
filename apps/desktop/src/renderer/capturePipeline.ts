@@ -9,7 +9,7 @@
  */
 
 import {
-  flowChartItems, inkMask, pageAspect, placeFlowItems, quadFromPixels, warpToPage,
+  flowChartItems, inkMask, mayHoldChart, pageAspect, placeFlowItems, quadFromPixels, warpToPage,
   type CanvasItem, type FlowWord, type Rect, type Size,
 } from "@writemind/core"
 import { paintStrokes, type InkStroke } from "./tabletPage"
@@ -94,7 +94,7 @@ export function renderSheet(strokes: InkStroke[], pageSize: Size, onPage: Rect, 
 }
 
 /** The most pixels a side of the picture the flow chart is read from has. */
-const READING_SIDE = 800
+const READING_SIDE = 1200
 
 /**
  * A flow chart sketched or photographed on `cut`, as the shapes and arrows
@@ -106,16 +106,53 @@ const READING_SIDE = 800
  */
 export function chartFrom(cut: CanvasImageSource, cutSize: Size, words: FlowWord[],
   pane: Size, colourHex: string, lineWidth: number, landing: Rect | null): CanvasItem[] {
+  return chartOnInk(readingInk(cut, cutSize), words, pane, colourHex, lineWidth, landing)
+}
+
+/** The writing of a picture as the chart reader sees it: lifted off the paper at a size the reading is quick at. */
+interface ReadingInk { mask: Uint8Array; w: number; h: number; scale: number }
+
+/**
+ * `source` drawn at `w`×`h`, halved in steps while it is more than twice as big. One big step of a canvas's bilinear
+ * scaling samples only some of the pixels under each new one, so a pen line a few pixels thick breaks up into dashes and
+ * the chart reader loses a box; halving averages every pixel in.
+ */
+function shrunk(source: CanvasImageSource, from: Size, w: number, h: number): HTMLCanvasElement {
+  let current: CanvasImageSource = source
+  let cw = Math.max(1, Math.round(from.width)), ch = Math.max(1, Math.round(from.height))
+  while (cw >= 2 * w && ch >= 2 * h) {
+    const step = document.createElement("canvas")
+    step.width = Math.max(w, Math.floor(cw / 2))
+    step.height = Math.max(h, Math.floor(ch / 2))
+    const stepContext = step.getContext("2d", { willReadFrequently: true })!
+    stepContext.imageSmoothingQuality = "high"
+    stepContext.drawImage(current, 0, 0, step.width, step.height)
+    current = step
+    cw = step.width
+    ch = step.height
+  }
+  const out = document.createElement("canvas")
+  out.width = w
+  out.height = h
+  const context = out.getContext("2d", { willReadFrequently: true })!
+  context.imageSmoothingQuality = "high"
+  context.drawImage(current, 0, 0, w, h)
+  return out
+}
+
+function readingInk(cut: CanvasImageSource, cutSize: Size): ReadingInk {
   const scale = Math.min(1, READING_SIDE / Math.max(cutSize.width, cutSize.height))
   const w = Math.max(9, Math.round(cutSize.width * scale))
   const h = Math.max(9, Math.round(cutSize.height * scale))
-  const small = document.createElement("canvas")
-  small.width = w
-  small.height = h
+  const small = shrunk(cut, cutSize, w, h)
   const context = small.getContext("2d", { willReadFrequently: true })!
-  context.drawImage(cut, 0, 0, w, h)
   const gray = grayOf(context.getImageData(0, 0, w, h).data, w * h)
-  const mask = inkMask(gray, w, h)
+  return { mask: inkMask(gray, w, h), w, h, scale }
+}
+
+function chartOnInk(ink: ReadingInk, words: FlowWord[], pane: Size, colourHex: string, lineWidth: number,
+  landing: Rect | null): CanvasItem[] {
+  const { mask, w, h, scale } = ink
   const found = flowChartItems(mask, w, h,
     words.map((word) => ({ text: word.text, box: {
       x: word.box.x * scale, y: word.box.y * scale,
@@ -124,6 +161,58 @@ export function chartFrom(cut: CanvasImageSource, cutSize: Size, words: FlowWord
   if (found.length === 0 || !landing) return found
   return placeFlowItems(found, landing, pane)
 }
+
+/** The words of a picture, boxed in ITS pixels - what labels a chart's nodes. */
+export type LabelReader = (canvas: HTMLCanvasElement) => Promise<FlowWord[]>
+
+/** A canvas holding `cut`, for the readers that want one. */
+function canvasOf(cut: CanvasImageSource, size: Size): HTMLCanvasElement {
+  if (typeof HTMLCanvasElement !== "undefined" && cut instanceof HTMLCanvasElement) return cut
+  const canvas = document.createElement("canvas")
+  canvas.width = Math.max(1, Math.round(size.width))
+  canvas.height = Math.max(1, Math.round(size.height))
+  canvas.getContext("2d")!.drawImage(cut, 0, 0, canvas.width, canvas.height)
+  return canvas
+}
+
+/**
+ * `chartFrom` with the NODES LABELLED. The shapes are found first, with no
+ * words (a page of prose gives nothing, and then no reader is ever asked); only
+ * a picture that holds a chart goes to the text reader, and the chart is then
+ * read again with the words in hand (the Mac passes Vision's words in
+ * from the start; asking only when there is something to label is what keeps
+ * a reader that takes a few hundred milliseconds off every prose capture).
+ * A reader that fails or finds nothing leaves the unlabelled chart, which is
+ * what this was before.
+ */
+export async function chartFromLabelled(cut: CanvasImageSource, cutSize: Size, pane: Size, colourHex: string,
+  lineWidth: number, landing: Rect | null, labels: LabelReader | null): Promise<CanvasItem[]> {
+  const ink = readingInk(cut, cutSize)
+  // No closed outline of a box's size: not a chart, and no reader is asked.
+  if (!mayHoldChart(ink.mask, ink.w, ink.h)) return []
+  let words: FlowWord[] = []
+  if (labels) { try { words = await labels(canvasOf(cut, cutSize)) } catch { words = [] } }
+  // The chart as ink alone has it - always read: words that are not words (an arrow head read as a letter) can make
+  // the labelled reading lose a node, and then the ink's own reading is the better chart.
+  const plain = chartOnInk(ink, [], pane, colourHex, lineWidth, landing)
+  if (words.length > 0) {
+    const labelled = chartOnInk(ink, words, pane, colourHex, lineWidth, landing)
+    if (labelled.length > 0 && labelled.length >= plain.length) return labelled
+  }
+  return plain
+}
+
+/** What a capture says about the chart it read, or null when it read none. */
+export function chartSummary(chart: CanvasItem[]): string | null {
+  const nodes = chart.filter((item) => item.kind === "shape").length
+  if (chart.length === 0) return null
+  const named = labelledNodes(chart)
+  return `Read a flow chart: ${nodes} ${nodes === 1 ? "node" : "nodes"}${named > 0 ? `, ${named} labelled` : ""}.`
+}
+
+/** How many of a chart's nodes arrived with a label. */
+export const labelledNodes = (chart: CanvasItem[]): number =>
+  chart.filter((item) => item.kind === "shape" && item.shape.label.trim() !== "").length
 
 /**
  * The flow chart on the tablet's sheet. The reader is given what a camera
@@ -140,6 +229,24 @@ export function sheetChart(strokes: InkStroke[], pageSize: Size, region: Rect, f
   const reading = renderSheet(strokes, pageSize, region, scale, "#000", margin)
   const found = chartFrom(reading, { width: reading.width, height: reading.height }, [], pane,
     colourHex, lineWidth, null)
+  if (found.length === 0 || !landing) return found
+  const fw = Math.max(1, frame.width), fh = Math.max(1, frame.height)
+  return placeFlowItems(found, {
+    x: landing.x + (region.x - margin - frame.x) / fw * landing.width,
+    y: landing.y + (region.y - margin - frame.y) / fh * landing.height,
+    width: (reading.width / fw) * landing.width,
+    height: (reading.height / fh) * landing.height,
+  }, pane)
+}
+
+/** `sheetChart` with the nodes labelled by the text reader (see `chartFromLabelled`). */
+export async function sheetChartLabelled(strokes: InkStroke[], pageSize: Size, region: Rect, frame: Rect,
+  scale: number, pane: Size, colourHex: string, lineWidth: number, landing: Rect | null,
+  labels: LabelReader | null): Promise<CanvasItem[]> {
+  const margin = Math.round(Math.min(region.width, region.height) * 0.04) + 8
+  const reading = renderSheet(strokes, pageSize, region, scale, "#000", margin)
+  const found = await chartFromLabelled(reading, { width: reading.width, height: reading.height }, pane,
+    colourHex, lineWidth, null, labels)
   if (found.length === 0 || !landing) return found
   const fw = Math.max(1, frame.width), fh = Math.max(1, frame.height)
   return placeFlowItems(found, {

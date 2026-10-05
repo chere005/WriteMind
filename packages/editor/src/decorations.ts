@@ -18,17 +18,17 @@
  * milliseconds a keystroke here.
  */
 
-import { RangeSetBuilder, type EditorState, type Extension } from "@codemirror/state"
+import { RangeSetBuilder, type ChangeDesc, type EditorState, type Extension, type Range as CMRange } from "@codemirror/state"
 import {
   Decoration, EditorView, ViewPlugin, WidgetType,
   type DecorationSet, type ViewUpdate,
 } from "@codemirror/view"
 import {
-  codeTokens, headingLevel, languageFrom, toggleTodo, todoItem,
-  type CodeTokenKind, type PositionedBlock,
+  codeTokens, firstCellFromBy, headingLevel, languageFrom, toggleTodo, todoItem,
+  type Block, type CodeToken, type CodeTokenKind, type MarkerStructure, type Range,
 } from "@writemind/core"
-import { applyEdit, notebook } from "./notebook"
-import { renderedField } from "./rendered"
+import { applyEdit, hullOf, notebook } from "./notebook"
+import { marksAway } from "./rendered"
 
 /** A round bullet where the file has `- `. */
 class BulletWidget extends WidgetType {
@@ -70,7 +70,7 @@ class TodoWidget extends WidgetType {
 const HEADING_MARKS = [1, 2, 3, 4, 5, 6].map((n) => Decoration.line({ class: `wm-h${n}` }))
 const faded = Decoration.mark({ class: "wm-marker" })
 const quoted = Decoration.line({ class: "wm-quote" })
-const codeLine = Decoration.line({ class: "wm-code-line" })
+const codeLine = Decoration.line({ class: "wm-code-line", attributes: { spellcheck: "false" } })
 const bulletMark = Decoration.replace({ widget: new BulletWidget() })
 const todoMarks = {
   open: Decoration.replace({ widget: new TodoWidget(false) }),
@@ -89,8 +89,9 @@ const tokenMarks: Record<CodeTokenKind, Decoration> = {
 const BOLD_MARK = Decoration.mark({ class: "wm-bold" })
 const ITALIC_MARK = Decoration.mark({ class: "wm-italic" })
 const STRIKE_MARK = Decoration.mark({ class: "wm-strike" })
-const CODE_MARK = Decoration.mark({ class: "wm-code" })
+const CODE_MARK = Decoration.mark({ class: "wm-code", attributes: { spellcheck: "false" } })
 const UNDERLINE_MARK = Decoration.mark({ class: "wm-underline" })
+const HIGHLIGHT_MARK = Decoration.mark({ class: "wm-highlight" })
 
 /**
  * The inline patterns, exactly the Mac's (`MarkdownSourceStyle.Patterns`):
@@ -106,6 +107,9 @@ const BOLD = /\*\*(?=\S)(?:.*?\S)\*\*|(?<![A-Za-z0-9])__(?=\S)(?:.*?\S)__(?![A-Z
 const ITALIC = /\*(?=\S)(?:[^*_\n]*?[^\s*_])\*|(?<![A-Za-z0-9])_(?=\S)(?:[^*_\n]*?[^\s*_])_(?![A-Za-z0-9])/g
 const STRIKE = /~~(?=\S)(?:[^~\n]*?\S)~~/g
 const UNDERLINE = /<u>(.*?)<\/u>/g
+// What `/link` writes round a highlighted run, and any other tag of the toolbar's own HTML.
+const MARK_TAG = /<mark\b[^>]*>(.*?)<\/mark>/g
+const ANY_TAG = /<\/?[A-Za-z][^>\n]*>/g
 
 /**
  * `<span style="font-family: …; font-size: …; color: …">words</span>` — the
@@ -140,6 +144,9 @@ const SPAN = /<span style="([^"]*)">/g
 const LINK = /\[([^\]\n]+)\]\(([^)\n]+)\)/g
 const linkMark = Decoration.mark({ class: "wm-link" })
 const hidden = Decoration.replace({})
+
+/** The colours of a code block, kept while the block is: an edit makes a new block, and the old one is let go. */
+const tokenCache = new WeakMap<Block, CodeToken[]>()
 
 interface Entry { from: number; to: number; deco: Decoration; kind: 0 | 1 | 2; atomic: boolean }
 // kind: 0 = line decoration (sorts first at a position), 1 = mark/replace
@@ -220,6 +227,35 @@ function inlineSpans(text: string, offset: number, out: Entry[]): void {
     }
   }
 
+  if (text.includes("<mark")) {
+    MARK_TAG.lastIndex = 0
+    let match: RegExpExecArray | null
+    while ((match = MARK_TAG.exec(text))) {
+      const end = match.index + match[0].length
+      const openEnd = match.index + match[0].indexOf(">") + 1
+      const closeStart = end - 7
+      if (!free(match.index, openEnd) || !free(closeStart, end)) continue
+      out.push({ from: offset + match.index, to: offset + openEnd, deco: faded, kind: 1, atomic: true })
+      if (closeStart > openEnd) {
+        out.push({ from: offset + openEnd, to: offset + closeStart, deco: HIGHLIGHT_MARK, kind: 1, atomic: false })
+      }
+      out.push({ from: offset + closeStart, to: offset + end, deco: faded, kind: 1, atomic: true })
+      cover(match.index, openEnd)
+      cover(closeStart, end)
+    }
+  }
+
+  if (text.includes("<")) {
+    ANY_TAG.lastIndex = 0
+    let match: RegExpExecArray | null
+    while ((match = ANY_TAG.exec(text))) {
+      const end = match.index + match[0].length
+      if (!free(match.index, end)) continue
+      out.push({ from: offset + match.index, to: offset + end, deco: faded, kind: 1, atomic: true })
+      cover(match.index, end)
+    }
+  }
+
   if (text.includes("*") || text.includes("_")) {
     for (const [pattern, deco] of [[BOLD, BOLD_MARK], [ITALIC, ITALIC_MARK]] as const) {
       pattern.lastIndex = 0
@@ -269,7 +305,7 @@ function touchedLines(state: EditorState): Set<number> {
 function editingKey(state: EditorState): string {
   const doc = state.doc
   // On the rendered page a line's marks show while the selection is on it.
-  let key = state.field(renderedField, false) ? `r:${[...touchedLines(state)].join(",")}|` : ""
+  let key = marksAway(state) ? `r:${[...touchedLines(state)].join(",")}|` : ""
   for (const r of state.selection.ranges) {
     const first = doc.lineAt(r.from)
     const last = doc.lineAt(r.to)
@@ -293,35 +329,38 @@ function build(state: EditorState, from: number, to: number): { all: DecorationS
   const doc = state.doc
   const cells = notebook(state).cells
 
-  // Code cells that reach into the window, and which of its lines are fence.
-  const codeCells: PositionedBlock[] = []
-  for (const cell of cells) {
-    if (cell.range.location > to) break
-    if (cell.block.kind === "code" && cell.range.location + cell.range.length >= from) codeCells.push(cell)
-  }
+  const startLine = doc.lineAt(Math.min(from, doc.length)).number
+  const endLine = doc.lineAt(Math.min(to, doc.length)).number
+
+  // Code cells that reach into the window, and which of ITS lines are fence (the lines of a long cell that are
+  // far off the page are nobody's business). The cells are in order: search for the first, walk to the last.
   const fenceLines = new Set<number>()
-  for (const cell of codeCells) {
+  for (let i = Math.max(0, firstCellFromBy(cells, from, (cell) => cell.range) - 1); i < cells.length; i++) {
+    const cell = cells[i]!
+    if (cell.range.location > to) break
+    if (cell.block.kind !== "code" || cell.range.location + cell.range.length < from) continue
     const first = doc.lineAt(cell.range.location)
     const last = doc.lineAt(Math.max(cell.range.location, cell.range.location + cell.range.length - 1))
-    for (let n = first.number; n <= last.number; n++) fenceLines.add(n)
-    // The colours: the body is everything after the opening fence's line.
-    if (cell.block.kind === "code" && last.number > first.number) {
+    for (let n = Math.max(first.number, startLine); n <= Math.min(last.number, endLine); n++) fenceLines.add(n)
+    // The colours: the body is everything after the opening fence's line. The tokens of a block are worked out
+    // once (the block is the same object until it is edited) and only those on the page are decorated.
+    if (last.number > first.number) {
       const language = languageFrom(cell.block.language)
       if (language && language !== "plain") {
         const bodyStart = first.to + 1
-        for (const token of codeTokens(cell.block.body, language)) {
-          entries.push({
-            from: bodyStart + token.range.location,
-            to: bodyStart + token.range.location + token.range.length,
-            deco: tokenMarks[token.kind], kind: 1, atomic: false,
-          })
+        let tokens = tokenCache.get(cell.block)
+        if (!tokens) { tokens = codeTokens(cell.block.body, language); tokenCache.set(cell.block, tokens) }
+        for (const token of tokens) {
+          const tokenFrom = bodyStart + token.range.location
+          const tokenTo = tokenFrom + token.range.length
+          if (tokenTo < from) continue
+          if (tokenFrom > to) break
+          entries.push({ from: tokenFrom, to: tokenTo, deco: tokenMarks[token.kind], kind: 1, atomic: false })
         }
       }
     }
   }
 
-  const startLine = doc.lineAt(Math.min(from, doc.length)).number
-  const endLine = doc.lineAt(Math.min(to, doc.length)).number
   for (let number = startLine; number <= endLine; number++) {
     const line = doc.line(number)
     const text = line.text
@@ -379,7 +418,7 @@ function build(state: EditorState, from: number, to: number): { all: DecorationS
 
   // The rendered page: the marks are put away, except on the lines the
   // selection is in, where the source shows so it can be edited.
-  if (state.field(renderedField, false)) {
+  if (marksAway(state)) {
     const touched = touchedLines(state)
     for (const entry of entries) {
       if (entry.deco === faded && !touched.has(doc.lineAt(entry.from).number)) entry.deco = hidden
@@ -398,6 +437,27 @@ function build(state: EditorState, from: number, to: number): { all: DecorationS
 
 /** How much beyond the viewport is decorated, so a scroll rarely rebuilds. */
 const MARGIN_LINES = 30
+
+/**
+ * Whether the page (the view's visible ranges) and the lines of an edit are still inside the window that was decorated.
+ * Only the window is in the OLD document's positions and goes through the change; the visible ranges and the lines
+ * of the edit are already in the new document's. (A plugin is updated after the view has been, so mapping the visible
+ * ranges as well threw `Position N is out of range for changeset of length M` whenever the page reached the end of a
+ * document that had just grown: the first character of a new note, a keystroke at the end of a short one, a
+ * `setDoc`. CodeMirror took the plugin down for that view, and headings, bullets and bold stayed raw markdown until
+ * the note was reopened.)
+ */
+export function windowHoldsPage(
+  changes: ChangeDesc, decorated: { from: number; to: number },
+  visible: readonly { from: number; to: number }[], region: { from: number; to: number },
+): { holds: boolean; from: number; to: number } {
+  const from = changes.mapPos(decorated.from, -1)
+  const to = changes.mapPos(decorated.to, 1)
+  const visibleFrom = visible.length ? visible[0]!.from : 0
+  const visibleTo = visible.length ? visible[visible.length - 1]!.to : 0
+  const holds = !(visibleFrom < from || visibleTo > to || region.from < from || region.to > to)
+  return { holds, from, to }
+}
 
 class Decorator {
   decorations: DecorationSet = Decoration.none
@@ -428,9 +488,57 @@ class Decorator {
     this.editing = editingKey(view.state)
   }
 
+  /**
+   * A keystroke re-decorates the lines it changed and nothing else: the decorations are mapped through the change
+   * and the lines of the change are built again (every decoration but a code block's is a function of its own line,
+   * the selection's key and the rendered/markers switch). Returns false when that is not safe — the edit touches a
+   * code block or a line with a fence in it (what is code depends on fences far below the edit), or the window
+   * would no longer hold the page — and the whole window is built again.
+   */
+  private patch(update: ViewUpdate): boolean {
+    const { state, startState, changes } = update
+    if (marksAway(state) !== marksAway(startState)) return false
+    const hull = hullOf(changes)
+    const doc = state.doc
+    const regionFrom = doc.lineAt(Math.min(hull.from, doc.length)).from
+    const regionTo = doc.lineAt(Math.min(hull.toNew, doc.length)).to
+    // The page must still be inside what is decorated (positions as they are now, after the change).
+    const page = windowHoldsPage(changes, { from: this.from, to: this.to }, update.view.visibleRanges, { from: regionFrom, to: regionTo })
+    if (!page.holds) return false
+    // A fence in the lines before or after the change: what is code depends on it, far below the edit.
+    const was = startState.doc
+    const wasTo = was.lineAt(Math.min(hull.toOld, was.length)).to
+    if (state.sliceDoc(regionFrom, regionTo).includes("```") || startState.sliceDoc(regionFrom, wasTo).includes("```")) return false
+    // Lines of a code block are decorated as code, from the whole block.
+    const cells = notebook(state).cells
+    for (let i = Math.max(0, firstCellFromBy(cells, regionFrom, (cell) => cell.range) - 1); i < cells.length; i++) {
+      const cell = cells[i]!
+      if (cell.range.location > regionTo + 1) break
+      if (cell.block.kind === "code" && cell.range.location + cell.range.length >= regionFrom - 1) return false
+    }
+    // The bullets whose markers are being edited: when that changes, more than these lines changes.
+    const key = editingKey(state)
+    if (key !== this.editing) return false
+
+    const built = build(state, regionFrom, regionTo)
+    const patched = (set: DecorationSet, fresh: DecorationSet): DecorationSet => {
+      const add: CMRange<Decoration>[] = []
+      for (const cursor = fresh.iter(); cursor.value; cursor.next()) add.push(cursor.value.range(cursor.from, cursor.to))
+      return set.map(changes).update({ filter: () => false, filterFrom: regionFrom, filterTo: regionTo, add })
+    }
+    this.decorations = patched(this.decorations, built.all)
+    this.atomic = patched(this.atomic, built.atomic)
+    this.from = page.from
+    this.to = page.to
+    return true
+  }
+
   update(update: ViewUpdate): void {
-    if (update.docChanged
-      || update.state.field(renderedField, false) !== update.startState.field(renderedField, false)) {
+    if (update.docChanged) {
+      if (!this.patch(update)) this.rebuild(update.view)
+      return
+    }
+    if (marksAway(update.state) !== marksAway(update.startState)) {
       this.rebuild(update.view)
       return
     }
@@ -449,3 +557,34 @@ export const notebookDecorations: Extension = ViewPlugin.fromClass(Decorator, {
   decorations: (plugin) => plugin.decorations,
   provide: (plugin) => EditorView.atomicRanges.of((view) => view.plugin(plugin)?.atomic ?? Decoration.none),
 })
+
+/**
+ * The markers on the lines from `from` to `to`, and which of them are the two halves of
+ * a bold / italic / strike / code run — what deleting over hidden markers needs
+ * (`MarkerDeletion`). It is read off the very decorations the lines are drawn with, so a
+ * marker the page hides is a marker a delete takes whole, and the editor's own
+ * reading of `snake_case_name` (not an emphasis) is the one that counts.
+ */
+export function markerStructureAround(state: EditorState, from: number, to: number): MarkerStructure {
+  const start = state.doc.lineAt(from).from
+  const stop = state.doc.lineAt(Math.min(to, state.doc.length)).to
+  const { all } = build(state, start, stop)
+  const markers: Range[] = []
+  const styled: Range[] = []
+  for (const cursor = all.iter(); cursor.value; cursor.next()) {
+    const length = cursor.to - cursor.from
+    if (length <= 0) continue
+    const value = cursor.value
+    if (value === faded || value === hidden) markers.push({ location: cursor.from, length })
+    else if (value === BOLD_MARK || value === ITALIC_MARK || value === STRIKE_MARK || value === CODE_MARK) {
+      styled.push({ location: cursor.from, length })
+    }
+  }
+  const pairs: MarkerStructure["pairs"] = []
+  for (const run of styled) {
+    const open = markers.find((marker) => marker.location + marker.length === run.location)
+    const close = markers.find((marker) => marker.location === run.location + run.length)
+    if (open && close) pairs.push({ open, close })
+  }
+  return { markers, pairs }
+}

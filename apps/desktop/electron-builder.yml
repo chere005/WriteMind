@@ -22,6 +22,11 @@ files:
 # in `app.asar.unpacked` when it is running from an archive.
 asarUnpack:
   - out/helpers/**
+  # The pen guard runs as a separate process (electron.exe with ELECTRON_RUN_AS_NODE=1): it must be a real file.
+  - out/main/pen-guard.mjs
+  # koffi prebuilt native addon (global pen/mouse hook, main/penHook.ts) must be a real file.
+  - node_modules/koffi/**
+  - node_modules/@koromix/**
 
 mac:
   category: public.app-category.productivity

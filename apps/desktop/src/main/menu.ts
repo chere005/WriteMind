@@ -94,6 +94,18 @@ export function buildMenu(options: MenuOptions): MenuItemConstructorOptions[] {
     item("expandSelection", "Expand Selection"),
     item("selectNext", "Select Next Occurrence"),
     item("selectAll", "Select All Occurrences"),
+    SEPARATOR,
+    {
+      label: "Find",
+      submenu: [
+        item("find", "Find…"),
+        item("findReplace", "Find and Replace…"),
+        item("findNext", "Find Next"),
+        item("findPrevious", "Find Previous"),
+        item("useSelectionForFind", "Use Selection for Find"),
+        item("jumpToSelection", "Jump to Selection"),
+      ],
+    },
   ]
 
   const view: MenuItemConstructorOptions[] = [
@@ -107,9 +119,8 @@ export function buildMenu(options: MenuOptions): MenuItemConstructorOptions[] {
     item("unfoldSection", "Unfold Section"),
     item("foldAll", "Fold All Sections"),
     item("unfoldAll", "Unfold All Sections"),
-    SEPARATOR,
-    { role: "togglefullscreen" },
-    ...(options.dev ? [{ role: "toggleDevTools" as const, accelerator: "F12" }] : []),
+    // No Toggle Full Screen: nothing in this app goes full screen (Sean's rule).
+    ...(options.dev ? [SEPARATOR, { role: "toggleDevTools" as const, accelerator: "F12" }] : []),
   ]
 
   const format: MenuItemConstructorOptions[] = [
@@ -142,6 +153,7 @@ export function buildMenu(options: MenuOptions): MenuItemConstructorOptions[] {
   const insert: MenuItemConstructorOptions[] = [
     item("insertImage", "Image…", { enabled: state.hasNote }),
     item("insertTextBox", "Text Box", { enabled: state.hasNote }),
+    item("insertMath", "Maths…", { enabled: state.hasNote }),
     SEPARATOR,
     item("codeBlock", state.codeLanguage ? `${state.codeLanguage} Block` : "Code Block",
       { enabled: state.hasNote }),
@@ -191,7 +203,7 @@ export function buildMenu(options: MenuOptions): MenuItemConstructorOptions[] {
       checked: state.cameraId === TABLET_SOURCE,
       click: () => run(`camera:${TABLET_SOURCE}`),
     },
-    item("tabletPad", state.pad ? "Exit Tablet Pad" : "Tablet Pad (Full Screen)"),
+    item("tabletGrab", "Grab Tablet to Sheet"),
     SEPARATOR,
     item("cameraOff", "Turn Camera Off", { enabled: state.cameraId !== null }),
     item("cameraRefresh", "Refresh Device List"),

@@ -1,0 +1,138 @@
+{
+ "source": "real WebHID metadata captured on this machine by tools/probe1.mjs (8BitDo gamepad, NOT the Wacom: it has no HID nodes at the moment)",
+ "vendorId": 11720,
+ "productId": 12554,
+ "productName": "Controller (8BitDo Ultimate 2C Wireless Controller)",
+ "collections": [
+  {
+   "usagePage": 1,
+   "usage": 5,
+   "type": 0,
+   "children": [],
+   "inputReports": [
+    {
+     "reportId": 0,
+     "items": [
+      {
+       "isConstant": false,
+       "isArray": false,
+       "isRange": false,
+       "hasNull": false,
+       "logicalMinimum": 0,
+       "logicalMaximum": -1,
+       "physicalMinimum": 0,
+       "physicalMaximum": -1,
+       "reportSize": 16,
+       "reportCount": 1,
+       "usages": [
+        65584
+       ]
+      },
+      {
+       "isConstant": false,
+       "isArray": false,
+       "isRange": false,
+       "hasNull": false,
+       "logicalMinimum": 0,
+       "logicalMaximum": -1,
+       "physicalMinimum": 0,
+       "physicalMaximum": -1,
+       "reportSize": 16,
+       "reportCount": 1,
+       "usages": [
+        65585
+       ]
+      },
+      {
+       "isConstant": false,
+       "isArray": false,
+       "isRange": false,
+       "hasNull": false,
+       "logicalMinimum": 0,
+       "logicalMaximum": -1,
+       "physicalMinimum": 0,
+       "physicalMaximum": -1,
+       "reportSize": 16,
+       "reportCount": 1,
+       "usages": [
+        65587
+       ]
+      },
+      {
+       "isConstant": false,
+       "isArray": false,
+       "isRange": false,
+       "hasNull": false,
+       "logicalMinimum": 0,
+       "logicalMaximum": -1,
+       "physicalMinimum": 0,
+       "physicalMaximum": -1,
+       "reportSize": 16,
+       "reportCount": 1,
+       "usages": [
+        65588
+       ]
+      },
+      {
+       "isConstant": false,
+       "isArray": false,
+       "isRange": false,
+       "hasNull": false,
+       "logicalMinimum": 0,
+       "logicalMaximum": -1,
+       "physicalMinimum": 0,
+       "physicalMaximum": -1,
+       "reportSize": 16,
+       "reportCount": 1,
+       "usages": [
+        65586
+       ]
+      },
+      {
+       "isConstant": false,
+       "isArray": false,
+       "isRange": true,
+       "hasNull": false,
+       "logicalMinimum": 0,
+       "logicalMaximum": 0,
+       "physicalMinimum": 0,
+       "physicalMaximum": 0,
+       "reportSize": 1,
+       "reportCount": 10,
+       "usageMinimum": 589825,
+       "usageMaximum": 589834
+      },
+      {
+       "isConstant": false,
+       "isArray": false,
+       "isRange": false,
+       "hasNull": true,
+       "logicalMinimum": 1,
+       "logicalMaximum": 8,
+       "physicalMinimum": 0,
+       "physicalMaximum": 4155,
+       "reportSize": 4,
+       "reportCount": 1,
+       "usages": [
+        65593
+       ]
+      },
+      {
+       "isConstant": true,
+       "isArray": true,
+       "isRange": false,
+       "hasNull": false,
+       "logicalMinimum": 0,
+       "logicalMaximum": 0,
+       "physicalMinimum": 0,
+       "physicalMaximum": 0,
+       "reportSize": 18,
+       "reportCount": 1,
+       "usages": []
+      }
+     ]
+    }
+   ]
+  }
+ ]
+}

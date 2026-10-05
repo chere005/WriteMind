@@ -1,38 +1,56 @@
 /**
- * The camera: a viewfinder, a box drawn on it by hand, and two ways to take
- * what is inside the box — the WRITING lifted off the paper, or the page as
- * a photograph.
+ * The camera: a viewfinder, a box drawn on it by hand, and the ways to take
+ * what is inside the box — the WRITING lifted off the paper and traced into
+ * outlines, the PAGE as a photograph, the RAW picture as the camera sees it.
  *
  * What is Apple's and what is ours, in one place. Finding the page in the
- * frame is Vision's document segmentation on the Mac and does not exist on
- * Windows, so the page's four corners are dragged by hand on both ("Straighten")
- * and the perspective is undone HERE, in `@writemind/core`'s `warpToPage` —
- * the one line under the viewfinder says so, because that absence changes
- * what the user has to do. Everything else — the local-mean threshold that
- * lifts ink off paper, the connected components that drop the printed dot
- * grid, the page shape that keeps two captures the same size, the flow-chart
- * reader that turns a sketched chart into real nodes and arrows — is
- * `@writemind/core` and runs the same on either platform.
+ * frame is Vision's document segmentation on the Mac; here it is
+ * `findPage` in `@writemind/core` (a threshold-and-hull finder with a line
+ * vote for pale desks, refined along the real edge), so a capture squares the
+ * page up by itself and "Straighten" starts its four corners ON the page,
+ * ready to be dragged if it got one wrong. The perspective is undone in
+ * `warpToPage`, and everything else — the local-mean threshold that lifts ink
+ * off paper, the connected components that drop the printed dot grid, the page
+ * shape that keeps two captures the same size, the outline tracer, the
+ * flow-chart reader that turns a sketched chart into real nodes and arrows —
+ * is `@writemind/core` and runs the same on either platform.
  *
  * THE TABLET IS A SECOND SOURCE for this same pane (picked beside the cameras
  * in Input Devices): a sheet to write on with the pen instead of a page under
  * a document camera. The box, the Writing and Page buttons, the page shape,
  * the placement, the flow-chart reader and the one-step undo are all this
  * file's, shared; only where the picture comes from differs (`takeTablet`).
+ *
+ * THE STREAM is `useCameraStream`: opened when the pane is on screen, every
+ * track stopped when it is put away, the source changes or the camera is
+ * unplugged. The pane draws the Mac's four stand-ins when there is no picture
+ * (no camera selected, access off, unavailable, starting).
  */
 
-import { useCallback, useEffect, useRef, useState } from "react"
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react"
 import {
-  displayedFrame, EDGE_INSET, inkBox, inkMask, pageBox, placement, quadFromPixels, regionOf,
-  resolveShape, shapeSize, type CanvasItem, type Rect, type Size,
+  boxAction, composeZoom, displayedFrame, isBoxDrag, placement, regionOf, unzoomedPoint, unzoomedRect,
+  zoomedPoint, zoomedRect, zoomOffset, zoomScale, type Rect, type Size,
 } from "@writemind/core"
-import { bandUnder, chartFrom, grayOf, measuredPage, straightened, type Corners } from "./capturePipeline"
-import { TABLET_SOURCE } from "../shared/commands"
+import { bandUnder, chartFromLabelled, chartSummary, type Corners } from "./capturePipeline"
+import { detectPage, takePicture } from "./cameraTake"
+import {
+  normalRotation, rememberedRotation, rememberedShape, rememberedZoom, rememberRotation, rememberShape, rememberZoom,
+  type CaptureMode, type Rotation, type ZoomBox,
+} from "./cameraSettings"
+import { idleProblem } from "./cameraDevices"
+import { useCameraStream } from "./useCameraStream"
+import { ocrAvailable, readCanvasLines, wordsForChart } from "./ocrClient"
+import { CAMERA_OFF, TABLET_SOURCE } from "../shared/commands"
 import { setEraser, usePenSettings } from "./penSettings"
 import { TabletSurface, type SurfaceHandle } from "./TabletSurface"
 import { keepClearAfter, keptClearAfter, sheet, takeFromSheet, type Capture } from "./tabletCapture"
 import { TabletAreaHelp } from "./tabletArea"
+import { OrientationSelect } from "./OrientationSelect"
+import { usePenFeed } from "./usePenFeed"
+import { PenHud } from "./PenHud"
 import type { Platform } from "./wm"
+import "./camera.css"
 
 export type { Capture }
 
@@ -44,13 +62,27 @@ interface Props {
   pane: Size
   onCapture(capture: Capture): void
   onHide(): void
-  /** Take the whole tablet for the sheet: the full-screen pad. */
-  onPad?(): void
-  /** The camera picked from the Input Devices menu (or the sidebar's video menu). */
+  /** The pen's colour and width, which the sheet strip changes. */
+  onPenColour?(hex: string): void
+  onPenWidth?(width: number): void
+  /**
+   * The source picked from the Input Devices menu (or the sidebar's video menu): a camera's id, the
+   * tablet, "off" (no source, the Mac's placeholder), or null for the system's default camera.
+   */
   preferred?: string | null
+  /** Every camera the machine has, for the placeholder's own list. */
+  cameras?: { id: string; name: string }[]
+  onPickSource?(id: string): void
+  onRefreshCameras?(): void
+  /** The camera actually in use (what the menu puts its tick on), or null. */
+  onActiveCamera?(id: string | null): void
+  /** The notes pane is showing; when it is not, the corner offers the way back. */
+  showEditor?: boolean
+  onToggleEditor?(): void
+  /** The words read out of a box, for the note. */
+  onReadText?(lines: string[]): void
 }
 
-type Mode = "ink" | "page"
 type CornerName = keyof Corners
 const CORNER_NAMES: CornerName[] = ["topLeft", "topRight", "bottomRight", "bottomLeft"]
 
@@ -61,14 +93,24 @@ const inset = (by: number): Quad01 => ({
   bottomRight: { x: 1 - by, y: 1 - by }, bottomLeft: { x: by, y: 1 - by },
 })
 
-export function CameraPane({ platform, penColour, penWidth = 2, pane, onCapture, onHide, onPad, preferred }: Props) {
+const hex = (colour: string): string => (/^#[0-9a-f]{6}$/i.test(colour) ? colour : "#2D7DD2")
+
+/** What the Input Devices menu and the video menu can ask of the pane (`wm:camera-action`). */
+export type CameraAction = "turn-left" | "turn-right" | "original-size" | "resize-by-square"
+
+export function CameraPane({
+  platform, penColour, penWidth = 2, pane, onCapture, onHide, onPenColour, onPenWidth, preferred,
+  cameras = [], onPickSource, onRefreshCameras, onActiveCamera, showEditor = true, onToggleEditor, onReadText,
+}: Props) {
   const video = useRef<HTMLVideoElement | null>(null)
   const host = useRef<HTMLDivElement | null>(null)
-  const [devices, setDevices] = useState<MediaDeviceInfo[]>([])
   /** The tablet is the source: a sheet to write on, no camera is opened. */
   const tablet = preferred === TABLET_SOURCE
-  const [device, setDevice] = useState<string>(preferred && preferred !== TABLET_SOURCE ? preferred : "")
-  useEffect(() => { if (preferred && preferred !== TABLET_SOURCE) setDevice(preferred) }, [preferred])
+  /** "Turn Camera Off": nothing is opened and the pane says so. */
+  const off = preferred === CAMERA_OFF
+  const wanted = preferred && preferred !== TABLET_SOURCE && preferred !== CAMERA_OFF ? preferred : null
+  const [attempt, setAttempt] = useState(0)
+  const stream = useCameraStream(video, { enabled: !tablet && !off, deviceId: wanted, attempt })
   const surface = useRef<SurfaceHandle | null>(null)
   const pen = usePenSettings()
   const [boxTool, setBoxTool] = useState(false)
@@ -76,223 +118,293 @@ export function CameraPane({ platform, penColour, penWidth = 2, pane, onCapture,
   const [, edited] = useState(0)
   const [trouble, setTrouble] = useState<string | null>(null)
   const [read, setRead] = useState<string | null>(null)
+  /** The box dragged on the picture, in the pane's own points as the person sees it. */
   const [box, setBox] = useState<Rect | null>(null)
   /** The tablet sheet's dashed box, in FRACTIONS of the sheet (the sheet is shown at any size). */
   const [sheetBox, setSheetBox] = useState<Rect | null>(null)
   const [areaOpen, setAreaOpen] = useState(false)
-  const [drag, setDrag] = useState<{ x: number; y: number } | null>(null)
+  /** The Tablet setup check card is open (the chip's popover and the Pen menu ask for it). */
+  const [checkOpen, setCheckOpen] = useState(false)
+  const drag = useRef<{ x: number; y: number; id: number } | null>(null)
+  /** The last click on the picture, so a second one close behind it is a double click (a pointer event carries no count). */
+  const [dragging, setDragging] = useState(false)
+  const lastClick = useRef<{ time: number; x: number; y: number } | null>(null)
   /** "Straighten" is on: the page's four corners are showing, and a capture is warped through them. */
   const [straighten, setStraighten] = useState(false)
   const [quad, setQuad] = useState<Quad01>(inset(0.08))
   const [, redraw] = useState(0)
-  /** The page's shape, learned from the first capture and kept. */
-  const shape = useRef<number | null>(null)
+  /** The page's shape, learned from the first page that was found and kept (across launches). */
+  const shape = useRef<number | null>(rememberedShape())
   /** So two captures in a row do not land exactly on top of each other. */
   const nudge = useRef(0)
+  const [busy, setBusy] = useState(false)
+  const [rotation, setRotation] = useState<Rotation>(rememberedRotation)
+  const [zoom, setZoom] = useState<ZoomBox | null>(rememberedZoom)
+  /** Armed to drag the box the pane zooms into. */
+  const [zooming, setZooming] = useState(false)
+  const [reader, setReader] = useState(false)
+  const [size, setSize] = useState<Size>({ width: 0, height: 0 })
 
-  // A FIRST LAUNCH NEVER ASKS FOR THE CAMERA on the Mac app, and this one
-  // keeps that: the stream is only opened once the pane is on screen,
-  // which is a thing the user asked for.
-  useEffect(() => {
-    let stream: MediaStream | null = null
-    let stopped = false
-    if (tablet) { setTrouble(null); return }
-    void (async () => {
-      try {
-        // The app's own grant first: a page cannot have a camera the app
-        // has not been given.
-        const allowed = await window.wm.askForCamera()
-        if (!allowed) { setTrouble("no camera permission"); return }
-        stream = await navigator.mediaDevices.getUserMedia({
-          video: device ? { deviceId: { exact: device } } : true,
-        })
-        if (stopped) { stream.getTracks().forEach((track) => track.stop()); return }
-        if (video.current) {
-          video.current.srcObject = stream
-          await video.current.play().catch(() => {})
-        }
-        setDevices((await navigator.mediaDevices.enumerateDevices())
-          .filter((one) => one.kind === "videoinput"))
-        setTrouble(null)
-      } catch (error) {
-        setTrouble((error as Error).message || "no camera")
-      }
-    })()
-    return () => {
-      stopped = true
-      stream?.getTracks().forEach((track) => track.stop())
+  useEffect(() => { void ocrAvailable().then(setReader) }, [])
+  useEffect(() => { onActiveCamera?.(stream.status === "running" ? stream.deviceId : null) }, [onActiveCamera, stream.status, stream.deviceId])
+
+  // The pane's size, as it is laid out (the picture is fitted to it and the corners are drawn against it).
+  useLayoutEffect(() => {
+    const element = host.current
+    if (!element) return
+    const measure = () => {
+      const rect = element.getBoundingClientRect()
+      setSize((was) => (was.width === rect.width && was.height === rect.height ? was : { width: rect.width, height: rect.height }))
     }
-  }, [device, tablet])
+    measure()
+    const observer = new ResizeObserver(measure)
+    observer.observe(element)
+    return () => observer.disconnect()
+  }, [])
 
-  // The picture's size is only known once a frame has arrived, and the
-  // corners are drawn against it: one more render when it does.
+  // The picture's size is only known once a frame has arrived (and changes if the camera does): one more render when it does.
   useEffect(() => {
     const element = video.current
     if (!element) return
     const again = () => redraw((was) => was + 1)
     element.addEventListener("loadedmetadata", again)
-    window.addEventListener("resize", again)
+    element.addEventListener("resize", again)
     return () => {
       element.removeEventListener("loadedmetadata", again)
-      window.removeEventListener("resize", again)
+      element.removeEventListener("resize", again)
     }
-  }, [])
+  }, [tablet])
 
-  const frameSize = (): Size => ({
-    width: video.current?.videoWidth ?? 0,
-    height: video.current?.videoHeight ?? 0,
-  })
-
-  const paneSize = (): Size => {
-    const rect = host.current?.getBoundingClientRect()
-    return { width: rect?.width ?? 0, height: rect?.height ?? 0 }
+  const turned = rotation === 90 || rotation === 270
+  /** The picture as the person sees it: upright, after the quarter turns. */
+  const frameSize = (): Size => {
+    const w = video.current?.videoWidth ?? 0, h = video.current?.videoHeight ?? 0
+    return turned ? { width: h, height: w } : { width: w, height: h }
   }
+  const paneSize = (): Size => size
+  const frame = frameSize()
+  const shown = displayedFrame(frame, size)
+  const running = !tablet && stream.status === "running" && shown.width > 0
 
-  const at = (event: React.PointerEvent): { x: number; y: number } => {
+  // MARK: the zoom, and the way from a point on screen to a point on the picture
+
+  const zoomed = zoom !== null && !tablet
+  /** A point on the unzoomed pane, where it is drawn. */
+  const toScreen = (point: { x: number; y: number }) => (zoom ? zoomedPoint(point, zoom, size) : point)
+  /** A point on screen, where it is on the unzoomed pane. */
+  const fromScreen = (point: { x: number; y: number }) => (zoom ? unzoomedPoint(point, zoom, size) : point)
+  const stageStyle = zoom
+    ? (() => {
+      const offset = zoomOffset(zoom, size)
+      return { transform: `translate(${offset.width}px, ${offset.height}px) scale(${zoomScale(zoom, size)})` }
+    })()
+    : undefined
+
+  const at = (event: { clientX: number; clientY: number }): { x: number; y: number } => {
     const rect = host.current!.getBoundingClientRect()
     return { x: event.clientX - rect.left, y: event.clientY - rect.top }
   }
 
-  /**
-   * Take what is in the box. The region goes through the same arithmetic
-   * the Mac's does — a fraction of the picture shown, then a box on the
-   * page at the page's own scale — so a capture lands where it was on the
-   * page and two of them are the same size. With "Straighten" on, the frame
-   * is first squared up through the four corners, and the box is carried
-   * through the same perspective onto the squared page.
-   */
-  const take = useCallback(async (mode: Mode) => {
-    const element = video.current
-    if (!element || element.videoWidth === 0) return
-    const frame: Size = { width: element.videoWidth, height: element.videoHeight }
-    const region = box
-      ? regionOf(box, frame, paneSize())
-      : { x: 0, y: 0, width: 1, height: 1 }
-    if (!region) return
+  // MARK: turning the picture
 
-    let source: CanvasImageSource = element
-    let pageSize: Size
-    let onPage: Rect
-    /** The part to cut, in `source`'s own pixels. */
-    let cutRect: Rect
-    if (straighten) {
-      const corners: Corners = {
-        topLeft: { x: quad.topLeft.x * frame.width, y: quad.topLeft.y * frame.height },
-        topRight: { x: quad.topRight.x * frame.width, y: quad.topRight.y * frame.height },
-        bottomRight: { x: quad.bottomRight.x * frame.width, y: quad.bottomRight.y * frame.height },
-        bottomLeft: { x: quad.bottomLeft.x * frame.width, y: quad.bottomLeft.y * frame.height },
-      }
-      const measured = measuredPage(corners, frame)
-      const page = resolveShape(measured.ratio, shape.current)
-      shape.current = page.ratio
-      pageSize = shapeSize(page, measured.portrait)
-      source = straightened(element, frame, corners, pageSize, EDGE_INSET)
-      const placed = box
-        ? pageBox({
-          region, quad: quadFromPixels(corners, frame.height),
-          frame: { x: 0, y: 0, width: frame.width, height: frame.height },
-          inset: EDGE_INSET, pageSize,
-        })
-        : { x: 0, y: 0, width: pageSize.width, height: pageSize.height }
-      if (!placed) { setTrouble("that box is not on the page"); return }
-      cutRect = placed
-      onPage = placed
-    } else {
-      // The page is the frame: without the page's corners there is no
-      // perspective to undo, and the box the user drew IS the answer.
-      const portrait = frame.height >= frame.width
-      const measured = Math.max(frame.width, frame.height) / Math.max(1, Math.min(frame.width, frame.height))
-      const page = resolveShape(measured, shape.current)
-      shape.current = page.ratio
-      pageSize = shapeSize(page, portrait)
-      onPage = {
-        x: region.x * pageSize.width, y: region.y * pageSize.height,
-        width: region.width * pageSize.width, height: region.height * pageSize.height,
-      }
-      cutRect = {
-        x: Math.round(region.x * frame.width), y: Math.round(region.y * frame.height),
-        width: Math.max(1, Math.round(region.width * frame.width)),
-        height: Math.max(1, Math.round(region.height * frame.height)),
-      }
-    }
-
-    const sw = Math.max(1, Math.round(cutRect.width)), sh = Math.max(1, Math.round(cutRect.height))
-    const cut = document.createElement("canvas")
-    cut.width = sw
-    cut.height = sh
-    const context = cut.getContext("2d", { willReadFrequently: true })!
-    context.drawImage(source, Math.round(cutRect.x), Math.round(cutRect.y), sw, sh, 0, 0, sw, sh)
-
-    let blob: Blob | null = null
-    let frameOnPage = onPage
-    if (mode === "page") {
-      blob = await new Promise((resolve) => cut.toBlob(resolve, "image/jpeg", 0.9))
-    } else {
-      // THE INK, lifted off the paper by the core's own pipeline.
-      const pixels = context.getImageData(0, 0, sw, sh)
-      const mask = inkMask(grayOf(pixels.data, sw * sh), sw, sh)
-      const inked = inkBox(mask, sw, sh)
-      if (!inked) { setTrouble("nothing written in that box"); return }
-      const out = document.createElement("canvas")
-      out.width = inked.width
-      out.height = inked.height
-      const ink = out.getContext("2d")!
-      const image = ink.createImageData(inked.width, inked.height)
-      const colour = penColour.replace("#", "")
-      const cr = parseInt(colour.slice(0, 2), 16), cg = parseInt(colour.slice(2, 4), 16)
-      const cb = parseInt(colour.slice(4, 6), 16)
-      for (let y = 0; y < inked.height; y++) {
-        for (let x = 0; x < inked.width; x++) {
-          if (!mask[(inked.y + y) * sw + inked.x + x]) continue
-          const to = (y * inked.width + x) * 4
-          image.data[to] = cr
-          image.data[to + 1] = cg
-          image.data[to + 2] = cb
-          image.data[to + 3] = 255
-        }
-      }
-      ink.putImageData(image, 0, 0)
-      blob = await new Promise((resolve) => out.toBlob(resolve, "image/png"))
-      // The writing's own box on the page, so it lands where it was.
-      const scaleX = onPage.width / sw, scaleY = onPage.height / sh
-      frameOnPage = {
-        x: onPage.x + inked.x * scaleX, y: onPage.y + inked.y * scaleY,
-        width: inked.width * scaleX, height: inked.height * scaleY,
-      }
-    }
-    if (!blob) return
-
-    const where = placement({ frame: frameOnPage, pageSize, pane, nudge: nudge.current })
-    nudge.current = (nudge.current + 0.02) % 0.1
-    const aspect = frameOnPage.height / Math.max(1, frameOnPage.width)
-
-    // A FLOW CHART on the page comes in as real nodes and arrows, in a band
-    // just under the picture (the Mac's rule), and only when the reader is
-    // sure it is one — a page of prose gives nothing. There are no words
-    // to label them with where nothing reads handwriting; a node's label is
-    // typed on it by double-click.
-    const chart = chartFrom(cut, { width: sw, height: sh }, [], pane, penColour, penWidth,
-      bandUnder(where.center, where.width, aspect, pane))
-
-    setTrouble(null)
-    const nodes = chart.filter((item) => item.kind === "shape").length
-    setRead(chart.length > 0
-      ? `Read a flow chart: ${nodes} ${nodes === 1 ? "node" : "nodes"}.` : null)
-    onCapture({
-      blob,
-      center: where.center,
-      width: where.width,
-      aspect,
-      ...(chart.length > 0 ? { chart } : {}),
+  const turn = useCallback((by: number) => {
+    setRotation((was) => {
+      const next = normalRotation(was + by)
+      rememberRotation(next)
+      return next
     })
-  }, [box, onCapture, pane, penColour, penWidth, quad, straighten])
+    // A box drawn on the picture is not on it any more.
+    setBox(null)
+  }, [])
+
+  // The video menu (and the corner) ask by event, so the pane owns the picture's state.
+  useEffect(() => {
+    const act = (event: Event) => {
+      const action = (event as CustomEvent<CameraAction>).detail
+      if (action === "turn-left") turn(-90)
+      else if (action === "turn-right") turn(90)
+      else if (action === "original-size") { setZoom(null); rememberZoom(null) }
+      else if (action === "resize-by-square") setZooming(true)
+    }
+    window.addEventListener("wm:camera-action", act)
+    return () => window.removeEventListener("wm:camera-action", act)
+  }, [turn])
+
+  useEffect(() => { if (stream.status !== "running") { setBox(null); setZooming(false) } }, [stream.status])
+  // Escape lets go of a zoom that was armed (and of a box that was drawn).
+  useEffect(() => {
+    if (!zooming && !box) return
+    const key = (event: KeyboardEvent) => { if (event.key === "Escape") { setZooming(false); setBox(null) } }
+    window.addEventListener("keydown", key)
+    return () => window.removeEventListener("keydown", key)
+  }, [zooming, box])
+
+  // MARK: the frame, upright, as one snapshot
+
+  /** The frame on screen right now, turned upright, as a canvas of its own (one frame for the whole capture). */
+  const snapshot = (): { picture: HTMLCanvasElement; frame: Size } | null => {
+    const element = video.current
+    if (!element || element.videoWidth === 0 || element.readyState < 2) return null
+    const vw = element.videoWidth, vh = element.videoHeight
+    const canvas = document.createElement("canvas")
+    canvas.width = turned ? vh : vw
+    canvas.height = turned ? vw : vh
+    const context = canvas.getContext("2d", { willReadFrequently: true })!
+    if (rotation === 90) { context.translate(canvas.width, 0); context.rotate(Math.PI / 2) }
+    else if (rotation === 180) { context.translate(canvas.width, canvas.height); context.rotate(Math.PI) }
+    else if (rotation === 270) { context.translate(0, canvas.height); context.rotate(-Math.PI / 2) }
+    context.drawImage(element, 0, 0)
+    return { picture: canvas, frame: { width: canvas.width, height: canvas.height } }
+  }
+
+  /** The page's corners in the picture's pixels, from the fractions the corners are kept in. */
+  const cornersPx = (f: Size): Corners => ({
+    topLeft: { x: quad.topLeft.x * f.width, y: quad.topLeft.y * f.height },
+    topRight: { x: quad.topRight.x * f.width, y: quad.topRight.y * f.height },
+    bottomRight: { x: quad.bottomRight.x * f.width, y: quad.bottomRight.y * f.height },
+    bottomLeft: { x: quad.bottomLeft.x * f.width, y: quad.bottomLeft.y * f.height },
+  })
+
+  /** Look for the page: the four corners go onto it (the person can still drag them). */
+  const findNow = useCallback(() => {
+    const taken = snapshot()
+    if (!taken) return
+    const found = detectPage(taken.picture, taken.frame)
+    if (!found) {
+      setQuad(inset(0.08))
+      setRead("No page found - drag the corners onto the page's corners.")
+      return
+    }
+    const f = taken.frame
+    const to = (p: { x: number; y: number }) => ({ x: p.x / f.width, y: p.y / f.height })
+    setQuad({
+      topLeft: to(found.corners.topLeft), topRight: to(found.corners.topRight),
+      bottomRight: to(found.corners.bottomRight), bottomLeft: to(found.corners.bottomLeft),
+    })
+    setRead("Found the page - drag a corner if it is off.")
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- reads the current frame
+  }, [rotation])
+
+  const toggleStraighten = () => {
+    const next = !straighten
+    setStraighten(next)
+    if (next) findNow()
+  }
+  // The picture turned under the corners: look again.
+  const firstTurn = useRef(true)
+  useEffect(() => {
+    if (firstTurn.current) { firstTurn.current = false; return }
+    if (straighten) findNow()
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- only a turn asks again
+  }, [rotation])
+
+  // MARK: the box, and taking what is in it
+
+  /** The box as a fraction of the upright picture (top-left origin), clipped to it; null without a box. */
+  const regionOfBox = (): { region: Rect | null; offPicture: boolean } => {
+    if (!box) return { region: null, offPicture: false }
+    // A box drawn on a zoomed picture is somewhere else on the real one.
+    const drawn = zoom ? unzoomedRect(box, zoom, size) : box
+    const region = regionOf(drawn, frameSize(), paneSize())
+    return { region, offPicture: region === null }
+  }
+
+  /** The box a double click draws: the picture as it is on screen (letterboxing and zoom allowed for). */
+  const wholePictureBox = (): Rect | null => {
+    if (shown.width <= 2 || shown.height <= 2) return null
+    const drawn = zoom ? zoomedRect(shown, zoom, size) : shown
+    const x0 = Math.max(0, drawn.x), y0 = Math.max(0, drawn.y)
+    const x1 = Math.min(size.width, drawn.x + drawn.width), y1 = Math.min(size.height, drawn.y + drawn.height)
+    return x1 - x0 >= 2 && y1 - y0 >= 2 ? { x: x0, y: y0, width: x1 - x0, height: y1 - y0 } : null
+  }
 
   /**
-   * Take what is on the tablet's sheet (tabletCapture.ts, shared with the
-   * full-screen pad): WRITING brings the strokes themselves, PAGE the sheet as
-   * a picture.
+   * Take what is in the box (or all of it). The page is found by itself, or
+   * its corners are the ones dragged ("Straighten"); the box is carried through
+   * the same perspective onto the squared page, so a capture lands where it was
+   * on the page and two of them are the same size.
    */
-  const takeTablet = useCallback(async (mode: Mode) => {
+  const take = useCallback(async (mode: CaptureMode) => {
+    if (busy) return
+    const taken = snapshot()
+    if (!taken) { setTrouble("There is no camera picture to take."); return }
+    const { region, offPicture } = regionOfBox()
+    if (offPicture) { setTrouble("That box is not on the picture."); return }
+    setBusy(true)
+    try {
+      const result = await takePicture({
+        mode, picture: taken.picture, frame: taken.frame, region,
+        corners: straighten && mode !== "raw" ? cornersPx(taken.frame) : null,
+        rememberedShape: rememberedShape() ?? shape.current, colour: hex(penColour),
+      })
+      if ("trouble" in result) { setTrouble(result.trouble); setRead(null); return }
+      // Only a page that was actually found sets the notebook's shape.
+      if (result.pageFound && result.learnedShape !== null) {
+        shape.current = result.learnedShape
+        rememberShape(result.learnedShape)
+      }
+      const where = placement({ frame: result.frameOnPage, pageSize: result.pageSize, pane, nudge: nudge.current })
+      nudge.current = (nudge.current + 0.02) % 0.1
+      const aspect = result.frameOnPage.height / Math.max(1, result.frameOnPage.width)
+
+      // A FLOW CHART on the page comes in as real nodes and arrows, in a band
+      // just under the picture (the Mac's rule), and only when the reader is
+      // sure it is one — a page of prose gives nothing. The nodes are labelled
+      // with the words the machine's text reader finds inside them (only a
+      // picture that holds a chart is ever sent to it, and without a reader a
+      // node's label is typed on it by double-click).
+      const chart = mode === "raw" ? [] : await chartFromLabelled(
+        result.cut, { width: result.cut.width, height: result.cut.height }, pane, penColour, penWidth,
+        bandUnder(where.center, where.width, aspect, pane), (canvas) => wordsForChart(canvas))
+
+      setTrouble(null)
+      const how = mode === "raw" ? null
+        : result.how === "hand" ? "The corners you set squared the page up."
+        : result.how ? "Found the page and squared it up."
+        : "No page found, so it took the whole picture."
+      setRead([how, chartSummary(chart)].filter(Boolean).join(" ") || null)
+      setBox(null)
+      onCapture({
+        blob: result.blob, center: where.center, width: where.width, aspect,
+        ...(chart.length > 0 ? { chart } : {}),
+      })
+    } finally {
+      setBusy(false)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- reads the current frame, box and corners
+  }, [box, busy, onCapture, pane, penColour, penWidth, quad, rotation, straighten, size, zoom])
+
+  /** The box read into the note as words. */
+  const takeText = useCallback(async () => {
+    if (busy) return
+    const taken = snapshot()
+    if (!taken) { setTrouble("There is no camera picture to read."); return }
+    const { region, offPicture } = regionOfBox()
+    if (offPicture) { setTrouble("That box is not on the picture."); return }
+    setBusy(true)
+    try {
+      const result = await takePicture({
+        mode: "page", picture: taken.picture, frame: taken.frame, region,
+        corners: straighten ? cornersPx(taken.frame) : null, rememberedShape: rememberedShape() ?? shape.current, colour: hex(penColour),
+      })
+      if ("trouble" in result) { setTrouble(result.trouble); return }
+      const lines = await readCanvasLines(result.cut)
+      if (lines === null || lines.length === 0) { setTrouble("No text could be read in that box."); return }
+      setTrouble(null)
+      setRead(lines.length === 1 ? "Read 1 line into the note." : `Read ${lines.length} lines into the note.`)
+      setBox(null)
+      onReadText?.(lines)
+    } finally {
+      setBusy(false)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- reads the current frame, box and corners
+  }, [box, busy, onReadText, penColour, quad, rotation, straighten, size, zoom])
+
+  /**
+   * Take what is on the tablet's sheet (tabletCapture.ts): WRITING brings
+   * the strokes themselves, PAGE the sheet as a picture.
+   */
+  const takeTablet = useCallback(async (mode: "ink" | "page") => {
     const out = await takeFromSheet(mode, {
       box: sheetBox, shown: surface.current?.size() ?? { width: 0, height: 0 }, pane,
       penColour, penWidth, clearAfter,
@@ -309,32 +421,83 @@ export function CameraPane({ platform, penColour, penWidth = 2, pane, onCapture,
     onCapture(out.capture)
   }, [sheetBox, clearAfter, onCapture, pane, penColour, penWidth])
 
-  const shown = displayedFrame(frameSize(), paneSize())
-  const corner = (name: CornerName) => ({
+  // PEN CAPTURE: the whole tablet is this sheet, with the notes still on screen (main/pen/*, renderer/penFeed.ts).
+  const feed = usePenFeed(tablet)
+  // The capture command (Ctrl+Alt+G, Input Devices) reaches the pane as an event; it switches capture on or off.
+  useEffect(() => {
+    if (!tablet) return
+    const toggle = () => feed.toggle()
+    const check = () => setCheckOpen(true)
+    window.addEventListener("wm:grab-toggle", toggle)
+    window.addEventListener("wm:pen-check", check)
+    return () => { window.removeEventListener("wm:grab-toggle", toggle); window.removeEventListener("wm:pen-check", check) }
+  }, [tablet, feed])
+
+  const corner = (name: CornerName) => toScreen({
     x: shown.x + quad[name].x * shown.width, y: shown.y + quad[name].y * shown.height,
   })
 
+  // MARK: gestures on the picture
+
+  const pictureDown = (event: React.PointerEvent) => {
+    if (tablet || event.button !== 0 || !running) return
+    const point = at(event)
+    drag.current = { ...point, id: event.pointerId }
+    setDragging(true)
+    try { host.current?.setPointerCapture(event.pointerId) } catch { /* the pointer is gone */ }
+    if (zooming) setBox({ x: point.x, y: point.y, width: 0, height: 0 })
+  }
+  const pictureMove = (event: React.PointerEvent) => {
+    const start = drag.current
+    if (tablet || !start || start.id !== event.pointerId) return
+    const point = at(event)
+    if (!zooming && !isBoxDrag(point.x - start.x, point.y - start.y)) return
+    setBox({
+      x: Math.min(start.x, point.x), y: Math.min(start.y, point.y),
+      width: Math.abs(point.x - start.x), height: Math.abs(point.y - start.y),
+    })
+  }
+  const pictureUp = (event: React.PointerEvent) => {
+    const start = drag.current
+    if (tablet || !start || start.id !== event.pointerId) return
+    drag.current = null
+    setDragging(false)
+    try { host.current?.releasePointerCapture(event.pointerId) } catch { /* already released */ }
+    const point = at(event)
+    if (zooming) {
+      // The box dragged is the part of the picture the pane then shows.
+      const dragged = { x: Math.min(start.x, point.x), y: Math.min(start.y, point.y), width: Math.abs(point.x - start.x), height: Math.abs(point.y - start.y) }
+      setBox(null)
+      setZooming(false)
+      if (dragged.width > 8 && dragged.height > 8) {
+        const composed = composeZoom(dragged, zoom, size)
+        if (composed) { setZoom(composed); rememberZoom(composed) }
+      }
+      return
+    }
+    // A drag leaves its box alone; one click clears it; two take the whole picture.
+    let clicks = 1
+    const before = lastClick.current
+    if (before && event.timeStamp - before.time < 450 && Math.hypot(point.x - before.x, point.y - before.y) < 8) clicks = 2
+    lastClick.current = isBoxDrag(point.x - start.x, point.y - start.y) || clicks === 2
+      ? null : { time: event.timeStamp, x: point.x, y: point.y }
+    const action = boxAction(point.x - start.x, point.y - start.y, clicks)
+    if (action === "clear") setBox(null)
+    else if (action === "whole") setBox(wholePictureBox())
+  }
+
+  // MARK: what the pane says when there is no picture
+
+  const problem = stream.problem ?? (off ? idleProblem() : null)
+  const showPlaceholder = !tablet && (off || stream.status === "failed")
+  const starting = !tablet && !off && stream.status === "starting"
+
+  const choose = (id: string) => onPickSource?.(id)
+
   return (
-    <div className="camera" ref={host}
-         onPointerDown={(event) => {
-           if (tablet || event.button !== 0) return
-           const point = at(event)
-           setDrag(point)
-           setBox({ x: point.x, y: point.y, width: 0, height: 0 })
-         }}
-         onPointerMove={(event) => {
-           if (tablet || !drag) return
-           const point = at(event)
-           setBox({
-             x: Math.min(drag.x, point.x), y: Math.min(drag.y, point.y),
-             width: Math.abs(point.x - drag.x), height: Math.abs(point.y - drag.y),
-           })
-         }}
-         onPointerUp={() => {
-           if (tablet) return
-           setDrag(null)
-           setBox((was) => (was && was.width > 8 && was.height > 8 ? was : null))
-         }}>
+    <div className={`camera${zooming ? " zooming" : ""}`} ref={host}
+         onPointerDown={pictureDown} onPointerMove={pictureMove} onPointerUp={pictureUp}
+         onPointerCancel={() => { drag.current = null; setDragging(false) }}>
       {tablet
         ? (
           <TabletSurface ref={surface} page={sheet} colour={penColour} width={penWidth}
@@ -342,13 +505,43 @@ export function CameraPane({ platform, penColour, penWidth = 2, pane, onCapture,
                          onBox={(rect, done) => { setSheetBox(rect); if (done) setBoxTool(false) }}
                          onEdited={() => edited((was) => was + 1)} />
         )
-        : <video ref={video} muted playsInline />}
-      {!tablet && box && (
-        <div className="box" style={{
-          left: box.x, top: box.y, width: box.width, height: box.height,
-        }} />
+        : (
+          // The video element is always here (so the stream can be let go of cleanly); it is only SEEN once it is running.
+          <div className="stage" style={{ visibility: running ? "visible" : "hidden" }}>
+            <div className="zoomer" style={stageStyle}>
+              <video ref={video} muted playsInline data-turn={rotation}
+                     style={turned
+                       ? { width: size.height, height: size.width, transform: `translate(-50%, -50%) rotate(${rotation}deg)` }
+                       : { width: size.width, height: size.height, transform: `translate(-50%, -50%) rotate(${rotation}deg)` }} />
+            </div>
+          </div>
+        )}
+      {!tablet && box && running && (
+        <div className="box-clip">
+          <div className={`box${zooming ? " zoom" : ""}`} style={{
+            left: box.x, top: box.y, width: box.width, height: box.height,
+          }} />
+        </div>
       )}
-      {!tablet && straighten && shown.width > 0 && (
+      {!tablet && box && running && !zooming && !dragging && box.width > 8 && box.height > 8 && (
+        <div className="box-choices" data-busy={busy ? "1" : "0"}
+             style={{
+               left: Math.min(Math.max(box.x + box.width / 2, 150), Math.max(size.width - 150, 150)),
+               top: Math.min(box.y + box.height + 22, Math.max(size.height - 18, 18)),
+             }}
+             onPointerDown={(event) => event.stopPropagation()} onPointerUp={(event) => event.stopPropagation()}>
+          <button disabled={busy} data-section="image" title="Put the picture inside the box on the page, squared up"
+                  onClick={() => { void take("page") }}>Image</button>
+          <button disabled={busy} data-section="writing" title="Lift the writing inside the box onto the page as ink"
+                  onClick={() => { void take("ink") }}>Writing</button>
+          {reader && onReadText && (
+            <button disabled={busy} data-section="text" title="Read the writing inside the box into the note as words"
+                    onClick={() => { void takeText() }}>Text</button>
+          )}
+        </div>
+      )}
+      {zooming && running && <div className="zoom-hint">Drag a box - the pane shows that much</div>}
+      {!tablet && straighten && running && (
         <>
           <svg className="quad" width="100%" height="100%">
             <polygon points={CORNER_NAMES.map((name) => `${corner(name).x},${corner(name).y}`).join(" ")} />
@@ -364,7 +557,7 @@ export function CameraPane({ platform, penColour, penWidth = 2, pane, onCapture,
                  onPointerMove={(event) => {
                    if (!event.currentTarget.hasPointerCapture(event.pointerId)) return
                    event.stopPropagation()
-                   const point = at(event)
+                   const point = fromScreen(at(event))
                    const x = Math.min(Math.max((point.x - shown.x) / shown.width, 0), 1)
                    const y = Math.min(Math.max((point.y - shown.y) / shown.height, 0), 1)
                    setQuad((was) => ({ ...was, [name]: { x, y } }))
@@ -376,12 +569,57 @@ export function CameraPane({ platform, penColour, penWidth = 2, pane, onCapture,
           ))}
         </>
       )}
+      {showPlaceholder && problem && (
+        <div className="placeholder" data-problem={problem.kind} onPointerDown={(event) => event.stopPropagation()}>
+          <div className="glyph" aria-hidden>{problem.kind === "denied" ? "\u{1F6AB}" : "\u{1F4F9}"}</div>
+          <div className="title">{problem.title}</div>
+          <div className="detail">{problem.detail}</div>
+          <div className="device-list" role="listbox" aria-label="Input Devices">
+            {cameras.length === 0 && <div className="none">No cameras found</div>}
+            {cameras.map((one) => (
+              <button key={one.id} data-camera={one.id} onClick={() => choose(one.id)}>{one.name}</button>
+            ))}
+            <button data-source="tablet" onClick={() => choose(TABLET_SOURCE)}>Tablet</button>
+            <button data-action="refresh" onClick={() => { onRefreshCameras?.(); setAttempt((was) => was + 1) }}>Refresh Device List</button>
+          </div>
+        </div>
+      )}
+      {starting && <div className="starting" aria-label="Starting the camera"><span className="spinner" /></div>}
       {trouble && <div className="trouble">{trouble}</div>}
       {tablet && areaOpen && (
         <div className="area-pop" onPointerDown={(event) => event.stopPropagation()}>
           <TabletAreaHelp />
         </div>
       )}
+      {/* The corner (turn, zoom, back to the notes) and the bar (take, straighten) share one row, and wrap under each other in a narrow pane. */}
+      <div className="camera-top">
+      <div className="camera-corner" onPointerDown={(event) => event.stopPropagation()}>
+        {!tablet && (
+          <>
+            <button className="icon-button" data-camera-turn="left" title="Turn the picture a quarter turn anticlockwise"
+                    disabled={!running} onClick={() => turn(-90)}
+                    style={{ width: "auto", padding: "0 8px", fontSize: 13 }}>{"↶"}</button>
+            <button className="icon-button" data-camera-turn="right" title="Turn the picture a quarter turn clockwise"
+                    disabled={!running} onClick={() => turn(90)}
+                    style={{ width: "auto", padding: "0 8px", fontSize: 13 }}>{"↷"}</button>
+            <button className={`icon-button${zooming ? " on" : ""}`} data-camera-zoom="square"
+                    title="Resize by Square: drag a box on the picture and the pane shows just that much"
+                    disabled={!running} onClick={() => setZooming((was) => !was)}
+                    style={{ width: "auto", padding: "0 8px", fontSize: 11 }}>Zoom</button>
+            {zoomed && (
+              <button className="icon-button" data-camera-zoom="original"
+                      title={`Original Size: the whole camera picture again (showing ${Math.round(zoom!.width * zoom!.height * 100)}%)`}
+                      onClick={() => { setZoom(null); rememberZoom(null) }}
+                      style={{ width: "auto", padding: "0 8px", fontSize: 11 }}>Original size</button>
+            )}
+          </>
+        )}
+        {!showEditor && (
+          <button className="icon-button" data-pane="notes" title="Back to Side by Side: the notes and the video together again"
+                  onClick={() => onToggleEditor?.()}
+                  style={{ width: "auto", padding: "0 8px", fontSize: 11 }}>Back to Side by Side</button>
+        )}
+      </div>
       <div className="camera-bar" onPointerDown={(event) => event.stopPropagation()}>
         {tablet && (
           <>
@@ -409,53 +647,66 @@ export function CameraPane({ platform, penColour, penWidth = 2, pane, onCapture,
                       keepClearAfter(next)
                     }}
                     style={{ width: "auto", padding: "0 8px", fontSize: 11 }}>Clear after</button>
-            {onPad && (
-              <button className="icon-button" data-tablet="pad"
-                      title="Pad mode: the window goes full screen and the whole tablet becomes the sheet (Ctrl+Alt+T)"
-                      onClick={onPad}
-                      style={{ width: "auto", padding: "0 8px", fontSize: 11 }}>Pad</button>
-            )}
+            <OrientationSelect compact />
+            <PenHud feed={feed} onCheck={() => setCheckOpen(true)} />
+            <button className="icon-button" data-tablet="rotate-ink" disabled={sheet.strokes.length === 0}
+                    title="Turn the ink on the sheet a quarter turn clockwise (changing the orientation never moves ink by itself)"
+                    onClick={() => { sheet.rotateInk(1); edited((was) => was + 1) }}
+                    style={{ width: "auto", padding: "0 8px", fontSize: 11 }}>Rotate ink</button>
             <button className={`icon-button${areaOpen ? " on" : ""}`} data-tablet="area"
                     title="Which part of the screen is this sheet? For the tablet driver's Mapping settings"
                     onClick={() => setAreaOpen((was) => !was)}
                     style={{ width: "auto", padding: "0 8px", fontSize: 11 }}>Area</button>
           </>
         )}
-        {!tablet && devices.length > 1 && (
-          <select className="icon-button" style={{ width: "auto", padding: "0 4px", fontSize: 11 }}
-                  value={device} onChange={(event) => setDevice(event.target.value)}>
-            <option value="">Default camera</option>
-            {devices.map((one) => (
-              <option key={one.deviceId} value={one.deviceId}>{one.label || "Camera"}</option>
-            ))}
-          </select>
+        {!tablet && (
+          <>
+            <button className={`icon-button${straighten ? " on" : ""}`}
+                    title="Square the page up: drag the four corners onto the page's corners"
+                    onClick={toggleStraighten}
+                    style={{ width: "auto", padding: "0 8px", fontSize: 11 }}>Straighten</button>
+            {straighten && (
+              <button className="icon-button" data-camera="find-page" disabled={!running}
+                      title="Look for the page again and put the four corners on it"
+                      onClick={findNow}
+                      style={{ width: "auto", padding: "0 8px", fontSize: 11 }}>Find page</button>
+            )}
+          </>
         )}
-        {!tablet && <button className={`icon-button${straighten ? " on" : ""}`}
-                title="Square the page up: drag the four corners onto the page's corners"
-                onClick={() => setStraighten((was) => !was)}
-                style={{ width: "auto", padding: "0 8px", fontSize: 11 }}>Straighten</button>}
-        <button className="icon-button" title={tablet ? "Bring the writing in as strokes" : "Take the writing off the page"}
+        <button className="icon-button" data-capture="ink" disabled={!tablet && (!running || busy)}
+                title={tablet ? "Bring the writing in as strokes" : "Take the writing off the page"}
                 onClick={() => { void (tablet ? takeTablet("ink") : take("ink")) }}
                 style={{ width: "auto", padding: "0 8px", fontSize: 11 }}>Writing</button>
-        <button className="icon-button" title={tablet ? "Bring the sheet in as a picture (read its words with Aa)" : "Take the page as a photograph"}
+        <button className="icon-button" data-capture="page" disabled={!tablet && (!running || busy)}
+                title={tablet ? "Bring the sheet in as a picture (read its words with Aa)" : "Take the page as a photograph"}
                 onClick={() => { void (tablet ? takeTablet("page") : take("page")) }}
                 style={{ width: "auto", padding: "0 8px", fontSize: 11 }}>Page</button>
-        <button className="icon-button" title="Put the camera away" onClick={onHide}>✕</button>
+        {!tablet && (
+          <button className="icon-button" data-capture="raw" disabled={!running || busy}
+                  title="Take the raw picture, exactly as the camera sees it: no page found, nothing squared"
+                  onClick={() => { void take("raw") }}
+                  style={{ width: "auto", padding: "0 8px", fontSize: 11 }}>Raw</button>
+        )}
+        <button className="icon-button" title="Put the camera away" onClick={onHide}>{"✕"}</button>
+      </div>
       </div>
       <div className="note">
+        {running && stream.label && <span className="camera-name" title="The camera in use">{stream.label}</span>}
         {/*
           THE ONE PLACE A MISSING CAPABILITY IS MENTIONED, because this one
           changes what the user does. Everything else the platform cannot
           do is simply not offered.
         */}
-        {tablet
+        {tablet && feed.capturing
+          ? "Pen capture: the whole tablet is this sheet. Esc or Ctrl+Alt+G lets go. (Wacom's own Mapping ▸ Portion of screen does the same with no app — see Area.)"
+          : tablet
           ? `Write with the pen${pen.eraser ? " — erasing" : pen.sideButton === "erases" ? " (side button erases)" : ""}, then take it.`
           : straighten
             ? "Drag the four corners onto the page's corners, then take it."
             : platform && !platform.findsThePage
               ? "Drag a box over the writing, then take it."
-              : "Point it at a page."}
-        {tablet || shown.width > 0 ? "" : " No picture yet."}
+              : "Point it at a page: it finds the page itself. Drag a box to take just a part."}
+        {tablet || shown.width > 0 || showPlaceholder || starting ? "" : " No picture yet."}
         {read ? ` ${read}` : ""}
       </div>
     </div>

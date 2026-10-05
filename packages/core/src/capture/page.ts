@@ -232,3 +232,72 @@ export function placement(options: {
     width: frame.width * scale / pane.width,
   }
 }
+
+/**
+ * Where a capture goes ON THE NOTE, as the centre of its picture in fractions of the pane (the layer
+ * scrolls with the text, so y counts from the top of the DOCUMENT).
+ *
+ * `placement` says where a capture sat on the page it was taken from and how big it comes out - which
+ * decides its SIZE and, when there is no caret to go by, its offset. Where it lands is the note's business
+ * (the Mac's `placeCapture` / `placedCenter`):
+ *   - one gap UNDER the caret's line and flush with the text, as a pasted picture lands - when that line is
+ *     on screen;
+ *   - otherwise the spot it had on the pane, carried down by how far the note is scrolled: the middle of
+ *     what is on screen, never somewhere above or below the window (a capture that lands off screen looks
+ *     like a capture that failed). The Mac goes under the caret whether or not the caret is in view; here a
+ *     caret scrolled out of view does not send the picture out of view with it.
+ * Two captures in a row do not land exactly on top of each other: `taken` are the centres already on the
+ * page, and a landing within a hair of one steps along by `nudge` (diagonally).
+ */
+export function capturePlacedCentre(options: {
+  /** The centre `placement` gave: fractions of the pane, as the capture sat on the pane. */
+  center: Point
+  /** Its width as a fraction of the pane's, and its height over its width. */
+  width: number
+  aspect: number
+  pane: Size
+  /** How far the note is scrolled, in points. */
+  scroll: number
+  /** The caret's line in document points, when the editor has one. */
+  caretLine?: Rect | null
+  gap?: number
+  taken?: Point[]
+  nudge?: number
+}): Point {
+  const { pane, scroll } = options
+  const paneWidth = Math.max(pane.width, 1), paneHeight = Math.max(pane.height, 1)
+  const width = options.width * paneWidth
+  const height = width * options.aspect
+  const gap = options.gap ?? 8
+  const line = options.caretLine ?? null
+  let centre: Point
+  const lineOnScreen = line !== null && line.y + line.height >= scroll && line.y <= scroll + pane.height
+  if (line && lineOnScreen) {
+    const x = Math.min(line.x + width / 2, Math.max(width / 2, paneWidth - width / 2))
+    const y = line.y + line.height + gap + height / 2
+    centre = { x: x / paneWidth, y: y / paneHeight }
+  } else {
+    centre = { x: options.center.x, y: options.center.y + scroll / paneHeight }
+  }
+  const step = options.nudge ?? 0.03
+  for (let tries = 0; tries < 6; tries++) {
+    const here = centre
+    if (!(options.taken ?? []).some((one) => Math.abs(one.x - here.x) < 0.01 && Math.abs(one.y - here.y) < 0.01)) break
+    centre = { x: centre.x + step, y: centre.y + step }
+  }
+  return centre
+}
+
+/**
+ * Where the words read out of a picture go in the note: in front of the first line that starts at or below the
+ * picture's bottom edge `y` (the Mac's `EditorBridge.insert(_:belowDocumentY:)`), or at the very end when none does.
+ * `block` is the editor's line at height `y` - what `view.lineBlockAtHeight(y)` gives (its offsets and its top and
+ * bottom in document points) - or null for an empty note. The nearest line may be the one ABOVE the picture,
+ * ending before `y`; the words then go on the line after that one.
+ */
+export function insertionPointBelow(block: { from: number; to: number; bottom: number } | null, y: number,
+  documentLength: number): number {
+  if (!block || documentLength <= 0) return Math.max(0, documentLength)
+  if (block.bottom <= y + 0.5) return Math.min(block.to + 1, documentLength)
+  return Math.min(block.from, documentLength)
+}

@@ -59,9 +59,20 @@ export function heading(line: string): { level: number; text: string } | null {
 }
 
 export function isRule(line: string): boolean {
-  const compact = line.split(" ").join("")
-  if (compact.length < 3) return false
-  return /^-+$/.test(compact) || /^\*+$/.test(compact) || /^_+$/.test(compact)
+  // Spaces are ignored; what is left is three or more of ONE of - * _. No allocation: this runs on every line
+  // (the old `split(" ").join("")` was a fifth of a keystroke's cost in a 500 KB note).
+  let mark = 0
+  let count = 0
+  for (let i = 0; i < line.length; i++) {
+    const c = line.charCodeAt(i)
+    if (c === 32) continue
+    if (mark === 0) {
+      if (c !== 45 && c !== 42 && c !== 95) return false
+      mark = c
+    } else if (c !== mark) return false
+    count++
+  }
+  return count >= 3
 }
 
 /**
@@ -114,180 +125,325 @@ export function blocks(markdown: string): Block[] {
   return positioned(markdown).map((p) => p.block)
 }
 
-export function positioned(markdown: string): PositionedBlock[] {
-  const out: PositionedBlock[] = []
-  let paragraph: string[] = []
-  let bullets: string[] = []
-  let todos: TodoItem[] = []
-  let dashes: string[] = []
-  let numbered: string[] = []
-  let quote: string[] = []
-  let code: string[] | null = null
-  let codeLanguage: string | null = null
+/**
+ * The parser as a MACHINE that is fed one line at a time. The whole-document `positioned` feeds it every line; the
+ * incremental `positionedUpdate` starts it at the beginning of the block an edit touched and stops it as soon as it
+ * is back in step with the blocks it parsed last time. One machine, so the two cannot disagree (a differential test
+ * compares them on thousands of random edits).
+ */
+class Machine {
+  readonly out: PositionedBlock[] = []
+  private paragraph: string[] = []
+  private bullets: string[] = []
+  private todos: TodoItem[] = []
+  private dashes: string[] = []
+  private numbered: string[] = []
+  private quote: string[] = []
+  private code: string[] | null = null
+  private codeLanguage: string | null = null
 
   // Where the open block started, and where its last line ended.
-  let blockStart = 0
-  let blockEnd = 0
-  let lineStart = 0
-  let blankRunStart: number | null = null
-  let blankRunFirst = 0
+  blockStart: number
+  private blockEnd: number
+  /** The offset the next line starts at. */
+  lineStart: number
+  // The run of blank lines being counted: how many, where it began, and the lengths (with newline) that
+  // `emitBlankRun` needs to find the middle of it.
+  private runLines = 0
+  private runFirst = 0
+  private runFirstLen = 0
+  private runAfterFirst = 0
+  private runLastLen = 0
 
-  const emit = (block: Block) => {
-    out.push({ block, range: range(blockStart, blockEnd - blockStart) })
+  constructor(at = 0) {
+    this.blockStart = at
+    this.blockEnd = at
+    this.lineStart = at
   }
 
-  const flush = () => {
-    if (paragraph.length) { emit({ kind: "paragraph", text: paragraph.join(" ") }); paragraph = [] }
-    if (bullets.length) { emit({ kind: "bullets", items: bullets }); bullets = [] }
-    if (todos.length) { emit({ kind: "todos", items: todos }); todos = [] }
-    if (dashes.length) { emit({ kind: "dashes", items: dashes }); dashes = [] }
-    if (numbered.length) { emit({ kind: "numbered", items: numbered }); numbered = [] }
-    if (quote.length) { emit({ kind: "quote", text: quote.join(" ") }); quote = [] }
+  private emit(block: Block): void {
+    this.out.push({ block, range: range(this.blockStart, this.blockEnd - this.blockStart) })
+  }
+
+  /**
+   * Ends the open block. `endAt` is where its last line ended: when the line
+   * that ends a block is itself text (a list item after a paragraph, a
+   * heading after a bullet), `blockEnd` has already moved on to THAT line,
+   * and a block that took it as its own end overlapped the next one.
+   */
+  private flush(endAt: number = this.blockEnd): void {
+    const kept = this.blockEnd
+    this.blockEnd = endAt
+    if (this.paragraph.length) { this.emit({ kind: "paragraph", text: this.paragraph.join(" ") }); this.paragraph = [] }
+    if (this.bullets.length) { this.emit({ kind: "bullets", items: this.bullets }); this.bullets = [] }
+    if (this.todos.length) { this.emit({ kind: "todos", items: this.todos }); this.todos = [] }
+    if (this.dashes.length) { this.emit({ kind: "dashes", items: this.dashes }); this.dashes = [] }
+    if (this.numbered.length) { this.emit({ kind: "numbered", items: this.numbered }); this.numbered = [] }
+    if (this.quote.length) { this.emit({ kind: "quote", text: this.quote.join(" ") }); this.quote = [] }
+    this.blockEnd = kept
   }
 
   /** The first line of a block sets its start; every line extends its end. */
-  const openIfNeeded = () => {
-    if (!paragraph.length && !bullets.length && !todos.length && !dashes.length
-      && !numbered.length && !quote.length && code === null) {
-      blockStart = lineStart
+  private openIfNeeded(): void {
+    if (!this.paragraph.length && !this.bullets.length && !this.todos.length && !this.dashes.length
+      && !this.numbered.length && !this.quote.length && this.code === null) {
+      this.blockStart = this.lineStart
     }
   }
-
-  // Split on "\n" alone, not on every Unicode newline: the line LENGTHS are
-  // what the ranges are built from, and a two-character separator counted as
-  // one would put every range after it out by one.
-  const allLines = markdown.split("\n")
-  const lineLengths = allLines.map((line) => line.length + 1)
 
   /**
    * The middle of a run of blank lines, as a cell. The first line of the run
    * and the last one are the separators either side of it, so a run of one or
    * two leaves nothing behind.
    */
-  const emitBlankRun = (upTo: number, from: number) => {
-    const count = upTo - from
+  private emitBlankRun(): void {
+    const count = this.runLines
     if (count < 3) return
     // `emit` reads blockStart and blockEnd, so this cell has to put them
     // back: the line that ENDED the run has already moved blockEnd on to
     // itself, and a cell that kept the blank run's end left the next one
     // with a range of negative length.
-    const openStart = blockStart
-    const openEnd = blockEnd
-    const start = blankRunFirst + lineLengths[from]!
-    let to = start
-    for (let index = from + 1; index < upTo - 1; index++) to += lineLengths[index]!
-    blockStart = start
-    blockEnd = Math.max(start, to - 1)
-    emit({ kind: "blank", lines: count - 2 })
-    blockStart = openStart
-    blockEnd = openEnd
+    const openStart = this.blockStart
+    const openEnd = this.blockEnd
+    const start = this.runFirst + this.runFirstLen
+    const to = start + (this.runAfterFirst - this.runLastLen)
+    this.blockStart = start
+    this.blockEnd = Math.max(start, to - 1)
+    this.emit({ kind: "blank", lines: count - 2 })
+    this.blockStart = openStart
+    this.blockEnd = openEnd
   }
 
-  for (let lineIndex = 0; lineIndex < allLines.length; lineIndex++) {
-    const rawLine = allLines[lineIndex]!
-    const lineEnd = lineStart + rawLine.length
+  /** Whether the line just fed (it began at `at`) opened a block of its own rather than joining the one before. */
+  opensBlockAt(at: number): boolean { return this.blockStart === at }
+
+  feed(rawLine: string): void {
+    const lineEnd = this.lineStart + rawLine.length
+    // A line is split on "\n" alone, not on every Unicode newline: the line LENGTHS are what the ranges are built
+    // from, and a two-character separator counted as one would put every range after it out by one.
+    const line = rawLine.trim()
+    // Where the open block's last line ended, before this line moves it.
+    const previousEnd = this.blockEnd
+    const blank = line.length === 0
     // A blank line ends a block without being part of it, so only the lines
     // that go INTO a block move its end (a paragraph's range stops at its
     // last character, not at the newline after it).
-    if (trimmed(rawLine).length > 0 || code !== null) blockEnd = lineEnd
+    if (!blank || this.code !== null) this.blockEnd = lineEnd
+    const size = rawLine.length + 1
 
     // A run of blank lines: the first ends the cell above it and the last
     // announces the one below; whatever is between them is a cell of empty
     // lines. Counted HERE, at the top, because every branch below continues.
-    if (code === null) {
-      if (trimmed(rawLine).length === 0) {
-        if (blankRunStart === null) { blankRunStart = lineIndex; blankRunFirst = lineStart }
-      } else if (blankRunStart !== null) {
-        emitBlankRun(lineIndex, blankRunStart)
-        blankRunStart = null
+    if (this.code === null) {
+      if (blank) {
+        if (this.runLines === 0) {
+          this.runFirst = this.lineStart
+          this.runFirstLen = size
+          this.runAfterFirst = 0
+        } else {
+          this.runAfterFirst += size
+        }
+        this.runLastLen = size
+        this.runLines++
+      } else if (this.runLines > 0) {
+        this.emitBlankRun()
+        this.runLines = 0
       }
     }
 
-    if (code !== null) {
-      if (trimmed(rawLine).startsWith("```")) {
-        emit({ kind: "code", language: codeLanguage, body: code.join("\n") })
-        code = null
-        codeLanguage = null
+    if (this.code !== null) {
+      if (line.startsWith("```")) {
+        this.emit({ kind: "code", language: this.codeLanguage, body: this.code.join("\n") })
+        this.code = null
+        this.codeLanguage = null
       } else {
-        code.push(rawLine)
+        this.code.push(rawLine)
       }
-      lineStart += rawLine.length + 1
-      continue
+      this.lineStart += size
+      return
     }
-
-    const line = trimmed(rawLine)
 
     if (line.startsWith("```")) {
-      flush()
-      blockStart = lineStart
+      this.flush(previousEnd)
+      this.blockStart = this.lineStart
       const lang = line.slice(3).trim()
-      codeLanguage = lang.length ? lang : null
-      code = []
-      lineStart += rawLine.length + 1
-      continue
+      this.codeLanguage = lang.length ? lang : null
+      this.code = []
+      this.lineStart += size
+      return
     }
-    if (line.length === 0) { flush(); lineStart += rawLine.length + 1; continue }
+    if (blank) { this.flush(); this.lineStart += size; return }
     if (isRule(line)) {
-      flush(); blockStart = lineStart; emit({ kind: "rule" })
-      lineStart += rawLine.length + 1; continue
+      this.flush(previousEnd); this.blockStart = this.lineStart; this.emit({ kind: "rule" })
+      this.lineStart += size; return
     }
     const head = heading(line)
     if (head) {
-      flush(); blockStart = lineStart
-      emit({ kind: "heading", level: head.level, text: head.text })
-      lineStart += rawLine.length + 1; continue
+      this.flush(previousEnd); this.blockStart = this.lineStart
+      this.emit({ kind: "heading", level: head.level, text: head.text })
+      this.lineStart += size; return
     }
     if (line.startsWith(">")) {
-      if (paragraph.length || bullets.length || todos.length || dashes.length || numbered.length) flush()
-      openIfNeeded()
-      quote.push(line.slice(1).trim())
-      lineStart += rawLine.length + 1; continue
+      if (this.paragraph.length || this.bullets.length || this.todos.length || this.dashes.length || this.numbered.length) this.flush(previousEnd)
+      this.openIfNeeded()
+      this.quote.push(line.slice(1).trim())
+      this.lineStart += size; return
     }
     // Before the plain bullet, because `- [ ] milk` starts with `- ` and
     // would otherwise be a bullet whose words are a box.
     const todo = todoItem(line)
     if (todo) {
-      if (paragraph.length || bullets.length || dashes.length || numbered.length || quote.length) flush()
-      openIfNeeded()
-      todos.push(todo)
-      lineStart += rawLine.length + 1; continue
+      if (this.paragraph.length || this.bullets.length || this.dashes.length || this.numbered.length || this.quote.length) this.flush(previousEnd)
+      this.openIfNeeded()
+      this.todos.push(todo)
+      this.lineStart += size; return
     }
     const bullet = bulletItem(line)
     if (bullet !== null) {
-      if (paragraph.length || todos.length || dashes.length || numbered.length || quote.length) flush()
-      openIfNeeded()
-      bullets.push(bullet)
-      lineStart += rawLine.length + 1; continue
+      if (this.paragraph.length || this.todos.length || this.dashes.length || this.numbered.length || this.quote.length) this.flush(previousEnd)
+      this.openIfNeeded()
+      this.bullets.push(bullet)
+      this.lineStart += size; return
     }
     const dash = dashItem(line)
     if (dash !== null) {
-      if (paragraph.length || bullets.length || todos.length || numbered.length || quote.length) flush()
-      openIfNeeded()
-      dashes.push(dash)
-      lineStart += rawLine.length + 1; continue
+      if (this.paragraph.length || this.bullets.length || this.todos.length || this.numbered.length || this.quote.length) this.flush(previousEnd)
+      this.openIfNeeded()
+      this.dashes.push(dash)
+      this.lineStart += size; return
     }
     const number = numberedItem(line)
     if (number !== null) {
-      if (paragraph.length || bullets.length || todos.length || dashes.length || quote.length) flush()
-      openIfNeeded()
-      numbered.push(number)
-      lineStart += rawLine.length + 1; continue
+      if (this.paragraph.length || this.bullets.length || this.todos.length || this.dashes.length || this.quote.length) this.flush(previousEnd)
+      this.openIfNeeded()
+      this.numbered.push(number)
+      this.lineStart += size; return
     }
-    if (bullets.length || todos.length || dashes.length || numbered.length || quote.length) flush()
-    openIfNeeded()
+    if (this.bullets.length || this.todos.length || this.dashes.length || this.numbered.length || this.quote.length) this.flush(previousEnd)
+    this.openIfNeeded()
     // The first line keeps the spaces it was written with, so an indented
     // paragraph is drawn indented. Four spaces is NOT a code block here —
     // code is what is inside ```, ` or `` and nothing else.
-    paragraph.push(paragraph.length === 0 ? leadingSpaces(rawLine) + line : line)
-    lineStart += rawLine.length + 1
+    this.paragraph.push(this.paragraph.length === 0 ? leadingSpaces(rawLine) + line : line)
+    this.lineStart += size
   }
 
-  if (code !== null) {
-    // An unclosed fence still renders as code — better than swallowing the
-    // rest of the note.
-    emit({ kind: "code", language: codeLanguage, body: code.join("\n") })
+  /** The end of the text: an unclosed fence still renders as code, the open block is closed, a trailing blank run is counted. */
+  finish(): PositionedBlock[] {
+    if (this.code !== null) {
+      // An unclosed fence still renders as code — better than swallowing the
+      // rest of the note.
+      this.emit({ kind: "code", language: this.codeLanguage, body: this.code.join("\n") })
+    }
+    this.flush()
+    if (this.runLines > 0) this.emitBlankRun()
+    return this.out
   }
-  flush()
-  if (blankRunStart !== null) emitBlankRun(allLines.length, blankRunStart)
-  return out
+}
+
+export function positioned(markdown: string): PositionedBlock[] {
+  const machine = new Machine()
+  let at = 0
+  for (;;) {
+    const stop = markdown.indexOf("\n", at)
+    if (stop < 0) { machine.feed(markdown.slice(at)); break }
+    machine.feed(markdown.slice(at, stop))
+    at = stop + 1
+  }
+  return machine.finish()
+}
+
+/** A document read line by line — CodeMirror's `Text` is one, and so is anything else with these members. */
+export interface LineSource {
+  readonly lines: number
+  readonly length: number
+  /** Line `n`, 1-based. */
+  line(n: number): { readonly from: number; readonly to: number; readonly text: string }
+  /** The line holding `pos`. */
+  lineAt(pos: number): { readonly number: number; readonly from: number; readonly to: number; readonly text: string }
+}
+
+/** A string as a `LineSource` (for tests and for callers that only have the text). */
+export function linesOf(text: string): LineSource {
+  const starts = [0]
+  for (let i = text.indexOf("\n"); i >= 0; i = text.indexOf("\n", i + 1)) starts.push(i + 1)
+  const lineAt = (number: number) => {
+    const from = starts[number - 1]!
+    const to = number < starts.length ? starts[number]! - 1 : text.length
+    return { from, to, number, text: text.slice(from, to) }
+  }
+  return {
+    lines: starts.length,
+    length: text.length,
+    line: lineAt,
+    lineAt(pos) {
+      let lo = 0, hi = starts.length - 1
+      while (lo < hi) { const mid = (lo + hi + 1) >> 1; if (starts[mid]! <= pos) lo = mid; else hi = mid - 1 }
+      return lineAt(lo + 1)
+    },
+  }
+}
+
+/** What changed, as ONE hull: the part of the old text from `from` to `toOld` became the new text from `from` to `toNew`. */
+export interface Hull { from: number; toOld: number; toNew: number }
+
+/** Index of the first block whose location is >= `at` (blocks are in order of location). */
+function firstAtOrAfter(blocks: PositionedBlock[], at: number): number {
+  let lo = 0, hi = blocks.length
+  while (lo < hi) { const mid = (lo + hi) >> 1; if (blocks[mid]!.range.location < at) lo = mid + 1; else hi = mid }
+  return lo
+}
+
+/**
+ * `positioned(newText)` worked out from `positioned(oldText)` and what changed, by parsing again only from the start
+ * of the block the edit touched, to the first block after it that is where it was (shifted by the edit's length).
+ * Every line up to the block before the edit's line and every line from that synchronising block on is a line the
+ * parser has already read, in the state it would read it in: a block's start is a place where the machine holds
+ * nothing over from the line before, so starting there — or stopping there — cannot change an answer. The result is
+ * identical to a full parse (the differential tests in `parserIncremental.test.ts`); an edit that changes what
+ * comes after it for good — a fence opened or closed — simply never gets back in step and parses to the end.
+ *
+ * Blocks reused from before the edit are the very same objects; those after it are new objects (their offsets
+ * moved) sharing the old `block`.
+ */
+export function positionedUpdate(old: PositionedBlock[], hull: Hull, doc: LineSource): PositionedBlock[] {
+  const delta = hull.toNew - hull.toOld
+  const edited = doc.lineAt(Math.min(hull.from, doc.length))
+  // Where to start: the last block that begins before the edited line (a blank cell is not a place to start: the
+  // run it counts began earlier).
+  let keep = firstAtOrAfter(old, edited.from) - 1
+  while (keep >= 0 && old[keep]!.block.kind === "blank") keep--
+  const restart = keep >= 0 ? old[keep]!.range.location : 0
+  if (keep < 0) keep = 0
+  const machine = new Machine(restart)
+  // The blocks after the edit that could be where the parse is back in step: those that begin at or after its end.
+  let next = firstAtOrAfter(old, hull.toOld)
+  while (next < old.length && old[next]!.block.kind === "blank") next++
+  let sync = -1
+  for (let n = doc.lineAt(restart).number; n <= doc.lines; n++) {
+    const line = doc.line(n)
+    machine.feed(line.text)
+    while (next < old.length && old[next]!.range.location + delta < line.from) {
+      next++
+      while (next < old.length && old[next]!.block.kind === "blank") next++
+    }
+    if (next < old.length && old[next]!.range.location + delta === line.from && machine.opensBlockAt(line.from)) {
+      sync = next
+      break
+    }
+  }
+  // (A heading or a rule is emitted by the very line that opens it; the old suffix has it already.)
+  if (sync >= 0) {
+    const last = machine.out[machine.out.length - 1]
+    if (last && last.range.location === old[sync]!.range.location + delta) machine.out.pop()
+  }
+  const result = old.slice(0, keep)
+  for (const one of sync < 0 ? machine.finish() : machine.out) result.push(one)
+  if (sync >= 0) {
+    for (let i = sync; i < old.length; i++) {
+      const b = old[i]!
+      result.push(delta === 0 ? b : { block: b.block, range: { location: b.range.location + delta, length: b.range.length } })
+    }
+  }
+  return result
 }

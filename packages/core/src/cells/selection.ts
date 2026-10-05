@@ -8,7 +8,7 @@
  * of them works it out.
  */
 
-import { intersection, sameRange, type Range } from "../text/range"
+import { end, intersection, sameRange, type Range } from "../text/range"
 
 /**
  * Whether a cell is picked: ONE of the selected ranges covers the whole of
@@ -127,3 +127,53 @@ export function cellFromSeam(y: number, goingDown: boolean, spans: Span[]): Rang
   const above = [...ordered].reverse().find((span) => span.bottom <= y)
   return (above ?? ordered[0]!).range
 }
+
+// MARK: - The same questions of cells that are in order (the editor's: they are the note's cells, sorted)
+
+/** Index of the first cell that starts at or after `at` (cells are in order of location and do not overlap). */
+export function firstCellFromBy<T>(cells: readonly T[], at: number, of: (cell: T) => Range): number {
+  let low = 0
+  let high = cells.length
+  while (low < high) {
+    const middle = (low + high) >> 1
+    if (of(cells[middle]!).location < at) low = middle + 1
+    else high = middle
+  }
+  return low
+}
+export const firstCellFrom = (cells: readonly Range[], at: number): number => firstCellFromBy(cells, at, (cell) => cell)
+
+/**
+ * `cellsOf` for cells in order: a binary search to the first cell the bracket reaches and a walk to the last,
+ * instead of an intersection with every cell of the note per bracket drawn (which made a 5,000-cell note cost
+ * milliseconds per keystroke). A cell of no length is inside only if it stands within the bracket.
+ */
+export function cellsOfSorted(bracket: Range, cells: readonly Range[]): Range[] {
+  const stop = end(bracket)
+  const inside: Range[] = []
+  for (let i = firstCellFrom(cells, bracket.location); i < cells.length; i++) {
+    const cell = cells[i]!
+    if (cell.location > stop) break
+    if (end(cell) <= stop) inside.push(cell)
+  }
+  return inside.length === 0 ? [bracket] : inside
+}
+
+/**
+ * `holds` for cells in order (any shape of cell, given how to get its range): walks the cells of the bracket and
+ * stops at the first that is not picked. A cell of no length is not a cell to pick and is not asked about.
+ */
+export function holdsSortedBy<T>(bracket: Range, cells: readonly T[], selection: Range[], of: (cell: T) => Range): boolean {
+  const stop = end(bracket)
+  let any = false
+  for (let i = firstCellFromBy(cells, bracket.location, of); i < cells.length; i++) {
+    const cell = of(cells[i]!)
+    if (cell.location > stop) break
+    if (end(cell) > stop || cell.length <= 0) continue
+    any = true
+    if (!covers(cell, selection)) return false
+  }
+  return any ? true : covers(bracket, selection)
+}
+export const holdsSorted = (bracket: Range, cells: readonly Range[], selection: Range[]): boolean =>
+  holdsSortedBy(bracket, cells, selection, (cell) => cell)

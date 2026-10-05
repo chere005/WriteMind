@@ -9,7 +9,7 @@
 import { useEffect, useState } from "react"
 import type { EditorView } from "@codemirror/view"
 import {
-  anchorIn, linkMarkdown, makeNote, triggerRange, type Note,
+  anchorIn, linkMarkdown, makeNote, stem, triggerRange, type Note,
 } from "@writemind/core"
 import type { Section } from "./wm"
 
@@ -22,6 +22,8 @@ interface Props {
   view: EditorView | null
   root: Section | null
   openNote(note: Note): Promise<void>
+  /** The link was written into `file` at [from, to): the note comes back with it selected. */
+  onLanded?(file: string, from: number, to: number): void
   onDone(): void
 }
 
@@ -44,8 +46,17 @@ export function minimalChange(before: string, after: string): { from: number; to
   return { from: start, to: stopBefore, insert: after.slice(start, stopAfter) }
 }
 
-export function LinkBanner({ request, current, view, root, openNote, onDone }: Props) {
+export function LinkBanner({ request, current, view, root, openNote, onLanded, onDone }: Props) {
   const [problem, setProblem] = useState<string | null>(null)
+  // Whether a run of text is highlighted in the note in front (the detail line says which kind of target it is).
+  const [highlighted, setHighlighted] = useState(false)
+  useEffect(() => {
+    if (!request || !view) return
+    const look = () => setHighlighted(!view.state.selection.main.empty)
+    look()
+    const tick = window.setInterval(look, 200)
+    return () => window.clearInterval(tick)
+  }, [request, view, current])
 
   useEffect(() => {
     setProblem(null)
@@ -57,23 +68,22 @@ export function LinkBanner({ request, current, view, root, openNote, onDone }: P
 
   if (!request) return null
 
+  // The Mac's banner (LinkBanner.swift): "Select section to point to", a second line that says what Link Here
+  // will do, and Link Here OFF while the note in front is the one the /link was typed in ("a note to itself").
+  const isSource = current === request.file
+  const sourceTitle = (root ? flatten(root).find((note) => note.path === request.file)?.title : undefined)
+    ?? stem(request.file)
+  const detail = problem
+    ?? (isSource ? `Open the note you want to point at — from “${sourceTitle}”.`
+      : highlighted ? "Links to the highlighted text, and marks it in this note as linked."
+      : "Links to the block the cursor is in. Highlight text first to point at just that.")
+
   const complete = async () => {
-    if (!view || !current) return
+    if (!view || !current || current === request.file) return
     const text = view.state.doc.toString()
     const main = view.state.selection.main
     const anchor = anchorIn(text, { location: main.from, length: main.to - main.from })
     const markdown = linkMarkdown(anchor.title, baseName(current), anchor.id)
-
-    if (current === request.file) {
-      // The link points into the note it is typed in.
-      const written = anchor.rewrittenText ?? text
-      const at = triggerRange(written, request.caret + (written.length - text.length))
-      if (!at) { setProblem("The /link is gone from this note."); return }
-      const finished = written.slice(0, at.location) + markdown + written.slice(at.location + at.length)
-      view.dispatch({ changes: minimalChange(text, finished) })
-      onDone()
-      return
-    }
 
     // The anchor goes into the target — through the open note, so the
     // editor never shows a stale copy of a file that changed underneath it.
@@ -91,17 +101,19 @@ export function LinkBanner({ request, current, view, root, openNote, onDone }: P
     if (!out.written) { setProblem("That note changed on disk; nothing was overwritten."); return }
     const known = root ? flatten(root).find((note) => note.path === request.file) : undefined
     onDone()
+    onLanded?.(request.file, at.location, at.location + markdown.length)
     await openNote(known ?? makeNote(request.file, Date.now(), finished))
   }
 
   return (
     <div className="link-banner" role="status">
-      <span>
-        {problem ?? "Select section to point to — open a note, put the cursor in a block or highlight a run, then Link Here."}
+      <span className="text">
+        <b className="title">Select section to point to</b>
+        <span className="detail">{detail}</span>
       </span>
       <div className="spacer" />
-      <button onClick={() => { void complete() }}>Link Here</button>
       <button onClick={onDone}>Cancel</button>
+      <button className="default" disabled={isSource} onClick={() => { void complete() }}>Link Here</button>
     </div>
   )
 }

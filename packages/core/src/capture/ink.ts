@@ -246,12 +246,22 @@ export function inkMask(gray: Uint8Array, width: number, height: number, options
   return writingMask(marks(raw, width, height, options))
 }
 
-/** The writing's box with a little room round it, kept inside the page. */
-export function inkBox(mask: Uint8Array, width: number, height: number, margin = 6):
+/**
+ * The writing's box with a little room round it, kept inside the page — the
+ * writing inside `within` only (page pixels, top-left origin), when there is
+ * one (`NotebookCapture.inkBox(of:within:)`: a section of the page).
+ */
+export function inkBox(mask: Uint8Array, width: number, height: number, margin = 6,
+  within?: { x: number; y: number; width: number; height: number }):
 { x: number; y: number; width: number; height: number } | null {
+  const fromX = within ? Math.max(0, Math.trunc(within.x)) : 0
+  const fromY = within ? Math.max(0, Math.trunc(within.y)) : 0
+  const toX = within ? Math.min(width, Math.ceil(within.x + within.width)) : width
+  const toY = within ? Math.min(height, Math.ceil(within.y + within.height)) : height
+  if (toX <= fromX || toY <= fromY) return null
   let minX = width, minY = height, maxX = -1, maxY = -1
-  for (let y = 0; y < height; y++) {
-    for (let x = 0; x < width; x++) {
+  for (let y = fromY; y < toY; y++) {
+    for (let x = fromX; x < toX; x++) {
       if (!mask[y * width + x]) continue
       if (x < minX) minX = x
       if (x > maxX) maxX = x
@@ -262,5 +272,79 @@ export function inkBox(mask: Uint8Array, width: number, height: number, margin =
   if (maxX < 0) return null
   const x0 = Math.max(0, minX - margin), y0 = Math.max(0, minY - margin)
   const x1 = Math.min(width - 1, maxX + margin), y1 = Math.min(height - 1, maxY + margin)
+  return { x: x0, y: y0, width: x1 - x0 + 1, height: y1 - y0 + 1 }
+}
+
+/**
+ * The box of the writing PROPER — the port's refinement of `inkBox`. A printed dot the
+ * lattice search missed (the dots at the far side of a tilted page come out blurred and
+ * irregular) is a mark just over the speck limit, and `inkBox` would stretch the picture
+ * to reach it: a line of writing came in the size of the whole page. Marks too small to
+ * be writing on their own (area under `SIGNIFICANT_AREA` and no side over
+ * `SIGNIFICANT_SIDE`) only count when they sit within `reach` of the writing that is
+ * (an i-dot, a full stop, a comma); a page with no larger mark at all keeps them all.
+ * `within` is a section of the page (page pixels); only marks whose centre is in it count.
+ */
+export const SIGNIFICANT_AREA = 60
+export const SIGNIFICANT_SIDE = 16
+
+export function writingBox(found: Marks, margin = 6, within?: { x: number; y: number; width: number; height: number },
+  reach = 28): { x: number; y: number; width: number; height: number } | null {
+  /** A mark as far as it lies in the section: a drawing joined up across the page is cut at the section's edge. */
+  interface Part { minX: number; minY: number; maxX: number; maxY: number; area: number }
+  const partsHere: Part[] = []
+  for (const index of found.writing) {
+    const c = found.components[index]!
+    if (!within) {
+      partsHere.push({ minX: c.minX, minY: c.minY, maxX: c.maxX, maxY: c.maxY, area: componentArea(c) })
+      continue
+    }
+    const left = within.x, top = within.y, right = within.x + within.width, bottom = within.y + within.height
+    if (c.maxX + 1 <= left || c.minX >= right || c.maxY + 1 <= top || c.minY >= bottom) continue
+    if (c.minX >= left && c.maxX + 1 <= right && c.minY >= top && c.maxY + 1 <= bottom) {
+      partsHere.push({ minX: c.minX, minY: c.minY, maxX: c.maxX, maxY: c.maxY, area: componentArea(c) })
+      continue
+    }
+    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity, area = 0
+    for (const pixel of c.pixels) {
+      const x = pixel % found.width, y = (pixel - x) / found.width
+      if (x < left || x >= right || y < top || y >= bottom) continue
+      area++
+      if (x < minX) minX = x
+      if (x > maxX) maxX = x
+      if (y < minY) minY = y
+      if (y > maxY) maxY = y
+    }
+    if (area > 0) partsHere.push({ minX, minY, maxX, maxY, area })
+  }
+  if (partsHere.length === 0) return null
+  const large = (p: Part): boolean =>
+    p.area >= SIGNIFICANT_AREA || Math.max(p.maxX - p.minX + 1, p.maxY - p.minY + 1) >= SIGNIFICANT_SIDE
+  const writing = partsHere.filter(large)
+  const base = writing.length > 0 ? writing : partsHere
+  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity
+  const take = (p: Part): void => {
+    minX = Math.min(minX, p.minX); minY = Math.min(minY, p.minY)
+    maxX = Math.max(maxX, p.maxX); maxY = Math.max(maxY, p.maxY)
+  }
+  base.forEach(take)
+  if (writing.length > 0) {
+    // The small marks that belong to the writing: near it. Taking one can bring another into reach, so go until none does.
+    const small = partsHere.filter((p) => !large(p))
+    const taken = new Set<Part>()
+    for (let grew = true; grew;) {
+      grew = false
+      for (const p of small) {
+        if (taken.has(p)) continue
+        if (p.maxX >= minX - reach && p.minX <= maxX + reach && p.maxY >= minY - reach && p.minY <= maxY + reach) {
+          taken.add(p)
+          take(p)
+          grew = true
+        }
+      }
+    }
+  }
+  const x0 = Math.max(0, minX - margin), y0 = Math.max(0, minY - margin)
+  const x1 = Math.min(found.width - 1, maxX + margin), y1 = Math.min(found.height - 1, maxY + margin)
   return { x: x0, y: y0, width: x1 - x0 + 1, height: y1 - y0 + 1 }
 }

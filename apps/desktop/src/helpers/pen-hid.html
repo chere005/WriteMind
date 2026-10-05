@@ -1,0 +1,17 @@
+<!doctype html>
+<!--
+  The WebHID helper page of the native pen feed (docs/spikes/DESIGN-pen-capture.md 4.4). It lives in a hidden window of its own
+  session ("pen-hid") that is allowed to see Wacom HID devices and nothing else; it is not the notes window and never sees user data.
+  pen-hid.js (built from src/main/pen/webhid/hostPage.ts) reads the tablet over navigator.hid and hands decoded pen samples to the
+  main process through the preload bridge (window.penHid, src/preload/penHid.ts). Nothing here is shown.
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'">
+<title>WriteMind pen (WebHID helper)</title>
+</head>
+<body>
+<script src="pen-hid.js"></script>
+</body>
+</html>

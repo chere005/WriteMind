@@ -8,6 +8,15 @@ export interface Section {
   sections: Section[]
 }
 
+/** The open project, as the main process describes it (projectCommands.ts). */
+export interface ProjectInfo {
+  name: string
+  file: string | null
+  edited: boolean
+  folders: { path: string; name: string; exists: boolean }[]
+  excluded: { path: string; name: string; exists: boolean }[]
+}
+
 export interface Platform extends Capabilities {
   platform: string
   root: string
@@ -23,22 +32,38 @@ declare global {
       createNote(folder: string): Promise<string>
       renameNote(file: string, title: string): Promise<string>
       trashNote(file: string): Promise<void>
+      rescue(file: string, text: string, kind?: "note" | "drawing"): Promise<string>
       createSection(parent: string): Promise<string>
-      trashSection(folder: string): Promise<void>
+      /** False: the folder is a project folder (or not in the project), nothing was put in the bin. */
+      trashSection(folder: string): Promise<boolean>
+      renameSection(folder: string, name: string): Promise<string | null>
       setOrder(folder: string, names: string[]): Promise<void>
       placeNote(file: string, folder: string, before: string | null): Promise<string>
       moveSection(folder: string, target: string): Promise<string | null>
-      readSession(): Promise<string | null>
-      writeSession(json: string): Promise<void>
+      readSession(projectFile: string | null): Promise<string | null>
+      writeSession(projectFile: string | null, json: string): Promise<void>
+      project(): Promise<ProjectInfo>
+      onProject(listener: (kind: "switch" | "folders" | "saved", info: ProjectInfo) => void): () => void
+      reveal(target: string): Promise<void>
       existing(files: string[]): Promise<string[]>
       readDrawing(note: string): Promise<string | null>
       writeDrawing(note: string, json: string): Promise<void>
       revealNotes(): Promise<string>
-      saveMedia(bytes: Uint8Array, extension: string): Promise<{ file: string }>
+      saveMedia(bytes: Uint8Array, extension: string, note?: string | null): Promise<{ file: string }>
       choosePicture(): Promise<{ bytes: Uint8Array; extension: string } | null>
-      readPicture(file: string): Promise<{ lines: { text: string; confidence: number }[] }>
+      readPicture(file: string): Promise<import("@writemind/core").OcrReading>
+      ocrRead(request: { id: string; file?: string; bytes?: Uint8Array; languages?: string[] }): Promise<import("@writemind/core").OcrReading>
+      ocrCancel(id: string): Promise<void>
+      ocrStatus(): Promise<{
+        ocr: boolean; engine: "vision" | "windows" | "tesseract" | null; japanese: boolean
+        probe: { ok: boolean; installed: string[]; profile: string | null; japanese: boolean; addJapanese: string; reason?: string }
+        addJapanese: string; busy: number; reads: number
+      }>
       askForCamera(): Promise<boolean>
-      exportPDF(suggested: string): Promise<string | null>
+      exportPDF(request: {
+        noteFile: string; title: string; markdown: string; drawing: string | null
+        pane: { width: number; height: number }
+      }): Promise<string | null>
       duplicateNote(file: string): Promise<string>
       setMenuState(state: import("../shared/commands").MenuState): Promise<void>
       runMain(id: string): Promise<void>
@@ -49,12 +74,11 @@ declare global {
       e2ePick?(answer: string): Promise<void>
       e2eWindow?(): Promise<unknown>
       e2eSetBounds?(bounds: unknown): Promise<void>
-      e2eLeaveFullScreen?(): Promise<void>
-      padEnter(): Promise<boolean>
-      padExit(): Promise<void>
-      onPadState(listener: (active: boolean) => void): () => void
-      windowInfo?(): Promise<import("./padGeometry").DisplayInfo | null>
+      /** The tablet pen's native feed (shared/pen.ts PenApi); present on every platform, `available: false` off Windows. */
+      pen: import("../shared/pen").PenApi
+      windowInfo?(): Promise<import("./tabletPage").DisplayInfo | null>
       onNotesChanged(listener: () => void): () => void
+      onFlushRequest(listener: () => Promise<void> | void): () => void
       onEdit(listener: (which: "undo" | "redo") => void): () => void
     }
   }

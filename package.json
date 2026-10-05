@@ -1,7 +1,7 @@
 {
   "name": "writemind-cross",
   "private": true,
-  "version": "0.2.0",
+  "version": "0.3.0-preview.1",
   "description": "WriteMind for macOS and Windows: one notebook, two platforms.",
   "workspaces": [
     "packages/*",
@@ -11,7 +11,11 @@
     "test": "vitest run",
     "typecheck": "tsc -b --pretty false && tsc -p apps/desktop",
     "dev": "npm -w @writemind/desktop run dev",
-    "build": "npm -w @writemind/desktop run build"
+    "build": "npm -w @writemind/desktop run build",
+    "e2e": "node e2e/run.mjs",
+    "e2e:list": "node e2e/run.mjs --list",
+    "e2e:selftest": "node e2e/selftest.mjs",
+    "e2e:instance": "node e2e/instance.mjs"
   },
   "devDependencies": {
     "@types/node": "^26.6.2",

@@ -179,3 +179,53 @@ export function anchorOffset(text: string, anchor: string): number | null {
   }
   return null
 }
+
+/**
+ * Which note a link names. `/link` writes only the target's FILE NAME
+ * (`[Title](Target.md#id)`), so the Mac's `follow(destination:)` looks the name
+ * up among ALL the notes, in any section (`lastPathComponent == file`, then
+ * `filename == file`, the name without its extension). A path written by hand
+ * (`../Ideas/Target.md`) is taken relative to the note it is in first.
+ *
+ * When two sections hold a note of that name, the one nearest the source wins
+ * (same folder, then the longest shared path); the Mac took the first in tree
+ * order. `notePaths` are the paths as the tree has them; the answer is one of
+ * them, or null.
+ */
+export function resolveLinkTarget(notePaths: string[], from: string, file: string): string | null {
+  if (file.length === 0) return null
+  const norm = (path: string): string => path.replace(/\\/g, "/")
+  const same = (a: string, b: string): boolean => norm(a) === norm(b) || norm(a).toLowerCase() === norm(b).toLowerCase()
+
+  // A path relative to the source's folder.
+  if (/[\\/]/.test(file)) {
+    const parts = norm(from).split("/")
+    parts.pop()
+    for (const part of norm(file).split("/")) {
+      if (part === "" || part === ".") continue
+      if (part === "..") { if (parts.length > 1) parts.pop() } else parts.push(part)
+    }
+    const wanted = parts.join("/")
+    const hit = notePaths.find((path) => same(path, wanted))
+    if (hit) return hit
+  }
+
+  const name = (path: string): string => norm(path).split("/").pop() ?? path
+  const bare = (path: string): string => name(path).replace(/\.[^.]*$/, "")
+  const base = file.split(/[\\/]/).pop() ?? file
+  const nearest = (candidates: string[]): string | null => {
+    if (candidates.length === 0) return null
+    const mine = norm(from).split("/")
+    const shared = (path: string): number => {
+      const theirs = norm(path).split("/")
+      let n = 0
+      while (n < mine.length - 1 && n < theirs.length - 1 && mine[n]!.toLowerCase() === theirs[n]!.toLowerCase()) n++
+      return n
+    }
+    return [...candidates].sort((a, b) => shared(b) - shared(a))[0]!
+  }
+  return nearest(notePaths.filter((path) => name(path) === base))
+    ?? nearest(notePaths.filter((path) => name(path).toLowerCase() === base.toLowerCase()))
+    ?? nearest(notePaths.filter((path) => bare(path) === base))
+    ?? nearest(notePaths.filter((path) => bare(path).toLowerCase() === base.toLowerCase()))
+}

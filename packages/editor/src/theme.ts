@@ -41,6 +41,8 @@ export const notebookTheme = EditorView.theme({
   ".wm-bold": { fontWeight: "700" },
   ".wm-italic": { fontStyle: "italic" },
   ".wm-underline": { textDecoration: "underline" },
+  // The run `/link` marked as linked to (<mark id=…>): a soft highlighter.
+  ".wm-highlight": { backgroundColor: "rgba(255, 213, 0, 0.28)", borderRadius: "2px" },
   ".wm-strike": { textDecoration: "line-through" },
   ".wm-code": {
     fontFamily: "ui-monospace, SFMono-Regular, Menlo, Consolas, 'DejaVu Sans Mono', monospace",

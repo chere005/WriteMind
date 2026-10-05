@@ -20,6 +20,24 @@ export const NODE_KINDS: ShapeKind[] =
   ["rectangle", "roundedRectangle", "oval", "diamond", "triangle", "parallelogram", "text"]
 export const MARK_KINDS: ShapeKind[] = ["check", "cross", "question", "star"]
 
+/** Every kind this build can draw. A sidecar can name another (a newer app wrote it): see `isShapeKind`. */
+export const SHAPE_KINDS: ShapeKind[] = [...NODE_KINDS, ...MARK_KINDS]
+
+/** Is this a kind we can draw? A name from a newer build is not, and must never reach the painter. */
+export const isShapeKind = (value: unknown): value is ShapeKind =>
+  typeof value === "string" && (SHAPE_KINDS as string[]).includes(value)
+
+/**
+ * What the Mac's two palettes offer (ShapeMenu.swift): the Shapes popover is the
+ * six flow-chart nodes; the Marks popover is the four marks AND the three
+ * plain figures people draw all the time (box, circle, triangle), followed by
+ * the arrow / both ways / line buttons, which are placements, not shapes.
+ */
+export const FLOW_MENU_KINDS: ShapeKind[] =
+  ["rectangle", "roundedRectangle", "oval", "diamond", "triangle", "parallelogram"]
+export const MARK_MENU_KINDS: ShapeKind[] =
+  ["check", "cross", "question", "star", "rectangle", "oval", "triangle"]
+
 /** Nodes carry a label and are what arrows land on; marks are marks. */
 export function isNode(kind: ShapeKind): boolean {
   return !MARK_KINDS.includes(kind)
@@ -36,7 +54,7 @@ export function shapeTitle(kind: ShapeKind): string {
     diamond: "Diamond", triangle: "Triangle", parallelogram: "Parallelogram",
     check: "Check Mark", cross: "Cross", star: "Star", question: "Question Mark",
     text: "Text Box",
-  }[kind]
+  }[kind] ?? String(kind)
 }
 
 /** Height over width when the shape is first put down. */
@@ -131,12 +149,52 @@ export function unitPolylines(kind: ShapeKind): Point[][] {
               [{ x: 0.497, y: 0.86 }, { x: 0.503, y: 0.86 }]]
     }
   }
+  // A kind this build does not know (the type says there is none, the file may say otherwise):
+  // no outline, so nothing is painted or hit, and nothing throws. `readDrawing` never lets one
+  // in; this is the floor under it for a drawing built any other way.
+  return []
 }
 
 export interface Rect { x: number; y: number; width: number; height: number }
 
-/** The polylines scaled into a box. */
+/** How round a rounded rectangle's corners are: this share of its SHORT side. */
+export const CORNER_RATIO = 0.2
+
+export const cornerRadius = (box: Rect): number =>
+  Math.min(Math.abs(box.width), Math.abs(box.height)) * CORNER_RATIO
+
+/**
+ * A rounded rectangle's outline in a box, clockwise from the top edge: four
+ * quarter arcs of radius `cornerRadius`, `steps` segments each. The radius
+ * is in POINTS, so it is a circle on a box of any shape (a unit outline
+ * scaled into the box would squash it into an ellipse).
+ */
+export function roundedRectanglePoints(box: Rect, steps = 6): Point[] {
+  const r = cornerRadius(box)
+  const centres = [
+    { x: box.x + box.width - r, y: box.y + r, from: -90 },
+    { x: box.x + box.width - r, y: box.y + box.height - r, from: 0 },
+    { x: box.x + r, y: box.y + box.height - r, from: 90 },
+    { x: box.x + r, y: box.y + r, from: 180 },
+  ]
+  const out: Point[] = []
+  for (const corner of centres) {
+    for (let step = 0; step <= steps; step++) {
+      const angle = (corner.from + (step / steps) * 90) * Math.PI / 180
+      out.push({ x: corner.x + r * Math.cos(angle), y: corner.y + r * Math.sin(angle) })
+    }
+  }
+  return out
+}
+
+/**
+ * The polylines scaled into a box. The Mac draws a rounded rectangle with its
+ * true curves and hits it, and lands arrows on it, as a square; here the
+ * outline IS the rounded one, so what is drawn, what is hit and where an
+ * arrow stops are the same line.
+ */
 export function polylines(kind: ShapeKind, box: Rect): Point[][] {
+  if (kind === "roundedRectangle") return [roundedRectanglePoints(box)]
   return unitPolylines(kind).map((line) =>
     line.map((point) => ({ x: box.x + point.x * box.width, y: box.y + point.y * box.height })))
 }

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest"
 import {
-  DIAMOND_LEAN, RECTANGLE_LEAN, SHIPPED_KINDS, componentOf, flowChartItems, isNodeKind, namedShape,
+  DIAMOND_LEAN, RECTANGLE_LEAN, SHIPPED_KINDS, componentOf, flowChartItems, isNodeKind, mayHoldChart, namedShape,
   noTransform, placeFlowItems, readFlow, readShape, type CanvasItem, type ShapeInkKind, type Size,
 } from "../src/index"
 import { Canvas, type Pt } from "./raster"
@@ -231,6 +231,49 @@ describe("ShapeInk corpus", () => {
       c.polyline([{ x: 210, y: 130 }, { x: 240, y: 150 }, { x: 210, y: 170 }])
     })
     expect(isNodeKind(kind(arrow)), "an arrow is a line, not a node").toBe(false)
+  })
+})
+
+describe("whether a page could hold a chart at all (beyond the Swift suite)", () => {
+  it("needs a closed outline of a box's size", () => {
+    const blank = new Canvas(600, 400)
+    expect(mayHoldChart(blank.mask(), 600, 400)).toBe(false)
+    // Writing: rows of small marks with counters no bigger than a letter's.
+    const prose = new Canvas(600, 400)
+    prose.lineWidth = 3
+    for (let row = 0; row < 6; row++) for (let i = 0; i < 18; i++) prose.strokeEllipse(20 + i * 30, 30 + row * 55, 14, 16)
+    expect(mayHoldChart(prose.mask(), 600, 400)).toBe(false)
+    const boxes = new Canvas(600, 400)
+    boxes.strokeRect(60, 70, 180, 90)
+    expect(mayHoldChart(boxes.mask(), 600, 400)).toBe(true)
+  })
+})
+
+describe("a labelled chart (beyond the Swift suite)", () => {
+  // Three boxes with a word of ink written in each and an arrow between each pair,
+  // and the reader's words for them.
+  function labelled() {
+    const c = new Canvas(800, 400)
+    c.lineWidth = 4
+    const boxes = [{ x: 40, label: "start" }, { x: 300, label: "check" }, { x: 560, label: "done" }]
+    for (const b of boxes) {
+      c.strokeRect(b.x, 150, 200, 100)
+      // The word: a run of letter-sized blobs standing in for the glyphs.
+      for (let i = 0; i < 5; i++) c.fillRect(b.x + 40 + i * 28, 185, 14, 30)
+    }
+    c.line({ x: 242, y: 200 }, { x: 298, y: 200 }); c.polyline([{ x: 282, y: 188 }, { x: 298, y: 200 }, { x: 282, y: 212 }])
+    c.line({ x: 502, y: 200 }, { x: 558, y: 200 }); c.polyline([{ x: 542, y: 188 }, { x: 558, y: 200 }, { x: 542, y: 212 }])
+    const words = boxes.map((b) => ({ text: b.label, box: { x: b.x + 36, y: 180, width: 140, height: 40 } }))
+    return { mask: c.mask(), words }
+  }
+  const pane = { width: 1000, height: 700 }
+
+  it("is read as nodes labelled with the words inside them", () => {
+    const { mask, words } = labelled()
+    const items = flowChartItems(mask, 800, 400, words, pane, "#000000", 2)
+    const shapes = items.filter((i) => i.kind === "shape")
+    expect(shapes.map((s) => (s.kind === "shape" ? s.shape.label : "")).sort()).toEqual(["check", "done", "start"])
+    expect(items.filter((i) => i.kind === "connector").length).toBe(2)
   })
 })
 

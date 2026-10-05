@@ -8,7 +8,7 @@
  */
 
 import {
-  isClosed as shapeIsClosed, polylines, type Point, type Rect,
+  isClosed as shapeIsClosed, isNode, polylines, type Point, type Rect,
 } from "./shapes"
 import {
   isHidden, itemTransform, type CanvasItem, type Drawing, type ItemTransform,
@@ -144,9 +144,15 @@ export function itemIsClosed(item: CanvasItem): boolean {
 }
 
 const unionRect = (points: Point[]): Rect => {
-  const xs = points.map((p) => p.x), ys = points.map((p) => p.y)
-  const minX = Math.min(...xs), minY = Math.min(...ys)
-  return { x: minX, y: minY, width: Math.max(...xs) - minX, height: Math.max(...ys) - minY }
+  // A loop, not Math.min(...xs): a very long stroke would overflow the argument limit.
+  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity
+  for (const p of points) {
+    if (p.x < minX) minX = p.x
+    if (p.x > maxX) maxX = p.x
+    if (p.y < minY) minY = p.y
+    if (p.y > maxY) maxY = p.y
+  }
+  return { x: minX, y: minY, width: maxX - minX, height: maxY - minY }
 }
 
 const inset = (rect: Rect, by: number): Rect => ({
@@ -190,24 +196,35 @@ export function placedCenter(item: CanvasItem, size: Size): Point {
  * matrix `CGAffineTransform` was building, written out.
  */
 export function applyMatrix(item: CanvasItem, size: Size, point: Point): Point {
+  return matrixOf(item, size)(point)
+}
+
+/**
+ * The same matrix as a function of a point, with the item's centre worked out
+ * ONCE. The centre of a stroke is the middle of its box, which is a pass over
+ * all its points: asking for it again for every point made every outline, hit
+ * test and repaint quadratic in the length of the stroke (a 500-point stroke
+ * cost a quarter of a million point allocations each time it was painted).
+ */
+export function matrixOf(item: CanvasItem, size: Size): (point: Point) => Point {
   const centre = baseCenter(item, size)
   const t = itemTransform(item)
-  const x = (point.x - centre.x) * t.scale
-  const y = (point.y - centre.y) * t.scale
   const c = Math.cos(t.rotation), s = Math.sin(t.rotation)
-  return {
-    x: centre.x + t.dx * size.width + x * c - y * s,
-    y: centre.y + t.dy * size.height + x * s + y * c,
+  const ox = centre.x + t.dx * size.width, oy = centre.y + t.dy * size.height
+  return (point) => {
+    const x = (point.x - centre.x) * t.scale
+    const y = (point.y - centre.y) * t.scale
+    return { x: ox + x * c - y * s, y: oy + x * s + y * c }
   }
 }
 
 /** The outline where it is now. */
 export const outline = (item: CanvasItem, size: Size): Point[] =>
-  basePoints(item, size).map((point) => applyMatrix(item, size, point))
+  basePoints(item, size).map(matrixOf(item, size))
 
 /** The four corners of the item's own box where they are now. */
 export const frameCorners = (item: CanvasItem, size: Size): Point[] =>
-  cornersOf(baseBounds(item, size)).map((point) => applyMatrix(item, size, point))
+  cornersOf(baseBounds(item, size)).map(matrixOf(item, size))
 
 /** The upright box around the item where it is now — what the handles hang off. */
 export function bounds(item: CanvasItem, size: Size): Rect {
@@ -265,8 +282,9 @@ export function hitTest(item: CanvasItem, point: Point, size: Size): boolean {
       if (shapeIsClosed(item.shape.kind)) {
         return polygonContains(shape, point) || near(point, [[...shape, shape[0]!]], reach)
       }
+      const place = matrixOf(item, size)
       const lines = polylines(item.shape.kind, baseBounds(item, size))
-        .map((line) => line.map((p) => applyMatrix(item, size, p)))
+        .map((line) => line.map(place))
       return near(point, lines, reach)
     }
     case "connector":
@@ -277,6 +295,43 @@ export function hitTest(item: CanvasItem, point: Point, size: Size): boolean {
       return near(point, [shape], reach)
     }
   }
+}
+
+/** How far apart two segments are: 0 when they cross or touch. */
+export function segmentDistance(a: Point, b: Point, c: Point, d: Point): number {
+  if (cross(a, b, c, d)) return 0
+  return Math.min(
+    distanceToSegment(a, c, d), distanceToSegment(b, c, d),
+    distanceToSegment(c, a, b), distanceToSegment(d, a, b),
+  )
+}
+
+/**
+ * The strokes the eraser rubs out in moving from `from` to `to`: every stroke whose ink the path in between
+ * comes within reach of — not only the strokes under the two ends. A pen at 60 Hz moving across the page
+ * reports a point every 20 to 30 points, and testing the points alone let an eraser pass straight over a
+ * stroke that lay between two of them (a quick scribble left half the strokes behind). A click is the same
+ * thing with `from == to`.
+ */
+export function strokesSwept(drawing: Drawing, from: Point, to: Point, size: Size): Set<string> {
+  const out = new Set<string>()
+  for (const item of drawing.items) {
+    if (item.kind !== "stroke" || isHidden(item)) continue
+    const shape = outline(item, size)
+    if (shape.length === 0) continue
+    const reach = Math.max((item.stroke.width * item.stroke.transform.scale) / 2, 6)
+    if (shape.length === 1) {
+      if (distanceToSegment(shape[0]!, from, to) <= reach) out.add(item.stroke.id)
+      continue
+    }
+    for (let index = 0; index < shape.length - 1; index++) {
+      if (segmentDistance(from, to, shape[index]!, shape[index + 1]!) <= reach) {
+        out.add(item.stroke.id)
+        break
+      }
+    }
+  }
+  return out
 }
 
 /**
@@ -304,6 +359,21 @@ export function indexAt(drawing: Drawing, point: Point, size: Size): number | nu
     const item = drawing.items[index]!
     if (isHidden(item)) continue
     if (hitTest(item, point, size)) return index
+  }
+  return null
+}
+
+/**
+ * The topmost node (a flow-chart shape or a picture) under a point — the
+ * Swift `attachable(at:)`. An arrow dropped with an end here is attached to
+ * it, and follows it from then on.
+ */
+export function attachableAt(drawing: Drawing, point: Point, size: Size): string | null {
+  for (let index = drawing.items.length - 1; index >= 0; index--) {
+    const item = drawing.items[index]!
+    if (isHidden(item)) continue
+    const node = item.kind === "image" || (item.kind === "shape" && isNode(item.shape.kind))
+    if (node && hitTest(item, point, size)) return itemIdOf(item)
   }
   return null
 }

@@ -1,24 +1,53 @@
+import "./penGateBoot"   // FIRST: the pen gate's listeners must be the first capture listeners on window (penGate.ts)
 import { StrictMode } from "react"
 import { createRoot } from "react-dom/client"
 import { App } from "./App"
+import PenSink from "./PenSink"
 import "./app.css"
+import "./chrome.css"
 import { watchPen } from "./penSettings"
 import { installPenCursor } from "./penCursor"
+import { installPenFeed } from "./penFeed"
+import { installDropGuard } from "./dropGuard"
 
+// The pen sink is this same bundle in a window of its own (main/pen/overlay.ts): the transparent window that holds the pen to the sheet.
+const sink = new URLSearchParams(location.search).has("pen-sink")
 watchPen()
-installPenCursor()
+if (!sink) { installPenCursor(); installPenFeed() }
+installDropGuard()
 
 // An app that silently does nothing is the worst kind: anything thrown in
 // the renderer says so on screen, where it can be read, rather than in a
-// console nobody has open.
+// console nobody has open. The note goes away by itself after a while and has
+// a close button, and it sits over the top corner rather than the footers: one
+// stray exception used to scar the window until a restart, over the project's
+// Folder menu.
+let hideTimer: number | undefined
 function shout(message: string): void {
+  // Chromium's report that a size observer settled over two frames: nothing is wrong.
+  if (/ResizeObserver loop/.test(message)) return
   let bar = document.getElementById("wm-error")
   if (!bar) {
-    bar = document.createElement("div")
-    bar.id = "wm-error"
-    document.body.appendChild(bar)
+    const note = document.createElement("div")
+    note.id = "wm-error"
+    note.setAttribute("role", "alert")
+    const text = document.createElement("span")
+    text.className = "text"
+    const close = document.createElement("button")
+    close.type = "button"
+    close.className = "close"
+    close.title = "Dismiss"
+    close.setAttribute("aria-label", "Dismiss")
+    close.textContent = "×"
+    close.addEventListener("click", () => note.remove())
+    note.append(text, close)
+    document.body.appendChild(note)
+    bar = note
   }
-  bar.textContent = message
+  const text = bar.querySelector(".text")
+  if (text) text.textContent = message.replace(/^Error invoking remote method '[^']*':\s*(Error:\s*)?/, "")
+  window.clearTimeout(hideTimer)
+  hideTimer = window.setTimeout(() => document.getElementById("wm-error")?.remove(), 15000)
 }
 
 window.addEventListener("error", (event) => shout(`${event.message}`))
@@ -27,6 +56,6 @@ window.addEventListener("unhandledrejection", (event) =>
 
 createRoot(document.getElementById("root")!).render(
   <StrictMode>
-    <App />
+    {sink ? <PenSink /> : <App />}
   </StrictMode>,
 )

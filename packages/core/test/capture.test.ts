@@ -1,9 +1,9 @@
 import { describe, expect, it } from "vitest"
 import {
-  applyHomography, displayedFrame, invertHomography, pageBox, placement, PAGE_FRACTION,
+  applyHomography, capturePlacedCentre, displayedFrame, insertionPointBelow, invertHomography, pageBox, placement, PAGE_FRACTION,
   regionOf, resolveShape, shapeSize, unitSquareTo,
 } from "../src/capture/page"
-import { inkBox, inkMask, localMeanRadius } from "../src/capture/ink"
+import { darkerThanPaper, inkBox, inkMask, localMeanRadius, marks, writingBox } from "../src/capture/ink"
 
 /**
  * A page drawn in code: paper, a grid of printed dots, a shadow down one
@@ -68,6 +68,17 @@ describe("lifting the writing off the paper", () => {
       gray[47 * width + x] = 20
     }
     expect(inkBox(inkMask(gray, width, height), width, height)).toBeNull()
+  })
+
+  it("only the writing inside a window counts", () => {
+    const mask = inkMask(page(), width, height)
+    // The stroke runs from x 20 to 100; a window over the left of it sees x 20 to 59, plus the 6-pixel margin.
+    const box = inkBox(mask, width, height, 6, { x: 0, y: 0, width: 60, height: 90 })!
+    expect(box.x).toBe(14)
+    expect(box.width).toBe(52)
+    expect(box.y).toBe(32)
+    expect(box.height).toBe(17)
+    expect(inkBox(mask, width, height, 6, { x: 0, y: 0, width: 60, height: 30 })).toBeNull()   // a window with no writing in it
   })
 
   it("keeps the local-mean radius the one number everything else asks for", () => {
@@ -190,5 +201,134 @@ describe("the perspective", () => {
 
     const noPage = pageBox({ region, quad: null, frame, inset: 0, pageSize })!
     expect(noPage).toEqual(plain)
+  })
+})
+
+describe("the box of the writing proper (the port's refinement of inkBox)", () => {
+  // A 200x160 page: a long pen stroke, plus whatever small marks a test adds.
+  const w = 200, h = 160
+  function pageWith(...marks: [number, number, number, number][]): Uint8Array {
+    const gray = new Uint8Array(w * h).fill(235)
+    for (let y = 40; y <= 44; y++) for (let x = 30; x <= 120; x++) gray[y * w + x] = 25   // the writing
+    for (const [x, y, mw, mh] of marks) for (let yy = y; yy < y + mh; yy++) for (let xx = x; xx < x + mw; xx++) gray[yy * w + xx] = 25
+    return gray
+  }
+  const found = (gray: Uint8Array) => marks(darkerThanPaper(gray, w, h), w, h)
+
+  it("a stray mark far from the writing does not stretch the box", () => {
+    // 3 wide and 9 tall: over the speck limit, so it is a mark, but not writing.
+    const gray = pageWith([20, 140, 3, 9])
+    const loose = inkBox(inkMask(gray, w, h), w, h)!
+    expect(loose.y + loose.height).toBeGreaterThan(140)   // the old box reaches the stray mark
+    const box = writingBox(found(gray))!
+    expect(box.y + box.height).toBeLessThan(60)
+    expect(box.x).toBe(24)
+    expect(box.width).toBe(103)
+  })
+
+  it("an i-dot or a full stop near the writing comes with it", () => {
+    const gray = pageWith([60, 22, 8, 8], [128, 38, 8, 8])   // a dot above the line, a full stop after it
+    const box = writingBox(found(gray))!
+    expect(box.y).toBe(22 - 6)
+    expect(box.x + box.width - 1).toBe(135 + 6)
+  })
+
+  it("a page whose only marks are small keeps them", () => {
+    const gray = new Uint8Array(w * h).fill(235)
+    for (let y = 60; y < 69; y++) for (let x = 90; x < 98; x++) gray[y * w + x] = 25
+    const box = writingBox(found(gray))!
+    expect(box).toEqual({ x: 84, y: 54, width: 20, height: 21 })
+  })
+
+  it("only the marks inside a section count, and a blank page has no box", () => {
+    const gray = pageWith([20, 140, 3, 9])
+    expect(writingBox(found(gray), 6, { x: 0, y: 100, width: 200, height: 60 })!.y).toBe(134)
+    expect(writingBox(found(new Uint8Array(w * h).fill(235)))).toBeNull()
+    expect(writingBox(found(pageWith()), 6, { x: 150, y: 0, width: 50, height: 160 })).toBeNull()
+  })
+})
+
+describe("a section of a drawing that is joined up across the page", () => {
+  it("counts the part of a big connected mark that lies inside the section", () => {
+    // One long wall of ink, 3 thick, from x 10 to 150, with a section over its left end only.
+    const w = 200, h = 80
+    const gray = new Uint8Array(w * h).fill(235)
+    for (let y = 30; y < 33; y++) for (let x = 10; x < 150; x++) gray[y * w + x] = 25
+    const found = marks(darkerThanPaper(gray, w, h), w, h)
+    const box = writingBox(found, 0, { x: 0, y: 0, width: 50, height: 80 })!
+    expect(box.x).toBe(10)
+    expect(box.x + box.width - 1).toBe(49)   // cut at the section's edge: its centre (80) is not in the section, but its left end is
+    expect(box.y).toBe(30)
+    expect(box.height).toBe(3)
+    expect(writingBox(found, 0, { x: 0, y: 40, width: 200, height: 40 })).toBeNull()
+  })
+})
+
+describe("where a capture lands on the note (capturePlacedCentre)", () => {
+  const pane = { width: 800, height: 600 }
+  const base = { center: { x: 0.5, y: 0.5 }, width: 0.4, aspect: 0.5, pane }
+
+  it("a note that is not scrolled and has no caret: where it sat on the pane", () => {
+    expect(capturePlacedCentre({ ...base, scroll: 0 })).toEqual({ x: 0.5, y: 0.5 })
+  })
+  it("a note scrolled down: the middle of what is on screen, not the top of the note", () => {
+    // Scrolled 6006 points down, the old code kept y = 0.5 of the pane = 300 points from the TOP of the document.
+    const centre = capturePlacedCentre({ ...base, scroll: 6006 })
+    expect(centre.x).toBe(0.5)
+    expect(centre.y * pane.height).toBeCloseTo(6006 + 300, 6)
+    expect(centre.y * pane.height).toBeGreaterThanOrEqual(6006)
+    expect(centre.y * pane.height).toBeLessThanOrEqual(6006 + pane.height)
+  })
+  it("the offset it had on the pane comes with it", () => {
+    const centre = capturePlacedCentre({ ...base, center: { x: 0.6, y: 0.3 }, scroll: 1200 })
+    expect(centre).toEqual({ x: 0.6, y: 0.3 + 1200 / 600 })
+  })
+  it("a caret on screen: one gap under its line, flush with the text", () => {
+    const caretLine = { x: 30, y: 6200, width: 740, height: 24 }
+    const centre = capturePlacedCentre({ ...base, scroll: 6006, caretLine })
+    // width 320, height 160: x = 30 + 160, y = 6200 + 24 + 8 + 80
+    expect(centre.x * pane.width).toBeCloseTo(190, 6)
+    expect(centre.y * pane.height).toBeCloseTo(6312, 6)
+  })
+  it("a caret that is off screen does not take the capture off screen", () => {
+    const above = capturePlacedCentre({ ...base, scroll: 6006, caretLine: { x: 30, y: 100, width: 740, height: 24 } })
+    const below = capturePlacedCentre({ ...base, scroll: 0, caretLine: { x: 30, y: 9000, width: 740, height: 24 } })
+    expect(above.y * pane.height).toBeCloseTo(6306, 6)
+    expect(below).toEqual({ x: 0.5, y: 0.5 })
+  })
+  it("a picture too wide for the line stays inside the pane", () => {
+    const centre = capturePlacedCentre({ ...base, width: 0.95, scroll: 0, caretLine: { x: 400, y: 10, width: 300, height: 24 } })
+    expect(centre.x * pane.width).toBeCloseTo(pane.width - 0.95 * pane.width / 2, 6)
+  })
+  it("a second capture does not land exactly on the first", () => {
+    const first = capturePlacedCentre({ ...base, scroll: 0 })
+    const second = capturePlacedCentre({ ...base, scroll: 0, taken: [first] })
+    expect(second.x).toBeCloseTo(first.x + 0.03, 9)
+    expect(second.y).toBeCloseTo(first.y + 0.03, 9)
+    const third = capturePlacedCentre({ ...base, scroll: 0, taken: [first, second] })
+    expect(third.x).toBeCloseTo(first.x + 0.06, 9)
+  })
+})
+
+describe("where the words of a read picture go (insertionPointBelow)", () => {
+  // Three lines of 20 points: "alpha\n" 0-5, "beta\n" 6-10, "gamma" 11-16 (document length 16).
+  const lines = [{ from: 0, to: 5, top: 0, bottom: 20 }, { from: 6, to: 10, top: 20, bottom: 40 }, { from: 11, to: 16, top: 40, bottom: 60 }]
+  const at = (y: number) => insertionPointBelow(lines.find((l) => y >= l.top && y < l.bottom) ?? lines[2]!, y, 16)
+
+  it("a picture whose bottom edge is inside a line: before that line", () => {
+    expect(at(30)).toBe(6)
+    expect(at(21)).toBe(6)
+    expect(at(5)).toBe(0)
+  })
+  it("a bottom edge on the boundary between two lines: the line that starts there", () => {
+    expect(at(40)).toBe(11)
+    expect(at(20)).toBe(6)
+  })
+  it("the nearest line ends above the edge: the line after it; none after: the end of the note", () => {
+    expect(insertionPointBelow(lines[1]!, 41, 16)).toBe(11)
+    expect(insertionPointBelow(lines[2]!, 500, 16)).toBe(16)
+  })
+  it("an empty note", () => {
+    expect(insertionPointBelow(null, 100, 0)).toBe(0)
   })
 })

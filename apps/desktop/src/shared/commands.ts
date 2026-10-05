@@ -66,6 +66,14 @@ export const COMMANDS: CommandDef[] = [
   c("expandSelection", "Expand Selection", "page", "CmdOrCtrl+."),
   c("selectNext", "Select Next Occurrence", "editor", "Alt+D"),
   c("selectAll", "Select All Occurrences", "editor", "Alt+Shift+D"),
+  // Find (the Mac's text view has a find bar: usesFindBar): ⌘F, ⌘G / ⇧⌘G, ⌘E, ⌥⌘F, ⌘J.
+  c("find", "Find…", "page", "CmdOrCtrl+F"),
+  c("findReplace", "Find and Replace…", "page", "CmdOrCtrl+H", "Alt+Cmd+F"),
+  // F3 / Shift+F3 here: Ctrl+G is Group on the drawing layer (the Mac's ⌃G; its find next is ⌘G, which is Ctrl on a PC).
+  c("findNext", "Find Next", "page", "F3", "Cmd+G"),
+  c("findPrevious", "Find Previous", "page", "Shift+F3", "Shift+Cmd+G"),
+  c("useSelectionForFind", "Use Selection for Find", "page", "CmdOrCtrl+E"),
+  c("jumpToSelection", "Jump to Selection", "page", "CmdOrCtrl+J"),
   // View
   c("toggleSidebar", "Hide Notes Sidebar", "page", "CmdOrCtrl+Alt+S", "Ctrl+Cmd+S"),
   c("toggleMode", "Show Markdown Preview", "page", "CmdOrCtrl+Shift+P"),
@@ -97,6 +105,8 @@ export const COMMANDS: CommandDef[] = [
   // Insert
   c("insertImage", "Image…", "page", "CmdOrCtrl+Shift+I"),
   c("insertTextBox", "Text Box", "page"),
+  // Port-only key: the Mac opens the maths popover from the bar only.
+  c("insertMath", "Maths…", "page", "CmdOrCtrl+Shift+M"),
   c("codeBlock", "Code Block", "editor", "CmdOrCtrl+8"),
   // Pen (port-only): the tablet's ExpressKeys type these. Ctrl+Alt+digit and
   // a few Ctrl+Alt+letters, none of which anything else uses.
@@ -116,8 +126,8 @@ export const COMMANDS: CommandDef[] = [
   // Input Devices
   c("cameraOff", "Turn Camera Off", "page"),
   c("cameraRefresh", "Refresh Device List", "page", "CmdOrCtrl+Alt+R", "Alt+Cmd+R"),
-  // The whole window becomes the tablet sheet (port-only: the Mac has no pen tablet).
-  c("tabletPad", "Tablet Pad (Full Screen)", "page", "CmdOrCtrl+Alt+T", "Ctrl+Cmd+T"),
+  // The whole tablet becomes the sheet in the notes window (an overlay grabs the pen).
+  c("tabletGrab", "Grab Tablet to Sheet", "page", "CmdOrCtrl+Alt+G"),
 ]
 
 const byId = new Map(COMMANDS.map((command) => [command.id, command]))
@@ -209,6 +219,9 @@ export function commandForKey(event: KeyLike, platform: string): CommandDef | nu
  */
 export const TABLET_SOURCE = "tablet"
 
+/** "Turn Camera Off": no source at all, the pane shows its placeholder (the Mac's `CameraController.turnOff`). */
+export const CAMERA_OFF = "off"
+
 /** The page tells the shell this, and the shell builds the menu from it. */
 export interface MenuState {
   /** A note is open (`store.selectedNote != nil`). */
@@ -217,9 +230,8 @@ export interface MenuState {
   /** The rendered page is showing (Mac: `appState.mode == .preview`). */
   rendered: boolean
   camera: boolean
-  /** Pad mode is on: the window is full screen and shows only the tablet sheet. */
-  pad: boolean
   editorPane: boolean
+  /** Markdown markers are shown (View ▸ Hide Markdown Markers is offered); independent of `rendered`. */
   markers: boolean
   canUndoDrawing: boolean
   canRedoDrawing: boolean
@@ -237,7 +249,7 @@ export interface MenuState {
 }
 
 export const initialMenuState: MenuState = {
-  hasNote: false, sidebar: true, rendered: false, camera: false, pad: false, editorPane: true, markers: false,
+  hasNote: false, sidebar: true, rendered: false, camera: false, editorPane: true, markers: true,
   canUndoDrawing: false, canRedoDrawing: false, listStyle: "Dots", codeLanguage: null,
   cameras: [], cameraId: null, penDown: false, penErase: false, penSelect: false, penAlwaysDraws: true,
 }

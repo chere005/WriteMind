@@ -5,6 +5,48 @@
  */
 
 import { contextBridge, ipcRenderer } from "electron"
+import { PEN_CHANNELS, type PenApi } from "../shared/pen"
+
+/**
+ * NATIVE PEN CAPTURE (docs/spikes/DESIGN-pen-capture.md 3.3): window.wm.pen. An object, not flat functions; every name is spelled once in
+ * shared/pen.ts (PEN_CHANNELS). The E2E hooks exist only under WRITEMIND_E2E.
+ */
+const listen = <T>(channel: string, listener: (payload: T) => void): (() => void) => {
+  const wrapped = (_event: unknown, payload: T) => listener(payload)
+  ipcRenderer.on(channel, wrapped)
+  return () => { ipcRenderer.removeListener(channel, wrapped) }
+}
+const pen: PenApi = {
+  open: (sheet) => ipcRenderer.invoke(PEN_CHANNELS.open, sheet),
+  close: (reason) => ipcRenderer.invoke(PEN_CHANNELS.close, reason),
+  status: () => ipcRenderer.invoke(PEN_CHANNELS.status),
+  settings: () => ipcRenderer.invoke(PEN_CHANNELS.settings),
+  setSettings: (patch) => ipcRenderer.invoke(PEN_CHANNELS.setSettings, patch),
+  sheet: (geometry) => ipcRenderer.send(PEN_CHANNELS.sheet, geometry),
+  witness: (w) => ipcRenderer.send(PEN_CHANNELS.witness, w),
+  dom: (reports) => ipcRenderer.send(PEN_CHANNELS.dom, reports),
+  panic: (reason) => ipcRenderer.send(PEN_CHANNELS.panic, reason),
+  check: {
+    start: () => ipcRenderer.invoke(PEN_CHANNELS.checkStart),
+    step: (id) => ipcRenderer.invoke(PEN_CHANNELS.checkStep, id),
+    cancel: () => ipcRenderer.invoke(PEN_CHANNELS.checkCancel),
+    copy: () => ipcRenderer.invoke(PEN_CHANNELS.checkCopy),
+    test: (mechanism) => ipcRenderer.invoke(PEN_CHANNELS.containTest, mechanism),
+  },
+  setFrame: (frame) => ipcRenderer.invoke(PEN_CHANNELS.frameSet, frame),
+  revealTrace: () => ipcRenderer.invoke(PEN_CHANNELS.revealTrace),
+  onSamples: (listener) => listen(PEN_CHANNELS.samples, listener),
+  onStatus: (listener) => listen(PEN_CHANNELS.statusPush, listener),
+  onEvent: (listener) => listen(PEN_CHANNELS.event, listener),
+  onCheck: (listener) => listen(PEN_CHANNELS.check, listener),
+  ...(process.env.WRITEMIND_E2E ? {
+    e2e: {
+      inject: (samples, backend) => ipcRenderer.invoke(PEN_CHANNELS.e2eInject, { samples, backend }),
+      state: () => ipcRenderer.invoke(PEN_CHANNELS.e2eState),
+      config: (c) => ipcRenderer.invoke(PEN_CHANNELS.e2eConfig, c),
+    },
+  } : {}),
+}
 
 const api = {
   capabilities: () => ipcRenderer.invoke("app:capabilities"),
@@ -14,24 +56,43 @@ const api = {
   createNote: (folder: string) => ipcRenderer.invoke("note:create", folder),
   renameNote: (file: string, title: string) => ipcRenderer.invoke("note:rename", file, title),
   trashNote: (file: string) => ipcRenderer.invoke("note:trash", file),
+  /** Text that could not be written, put where it can be come back to; resolves to the file. */
+  rescue: (file: string, text: string, kind: "note" | "drawing" = "note"): Promise<string> =>
+    ipcRenderer.invoke("note:rescue", file, text, kind),
   createSection: (parent: string) => ipcRenderer.invoke("section:create", parent),
   trashSection: (folder: string) => ipcRenderer.invoke("section:trash", folder),
+  renameSection: (folder: string, name: string) => ipcRenderer.invoke("section:rename", folder, name),
   setOrder: (folder: string, names: string[]) => ipcRenderer.invoke("order:set", folder, names),
   placeNote: (file: string, folder: string, before: string | null) =>
     ipcRenderer.invoke("note:place", file, folder, before),
   moveSection: (folder: string, target: string) => ipcRenderer.invoke("section:move", folder, target),
-  readSession: () => ipcRenderer.invoke("session:read"),
-  writeSession: (json: string) => ipcRenderer.invoke("session:write", json),
+  readSession: (projectFile: string | null) => ipcRenderer.invoke("session:read", projectFile),
+  writeSession: (projectFile: string | null, json: string) => ipcRenderer.invoke("session:write", projectFile, json),
+  /** The open project (name, file, folders, hidden folders) and the word that it changed. */
+  project: () => ipcRenderer.invoke("project:info"),
+  onProject: (listener: (kind: "switch" | "folders" | "saved", info: unknown) => void) => {
+    const wrapped = (_event: unknown, kind: "switch" | "folders" | "saved", info: unknown) => listener(kind, info)
+    ipcRenderer.on("project:changed", wrapped)
+    return () => ipcRenderer.removeListener("project:changed", wrapped)
+  },
+  /** Show a file or folder in Explorer / Finder. */
+  reveal: (target: string) => ipcRenderer.invoke("path:reveal", target),
   existing: (files: string[]) => ipcRenderer.invoke("files:existing", files),
   readDrawing:(note: string) => ipcRenderer.invoke("drawing:read", note),
   writeDrawing: (note: string, json: string) => ipcRenderer.invoke("drawing:write", note, json),
   revealNotes: () => ipcRenderer.invoke("notes:reveal"),
-  saveMedia: (bytes: Uint8Array, extension: string) =>
-    ipcRenderer.invoke("media:save", bytes, extension),
+  /** The picture goes in the project folder of `note` (else of the note in front). */
+  saveMedia: (bytes: Uint8Array, extension: string, note?: string | null) =>
+    ipcRenderer.invoke("media:save", bytes, extension, note ?? null),
   choosePicture: () => ipcRenderer.invoke("media:choose"),
   readPicture: (file: string) => ipcRenderer.invoke("vision:read", file),
+  /** The words in a picture (a note's file by name, or the bytes of one), boxed and cached; `ocrCancel(id)` takes the request back. */
+  ocrRead: (request: { id: string; file?: string; bytes?: Uint8Array; languages?: string[] }) =>
+    ipcRenderer.invoke("ocr:read", request),
+  ocrCancel: (id: string) => ipcRenderer.invoke("ocr:cancel", id),
+  ocrStatus: () => ipcRenderer.invoke("ocr:status"),
   askForCamera: () => ipcRenderer.invoke("camera:ask"),
-  exportPDF: (suggested: string) => ipcRenderer.invoke("export:pdf", suggested),
+  exportPDF: (request: unknown) => ipcRenderer.invoke("export:pdf", request),
   duplicateNote: (file: string) => ipcRenderer.invoke("note:duplicate", file),
   /** What the application menu needs to know (a note open, the sidebar shown, ...). */
   setMenuState: (state: unknown) => ipcRenderer.invoke("menu:state", state),
@@ -45,15 +106,8 @@ const api = {
     ipcRenderer.on("menu:command", wrapped)
     return () => ipcRenderer.removeListener("menu:command", wrapped)
   },
-  /** Pad mode: full screen on the window's display, and back as it was. */
-  padEnter: (): Promise<boolean> => ipcRenderer.invoke("pad:enter"),
-  padExit: (): Promise<void> => ipcRenderer.invoke("pad:exit"),
-  /** The shell's word that the pad began or ended (full screen can be lost without the pad's own Exit). */
-  onPadState: (listener: (active: boolean) => void) => {
-    const wrapped = (_event: unknown, active: boolean) => listener(active)
-    ipcRenderer.on("pad:state", wrapped)
-    return () => ipcRenderer.removeListener("pad:state", wrapped)
-  },
+  /** The tablet pen's native feed (main/pen/*): see PenApi in shared/pen.ts. */
+  pen,
   /** Where the window is on the desktop (content area, its display, the display's scale). */
   windowInfo: () => ipcRenderer.invoke("window:info"),
   /** End-to-end scripts only (WRITEMIND_E2E): read the menu bar and press an item. */
@@ -62,14 +116,25 @@ const api = {
     e2eMenuClick: (id: string) => ipcRenderer.invoke("e2e:menuClick", id),
     e2ePick: (answer: string) => ipcRenderer.invoke("e2e:pick", answer),
     e2eWindow: () => ipcRenderer.invoke("e2e:window"),
+    e2ePerf: (command: string, arg?: unknown) => ipcRenderer.invoke("e2e:perf", command, arg),
     e2eSetBounds: (bounds: unknown) => ipcRenderer.invoke("e2e:setBounds", bounds),
-    e2eLeaveFullScreen: () => ipcRenderer.invoke("e2e:leaveFullScreen"),
   } : {}),
   /** Edit ▸ Undo / Redo in the app's own menu. */
   onEdit: (listener: (which: "undo" | "redo") => void) => {
     const wrapped = (_event: unknown, which: "undo" | "redo") => listener(which)
     ipcRenderer.on("edit:history", wrapped)
     return () => ipcRenderer.removeListener("edit:history", wrapped)
+  },
+  /**
+   * The window is closing and wants what the page is holding written first (the quit handshake, main.ts): the
+   * listener's promise is waited for, then the shell is told.
+   */
+  onFlushRequest: (listener: () => Promise<void> | void) => {
+    const wrapped = async () => {
+      try { await listener() } finally { ipcRenderer.send("app:flushed") }
+    }
+    ipcRenderer.on("app:flush", wrapped)
+    return () => ipcRenderer.removeListener("app:flush", wrapped)
   },
   onNotesChanged: (listener: () => void) => {
     const wrapped = () => listener()

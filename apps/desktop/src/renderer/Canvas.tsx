@@ -16,18 +16,21 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import {
-  applyMatrix, angleAbout, baseBounds, baseCenter, basePoints, bounds, boundsOf, cropRect, cropped,
-  emptyDrawing, headLength, hitTest, idsTouching, isNode, isRouted, pressureScale, placedCenter,
-  reconnect, segmentMidpoints, TEXT_BOX, textBoxAspect, textBoxHeight, readableInk,
+  applyMatrix, matrixOf, angleAbout, attachableAt, baseBounds, baseCenter, basePoints, bounds, boundsOf, connectorPaths,
+  copiedItems, cornerRadius, cropRect, cropped, dashPattern, distance, emptyDrawing, hitTest, idsTouching,
+  isClosed, isNode, isRouted, nudged, pressureScale, placedCenter, reconnect, reordered, restyled,
+  segmentMidpoints, shifted, strokeCurve, TEXT_BOX, textBoxAspect, textBoxHeight, readableInk,
   indexAt, isHidden, itemId, itemTransform, newID, noTransform, placedItem, polylines, rectFrom,
-  removing, route, scaleFactor, toggled, transformed, unitPolylines, whole, withTransform,
-  type CanvasItem, type ConnectorItem, type Drawing, type ItemTransform, type Placement,
-  type Measure, type Point, type Rect, type Size,
+  removing, route, scaleFactor, stillPicked, strokesSwept, toggle, toggled, transformed, whole, withTransform,
+  type CanvasItem, type ConnectorItem, type Drawing, type ItemTransform, type Order, type Placement,
+  type Measure, type Point, type Rect, type ShapeKind, type Size, type StylePatch,
 } from "@writemind/core"
 import type { DrawingHistory } from "./drawingHistory"
+import { StyleBar } from "./StyleBar"
 import { penSettings, usePenSettings } from "./penSettings"
 import { resolvePress, slotOf } from "./penButtons"
 import { registerPenHandlers } from "./penActions"
+import { layerKey } from "./layerKeys"
 
 export type CanvasMode = "cursor" | "pen"
 
@@ -68,10 +71,12 @@ interface Props {
 // gesture to an already-baked drawing would move it twice.
 type Gesture =
   | { kind: "drawing"; points: Point[]; pressures: number[] | null }
-  | { kind: "erasing"; before: Drawing }
+  | { kind: "erasing"; before: Drawing; last: Point }
   | { kind: "moving"; from: Point; snapshot: Map<string, ItemTransform>; base: Drawing }
   | { kind: "marquee"; from: Point; to: Point; additive: boolean }
   | { kind: "placing"; from: Point; to: Point }
+  /** An arrow being drawn from one thing to another (the arrow tool, or ⌥ from a node). */
+  | { kind: "connecting"; from: Point; to: Point; node: string | null }
   | { kind: "scaling"; from: Point; pivot: Point; snapshot: Map<string, ItemTransform>; base: Drawing }
   | { kind: "rotating"; from: number; pivot: Point; snapshot: Map<string, ItemTransform>; base: Drawing }
   | { kind: "segment"; id: string; index: number; vertical: boolean; base: Drawing }
@@ -91,21 +96,6 @@ export const loadedPicture = (file: string): HTMLImageElement | null => {
   return held && held.complete && held.naturalWidth > 0 ? held : null
 }
 
-/**
- * The topmost node (a flow-chart shape or a picture) under a point — the
- * Swift `attachable(at:)`. An arrow dropped with an end here is attached to
- * it, and follows it from then on.
- */
-export function attachableAt(drawing: Drawing, point: Point, size: Size): string | null {
-  for (let index = drawing.items.length - 1; index >= 0; index--) {
-    const item = drawing.items[index]!
-    if (isHidden(item)) continue
-    const node = item.kind === "image" || (item.kind === "shape" && isNode(item.shape.kind))
-    if (node && hitTest(item, point, size)) return itemId(item)
-  }
-  return null
-}
-
 // MARK: - Text boxes
 //
 // A text box is typed into exactly where it is drawn, so the painter and the
@@ -116,9 +106,10 @@ const TEXT_FONT = `${TEXT_BOX.fontSize}px -apple-system, "Segoe UI", system-ui, 
 let ruler: CanvasRenderingContext2D | null = null
 
 /** The lines `text` wraps to in `room` points: a greedy wrap that breaks a word only when it cannot fit. */
-export function wrapLines(text: string, room: number, context?: CanvasRenderingContext2D): string[] {
+export function wrapLines(text: string, room: number, context?: CanvasRenderingContext2D,
+  font: string = TEXT_FONT): string[] {
   const ctx = context ?? (ruler ??= document.createElement("canvas").getContext("2d")!)
-  ctx.font = TEXT_FONT
+  ctx.font = font
   const width = (word: string) => ctx.measureText(word).width
   const out: string[] = []
   for (const paragraph of text.split(String.fromCharCode(10))) {
@@ -171,6 +162,33 @@ function picture(file: string, onLoad: () => void): HTMLImageElement | null {
   return null
 }
 
+// MARK: - Copying objects between notes
+//
+// What is copied is held here (the copies are whole items, with their own ids
+// already) and a line of text with a token in it goes on the system clipboard.
+// A paste that finds ITS token on the clipboard puts the objects back; any
+// other paste is the notebook's. Pictures are files in one media folder shared
+// by every note, so they come across by name.
+
+interface ObjectClip { token: string; items: CanvasItem[]; pastes: number }
+let objectClipboard: ObjectClip | null = null
+
+function copyObjects(items: CanvasItem[], ids: Set<string>): void {
+  const copied = copiedItems(items, ids)
+  if (copied.length === 0) return
+  const token = newID().slice(0, 8)
+  objectClipboard = { token, items: copied, pastes: 0 }
+  const text = `WriteMind objects [${token}]`
+  // The page's own copy command, with the text put on it: the app's permission
+  // handler does not grant the async clipboard API, and this needs no grant.
+  let wrote = false
+  const put = (event: ClipboardEvent) => { event.clipboardData?.setData("text/plain", text); event.preventDefault(); wrote = true }
+  document.addEventListener("copy", put, true)
+  try { document.execCommand("copy") } catch { /* fall through to the API */ }
+  document.removeEventListener("copy", put, true)
+  if (!wrote) void navigator.clipboard?.writeText(text).catch(() => {})
+}
+
 export function Canvas({
   drawing, onChange, mode, colorHex, penWidth, placing, onPlaced, scroller, onSelectionChanged,
   onReadPicture, history,
@@ -184,32 +202,49 @@ export function Canvas({
   const [scroll, setScroll] = useState(0)
   const scrollRef = useRef(0)
   const scrollShown = useRef(0)
-  const [selection, setSelection] = useState<Set<string>>(new Set())
+  // WHAT IS PICKED is whatever of the pick is still on the layer and drawn. The raw ids are kept in state
+  // (they are set by a click, a marquee, a paste); an id whose object was undone away, deleted, erased or put
+  // away (a picture read into words) is dropped from them at once, so a pick nobody can see is no pick: it
+  // used to keep the arrows, Ctrl+C / Ctrl+X and Backspace swallowed with no handles on screen.
+  const [pickedIds, setSelection] = useState<Set<string>>(new Set())
+  const selection = useMemo(() => stillPicked(drawing, pickedIds), [drawing, pickedIds])
+  useEffect(() => { if (selection !== pickedIds) setSelection(selection) }, [selection, pickedIds])
   const [gesture, setGesture] = useState<Gesture | null>(null)
+  /** The pointer that began the gesture: moves and lifts from any other (a palm, a stray mouse) are not its. */
+  const owner = useRef<number | null>(null)
   /** The gesture as it is NOW: moved on every pointer event without a render. */
   const live = useRef<Gesture | null>(null)
   const [command, setCommand] = useState(false)
   const tools = usePenSettings()
   const eraserOn = tools.eraser
   const selectOn = tools.selectTool
-  const [crop, setCrop] = useState<Crop | null>(null)
+  const [cropState, setCrop] = useState<Crop | null>(null)
+  // A crop box is open only on a picture that is still there and shown (an Undo, a read-into-words or
+  // another note takes the picture away; the box must go with it, not keep the arrows and Esc).
+  const crop = cropState && drawing.items.some((item) =>
+    item.kind === "image" && !item.image.hidden && item.image.id === cropState.id) ? cropState : null
+  useEffect(() => { if (cropState && !crop) setCrop(null) }, [cropState, crop])
   const [labelling, setLabelling] = useState<Labelling | null>(null)
   /** The text box being typed into: the painter leaves its words to the field over it. */
   const editingBox = useRef<string | null>(null)
   const lastPress = useRef<{ at: number; id: string } | null>(null)
   /** A text box's editing counts as ONE undo: whether this session has taken its snapshot. */
   const openBox = useRef(false)
+  /** The style bar (colour, width, fill, heads, order) is up under the selection. */
+  const [styling, setStyling] = useState(false)
+  /** Enter on an open crop box: set up below, where the crop is. */
+  const confirmCrop = useRef<() => void>(() => {})
 
   const box = useMemo(() => boundsOf(drawing, selection, size), [drawing, selection, size])
 
   const latest = useRef({
     drawing, selection, gesture, placing, mode, size, colorHex, penWidth, onChange, onPlaced, box,
-    crop,
+    crop, styling,
   })
   latest.current = {
     ...latest.current,
     drawing, selection, gesture, placing, mode, size, colorHex, penWidth, onChange, onPlaced, box,
-    crop,
+    crop, styling,
   }
 
   /**
@@ -234,6 +269,14 @@ export function Canvas({
   }, [drawing, size, onChange])
 
   useEffect(() => { onSelectionChanged?.(selection.size) }, [selection, onSelectionChanged])
+  useEffect(() => { if (selection.size === 0) setStyling(false) }, [selection])
+
+  // Objects the app has just put on the layer (a pasted or dropped picture, a
+  // capture) arrive picked up, with the handles on them, as a shape does.
+  useEffect(() => {
+    const ids = history.takeSelection((id) => drawing.items.some((item) => itemId(item) === id))
+    if (ids) setSelection(whole(new Set(ids), drawing.items))
+  }, [drawing, history])
 
   // MARK: - Painting
   //
@@ -246,6 +289,8 @@ export function Canvas({
   const baseDirty = useRef(true)
   const overlayDrawn = useRef(0)
   const overlayReset = useRef(true)
+  /** The overlay holds a rubber band (marquee, ghost, arrow preview) that must be cleared. */
+  const overlayShapes = useRef(false)
   const frame = useRef<number | null>(null)
   const renderRef = useRef<() => void>(() => {})
 
@@ -287,25 +332,6 @@ export function Canvas({
         paint(context, item, now.size, () => { baseDirty.current = true; schedule() },
           editingBox.current)
       }
-      const g = live.current
-      if (g?.kind === "placing" && now.placing) {
-        const ghost = placedItem(now.placing, g.from, g.to, now.size, now.colorHex, now.penWidth)
-        if (ghost) {
-          context.globalAlpha = 0.5
-          paint(context, ghost, now.size)
-          context.globalAlpha = 1
-        }
-      }
-      if (g?.kind === "marquee") {
-        const rect = rectFrom(g.from, g.to)
-        context.strokeStyle = "rgba(109,169,240,0.9)"
-        context.fillStyle = "rgba(109,169,240,0.12)"
-        context.lineWidth = 1
-        context.setLineDash([4, 3])
-        context.fillRect(rect.x, rect.y, rect.width, rect.height)
-        context.strokeRect(rect.x, rect.y, rect.width, rect.height)
-        context.setLineDash([])
-      }
       if (now.box) {
         context.strokeStyle = "rgba(109,169,240,0.9)"
         context.lineWidth = 1
@@ -325,27 +351,69 @@ export function Canvas({
         overlayReset.current = false
       }
       context.setTransform(ratio, 0, 0, ratio, 0, -scrolled * ratio)
+      if (g.pressures) {
+        // A pen stroke is drawn as it is committed: a smooth line of varying width, piece by piece.
+        // `overlayDrawn` counts the pieces already down.
+        const pts = g.points, w = now.size.width, h = now.size.height
+        overlayDrawn.current = strokePressure(context, pts.length, (i) => ({ x: pts[i]!.x * w, y: pts[i]!.y * h }),
+          g.pressures, now.penWidth, overlayDrawn.current, false)
+      }
       // Only the segments that are new, from the last point already drawn.
       const from = Math.max(overlayDrawn.current - 1, 0)
-      if (g.points.length > from) {
+      if (!g.pressures && g.points.length > from) {
         paint(context, {
           kind: "stroke",
           stroke: {
             id: "live", colorHex: now.colorHex, width: now.penWidth,
             points: from === 0 ? g.points : g.points.slice(from),
-            ...(g.pressures
-              ? { pressures: from === 0 ? g.pressures : g.pressures.slice(from) }
-              : {}),
             transform: noTransform(), group: null,
           },
         }, now.size)
         overlayDrawn.current = g.points.length
       }
-    } else if (overlayDrawn.current > 0 || overlayReset.current) {
+    } else if (g && (g.kind === "marquee" || g.kind === "connecting" || (g.kind === "placing" && now.placing))) {
+      // What is being dragged out is painted on the overlay, from scratch each frame: the
+      // base layer (every object on the page) is not repainted for a rubber band.
+      context.setTransform(1, 0, 0, 1, 0, 0)
+      context.clearRect(0, 0, top.width, top.height)
+      context.setTransform(ratio, 0, 0, ratio, 0, -scrolled * ratio)
+      if (g.kind === "marquee") {
+        const rect = rectFrom(g.from, g.to)
+        context.strokeStyle = "rgba(109,169,240,0.9)"
+        context.fillStyle = "rgba(109,169,240,0.12)"
+        context.lineWidth = 1
+        context.setLineDash([4, 3])
+        context.fillRect(rect.x, rect.y, rect.width, rect.height)
+        context.strokeRect(rect.x, rect.y, rect.width, rect.height)
+        context.setLineDash([])
+      } else if (g.kind === "connecting") {
+        // The line being drawn from here to wherever it is let go (the Mac's dashed preview).
+        context.strokeStyle = now.colorHex
+        context.lineWidth = Math.min(Math.max(now.penWidth, 1.5), 6)
+        context.lineCap = "butt"
+        context.setLineDash([6, 4])
+        context.beginPath()
+        context.moveTo(g.from.x, g.from.y)
+        context.lineTo(g.to.x, g.to.y)
+        context.stroke()
+        context.setLineDash([])
+      } else if (g.kind === "placing" && now.placing) {
+        const ghost = placedItem(now.placing, g.from, g.to, now.size, now.colorHex, now.penWidth)
+        if (ghost) {
+          context.globalAlpha = 0.5
+          paint(context, ghost, now.size)
+          context.globalAlpha = 1
+        }
+      }
+      overlayDrawn.current = 0
+      overlayReset.current = false
+      overlayShapes.current = true
+    } else if (overlayDrawn.current > 0 || overlayReset.current || overlayShapes.current) {
       context.setTransform(1, 0, 0, 1, 0, 0)
       context.clearRect(0, 0, top.width, top.height)
       overlayDrawn.current = 0
       overlayReset.current = false
+      overlayShapes.current = false
     }
 
     // The handles are DOM, and sit where the scroll puts them.
@@ -357,6 +425,24 @@ export function Canvas({
 
   useEffect(() => () => { if (frame.current !== null) cancelAnimationFrame(frame.current) }, [])
 
+  // The pane's pixel density changes without its size changing — the window
+  // dragged to another display, or the display's scale set to 150% — and the
+  // canvas has to be given the new backing store and repainted. A media-query
+  // listener is the textbook way and is unreliable across such changes in
+  // Chromium (it stops firing once re-armed), so the density is simply looked
+  // at a few times a second: it costs one property read.
+  useEffect(() => {
+    let seen = window.devicePixelRatio
+    const timer = window.setInterval(() => {
+      if (window.devicePixelRatio === seen) return
+      seen = window.devicePixelRatio
+      baseDirty.current = true
+      overlayReset.current = true
+      schedule()
+    }, 300)
+    return () => window.clearInterval(timer)
+  }, [schedule])
+
   // Everything that changes what is COMMITTED repaints the base layer.
   useEffect(() => {
     baseDirty.current = true
@@ -367,15 +453,21 @@ export function Canvas({
   // move without a re-render of ours.
   useEffect(() => {
     if (!host.current) return
+    let alive = true
     const measure = () => {
-      const rect = host.current!.getBoundingClientRect()
+      // React lets go of the ref when the canvas is taken out (closing the last tab), a moment BEFORE this
+      // effect's cleanup runs, and the observer can answer in between: "Cannot read properties of null
+      // (reading 'getBoundingClientRect')" on the first close after a launch, once in two.
+      const element = host.current
+      if (!alive || !element) return
+      const rect = element.getBoundingClientRect()
       setSize((was) => was.width === rect.width && was.height === rect.height
         ? was : { width: rect.width, height: rect.height })
     }
     measure()
     const observer = new ResizeObserver(measure)
     observer.observe(host.current)
-    return () => observer.disconnect()
+    return () => { alive = false; observer.disconnect() }
   }, [])
 
   useEffect(() => {
@@ -390,6 +482,22 @@ export function Canvas({
     scroller.addEventListener("scroll", onScroll, { passive: true })
     return () => scroller.removeEventListener("scroll", onScroll)
   }, [scroller, schedule])
+
+  // The wheel (and a touchpad's two-finger scroll) over the layer: while the pen is down the
+  // layer takes every pointer event, and the page is not inside it, so a wheel turned over it
+  // scrolled nothing. It is handed to the page's scroller here.
+  useEffect(() => {
+    const element = host.current
+    if (!element || !scroller) return
+    const wheel = (event: WheelEvent) => {
+      if (event.ctrlKey || event.metaKey) return
+      const unit = event.deltaMode === 1 ? 40 : event.deltaMode === 2 ? scroller.clientHeight : 1
+      event.preventDefault()
+      scroller.scrollBy({ top: event.deltaY * unit, left: event.deltaX * unit })
+    }
+    element.addEventListener("wheel", wheel, { passive: false })
+    return () => element.removeEventListener("wheel", wheel)
+  }, [scroller])
 
   // ⌘ has to be WATCHED, not asked for: the marquee can start anywhere, so
   // the layer has to be ready to take a click over plain text the moment
@@ -419,9 +527,37 @@ export function Canvas({
     publish(next)
   }, [history, publish])
 
-  /** A gesture begins: it is state once, and a ref from then on. */
-  const start = useCallback((next: Gesture) => {
+  /** An edit that arrives in bursts (a colour dragged, an arrow key held): one undo for the burst (`DrawingHistory.recordBurst`). */
+  const burst = useCallback((next: Drawing) => {
+    const held = latest.current.drawing
+    if (next === held) return
+    history.recordBurst(held, performance.now())
+    publish(next)
+  }, [history, publish])
+
+  const applyStyle = useCallback((patch: StylePatch) => {
+    burst(restyled(latest.current.drawing, latest.current.selection, patch))
+  }, [burst])
+
+  const orderSelection = useCallback((how: Order) => {
+    const held = latest.current.drawing
+    const items = reordered(held.items, latest.current.selection, how)
+    if (items !== held.items) change({ items })
+  }, [change])
+
+  /** A copy of what is picked, a little way down and to the right, picked in turn. */
+  const duplicate = useCallback(() => {
+    const { drawing: held, selection: picked, size: now } = latest.current
+    const copies = shifted(copiedItems(held.items, picked), 16, 16, now)
+    if (copies.length === 0) return
+    change({ items: [...held.items, ...copies] })
+    setSelection(new Set(copies.map(itemId)))
+  }, [change])
+
+  /** A gesture begins: it is state once, and a ref from then on. `pointerId` is the pointer that owns it. */
+  const start = useCallback((next: Gesture, pointerId: number) => {
     live.current = next
+    owner.current = pointerId
     overlayReset.current = true
     setGesture(next)
   }, [])
@@ -440,6 +576,20 @@ export function Canvas({
       latest.current.onChange(next)
       return
     }
+  }, [])
+
+  /**
+   * Rub out every stroke the eraser passes over in going from `from` to `to`. The strokes between two
+   * samples count: a quick sweep reports a point every 20 to 30 points, and testing the points alone let the
+   * eraser step over the strokes between them.
+   */
+  const eraseAlong = useCallback((from: Point, to: Point) => {
+    const held = latest.current.drawing
+    const ids = strokesSwept(held, from, to, latest.current.size)
+    if (ids.size === 0) return
+    const next = removing(held, ids)
+    latest.current = { ...latest.current, drawing: next }
+    latest.current.onChange(next)
   }, [])
 
   /** Put a node's label in (an empty one is no label); the edit is one undo. */
@@ -542,12 +692,13 @@ export function Canvas({
     }
     if (press.kind === "erase" && (pen || event.button === 0)
       && !(event.target instanceof Element
-        && event.target.closest(".wm-handle, .wm-label-edit, .wm-textbox-edit, .wm-gutter"))) {
+        && event.target.closest(".wm-handle, .wm-style-bar, .wm-label-edit, .wm-textbox-edit, .wm-gutter"))) {
       event.preventDefault(); event.stopPropagation()
       const held = latest.current.drawing
       capture(event)
-      start({ kind: "erasing", before: held })
-      eraseAt(doc(event))
+      const where = doc(event)
+      start({ kind: "erasing", before: held, last: where }, event.pointerId)
+      eraseAt(where)
       return
     }
     // A pen button is a way of asking for a gesture by hand, as ⌘ is: it is
@@ -560,7 +711,7 @@ export function Canvas({
     // the selection, and unmounts the very button that was being pressed.
     // Every handle's own press then never ran at all.
     if (event.target instanceof Element
-      && event.target.closest(".wm-handle, .wm-label-edit, .wm-textbox-edit, .wm-crop")) return
+      && event.target.closest(".wm-handle, .wm-style-bar, .wm-label-edit, .wm-textbox-edit, .wm-crop")) return
     // PAN: the pen's hand button turns the page, as a finger does.
     if (press.kind === "pan") {
       event.preventDefault(); event.stopPropagation()
@@ -579,10 +730,22 @@ export function Canvas({
     const point = doc(event)
     const { drawing: held, placing: armed, mode: now } = latest.current
 
+    // The arrow tool, or ⌥ held down on a node: a line is drawn from here to
+    // wherever it is let go, and each end that lands on a node is attached
+    // to it. ⌥ has to start ON a node, so it never steals a stroke or a pick.
+    const toolArmed = armed?.kind === "line" && armed.tool === true
+    // (Not when Alt is the pen's own "Tip + Alt" button: that has its own meaning.)
+    const fromNode = toolArmed || (!armed && event.altKey && !byButton) ? attachableAt(held, point, size) : null
+    if (toolArmed || (!armed && fromNode !== null)) {
+      event.preventDefault(); event.stopPropagation()
+      capture(event)
+      start({ kind: "connecting", from: point, to: point, node: fromNode }, event.pointerId)
+      return
+    }
     // Something is armed: this gesture is where it goes.
     if (armed) {
       event.preventDefault(); event.stopPropagation()
-      start({ kind: "placing", from: point, to: point })
+      start({ kind: "placing", from: point, to: point }, event.pointerId)
       return
     }
 
@@ -602,13 +765,13 @@ export function Canvas({
       start({
         kind: "drawing", points: [normalise(point, size)],
         pressures: pen && penSettings().pressure ? [pressureOf(event)] : null,
-      })
+      }, event.pointerId)
       return
     }
     if (kind === "marquee") {
       event.preventDefault(); event.stopPropagation()
       if (!extend) setSelection(new Set())
-      start({ kind: "marquee", from: point, to: point, additive: extend })
+      start({ kind: "marquee", from: point, to: point, additive: extend }, event.pointerId)
       return
     }
 
@@ -641,7 +804,7 @@ export function Canvas({
         ? latest.current.selection
         : whole(new Set([id]), held.items))
     setSelection(picked)
-    start({ kind: "moving", from: point, snapshot: snapshotOf(held, picked), base: held })
+    start({ kind: "moving", from: point, snapshot: snapshotOf(held, picked), base: held }, event.pointerId)
   }, [doc, eraseAt, start, scrollWithFinger])
 
   useEffect(() => {
@@ -699,6 +862,9 @@ export function Canvas({
     }
 
     const move = (event: PointerEvent) => {
+      // Only the pointer that began the gesture moves it: a palm that lands beside the pen, or a stray mouse,
+      // used to add its own far-away point to the stroke being written.
+      if (event.pointerId !== owner.current) return
       const rect = host.current!.getBoundingClientRect()
       const at = (e: { clientX: number; clientY: number }): Point =>
         ({ x: e.clientX - rect.left, y: e.clientY - rect.top + scrollRef.current })
@@ -720,17 +886,22 @@ export function Canvas({
           schedule()
           break
         }
-        case "erasing":
-          eraseAt(point)
+        case "erasing": {
+          // Every sample the pen reported since the last event, and the path between them.
+          const samples = event.getCoalescedEvents?.() ?? []
+          let from = g.last
+          for (const sample of samples.length > 0 ? samples : [event]) {
+            const to = at(sample)
+            eraseAlong(from, to)
+            from = to
+          }
+          g.last = from
           break
+        }
         case "marquee":
-          live.current = { ...g, to: point }
-          baseDirty.current = true
-          schedule()
-          break
         case "placing":
+        case "connecting":
           live.current = { ...g, to: point }
-          baseDirty.current = true
           schedule()
           break
         case "moving": {
@@ -748,7 +919,9 @@ export function Canvas({
           break
         }
         case "rotating": {
-          const turn = angleAbout(point, g.pivot) - g.from
+          let turn = angleAbout(point, g.pivot) - g.from
+          // ⇧ turns in 15-degree steps.
+          if (event.shiftKey) { const step = Math.PI / 12; turn = Math.round(turn / step) * step }
           later(() => publish(edited(g.base, g.snapshot,
             (item, original) => transformed(item, original,
               { rotate: turn, pivot: g.pivot, size }))))
@@ -783,6 +956,7 @@ export function Canvas({
       }
     }
     const up = (event: PointerEvent) => {
+      if (event.pointerId !== owner.current) return
       flush()
       const point = doc(event)
       const now = latest.current
@@ -804,14 +978,31 @@ export function Canvas({
       } else if (g.kind === "marquee") {
         const touched = whole(idsTouching(held, rectFrom(g.from, point), now.size), held.items)
         setSelection(g.additive ? new Set([...now.selection, ...touched]) : touched)
-      } else if (g.kind === "placing" && now.placing) {
-        let item = placedItem(now.placing, g.from, point, now.size, now.colorHex, now.penWidth)
-        if (item?.kind === "connector") {
-          // An arrow dropped with an end on a node is ATTACHED to it.
-          const startNode = attachableAt(held, g.from, now.size)
-          const endNode = attachableAt(held, point, now.size)
-          item = { kind: "connector", connector: { ...item.connector, startNode, endNode } }
+      } else if (g.kind === "connecting") {
+        const hit = attachableAt(held, point, now.size)
+        const endNode = hit === g.node ? null : hit
+        // A click is not an arrow; a drag is, and so is a click that started on
+        // one node and ended on another.
+        if (distance(g.from, point) >= 8 || endNode !== null) {
+          const connector: ConnectorItem = {
+            id: newID(),
+            start: normalise(g.from, now.size), end: normalise(point, now.size),
+            startNode: g.node, endNode,
+            startHead: "none", endHead: "arrow", line: "solid", colorHex: now.colorHex,
+            lineWidth: Math.min(Math.max(now.penWidth, 1.5), 6),
+            transform: noTransform(), bends: [],
+          }
+          change({ items: [...held.items, { kind: "connector", connector }] })
+          setSelection(new Set([connector.id]))
+          // The bar that comes up once an arrow is drawn: its heads and its line.
+          setStyling(true)
         }
+      } else if (g.kind === "placing" && now.placing) {
+        // A line from the palette runs from the press to the release and is attached to NOTHING (the Mac's
+        // CanvasPlacementTests: "a line from the palette is attached to nothing"). The ARROW TOOL is the one
+        // that attaches, and it is the `connecting` gesture above; this one used to attach and re-route
+        // a palette line too, and one dragged inside a single node ran from that node to itself.
+        let item = placedItem(now.placing, g.from, point, now.size, now.colorHex, now.penWidth)
         if (item?.kind === "shape" && item.shape.kind === "text") {
           // A text box is born ready for typing, and as tall as an empty line.
           const width = Math.max(TEXT_BOX.minimumWidth, item.shape.width * now.size.width)
@@ -824,8 +1015,17 @@ export function Canvas({
         } else if (item) {
           change({ items: [...held.items, item] })
           setSelection(new Set([itemId(item)]))
+          if (item.kind === "connector") setStyling(true)
         }
         now.onPlaced()
+        // The palette has done its job: the keys go back to the notebook, as on the Mac where the popover closes
+        // and the text view stays the first responder. (A <select> that chose the shape kept the focus, and a
+        // <select> takes the arrow keys for its own choices.)
+        const focused = document.activeElement
+        if (focused instanceof HTMLSelectElement) {
+          focused.blur()
+          scroller?.querySelector<HTMLElement>(".cm-content")?.focus({ preventScroll: true })
+        }
       } else if (g.kind === "moving" || g.kind === "scaling" || g.kind === "rotating"
         || g.kind === "segment") {
         // The move already went through `onChange` as it happened; this is
@@ -833,6 +1033,7 @@ export function Canvas({
         if (moved) history.record(g.base)
       }
       live.current = null
+      owner.current = null
       baseDirty.current = true
       schedule()
       setGesture(null)
@@ -848,7 +1049,7 @@ export function Canvas({
       window.removeEventListener("pointerup", up)
       window.removeEventListener("pointercancel", up)
     }
-  }, [gesture, doc, change, eraseAt, schedule, publish, history])
+  }, [gesture, doc, change, eraseAlong, schedule, publish, history, scroller])
 
   // The pen's Delete and Clear buttons (and the same ExpressKeys): the drawing
   // layer owns the selection, so it answers for them.
@@ -871,12 +1072,14 @@ export function Canvas({
       const held = latest.current.drawing
       const picked = latest.current.selection
       if (event.key === "Escape" && latest.current.crop) { setCrop(null); return }
-      if ((event.key === "Backspace" || event.key === "Delete") && picked.size > 0) {
-        event.preventDefault()
-        change(removing(held, picked))
-        setSelection(new Set())
+      if (event.key === "Escape" && latest.current.styling) {
+        setStyling(false)
+        // A tool armed at the same time is put away too: one Escape, not two.
+        if (latest.current.placing) onPlaced()
         return
       }
+      // (Backspace and Delete are in the capture handler below: heard here, after the notebook, the same press
+      // had already taken a letter out of the note.)
       // ⌃G both ways, and it returns without swallowing the key when there
       // was nothing to do — a watcher that eats a key it did not use is
       // how typing dies.
@@ -885,6 +1088,7 @@ export function Canvas({
         if (!next) return
         event.preventDefault()
         change({ items: next })
+        setSelection(whole(picked, next))
         return
       }
       if (event.key === "Escape" && (picked.size > 0 || latest.current.placing)) {
@@ -903,21 +1107,125 @@ export function Canvas({
     return () => window.removeEventListener("keydown", key)
   }, [change, history, onPlaced, publish])
 
+  // What is picked answers the arrow keys, Backspace / Delete and the copy keys BEFORE the notebook does
+  // (capture phase, and the key goes no further): the caret is not moving, and no letter is taken out of
+  // the note, while a thing on the layer is picked up. WHOSE a key is, is `layerKey` (layerKeys.ts): a key
+  // that works on the words -- a letter typed, Enter, Ctrl+A -- is the notebook's AND lets go of the pick,
+  // which gives the arrows and Backspace back to the text; a press on the words does the same. The Mac's
+  // layer has the delete (its key monitor swallows it too); the arrows and the copy keys are the port's own.
+  useEffect(() => {
+    const away = (target: EventTarget | null) =>
+      target instanceof Element && target.closest("input, textarea") !== null
+    /** A key the layer took and the person is still holding: its repeats are the layer's too, not the note's. */
+    let taken: string | null = null
+    const keys = (event: KeyboardEvent) => {
+      if (event.repeat && taken === event.key) { event.preventDefault(); event.stopPropagation(); return }
+      const { drawing: held, selection: picked, size: now, box: shown, crop: cropping } = latest.current
+      const target = event.target
+      const verdict = layerKey({
+        key: event.key, ctrl: event.ctrlKey, meta: event.metaKey, alt: event.altKey, shift: event.shiftKey,
+        altGraph: event.getModifierState?.("AltGraph") ?? false,
+        composing: event.isComposing,
+        inField: away(target),
+        inSelect: target instanceof Element && target.closest("select") !== null,
+        inNotebook: target instanceof HTMLElement && target.isContentEditable,
+        picked: picked.size > 0 && shown !== null,
+        cropOpen: cropping !== null,
+      })
+      if (!verdict) return
+      if (verdict.take === "letGo") { setSelection(new Set()); return }
+      event.preventDefault(); event.stopPropagation()
+      switch (verdict.take) {
+        case "nudge":
+          burst(nudged(held, picked, verdict.dx, verdict.dy, now))
+          break
+        case "delete":
+          taken = event.key
+          change(removing(held, picked))
+          setSelection(new Set())
+          break
+        case "copy":
+        case "cut":
+          copyObjects(held.items, whole(picked, held.items))
+          if (verdict.take === "cut") {
+            change(removing(held, picked))
+            setSelection(new Set())
+          }
+          break
+        case "confirmCrop":
+          taken = event.key
+          if (!event.repeat) confirmCrop.current()
+          break
+      }
+    }
+    const lifted = () => { taken = null }
+    const pasted = (event: ClipboardEvent) => {
+      if (away(event.target)) return
+      const text = event.clipboardData?.getData("text/plain") ?? ""
+      const clip = objectClipboard
+      if (!clip || !text.includes(`[${clip.token}]`)) {
+        // Words pasted into the notebook: the person is in the text again, not with the objects.
+        if (event.target instanceof HTMLElement && event.target.isContentEditable) setSelection(new Set())
+        return
+      }
+      event.preventDefault(); event.stopPropagation()
+      const { drawing: held, size: now } = latest.current
+      clip.pastes += 1
+      const slide = 16 * clip.pastes
+      let copies = shifted(copiedItems(clip.items, new Set(clip.items.map(itemId))), slide, slide, now)
+      // From another note, scrolled somewhere else: bring it into view.
+      const where = boundsOf({ items: copies }, new Set(copies.map(itemId)), now)
+      const top = scrollRef.current
+      if (where && (where.y + where.height < top || where.y > top + now.height)) {
+        copies = shifted(copies, 0, top + 40 - where.y, now)
+      }
+      if (copies.length === 0) return
+      change({ items: [...held.items, ...copies] })
+      setSelection(new Set(copies.map(itemId)))
+    }
+    window.addEventListener("keydown", keys, true)
+    window.addEventListener("keyup", lifted, true)
+    window.addEventListener("paste", pasted, true)
+    return () => {
+      window.removeEventListener("keydown", keys, true)
+      window.removeEventListener("keyup", lifted, true)
+      window.removeEventListener("paste", pasted, true)
+    }
+  }, [burst, change])
+
   // MARK: - The handles
 
   // The handles stand at the corners of the selection, but a thin selection (a
   // flat stroke, a short line) would stack three 22-point buttons on top of one
   // another; they are spread to a box at least this big, and the pivot stays put.
-  const MIN_SPAN = 34
+  // Across the top there are three (turn, move, delete) and across the bottom up
+  // to four (group, crop, style, resize), each 22 wide: a tick one line of text
+  // across needs a box well wider than it is tall to keep them apart.
+  const MIN_SPAN_X = 96, MIN_SPAN_Y = 34
   const hb = box ? {
-    x: box.x - Math.max(0, (MIN_SPAN - box.width) / 2),
-    y: box.y - Math.max(0, (MIN_SPAN - box.height) / 2),
-    width: Math.max(box.width, MIN_SPAN),
-    height: Math.max(box.height, MIN_SPAN),
+    x: box.x - Math.max(0, (MIN_SPAN_X - box.width) / 2),
+    y: box.y - Math.max(0, (MIN_SPAN_Y - box.height) / 2),
+    width: Math.max(box.width, MIN_SPAN_X),
+    height: Math.max(box.height, MIN_SPAN_Y),
   } : null
+  const grouping = toggle(selection, drawing.items)
+  // The style bar sits under the selection, or over it when there is no room.
+  const barSpot = hb ? (() => {
+    const wide = 340, tall = 176
+    const left = Math.round(Math.min(Math.max(hb.x, 8), Math.max(size.width - wide - 8, 8)))
+    const below = hb.y + hb.height - scroll + 40
+    const top = below + tall <= size.height ? below : Math.max(hb.y - scroll - tall - 34, 8)
+    return { left, top: Math.round(Math.min(Math.max(top, 8), Math.max(size.height - tall, 8))) }
+  })() : null
+  // A handle stays on the pane: an object at the edge of the view (or half
+  // scrolled off it) keeps every button within reach, as on the Mac, where
+  // they are clamped 14 points in.
+  const spot = (x: number, y: number, scrolled: number) => at(
+    Math.min(Math.max(x, 2), Math.max(size.width - 24, 2)),
+    Math.min(Math.max(y - scrolled, 2), Math.max(size.height - 24, 2)) + scrolled, scrolled)
   const handles = box && hb && !gesture && selection.size > 0 ? (
     <>
-      <button className="wm-handle" style={at(hb.x - HANDLE, hb.y - HANDLE, scroll)}
+      <button className="wm-handle" style={spot(hb.x - HANDLE, hb.y - HANDLE, scroll)}
               title="Turn"
               onPointerDown={(event) => {
                 event.preventDefault(); event.stopPropagation()
@@ -928,9 +1236,9 @@ export function Canvas({
                   pivot,
                   snapshot: snapshotOf(drawing, selection),
                   base: drawing,
-                })
+                }, event.pointerId)
               }}>⟳</button>
-      <button className="wm-handle" style={at(hb.x + hb.width, hb.y + hb.height, scroll)}
+      <button className="wm-handle" style={spot(hb.x + hb.width, hb.y + hb.height, scroll)}
               title="Resize"
               onPointerDown={(event) => {
                 event.preventDefault(); event.stopPropagation()
@@ -941,9 +1249,9 @@ export function Canvas({
                   pivot,
                   snapshot: snapshotOf(drawing, selection),
                   base: drawing,
-                })
+                }, event.pointerId)
               }}>⤡</button>
-      <button className="wm-handle" style={at(hb.x + hb.width, hb.y - HANDLE, scroll)}
+      <button className="wm-handle" style={spot(hb.x + hb.width, hb.y - HANDLE, scroll)}
               title="Delete"
               onPointerDown={(event) => {
                 event.preventDefault(); event.stopPropagation()
@@ -954,7 +1262,7 @@ export function Canvas({
         const only = drawing.items.find((item) => itemId(item) === [...selection][0])
         if (!only || only.kind !== "image") return null
         return (
-          <button className="wm-handle wm-handle-wide" style={at(hb.x - HANDLE, hb.y + hb.height / 2, scroll)}
+          <button className="wm-handle wm-handle-wide" style={spot(hb.x - HANDLE, hb.y + hb.height / 2, scroll)}
                   title="Read the words out of this picture"
                   onPointerDown={(event) => {
                     event.preventDefault(); event.stopPropagation()
@@ -967,7 +1275,7 @@ export function Canvas({
         if (!only || only.kind !== "image") return null
         return (
           <button className="wm-handle" title="Crop this picture"
-                  style={at(hb.x + hb.width / 2 - HANDLE, hb.y + hb.height, scroll)}
+                  style={spot(hb.x + hb.width / 2 - HANDLE, hb.y + hb.height, scroll)}
                   onPointerDown={(event) => {
                     event.preventDefault(); event.stopPropagation()
                     setCrop({ id: only.image.id, rect: { x: 0, y: 0, width: 1, height: 1 } })
@@ -992,18 +1300,48 @@ export function Canvas({
                     start({
                       kind: "segment", id: item.connector.id, index: segment.index,
                       vertical: segment.vertical, base: drawing,
-                    })
+                    }, event.pointerId)
                   }} />
         ))
       })}
-      {selection.size > 1 && (
-        <button className="wm-handle wm-handle-wide" style={at(hb.x - HANDLE, hb.y + hb.height, scroll)}
-                title="Hold these together (⌃G)"
+      {/* Hold what is picked together, or take it apart: the button says which
+          it will do, and ⌃G does the same. */}
+      {grouping !== "nothing" && (
+        <button className="wm-handle wm-handle-group" data-group={grouping}
+                style={spot(hb.x - HANDLE, hb.y + hb.height, scroll)}
+                title={grouping === "ungroup" ? "Ungroup these (⌃G does too)" : "Group these (⌃G does too)"}
                 onPointerDown={(event) => {
                   event.preventDefault(); event.stopPropagation()
                   const next = toggled(selection, drawing.items)
-                  if (next) change({ items: next })
-                }}>⌃G</button>
+                  if (next) {
+                    change({ items: next })
+                    // The handles go round the whole of what is held at once.
+                    setSelection(whole(selection, next))
+                  }
+                }}>{grouping === "ungroup" ? "Ungroup" : "Group"}</button>
+      )}
+      {/* Dragging the ink moves it too, but a thin stroke is a small target and a
+          picture under the pointer is not obviously draggable: a button says so. */}
+      <button className="wm-handle" data-handle="move"
+              style={spot(hb.x + hb.width / 2 - HANDLE, hb.y - HANDLE, scroll)}
+              title="Drag to move"
+              onPointerDown={(event) => {
+                event.preventDefault(); event.stopPropagation()
+                start({ kind: "moving", from: doc(event.nativeEvent), snapshot: snapshotOf(drawing, selection), base: drawing }, event.pointerId)
+              }}>✥</button>
+      {/* Colour, width, fill, an arrow's heads and line, the order, a copy. */}
+      <button className={`wm-handle${styling ? " wm-handle-on" : ""}`} data-handle="style"
+              style={spot(hb.x + hb.width / 2 - HANDLE / 2 + 18, hb.y + hb.height, scroll)}
+              title="Colour, width, heads and line"
+              onPointerDown={(event) => {
+                event.preventDefault(); event.stopPropagation()
+                setStyling((was) => !was)
+              }}>◐</button>
+      {styling && barSpot && (
+        <StyleBar items={drawing.items.filter((item) => selection.has(itemId(item)))}
+                  left={barSpot.left} top={barSpot.top}
+                  onPatch={applyStyle} onOrder={orderSelection} onDuplicate={duplicate}
+                  onClose={() => setStyling(false)} />
       )}
     </>
   ) : null
@@ -1012,7 +1350,17 @@ export function Canvas({
 
   const labelled = labelling
     ? drawing.items.find((item) => itemId(item) === labelling.id) : undefined
+  /**
+   * Escape set this to keep the blur that follows from committing what was typed -- but the input is
+   * unmounted, and an unmounted input sends no blur: the flag stayed set and swallowed the NEXT label's
+   * commit (a click away did nothing; only Enter finally did, and Enter needed two presses). It is the
+   * business of ONE editor, so it is put back the moment there is none.
+   */
   const labelCancelled = useRef(false)
+  const labelling_ = labelling !== null
+  useEffect(() => { if (!labelling_) labelCancelled.current = false }, [labelling_])
+  // A label whose object has gone (undone away, deleted) is no label being typed.
+  useEffect(() => { if (labelling && !labelled) setLabelling(null) }, [labelling, labelled])
   useEffect(() => {
     editingBox.current = labelling && labelled?.kind === "shape" && labelled.shape.kind === "text"
       ? labelling.id : null
@@ -1121,6 +1469,7 @@ export function Canvas({
     })
     setCrop(null)
   }
+  confirmCrop.current = () => { void applyCrop() }
   const cropEditor = crop && cropped_?.kind === "image" ? (() => {
     const base = baseBounds(cropped_, size)
     const centre = placedCenter(cropped_, size)
@@ -1148,7 +1497,7 @@ export function Canvas({
                  style={{ left: percent(corner.x), top: percent(corner.y) }}
                  onPointerDown={(event) => {
                    event.preventDefault(); event.stopPropagation()
-                   start({ kind: "cropping", corner: index })
+                   start({ kind: "cropping", corner: index }, event.pointerId)
                  }} />
           ))}
         </div>
@@ -1248,10 +1597,57 @@ const edited = (drawing: Drawing, snapshot: Map<string, ItemTransform>,
   }),
 })
 
+/**
+ * A pen stroke: a smooth line whose width follows the pressure. The line goes
+ * through the middles of the samples with each sample as the control point
+ * (the same curve a mouse stroke is given, `strokeCurve`), cut into one piece
+ * per sample, and each piece is as wide as the pressure at its sample. Runs of
+ * pieces whose width rounds to the same quarter pixel go down as ONE path: a
+ * stroke is hundreds of pieces and a draw call for each was most of what a
+ * repaint cost. The pieces meet end to end, so a run needs no new start.
+ *
+ * `from` is the first piece not yet drawn (a stroke still being written is
+ * painted a few pieces at a time); `tail` draws the last half piece, to the
+ * final sample, which a stroke being written does not have yet. Returns the
+ * number of pieces drawn so far.
+ */
+function strokePressure(context: CanvasRenderingContext2D, count: number, at: (index: number) => Point,
+  pressures: number[], base: number, from: number, tail: boolean): number {
+  const last = tail ? count - 1 : count - 2
+  if (count < 2 || from > last) return Math.max(from, 0)
+  const middle = (a: Point, b: Point): Point => ({ x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 })
+  context.lineCap = "round"
+  context.lineJoin = "round"
+  let run = -1
+  for (let piece = from; piece <= last; piece++) {
+    const width = Math.max(0.25, Math.round(base * pressureScale(pressures[piece] ?? 0.5) * 4) / 4)
+    if (width !== run) {
+      if (run >= 0) context.stroke()
+      run = width
+      context.lineWidth = width
+      context.beginPath()
+      const start = piece === 0 ? at(0) : middle(at(piece - 1), at(piece))
+      context.moveTo(start.x, start.y)
+    }
+    if (piece === 0) {
+      const to = middle(at(0), at(1))
+      context.lineTo(to.x, to.y)
+    } else if (piece === count - 1) {
+      const to = at(count - 1)
+      context.lineTo(to.x, to.y)
+    } else {
+      const control = at(piece), to = middle(control, at(piece + 1))
+      context.quadraticCurveTo(control.x, control.y, to.x, to.y)
+    }
+  }
+  if (run >= 0) context.stroke()
+  return last + 1
+}
+
 /** One object, drawn where it is now. */
 function paint(context: CanvasRenderingContext2D, item: CanvasItem, size: Size,
   onPictureLoad: () => void = () => {}, editing: string | null = null): void {
-  const place = (point: Point) => applyMatrix(item, size, point)
+  const place = matrixOf(item, size)
   context.lineCap = "round"
   context.lineJoin = "round"
 
@@ -1263,93 +1659,89 @@ function paint(context: CanvasRenderingContext2D, item: CanvasItem, size: Size,
       context.lineWidth = item.stroke.width * item.stroke.transform.scale
       const pressures = item.stroke.pressures
       if (pressures && pressures.length === points.length && points.length > 1) {
-        // A pen stroke: each segment at the mean of its ends' pressure.
-        // Runs of segments whose width rounds to the same quarter pixel go
-        // down as ONE path: a stroke is hundreds of segments and a draw call
-        // for each was most of what a repaint cost.
-        const base = context.lineWidth
-        let runWidth = -1
-        context.beginPath()
-        for (let i = 1; i < points.length; i++) {
-          const width = Math.max(0.25, Math.round(
-            base * pressureScale((pressures[i - 1]! + pressures[i]!) / 2) * 4) / 4)
-          if (width !== runWidth) {
-            if (runWidth >= 0) context.stroke()
-            runWidth = width
-            context.lineWidth = width
-            context.beginPath()
-          }
-          context.moveTo(points[i - 1]!.x, points[i - 1]!.y)
-          context.lineTo(points[i]!.x, points[i]!.y)
-        }
-        context.stroke()
+        strokePressure(context, points.length, (i) => points[i]!, pressures, context.lineWidth, 0, true)
         return
       }
       context.beginPath()
-      context.moveTo(points[0]!.x, points[0]!.y)
-      for (const point of points.slice(1)) context.lineTo(point.x, point.y)
-      if (points.length === 1) context.lineTo(points[0]!.x + 0.01, points[0]!.y)
+      // The line through the middles of the samples, as on the Mac; the stroke
+      // still being drawn is a polyline until it is let go.
+      const curve = item.stroke.id === "live" ? null : strokeCurve(item.stroke, points)
+      if (curve && "steps" in curve) {
+        for (const step of curve.steps) {
+          if (step.op === "M") context.moveTo(step.to.x, step.to.y)
+          else if (step.op === "L") context.lineTo(step.to.x, step.to.y)
+          else context.quadraticCurveTo(step.control.x, step.control.y, step.to.x, step.to.y)
+        }
+      } else {
+        context.moveTo(points[0]!.x, points[0]!.y)
+        for (const point of points.slice(1)) context.lineTo(point.x, point.y)
+        if (points.length === 1) context.lineTo(points[0]!.x + 0.01, points[0]!.y)
+      }
       context.stroke()
       return
     }
     case "shape": {
       const shape = item.shape
       if (shape.kind === "text") { paintTextBox(context, item, size, editing === shape.id); return }
-      const lines = polylines(shape.kind, bounds(item, size).width > 0
-        ? baseBoxOf(item, size)
-        : baseBoxOf(item, size))
+      // Drawn in the shape's own frame — turned and scaled about its centre, as
+      // the Mac's layer is — so the outline's width scales with it, and the
+      // true curves (an oval, a rounded rectangle's corners) are drawn as curves.
+      const box = baseBoxOf(item, size)
+      const centre = baseCenter(item, size)
+      const t = shape.transform
+      context.save()
+      context.translate(centre.x + t.dx * size.width, centre.y + t.dy * size.height)
+      context.rotate(t.rotation)
+      context.scale(t.scale, t.scale)
+      context.translate(-centre.x, -centre.y)
+      const outlinePath = shapePath(shape.kind, box)
+      if (shape.fillHex) { context.fillStyle = shape.fillHex; context.fill(outlinePath) }
       context.strokeStyle = shape.colorHex
-      context.lineWidth = shape.lineWidth * shape.transform.scale
-      for (const line of lines) {
-        const points = line.map(place)
-        context.beginPath()
-        context.moveTo(points[0]!.x, points[0]!.y)
-        for (const point of points.slice(1)) context.lineTo(point.x, point.y)
-        if (unitPolylines(shape.kind).length === 1 && isClosedKind(shape.kind)) context.closePath()
-        if (shape.fillHex) { context.fillStyle = shape.fillHex; context.fill() }
-        context.stroke()
-      }
-      if (shape.label) {
-        const where = place({ x: baseBoxOf(item, size).x + baseBoxOf(item, size).width / 2,
-          y: baseBoxOf(item, size).y + baseBoxOf(item, size).height / 2 })
-        context.fillStyle = shape.colorHex
-        context.font = "13px -apple-system, Segoe UI, system-ui, sans-serif"
+      context.lineWidth = shape.lineWidth
+      context.stroke(outlinePath)
+      if (shape.label && editing !== shape.id) {
+        const font = "13px -apple-system, Segoe UI, system-ui, sans-serif"
+        const room = Math.max(10, box.width - 12)
+        const lines = wrapLines(shape.label, room, context, font).slice(0, 6)
+        context.fillStyle = shape.fillHex ? readableInk(shape.colorHex, shape.fillHex) : shape.colorHex
+        context.font = font
         context.textAlign = "center"
         context.textBaseline = "middle"
-        context.fillText(shape.label, where.x, where.y)
+        const leading = 16
+        lines.forEach((text, index) => {
+          context.fillText(text, box.x + box.width / 2,
+            box.y + box.height / 2 + (index - (lines.length - 1) / 2) * leading)
+        })
       }
+      context.restore()
       return
     }
     case "connector": {
       const points = route(item.connector).map((point) =>
         place({ x: point.x * size.width, y: point.y * size.height }))
+      const scale = item.connector.transform.scale
+      // The line is pulled back from a head so the tip is the point; the heads
+      // are filled triangles (the Mac's InkPaths, which the PDF is drawn from too).
+      const { line, heads } = connectorPaths(item.connector, points)
+      if (line.length === 0) return
       context.strokeStyle = item.connector.colorHex
-      context.lineWidth = item.connector.lineWidth * item.connector.transform.scale
-      context.setLineDash(item.connector.line === "dashed"
-        ? [item.connector.lineWidth * 4, item.connector.lineWidth * 3]
-        : item.connector.line === "dotted" ? [0.1, item.connector.lineWidth * 2.2] : [])
+      context.fillStyle = item.connector.colorHex
+      context.lineWidth = item.connector.lineWidth * scale
+      context.lineCap = item.connector.line === "dotted" ? "round" : "butt"
+      context.setLineDash(dashPattern(item.connector).map((part) => part * scale))
       context.beginPath()
-      context.moveTo(points[0]!.x, points[0]!.y)
-      for (const point of points.slice(1)) context.lineTo(point.x, point.y)
+      context.moveTo(line[0]!.x, line[0]!.y)
+      for (const point of line.slice(1)) context.lineTo(point.x, point.y)
       context.stroke()
       context.setLineDash([])
-      const head = (tip: Point, from: Point) => {
-        const length = headLength(item.connector.lineWidth)
-        const dx = tip.x - from.x, dy = tip.y - from.y
-        const reach = Math.max(Math.hypot(dx, dy), 0.001)
-        const ux = dx / reach, uy = dy / reach
-        const base = { x: tip.x - ux * length, y: tip.y - uy * length }
-        const half = length * 0.45
-        context.fillStyle = item.connector.colorHex
+      for (const head of heads) {
         context.beginPath()
-        context.moveTo(tip.x, tip.y)
-        context.lineTo(base.x - uy * half, base.y + ux * half)
-        context.lineTo(base.x + uy * half, base.y - ux * half)
+        context.moveTo(head[0]!.x, head[0]!.y)
+        context.lineTo(head[1]!.x, head[1]!.y)
+        context.lineTo(head[2]!.x, head[2]!.y)
         context.closePath()
         context.fill()
       }
-      if (item.connector.endHead === "arrow") head(points.at(-1)!, points.at(-2)!)
-      if (item.connector.startHead === "arrow") head(points[0]!, points[1]!)
       return
     }
     case "image": {
@@ -1434,7 +1826,26 @@ const baseBoxOf = (item: CanvasItem, size: Size): Rect => {
   }
 }
 
-const isClosedKind = (kind: CanvasItem extends never ? never : Parameters<typeof polylines>[0]): boolean =>
-  !(kind === "check" || kind === "cross" || kind === "question")
+/**
+ * What is drawn for a shape in its box: the true curves where the outline the
+ * hit test uses is an approximation (an oval is a 32-gon there, a rounded
+ * rectangle's corners are short arcs).
+ */
+function shapePath(kind: ShapeKind, box: Rect): Path2D {
+  const path = new Path2D()
+  if (kind === "oval") {
+    path.ellipse(box.x + box.width / 2, box.y + box.height / 2, box.width / 2, box.height / 2, 0, 0, Math.PI * 2)
+  } else if (kind === "roundedRectangle") {
+    path.roundRect(box.x, box.y, box.width, box.height, cornerRadius(box))
+  } else {
+    for (const line of polylines(kind, box)) {
+      if (line.length === 0) continue
+      path.moveTo(line[0]!.x, line[0]!.y)
+      for (const point of line.slice(1)) path.lineTo(point.x, point.y)
+      if (isClosed(kind)) path.closePath()
+    }
+  }
+  return path
+}
 
 export const emptyCanvas = emptyDrawing

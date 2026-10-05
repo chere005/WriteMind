@@ -1,0 +1,8 @@
+/* The reach hint (SheetReach.tsx): hatching over the part of the sheet that is outside the allowed rectangle. Never takes a pointer. */
+.sheet-reach { position: absolute; inset: 0; pointer-events: none; z-index: 4; overflow: hidden; }
+.sheet-reach-strip {
+  position: absolute;
+  background-image: repeating-linear-gradient(135deg, rgba(255, 255, 255, 0.16) 0 6px, rgba(255, 255, 255, 0) 6px 12px);
+  background-color: rgba(0, 0, 0, 0.22);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.18);
+}

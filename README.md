@@ -13,6 +13,8 @@ as a reference, and its living copy is `~/GIT/WriteMind`.
 - `docs/BUILDING.md` — the build, the three packages, and Arch in
   particular
 - `docs/TODO.md` — what is left
+- `docs/TESTING.md` — typecheck, unit tests and the end-to-end suites
+  (`npm run e2e`)
 - `AGENTS.md` — how the code is put together (the Mac app's own rules are
   in there too, and they are still the rules: they were never about AppKit)
 

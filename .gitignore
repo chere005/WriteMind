@@ -29,3 +29,8 @@ dist-electron/
 
 # The shortcut icon tools/setup-windows.ps1 makes from packaging/icon.png
 packaging/writemind.ico
+
+# End-to-end runs: reports, screenshots, logs, the build snapshot and scratch scripts
+e2e/.results/
+e2e/.snapshot/
+e2e/.scratch/

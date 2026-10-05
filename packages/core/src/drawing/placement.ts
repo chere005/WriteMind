@@ -15,7 +15,12 @@ import type { Size } from "./geometry"
 
 export type Placement =
   | { kind: "shape"; shape: ShapeKind }
-  | { kind: "line"; start: ConnectorHead; end: ConnectorHead }
+  /**
+   * `tool` is the Mac's "Draw arrows between nodes" switch: it stays armed
+   * for any number of lines, and a line starts and ends ON nodes (attached),
+   * where a palette line is just a line.
+   */
+  | { kind: "line"; start: ConnectorHead; end: ConnectorHead; tool?: boolean }
 
 /** Under this, the drag was a click. */
 export const DRAG_THRESHOLD = 4

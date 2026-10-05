@@ -1,20 +1,22 @@
 /**
  * The tablet sheet's memory and what taking from it means. Both the video pane
- * (CameraPane) and the full-screen pad (PadMode) show THE SAME sheet and take
+ * (CameraPane) and the Grab overlay (GrabOverlay) show THE SAME sheet and take
  * from it through THE SAME function, so a capture made in either is the same
  * capture: the strokes with their pressures, the Page picture, the Box
  * section, the flow-chart reader, the learned page shape, the placement.
  *
  * No React in here. The sheet outlives both views (putting the video away, or
- * leaving the pad, does not wipe the page).
+ * ending a grab, does not wipe the page).
  */
 
 import {
   placement, regionOf, resolveShape, shapeSize, type CanvasItem, type Rect, type Size,
 } from "@writemind/core"
-import { bandUnder, renderSheet, sheetChart } from "./capturePipeline"
-import { screenAspect } from "./padGeometry"
-import { inkExtent, landStrokes, SHEET_REF, splitByRegion, TabletPage } from "./tabletPage"
+import { bandUnder, chartSummary, renderSheet, sheetChartLabelled } from "./capturePipeline"
+import { wordsForChart } from "./ocrClient"
+import { currentTurns, subscribeOrientation } from "./orientation"
+import { sheetAspectFor } from "../shared/orientation"
+import { inkExtent, landStrokes, screenAspect, SHEET_REF, splitByRegion, TabletPage } from "./tabletPage"
 
 export interface Capture {
   /** The picture's bytes, ready for `saveMedia`. Absent when the writing comes in as strokes. */
@@ -29,8 +31,15 @@ export interface Capture {
   chart?: CanvasItem[]
 }
 
-/** The one sheet, in the shape of this machine's screen. */
-export const sheet = new TabletPage(screenAspect())
+/**
+ * The sheet's shape: the screen's, turned by the tablet's orientation (landscape on a
+ * landscape display unless the tablet is turned a quarter turn).
+ */
+export const currentSheetAspect = (): number => sheetAspectFor(screenAspect(), currentTurns())
+
+/** The one sheet. Its shape follows the orientation; its strokes are fractions of it and never change with it. */
+export const sheet = new TabletPage(currentSheetAspect())
+subscribeOrientation(() => sheet.setAspect(currentSheetAspect()))
 
 /** The sheet's size in reference units: what widths and the page arithmetic are measured in. */
 export const sheetUnits = (aspect: number = sheet.aspect): Size =>
@@ -119,12 +128,16 @@ export async function takeFromSheet(mode: "ink" | "page", options: {
     ? landStrokes(parts.inside, { surface: units, pageSize, frame: frameOnPage, where, pane })
     : undefined
 
-  const chart = sheetChart(parts.inside, pageSize, onPage, frameOnPage, scale, pane, penColour, penWidth,
-    bandUnder(where.center, where.width, aspect, pane))
-  const nodes = chart.filter((item) => item.kind === "shape").length
-  const read = chart.length > 0
-    ? `Read a flow chart: ${nodes} ${nodes === 1 ? "node" : "nodes"}.` : null
+  // What was taken leaves the sheet NOW, before the text reader is waited for
+  // (it takes a few hundred milliseconds, and the pen keeps writing meanwhile:
+  // clearing afterwards would drop what was written in between).
   if (clearAfter) sheet.replace(parts.outside)
+  // The nodes of a chart are labelled with the words the machine's text reader
+  // finds in the sheet (only a sheet that holds a chart is ever sent to it).
+  // (The sheet is already cleared, so a chart that cannot be read must not lose the capture.)
+  const chart = await sheetChartLabelled(parts.inside, pageSize, onPage, frameOnPage, scale, pane, penColour, penWidth,
+    bandUnder(where.center, where.width, aspect, pane), (canvas) => wordsForChart(canvas)).catch(() => [])
+  const read = chartSummary(chart)
   return {
     read, cleared: clearAfter,
     capture: {

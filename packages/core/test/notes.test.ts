@@ -25,6 +25,12 @@ describe("a note's row", () => {
     expect(note.snippet).toBe("bold and under code · quoted")
   })
 
+  // Port-only: what /link writes into a target is not part of the row's words.
+  it("drops the anchor and highlight tags /link writes", () => {
+    const note = makeNote(path, 0, '# T\n<a id="wm-6a841e8d"></a>first paragraph\nwith <mark id="wm-31ed2311">a phrase</mark> in it')
+    expect(note.snippet).toBe("first paragraph · with a phrase in it")
+  })
+
   it("drops the hashes from later headings too", () => {
     const note = makeNote(path, 0, "# T\n###### Sean Cheren\n## Next")
     expect(note.snippet).toBe("Sean Cheren · Next")
@@ -81,5 +87,30 @@ describe("the row order", () => {
     let order = setOrder(emptyOrder(), ["a.md"], root, root)
     order = forget(order, "a.md", root, root)
     expect(order.folders).toEqual({})
+  })
+})
+
+// e3-editor-perf (2026-10-04): `arrange` no longer does an indexOf and a splice per remembered name (a folder of thousands).
+// It must put names where the old one did, including a name remembered twice or listed twice.
+describe("arrange, in one pass", () => {
+  const old = (wanted: string[], names: string[]): string[] => {
+    const remaining = [...names]
+    const out: string[] = []
+    for (const name of wanted) {
+      const at = remaining.indexOf(name)
+      if (at >= 0) out.push(remaining.splice(at, 1)[0]!)
+    }
+    return [...out, ...remaining]
+  }
+  it("is the old arrange on random lists", () => {
+    let seed = 3
+    const rnd = () => (seed = (seed * 48271) % 2147483647) / 2147483647
+    const letters = "abcdefghij".split("")
+    for (let i = 0; i < 3000; i++) {
+      const names = Array.from({ length: Math.floor(rnd() * 12) }, () => letters[Math.floor(rnd() * letters.length)]!)
+      const wanted = Array.from({ length: Math.floor(rnd() * 12) }, () => letters[Math.floor(rnd() * letters.length)]!)
+      const order = { folders: { "": wanted } }
+      expect(arrange(order, names, "/r", "/r")).toEqual(old(wanted, names))
+    }
   })
 })

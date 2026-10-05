@@ -1,0 +1,64 @@
+# The TypeScript port on Windows: typecheck, unit tests, build; then the end-to-end suites (allowed to fail for
+# now: they drive the real app, and they publish their report and screenshots either way).
+# The Swift side of the repo is the macOS app's reference copy and is built and tested on a Mac, not here.
+name: CI
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    name: Typecheck, test, build
+    runs-on: windows-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - name: Typecheck
+        run: npm run typecheck
+      - name: Unit tests
+        run: npm test
+      - name: Build
+        run: npm run build
+
+  e2e:
+    name: End-to-end (optional)
+    needs: verify
+    runs-on: windows-latest
+    timeout-minutes: 40
+    # The suites drive the real app on a hosted desktop: until they have proven steady there they inform, not block.
+    continue-on-error: true
+    env:
+      # Hosted runners have no GPU worth the name.
+      WM_E2E_ARGS: --disable-gpu
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - name: Build
+        run: npm run build
+      - name: End-to-end suites
+        run: npm run e2e -- --snapshot
+      - name: Report and screenshots
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: e2e-report
+          path: |
+            e2e/.results/**
+            !e2e/.results/**/profile/**
+          if-no-files-found: ignore
+          retention-days: 14

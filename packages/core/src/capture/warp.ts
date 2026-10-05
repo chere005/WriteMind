@@ -106,3 +106,30 @@ export function pageAspect(corners: {
   const ratio = Math.sqrt(top / bottom)
   return Number.isFinite(ratio) && ratio > 0.2 && ratio < 5 ? ratio : null
 }
+
+/**
+ * Quarter turns CLOCKWISE, as the video pane shows them (`NotebookCapture.
+ * rotated` on the Mac): an RGBA picture turned `turns` quarter turns, so a
+ * capture of a camera that is mounted sideways comes in upright. The picture
+ * stays at the origin; at an odd number of turns its width and height swap.
+ */
+export function quarterTurned(source: Uint8ClampedArray | Uint8Array, width: number, height: number, turns: number):
+{ data: Uint8ClampedArray<ArrayBuffer>; width: number; height: number } {
+  const quarter = ((Math.round(turns) % 4) + 4) % 4
+  const swap = quarter % 2 === 1
+  const w = swap ? height : width, h = swap ? width : height
+  const out = new Uint8ClampedArray(w * h * 4)
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < w; x++) {
+      // Where this pixel of the turned picture was in the original.
+      const sx = quarter === 0 ? x : quarter === 1 ? y : quarter === 2 ? width - 1 - x : width - 1 - y
+      const sy = quarter === 0 ? y : quarter === 1 ? height - 1 - x : quarter === 2 ? height - 1 - y : x
+      const from = (sy * width + sx) * 4, to = (y * w + x) * 4
+      out[to] = source[from]!
+      out[to + 1] = source[from + 1]!
+      out[to + 2] = source[from + 2]!
+      out[to + 3] = source[from + 3]!
+    }
+  }
+  return { data: out, width: w, height: h }
+}

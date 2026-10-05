@@ -12,6 +12,7 @@
 
 import { useEffect, useRef } from "react"
 import { commandForKey, type MenuState } from "../shared/commands"
+import { returnFocusSoon, watchChromeFocus } from "./focusReturn"
 
 interface Options {
   platform: string
@@ -39,12 +40,19 @@ export function useChrome({ platform, run, state }: Options): void {
       if (event.repeat && command.id.startsWith("pen")) return
       if (command.owner === "main") void window.wm.runMain(command.id)
       else latest.current(command.id)
+      if (!command.id.startsWith("pen")) returnFocusSoon()
     }
     window.addEventListener("keydown", key)
-    const unlisten = window.wm.onMenuCommand((id) => latest.current(id))
+    // A menu click: done, and then the caret is back in the notes (chrome never keeps the keyboard).
+    const unlisten = window.wm.onMenuCommand((id) => {
+      latest.current(id)
+      if (!id.startsWith("pen")) returnFocusSoon()
+    })
+    const unwatch = watchChromeFocus()
     return () => {
       window.removeEventListener("keydown", key)
       unlisten()
+      unwatch()
     }
   }, [platform])
 

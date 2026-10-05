@@ -52,6 +52,17 @@ The rules did not change. `CellSeams` still says where the bar goes;
 the + opens. They are imported from `@writemind/core` by both the editor and
 the shell, and neither may decide any of it for itself.
 
+## The rendered page is the same view
+
+The Mac's rendered page is a second view: SwiftUI blocks, one `NSTextView` for the block being
+edited, the note written back block by block (`MarkdownPreview`, `BlockEditor`). On CodeMirror it is
+cheaper and safer to keep ONE view: every block that is not open is a block widget standing over the
+characters it came from (`packages/editor/src/preview/`), and the open block is those characters, styled.
+One document, one selection, one undo — so "only the block you are in is ever rewritten" is true because
+there is no second copy to convert, and the brackets, seams, + menu, folds and held-cell commands are the
+markdown side's own. Which blocks are open is a pure rule in the core (`cellStates`); so are Return, Backspace
+and the keys of a bar (`cells/preview.ts`), tested from the Swift tests of the same names.
+
 ## What each platform can do
 
 `packages/core/src/platform/capabilities.ts` is the ONE place that answers
@@ -62,13 +73,14 @@ this. Nothing else asks `process.platform`.
 | The notebook, the drawing layer, the files | yes | yes | yes |
 | Export ▸ PDF | yes | yes | yes (Chromium prints the page) |
 | The camera, the box, and the ink lifted off the paper | yes | yes | yes |
-| Reading a picture's words | `wm-vision` (Vision) | `tesseract` if installed | `tesseract` if installed |
-| Finding the page in the frame by itself | not yet — the helper answers, nothing warps the frame through it | no | no |
+| Reading a picture's words | `wm-vision` (Vision) | Windows' own OCR engine (`Windows.Media.Ocr`, nothing to install; Japanese is an optional Windows capability, `docs/OCR-WINDOWS.md`), else `tesseract` if installed | `tesseract` if installed |
+| Finding the page in the frame by itself | `findPage` (plain arrays, `capture/findPage.ts`) - the Mac app keeps Vision | yes, the same code | yes, the same code |
 
 **A CAPABILITY IS A FILE BEING THERE, and that is the whole rule.** There is
 no table of operating systems in the code: `capabilitiesFor(platform,
-{ocr})` asks one question, and the shell answers the helper half by looking
-for `wm-vision` (built by `tools/build-vision.sh` on macOS) or `tesseract`
+{ocr, engine, japanese})` asks one question, and the shell answers the helper half by looking
+for `wm-vision` (built by `tools/build-vision.sh` on macOS), Windows' engine (a probe of
+`helpers/wm-ocr.ps1` that works) or `tesseract`
 on the PATH — Arch's `tesseract` and `tesseract-data-eng`, which the package
 lists as OPTIONAL. A Mac with no helper built is a Mac without OCR. Nothing
 anywhere else asks `process.platform`.

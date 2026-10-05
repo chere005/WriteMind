@@ -1,0 +1,82 @@
+/* The camera pane: the picture, the box dragged on it, the stand-ins for a picture that is not there. */
+
+/* The stage holds the video and everything that turns and zooms with it. */
+.camera .stage { position: absolute; inset: 0; overflow: hidden; background: #000; }
+.camera .stage .zoomer { position: absolute; inset: 0; transform-origin: 50% 50%; }
+.camera .stage video {
+  position: absolute; left: 50%; top: 50%; max-width: none; object-fit: contain; background: #000;
+  transform-origin: 50% 50%;
+}
+.camera.zooming { cursor: crosshair; }
+/* A pen drags the box too: nothing in here is for the browser to pan. */
+.camera { touch-action: none; }
+
+/* A box dragged over the picture: what is outside it is dimmed (the Mac's even-odd fill) and its edge is dashed. */
+.camera .box-clip { position: absolute; inset: 0; overflow: hidden; pointer-events: none; z-index: 1; }
+.camera .box-clip .box {
+  position: absolute; background: transparent; border: 1.5px dashed #fff;
+  box-shadow: 0 0 0 9999px rgba(0, 0, 0, 0.45);
+}
+.camera .box-clip .box.zoom { border-color: var(--wm-accent); }
+
+/* What can be done with a box: three buttons, not a sentence about a button somewhere else. */
+.camera .box-choices {
+  position: absolute; z-index: 4; display: flex; gap: 6px; transform: translate(-50%, -50%);
+}
+.camera .box-choices button {
+  border: 1px solid rgba(255, 255, 255, 0.28); border-radius: 999px; background: rgba(0, 0, 0, 0.62);
+  color: #fff; font-size: 12px; font-weight: 600; padding: 5px 10px; cursor: pointer;
+}
+.camera .box-choices button:hover:not(:disabled) { background: var(--wm-accent); }
+.camera .box-choices button:disabled { opacity: 0.6; cursor: default; }
+
+.camera .zoom-hint {
+  position: absolute; z-index: 4; top: 44px; left: 50%; transform: translateX(-50%);
+  background: rgba(0, 0, 0, 0.55); color: #fff; font-size: 12.5px; padding: 6px 12px; border-radius: 999px;
+  pointer-events: none;
+}
+
+/* The top row: the corner (turning the picture, zooming it, the way back to the notes) on the left and the bar on the right. */
+.camera .camera-top {
+  position: absolute; z-index: 3; top: 8px; left: 8px; right: 8px; display: flex; flex-wrap: wrap; gap: 4px;
+  justify-content: space-between; align-items: flex-start; pointer-events: none;
+}
+.camera .camera-top > * { pointer-events: auto; }
+.camera .camera-top .camera-bar { position: static; margin-left: auto; }
+.camera .camera-corner { display: flex; gap: 4px; flex-wrap: wrap; }
+.camera .camera-corner .icon-button { background: rgba(0, 0, 0, 0.45); color: #e8e8ea; }
+.camera .camera-corner .icon-button:hover:not(:disabled) { background: var(--wm-accent); }
+.camera .camera-corner .icon-button:disabled { opacity: 0.45; }
+.camera .camera-corner .icon-button.on { background: var(--wm-accent); color: #fff; }
+
+/* The camera's name, the Mac's capsule: first on the line under the picture. */
+.camera .note .camera-name {
+  display: block; width: fit-content; max-width: 90%; margin: 0 auto 4px; font-size: 11px; color: #e8e8ea;
+  background: rgba(0, 0, 0, 0.5); padding: 3px 10px; border-radius: 999px;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+
+/* No picture: no camera selected, access off, unavailable. */
+.camera .placeholder {
+  position: absolute; inset: 0; z-index: 1; display: flex; flex-direction: column; align-items: center;
+  justify-content: center; gap: 8px; padding: 24px; text-align: center; color: #c9c9d0; overflow: auto;
+}
+.camera .placeholder .glyph { font-size: 38px; opacity: 0.6; }
+.camera .placeholder .title { font-size: 15px; color: #fff; }
+.camera .placeholder .detail { font-size: 12.5px; max-width: 320px; color: rgba(255, 255, 255, 0.7); }
+.camera .placeholder .device-list {
+  display: flex; flex-direction: column; gap: 4px; margin-top: 8px; min-width: 200px; max-width: 320px;
+}
+.camera .placeholder .device-list button {
+  border: 1px solid rgba(255, 255, 255, 0.18); border-radius: 6px; background: rgba(255, 255, 255, 0.08);
+  color: #e8e8ea; font-size: 12.5px; padding: 6px 10px; cursor: pointer; text-align: center;
+}
+.camera .placeholder .device-list button:hover { background: var(--wm-accent); color: #fff; }
+.camera .placeholder .device-list .none { font-size: 12px; color: rgba(255, 255, 255, 0.55); padding: 4px; }
+
+.camera .starting { position: absolute; inset: 0; z-index: 1; display: flex; align-items: center; justify-content: center; pointer-events: none; }
+.camera .spinner {
+  width: 30px; height: 30px; border-radius: 50%; border: 3px solid rgba(255, 255, 255, 0.2); border-top-color: #fff;
+  animation: wm-spin 0.9s linear infinite;
+}
+@keyframes wm-spin { to { transform: rotate(360deg); } }

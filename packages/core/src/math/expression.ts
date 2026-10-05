@@ -13,17 +13,30 @@ export type WLExpr =
   | { kind: "text"; value: string }
   | { kind: "list"; items: WLExpr[] }
   | { kind: "call"; head: WLExpr; args: WLExpr[] }
-  | { kind: "binary"; op: string; left: WLExpr; right: WLExpr }
+  | { kind: "binary"; op: string; left: WLExpr; right: WLExpr; written?: string }
   | { kind: "negate"; operand: WLExpr }
+  | { kind: "group"; inner: WLExpr }
 
 export const num = (value: string): WLExpr => ({ kind: "number", value })
 export const sym = (name: string): WLExpr => ({ kind: "symbol", name })
 export const txt = (value: string): WLExpr => ({ kind: "text", value })
 export const list = (items: WLExpr[]): WLExpr => ({ kind: "list", items })
 export const call = (head: WLExpr, args: WLExpr[]): WLExpr => ({ kind: "call", head, args })
-export const binary = (op: string, left: WLExpr, right: WLExpr): WLExpr =>
-  ({ kind: "binary", op, left, right })
+/**
+ * `written` (PORT-ONLY) is the multiplication sign a person actually wrote -- `×` or `·` -- so that the
+ * typeset form can keep it. It is left off a node that was spelled `*` or had no sign at all (`2 x`).
+ */
+export const binary = (op: string, left: WLExpr, right: WLExpr, written?: string): WLExpr =>
+  written === undefined ? { kind: "binary", op, left, right } : { kind: "binary", op, left, right, written }
 export const negate = (operand: WLExpr): WLExpr => ({ kind: "negate", operand })
+/**
+ * (PORT-ONLY) Round brackets that were WRITTEN right after another factor: the `(2)` of `f(2)`, the `(x + 1)` of
+ * `2(x + 1)`. Everywhere else brackets only group, and the parser drops them (the printer puts back the ones
+ * the reading needs); here they are what the person wrote and what a reader expects to see, so they stay. A
+ * parenthesised operand used to lose them and be drawn as a product: `f(2) = 4` came out as `f·2 = 4` (the dot
+ * is the rule that a number after a factor needs a sign), `y(0)` as `y·0`, `f(x)` as `f x`.
+ */
+export const group = (inner: WLExpr): WLExpr => ({ kind: "group", inner })
 
 /** `Integrate[…]` and friends: a named head with its arguments. */
 export function application(expr: WLExpr): { name: string; args: WLExpr[] } | null {
@@ -38,12 +51,38 @@ export function isAtom(expr: WLExpr): boolean {
   return expr.kind !== "binary" && expr.kind !== "negate"
 }
 
+/** Whether an operand opens with brackets that were written after a factor: the `(2)` of `f(2)`, the `(x)^2` of `f(x)^2`. */
+export function opensWithGroup(expr: WLExpr): boolean {
+  return expr.kind === "group" || (expr.kind === "binary" && expr.op === "^" && opensWithGroup(expr.left))
+}
+
+/** Whether the last thing in a product is a name that a bracket after it applies: `f` in `f(2)`, `2 f` in `2 f(x)`. */
+export function endsWithName(expr: WLExpr): boolean {
+  if (expr.kind === "symbol" || expr.kind === "call") return true
+  return expr.kind === "binary" && expr.op === "*" && endsWithName(expr.right)
+}
+
 interface Token {
   kind: "number" | "symbol" | "text" | "op" | "punct"
   value: string
+  /** For an operator that was typed as another sign (× and ·, both read as `*`): the sign as typed. */
+  written?: string
 }
 
-const OPERATORS = ["->", "==", "!=", "<=", ">=", "+", "-", "*", "/", "^", "<", ">"]
+// A lone "=" is read as an equals sign (PORT-ONLY: WL means Set by it, but a line of
+// algebra written by hand -- "y = 2x + 1", which the handwriting reader hands over as
+// exactly that -- is an equation, and left unparsed it was shown as source).
+const OPERATORS = ["->", "==", "!=", "<=", ">=", "=", "+", "-", "*", "/", "^", "<", ">"]
+
+const WRITTEN_OPERATORS: Record<string, string> = {
+  "≤": "<=", "≥": ">=", "≠": "!=", "×": "*", "·": "*", "÷": "/", "−": "-",
+}
+
+/** The written signs the typeset form keeps: `3 × 4` is drawn with its ×, not as `3 4` (which reads as 34). */
+const KEPT_SIGNS = new Set(["×", "·"])
+
+/** x² as it arrives from a reader that gives the raised character itself: the same as x^2. */
+const SUPERSCRIPTS = "⁰¹²³⁴⁵⁶⁷⁸⁹"
 
 const isNumberCh = (c: string): boolean => /^\p{N}$/u.test(c)
 const isLetterCh = (c: string): boolean => /^\p{L}$/u.test(c)
@@ -69,6 +108,17 @@ export function tokenize(source: string): Token[] {
       continue
     }
 
+    if (SUPERSCRIPTS.includes(ch) || (ch === "⁻" && SUPERSCRIPTS.includes(chars[index + 1] ?? "-"))) {
+      let value = ""
+      tokens.push({ kind: "op", value: "^" })
+      if (ch === "⁻") { tokens.push({ kind: "op", value: "-" }); index += 1 }
+      while (index < chars.length && SUPERSCRIPTS.includes(chars[index]!)) {
+        value += SUPERSCRIPTS.indexOf(chars[index]!); index += 1
+      }
+      tokens.push({ kind: "number", value })
+      continue
+    }
+
     if (isNumberCh(ch) || (ch === "." && index + 1 < chars.length && isNumberCh(chars[index + 1]!))) {
       let value = ""
       while (index < chars.length && (isNumberCh(chars[index]!) || chars[index] === ".")) {
@@ -81,7 +131,8 @@ export function tokenize(source: string): Token[] {
     if (isLetterCh(ch) || ch === "$") {
       let name = ""
       while (index < chars.length
-        && (isLetterCh(chars[index]!) || isNumberCh(chars[index]!) || chars[index] === "$")) {
+        && (isLetterCh(chars[index]!) || (isNumberCh(chars[index]!) && !SUPERSCRIPTS.includes(chars[index]!))
+          || chars[index] === "$")) {
         name += chars[index]; index += 1
       }
       tokens.push({ kind: "symbol", value: name })
@@ -94,6 +145,14 @@ export function tokenize(source: string): Token[] {
       while (index < chars.length && chars[index] !== "\"") { value += chars[index]; index += 1 }
       if (index < chars.length) index += 1
       tokens.push({ kind: "text", value })
+      continue
+    }
+
+    // The signs a person (or a reader of handwriting) types instead of the ASCII spelling.
+    const typed = WRITTEN_OPERATORS[ch]
+    if (typed !== undefined) {
+      tokens.push(KEPT_SIGNS.has(ch) ? { kind: "op", value: typed, written: ch } : { kind: "op", value: typed })
+      index += 1
       continue
     }
 
@@ -114,7 +173,7 @@ export function tokenize(source: string): Token[] {
 export function precedence(op: string): number {
   switch (op) {
     case "->": return 1
-    case "==": case "!=": case "<": case "<=": case ">": case ">=": return 2
+    case "=": case "==": case "!=": case "<": case "<=": case ">": case ">=": return 2
     case "+": case "-": return 3
     case "*": case "/": return 4
     case "^": return 5
@@ -126,6 +185,8 @@ export const isRightAssociative = (op: string): boolean => op === "^" || op === 
 
 class Parser {
   index = 0
+  /** Set when the next primary is the right-hand factor of a product with no sign: its brackets, if any, are kept. */
+  private afterFactor = false
   constructor(readonly tokens: Token[]) {}
 
   get isFinished(): boolean { return this.index >= this.tokens.length }
@@ -144,13 +205,15 @@ class Parser {
         const next = isRightAssociative(op) ? precedence(op) : precedence(op) + 1
         const right = this.expression(next)
         if (right === null) return null
-        left = binary(op, left, right)
+        left = binary(op, left, right, token.written)
         continue
       }
       // `2 x` is a product in WL, and someone typing into a slot will
       // write it that way.
       if (this.startsPrimary(token) && precedence("*") >= minimum) {
+        this.afterFactor = true
         const right = this.expression(precedence("*") + 1)
+        this.afterFactor = false
         if (right === null) return null
         left = binary("*", left, right)
         continue
@@ -172,7 +235,10 @@ class Parser {
     const token = this.current
     if (token !== undefined && token.kind === "op" && token.value === "-") {
       this.index += 1
-      const operand = this.unary()
+      // `-x^2` is -(x^2): a power binds tighter than the sign in front of it.
+      // (The Swift parser took only the `x` and gave (-x)^2, which typeset
+      // `Exp[-x^2]` — the Gaussian — as e to the power (-x)².)
+      const operand = this.expression(precedence("^"))
       return operand === null ? null : negate(operand)
     }
     if (token !== undefined && token.kind === "op" && token.value === "+") {
@@ -197,6 +263,9 @@ class Parser {
   }
 
   primary(): WLExpr | null {
+    // Only the first primary after a factor is "after a factor"; anything nested inside it is not.
+    const keepBrackets = this.afterFactor
+    this.afterFactor = false
     const token = this.current
     if (token === undefined) return null
     switch (token.kind) {
@@ -213,7 +282,7 @@ class Parser {
             return null
           }
           this.index += 1
-          return inner
+          return keepBrackets ? group(inner) : inner
         }
         if (token.value === "{") {
           this.index += 1
@@ -270,7 +339,8 @@ export function printWL(expr: WLExpr): string {
     case "text": return `"${expr.value}"`
     case "list": return "{" + expr.items.map(printWL).join(", ") + "}"
     case "call": return printWL(expr.head) + "[" + expr.args.map(printWL).join(", ") + "]"
-    case "negate": return "-" + wrapped(expr.operand, 6)
+    case "negate": return "-" + wrapped(expr.operand, 5)
+    case "group": return "(" + printWL(expr.inner) + ")"
     case "binary": {
       const level = precedence(expr.op)
       const spacing = level <= 3 ? " " : ""

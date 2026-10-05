@@ -2,7 +2,10 @@ import { mkdtempSync, mkdirSync, readFileSync, writeFileSync } from "node:fs"
 import os from "node:os"
 import path from "node:path"
 import { describe, expect, it } from "vitest"
-import { ProjectStore, parseProject, stringifyProject } from "../src/main/project"
+import {
+  ProjectStore, cleanPath, isForeignPath, parseProject, projectSessionFile, readProjectSession,
+  stringifyProject, writeProjectSession,
+} from "../src/main/project"
 import { duplicateNote, projectTree, setExcluded } from "../src/main/notes"
 
 const scratch = () => mkdtempSync(path.join(os.tmpdir(), "wm-project-"))
@@ -126,5 +129,154 @@ describe("Edit Notes > Duplicate", () => {
     const tree = await projectTree([home], home, "P")
     const names = tree.notes.map((note) => path.basename(note.path))
     expect(names.indexOf("a copy.md")).toBe(names.indexOf("a.md") + 1)
+  })
+})
+
+// ProjectTests.swift: the file is the Mac's, in both directions.
+describe("a project file is the Mac's file", () => {
+  it("is written the way Foundation prints it (sorted keys, ` : `, an empty array as a blank line)", () => {
+    expect(stringifyProject({ version: 1, folders: ["/a/notes", "/b/more notes"], excluded: [] })).toBe([
+      "{",
+      '  "excluded" : [',
+      "",
+      "  ],",
+      '  "folders" : [',
+      '    "/a/notes",',
+      '    "/b/more notes"',
+      "  ],",
+      '  "version" : 1',
+      "}",
+    ].join("\n"))
+    expect(stringifyProject({ version: 1, folders: ["/a"], excluded: ["/a/old"] })).toContain('"excluded" : [\n    "/a/old"\n  ]')
+  })
+
+  it("reads a file the Mac wrote, whatever its spacing, and the other way round", () => {
+    const fromMac = '{\n  "excluded" : [\n\n  ],\n  "folders" : [\n    "/Users/s/Documents/WriteMind"\n  ],\n  "version" : 1\n}'
+    expect(parseProject(fromMac)).toEqual({ version: 1, folders: ["/Users/s/Documents/WriteMind"], excluded: [] })
+    const ours = stringifyProject({ version: 1, folders: ["/a", "/b"], excluded: ["/a/x"] })
+    expect(JSON.parse(ours)).toEqual({ version: 1, folders: ["/a", "/b"], excluded: ["/a/x"] })
+  })
+
+  it("keeps a path from the other kind of machine exactly as written, and says it is not ours", () => {
+    expect(isForeignPath("/Users/s/Notes", "win32")).toBe(true)
+    expect(isForeignPath("C:\\Users\\s", "win32")).toBe(false)
+    expect(isForeignPath("\\\\server\\share", "win32")).toBe(false)
+    expect(isForeignPath("C:\\Users\\s", "darwin")).toBe(true)
+    expect(isForeignPath("/Users/s/Notes", "darwin")).toBe(false)
+    expect(cleanPath("/Users/s/Notes", "win32")).toBe("/Users/s/Notes")
+  })
+
+  it("opens a project whose folders are another machine's, and saves it back unchanged", async () => {
+    const dir = scratch()
+    const file = path.join(dir, "FromMac.writemind-project")
+    writeFileSync(file, '{"version":1,"folders":["/Users/s/Documents/WriteMind"],"excluded":["/Users/s/Documents/WriteMind/Old"]}')
+    const store = new ProjectStore(scratch())
+    expect(await store.open(file)).toBe(true)
+    if (process.platform === "win32") {
+      expect(store.folders).toEqual(["/Users/s/Documents/WriteMind"])
+      expect(store.excluded).toEqual(["/Users/s/Documents/WriteMind/Old"])
+    }
+    store.dirty = true
+    await store.save()
+    const again = parseProject(readFileSync(file, "utf8"))!
+    if (process.platform === "win32") expect(again.folders).toEqual(["/Users/s/Documents/WriteMind"])
+    expect(again.excluded).toHaveLength(1)
+  })
+
+  it("opens a project with no folders on the default one, and refuses what is not a project", async () => {
+    const dir = scratch()
+    const home = scratch()
+    const empty = path.join(dir, "Empty.writemind-project")
+    writeFileSync(empty, '{"version":1,"folders":[]}')
+    const store = new ProjectStore(home)
+    store.addFolder(scratch())
+    expect(await store.open(empty)).toBe(true)
+    expect(store.folders).toEqual([path.resolve(home)])
+    expect(store.file).toBe(empty)
+
+    const junk = path.join(dir, "junk.writemind-project")
+    writeFileSync(junk, "this is not json")
+    const before = [...store.folders]
+    expect(await store.open(junk)).toBe(false)
+    expect(await store.open(path.join(dir, "missing.writemind-project"))).toBe(false)
+    expect(store.folders).toEqual(before)
+    expect(store.file).toBe(empty)
+    expect(parseProject("[1,2]")).toBeNull()
+    expect(parseProject("null")).toBeNull()
+  })
+})
+
+describe("the folders of a project (ProjectStore)", () => {
+  it("adding the same folder twice is one folder, spelled any way", () => {
+    const home = scratch()
+    const other = scratch()
+    const store = new ProjectStore(home)
+    expect(store.addFolder(other)).toBe(true)
+    expect(store.addFolder(other + path.sep)).toBe(false)
+    expect(store.addFolder(path.join(other, "..", path.basename(other)))).toBe(false)
+    if (process.platform === "win32") expect(store.addFolder(other.toUpperCase())).toBe(false)
+    expect(store.folders).toHaveLength(2)
+  })
+
+  it("a folder inside another may be added, and removing one leaves the other", () => {
+    const home = scratch()
+    const inner = path.join(home, "Inner")
+    mkdirSync(inner)
+    const store = new ProjectStore(home)
+    expect(store.addFolder(inner)).toBe(true)
+    expect(store.folders).toHaveLength(2)
+    expect(store.removeFolder(inner)).toBe(true)
+    expect(store.folders).toEqual([path.resolve(home)])
+    expect(store.removeFolder(home)).toBe(false)
+  })
+
+  it("hiding and showing a folder marks the project edited, once", () => {
+    const home = scratch()
+    const store = new ProjectStore(home)
+    expect(store.dirty).toBe(false)
+    expect(store.exclude(path.join(home, "Drafts"))).toBe(true)
+    expect(store.exclude(path.join(home, "Drafts"))).toBe(false)
+    expect(store.dirty).toBe(true)
+    expect(store.include(path.join(home, "Drafts"))).toBe(true)
+    expect(store.include(path.join(home, "Drafts"))).toBe(false)
+    expect(store.excluded).toEqual([])
+  })
+
+  it("an untitled project that has changed is 'edited' too (the Mac's hasUnsavedProjectChanges)", () => {
+    const store = new ProjectStore(scratch())
+    store.addFolder(scratch())
+    expect(store.file).toBeNull()
+    expect(store.dirty).toBe(true)
+    store.newProject()
+    expect(store.dirty).toBe(false)
+  })
+})
+
+describe("a session for each project (ProjectSession)", () => {
+  it("two projects with the same file name in different places do not share a session file", () => {
+    const one = projectSessionFile("/u", path.resolve("/x/A.writemind-project"))
+    const two = projectSessionFile("/u", path.resolve("/y/A.writemind-project"))
+    expect(one).not.toBe(two)
+    expect(path.basename(projectSessionFile("/u", null))).toBe("default.json")
+    expect(path.basename(one)).not.toMatch(/[\/]/)
+    expect(path.extname(one)).toBe(".json")
+  })
+
+  it("is written and read back under the project's own file, and the untitled project's is separate", async () => {
+    const userData = scratch()
+    await writeProjectSession(userData, "/p/Work.writemind-project", '{"open":["a"]}')
+    await writeProjectSession(userData, null, '{"open":["b"]}')
+    expect(await readProjectSession(userData, "/p/Work.writemind-project", userData)).toBe('{"open":["a"]}')
+    expect(await readProjectSession(userData, null, userData)).toBe('{"open":["b"]}')
+    expect(await readProjectSession(userData, "/p/Other.writemind-project", userData)).toBeNull()
+  })
+
+  it("the untitled project falls back to the session kept per notes folder before projects had their own", async () => {
+    const userData = scratch()
+    const root = scratch()
+    const { sessionFileName } = await import("@writemind/core")
+    mkdirSync(path.join(userData, "sessions"), { recursive: true })
+    writeFileSync(path.join(userData, "sessions", sessionFileName(path.resolve(root))), '{"open":["old"]}')
+    expect(await readProjectSession(userData, null, root)).toBe('{"open":["old"]}')
   })
 })
