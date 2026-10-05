@@ -28,7 +28,7 @@ const lineWidthOf = (item: CanvasItem): number | null => {
     case "stroke": return item.stroke.width
     case "shape": return item.shape.lineWidth
     case "connector": return item.connector.lineWidth
-    case "image": return null
+    case "image": case "cell": return null
   }
 }
 
@@ -37,7 +37,7 @@ const colourOf = (item: CanvasItem): string | null => {
     case "stroke": return item.stroke.colorHex
     case "shape": return item.shape.colorHex
     case "connector": return item.connector.colorHex
-    case "image": return null
+    case "image": case "cell": return null
   }
 }
 

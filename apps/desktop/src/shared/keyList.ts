@@ -42,12 +42,13 @@ export const KEY_MENUS: { menu: string; ids: string[] }[] = [
       "moveSectionUp", "moveSectionDown",
     ],
   },
-  { menu: "Insert", ids: ["insertImage", "insertTextBox", "insertMath", "codeBlock"] },
+  { menu: "Insert", ids: ["insertImage", "insertTextBox", "insertMath", "codeBlock", "insertInkCell"] },
   {
     menu: "Pen",
     ids: [
       "penToggle", "penErase", "penSelect", "penAlwaysDraws", "penNextColour", "penPrevColour", "penWider",
       "penThinner", "penDelete", "penClearSelection", "penSendWriting", "penSendPage", "penClearSheet",
+      "penNextSheet", "penPrevSheet",
     ],
   },
   { menu: "Input Devices", ids: ["cameraOff", "cameraRefresh"] },

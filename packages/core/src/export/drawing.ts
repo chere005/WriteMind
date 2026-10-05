@@ -57,6 +57,12 @@ function boxStyle(item: CanvasItem, size: Size, box: Rect, transform: { dx: numb
 }
 
 function strokeHtml(item: Extract<CanvasItem, { kind: "stroke" }>, size: Size, paper: string): string {
+  const body = strokeBody(item, size, paper)
+  return body ? svg(size, body) : ""
+}
+
+/** A stroke's SVG elements, in the px of `size`; "" when it has no ink. */
+function strokeBody(item: Extract<CanvasItem, { kind: "stroke" }>, size: Size, paper: string): string {
   const stroke = item.stroke
   const place = matrixOf(item, size)
   const points = stroke.points.map((p) => place({ x: p.x * size.width, y: p.y * size.height }))
@@ -80,20 +86,25 @@ function strokeHtml(item: Extract<CanvasItem, { kind: "stroke" }>, size: Size, p
       run += `M${n(points[i - 1]!.x)} ${n(points[i - 1]!.y)}L${n(points[i]!.x)} ${n(points[i]!.y)}`
     }
     if (run) paths.push(`<path d="${run}" ${common} stroke-width="${n(runWidth)}"/>`)
-    return svg(size, paths.join(""))
+    return paths.join("")
   }
   const curve = strokeCurve({ width }, points)
   if (!curve) return ""
   if ("dot" in curve) {
-    return svg(size, `<circle cx="${n(curve.dot.centre.x)}" cy="${n(curve.dot.centre.y)}" r="${n(curve.dot.diameter / 2)}" fill="${colour}"/>`)
+    return `<circle cx="${n(curve.dot.centre.x)}" cy="${n(curve.dot.centre.y)}" r="${n(curve.dot.diameter / 2)}" fill="${colour}"/>`
   }
   const d = curve.steps.map((step) => step.op === "Q"
     ? `Q${n(step.control.x)} ${n(step.control.y)} ${n(step.to.x)} ${n(step.to.y)}`
     : `${step.op}${n(step.to.x)} ${n(step.to.y)}`).join("")
-  return svg(size, `<path d="${d}" ${common} stroke-width="${n(width)}"/>`)
+  return `<path d="${d}" ${common} stroke-width="${n(width)}"/>`
 }
 
 function connectorHtml(item: Extract<CanvasItem, { kind: "connector" }>, size: Size, paper: string): string {
+  const body = connectorBody(item, size, paper)
+  return body ? svg(size, body) : ""
+}
+
+function connectorBody(item: Extract<CanvasItem, { kind: "connector" }>, size: Size, paper: string): string {
   const c = item.connector
   const place = matrixOf(item, size)
   const placed = route(c).map((p) => place({ x: p.x * size.width, y: p.y * size.height }))
@@ -106,10 +117,15 @@ function connectorHtml(item: Extract<CanvasItem, { kind: "connector" }>, size: S
     + `stroke-linecap="${c.line === "dotted" ? "round" : "butt"}" stroke-linejoin="round"`
     + `${dash.length ? ` stroke-dasharray="${dash.map(n).join(" ")}"` : ""}/>`
     + heads.map((head) => `<path d="${polyline(head, true)}" fill="${colour}"/>`).join("")
-  return svg(size, body)
+  return body
 }
 
 function imageHtml(item: Extract<CanvasItem, { kind: "image" }>, size: Size, options: InkOptions): string {
+  const body = imageBody(item, size, options)
+  return body ? svg(size, body) : ""
+}
+
+function imageBody(item: Extract<CanvasItem, { kind: "image" }>, size: Size, options: InkOptions): string {
   const image = item.image
   if (!image.file) return ""
   const box = baseBounds(item, size)
@@ -119,8 +135,44 @@ function imageHtml(item: Extract<CanvasItem, { kind: "image" }>, size: Size, opt
     + `rotate(${n(t.rotation * 180 / Math.PI)}) scale(${t.scale}) translate(${n(-centre.x)} ${n(-centre.y)})`
   // A file that has gone missing leaves nothing on the paper — the dashed box the
   // canvas shows in its place is a message to the person editing, not part of the note.
-  return svg(size, `<image href="${escapeHtml(options.mediaUrl(image.file))}" x="${n(box.x)}" y="${n(box.y)}" `
-    + `width="${n(box.width)}" height="${n(box.height)}" preserveAspectRatio="none" transform="${transform}"/>`)
+  return `<image href="${escapeHtml(options.mediaUrl(image.file))}" x="${n(box.x)}" y="${n(box.y)}" `
+    + `width="${n(box.width)}" height="${n(box.height)}" preserveAspectRatio="none" transform="${transform}"/>`
+}
+
+/**
+ * A shape as SVG elements alone (for a drawing written as ONE svg, such as an ink cell's snapshot): its outline as
+ * paths, and its words (a text box's, a node's label) in a `<foreignObject>` holding the same box the page draws.
+ */
+function shapeBody(item: Extract<CanvasItem, { kind: "shape" }>, size: Size, paper: string): string {
+  const shape = item.shape
+  const box = baseBounds(item, size)
+  const colour = readableInk(shape.colorHex, shape.fillHex ?? paper)
+  const centre = baseCenter(item, size)
+  const t = shape.transform
+  const turn = `translate(${n(centre.x + t.dx * size.width)} ${n(centre.y + t.dy * size.height)}) `
+    + `rotate(${n(t.rotation * 180 / Math.PI)}) scale(${t.scale}) translate(${n(-centre.x)} ${n(-centre.y)})`
+  const words = (style: string): string => `<foreignObject x="${n(box.x)}" y="${n(box.y)}" width="${n(box.width)}" `
+    + `height="${n(box.height)}" transform="${turn}"><div xmlns="http://www.w3.org/1999/xhtml" style="width:100%;height:100%;`
+    + `box-sizing:border-box;${style}">${escapeHtml(shape.label)}</div></foreignObject>`
+  if (shape.kind === "text") {
+    if (!shape.fillHex && shape.label === "") return ""
+    return words(`border-radius:${TEXT_BOX.cornerRadius}px;${shape.fillHex ? `background:${shape.fillHex};` : ""}`
+      + `padding:${TEXT_BOX.padding.height}px ${TEXT_BOX.padding.width}px;font:${TEXT_BOX.fontSize}px/${TEXT_BOX.lineHeight}px ${FONT.replace(/"/g, "'")};`
+      + `color:${colour};white-space:pre-wrap;overflow-wrap:break-word;overflow:hidden`)
+  }
+  const place = matrixOf(item, size)
+  const lines = polylines(shape.kind, box).map((one) => one.map(place))
+  const closed = isClosed(shape.kind)
+  const width = shape.lineWidth * shape.transform.scale
+  let body = lines.map((line) => line.length === 0 ? "" :
+    `<path d="${polyline(line, closed && lines.length === 1)}" `
+    + `fill="${shape.fillHex && closed && lines.length === 1 ? shape.fillHex : "none"}" stroke="${colour}" `
+    + `stroke-width="${n(width)}" stroke-linecap="round" stroke-linejoin="round"/>`).join("")
+  if (shape.label) {
+    body += words(`display:flex;align-items:center;justify-content:center;padding:4px 6px;font:13px/16px ${FONT.replace(/"/g, "'")};`
+      + `color:${colour};text-align:center;white-space:pre-wrap;overflow-wrap:break-word`)
+  }
+  return body
 }
 
 function shapeHtml(item: Extract<CanvasItem, { kind: "shape" }>, size: Size, paper: string): string {
@@ -164,6 +216,23 @@ export function itemHtml(item: CanvasItem, size: Size, options: InkOptions): str
     case "connector": return connectorHtml(item, size, paper)
     case "image": return imageHtml(item, size, options)
     case "shape": return shapeHtml(item, size, paper)
+    // An ink cell is printed with the words, as a cell (blocks.ts), never as a floating object.
+    case "cell": return ""
+  }
+}
+
+/**
+ * One object as SVG ELEMENTS (no `<svg>` round it), in the px of `size`, or "" when it paints nothing: for a drawing
+ * written as one svg, such as an ink cell (`inkSnapshot.ts`). A cell inside is nothing (a cell never holds one).
+ */
+export function itemSvg(item: CanvasItem, size: Size, options: InkOptions): string {
+  const paper = options.paper ?? PAPER_HEX
+  switch (item.kind) {
+    case "stroke": return strokeBody(item, size, paper)
+    case "connector": return connectorBody(item, size, paper)
+    case "image": return item.image.file ? imageBody(item, size, options) : ""
+    case "shape": return shapeBody(item, size, paper)
+    case "cell": return ""
   }
 }
 

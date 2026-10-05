@@ -50,6 +50,8 @@ declare global {
       writeDrawing(note: string, json: string): Promise<void>
       revealNotes(): Promise<string>
       saveMedia(bytes: Uint8Array, extension: string, note?: string | null): Promise<{ file: string }>
+      /** An ink cell's snapshot `ink-<id>.svg` (docs\PLAN-docking-ink-cells.md (f)); `onlyIfMissing` keeps one that is there. */
+      writeInkSnapshot(note: string, id: string, svg: string, onlyIfMissing?: boolean): Promise<{ file: string }>
       choosePicture(): Promise<{ bytes: Uint8Array; extension: string } | null>
       readPicture(file: string): Promise<import("@writemind/core").OcrReading>
       ocrRead(request: { id: string; file?: string; bytes?: Uint8Array; languages?: string[] }): Promise<import("@writemind/core").OcrReading>
@@ -80,6 +82,10 @@ declare global {
       e2eSetBounds?(bounds: unknown): Promise<void>
       /** The tablet pen's native feed (shared/pen.ts PenApi); present on every platform, `available: false` off Windows. */
       pen: import("../shared/pen").PenApi
+      /** The quick reference written at this launch (a new install), once, else null (main/welcome.ts); absent in an old preload. */
+      welcomed?(): Promise<string | null>
+      /** The tablet's sheets (tabs), as text (renderer/sheetSet.ts), kept in userData/sheets.json; absent in an old preload. */
+      sheets?: { load(): Promise<string | null>; save(text: string): void }
       /** Evaluation cells (shared/eval.ts): run one cell on Shift+Enter, take a run back, where the tools are. */
       evaluate: import("../shared/eval").EvalApi
       onNotesChanged(listener: () => void): () => void

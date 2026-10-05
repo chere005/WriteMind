@@ -23,10 +23,12 @@ describe("what a press of the pen means (penButtons.ts)", () => {
     expect(pressAction({ pointerType: "pen", button: 5, buttons: 32 }, selects)).toBe("erase")
     expect(pressAction({ pointerType: "pen", button: 0, buttons: 33 }, selects)).toBe("erase")
   })
-  it("the side button selects (like ⌘) unless it is set to erase", () => {
-    const side = { pointerType: "pen", button: 2, buttons: 2 }
+  it("the side button held while the pen touches selects or erases; pressed in the air it does nothing", () => {
+    // Windows Ink: the barrel at contact is button 2 with pressure; in the air, no pressure.
+    const side = { pointerType: "pen", button: 2, buttons: 2, pressure: 0.5 }
     expect(pressAction(side, selects)).toBe("select")
     expect(pressAction(side, erases)).toBe("erase")
+    expect(pressAction({ ...side, pressure: 0 }, erases)).toBe("ignore")
     // Already held at contact: button 0, bit 2 set.
     expect(pressAction({ pointerType: "pen", button: 0, buttons: 3 }, erases)).toBe("erase")
     expect(pressAction({ pointerType: "pen", button: 0, buttons: 3 }, selects)).toBe("select")

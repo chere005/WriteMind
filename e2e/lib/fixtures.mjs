@@ -1,6 +1,7 @@
 // Synthetic "camera" feeds for the camera e2e suites (Chromium's fake capture device plays a .y4m).
 //   chart.y4m  - a flowchart drawn on white paper, filling the frame
 //   tilted.y4m - a page seen in perspective on a mid-grey desk (a thick border and a cross on it)
+//   moving.y4m - paper with some writing and a block that steps along the bottom (Hold image)
 import fs from "node:fs"
 import path from "node:path"
 const W = 640, H = 480
@@ -45,11 +46,21 @@ function y4m(file, gray) {
   fs.writeFileSync(file, Buffer.concat([header, frame, frame, frame]))
 }
 
+/** moving.y4m: the block is at x = MOVING_X0 + k * MOVING_DX (frame pixels) in frame k, rows 380-440. */
+export const MOVING_STEPS = 10, MOVING_X0 = 30, MOVING_DX = 56
+
+function y4mFrames(file, grays, fps) {
+  const { w, h } = grays[0]
+  const header = Buffer.from(`YUV4MPEG2 W${w} H${h} F${fps}:1 Ip A1:1 C420jpeg\n`)
+  const chroma = Buffer.alloc((w / 2) * (h / 2) * 2, 128)
+  fs.writeFileSync(file, Buffer.concat([header, ...grays.flatMap((g) => [Buffer.from("FRAME\n"), Buffer.from(g.d), chroma])]))
+}
+
 // 1. The flowchart: Start (rounded) -> Decision (diamond) -> Process, and Decision -> Other process.
 /** Write chart.y4m, tilted.y4m and tilted-quad.json into `dir`; returns their paths. */
 export function makeVideoFixtures(dir) {
 fs.mkdirSync(dir, { recursive: true })
-const out = { chart: path.join(dir, "chart.y4m"), tilted: path.join(dir, "tilted.y4m"), tiltedQuad: path.join(dir, "tilted-quad.json") }
+const out = { chart: path.join(dir, "chart.y4m"), tilted: path.join(dir, "tilted.y4m"), tiltedQuad: path.join(dir, "tilted-quad.json"), moving: path.join(dir, "moving.y4m") }
 {
   const g = new Gray(W, H, 235)
   g.box(60, 40, 150, 70, 4, 25)               // top box
@@ -111,6 +122,23 @@ const out = { chart: path.join(dir, "chart.y4m"), tilted: path.join(dir, "tilted
     }
   }
   y4m(out.tilted, g)
+}
+
+// 3. A feed that MOVES (for Hold image): paper with a word of strokes and a box, and a dark block that steps
+//    along the bottom, one place a frame (MOVING_STEPS frames at 5 fps, looped). Where the block is says which frame it is.
+{
+  const frames = []
+  for (let k = 0; k < MOVING_STEPS; k++) {
+    const g = new Gray(W, H, 235)
+    // A "word" of short pen strokes top left (no closed outline, so a Writing capture of it reads no chart), a box top right.
+    g.line(80, 70, 105, 125, 4, 25); g.line(105, 125, 130, 70, 4, 25)
+    g.line(150, 70, 150, 125, 4, 25); g.line(150, 97, 185, 97, 4, 25); g.line(185, 70, 185, 125, 4, 25)
+    g.line(205, 125, 225, 70, 4, 25); g.line(225, 70, 245, 125, 4, 25)
+    g.box(390, 60, 180, 90, 4, 25)
+    g.rect(MOVING_X0 + k * MOVING_DX, 380, 40, 60, 20)
+    frames.push(g)
+  }
+  y4mFrames(out.moving, frames, 5)
 }
 return out
 }

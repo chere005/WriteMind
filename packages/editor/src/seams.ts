@@ -12,20 +12,35 @@
  */
 
 import {
-  Prec, StateEffect, StateField, type Extension, type Transaction,
+  EditorSelection, Prec, StateEffect, StateField, type Extension, type Transaction,
 } from "@codemirror/state"
 import { Decoration, EditorView, ViewPlugin, keymap, type ViewUpdate } from "@codemirror/view"
 import {
-  armIn, end, firstCellFromBy, GAP_HEIGHT, onPlus, openCell, plus, seamAt, seams, type CellBox, type CellKind,
-  type PositionedBlock, type Seam,
+  armIn, between, end, firstCellFromBy, GAP_HEIGHT, onPlus, openCell, plus, seamAt, seams, type CellBox, type CellKind,
+  type PositionedBlock, type Range, type Seam,
 } from "@writemind/core"
 import { hiddenNow, insideHidden } from "./fold"
+import { setHolding } from "./preview/hold"
 import { notebook } from "./notebook"
 
 /** Arm a seam by hand — the two ends of the page, which no caret can name. */
 export const armSeam = StateEffect.define<number | null>()
 /** What kind of cell the next character at the bar opens. */
 export const setArmedType = StateEffect.define<CellKind>()
+
+/**
+ * The bar a dragged selection would be docked at (docs\PLAN-docking-ink-cells.md (d)): a seam's offset, or null.
+ * Drawn by the seam layer, heavier than the armed bar and apart from it; the armed bar (the cursor) stays as it was.
+ */
+export const showDropBar = StateEffect.define<number | null>()
+
+export const dropBarField = StateField.define<number | null>({
+  create() { return null },
+  update(value, transaction) {
+    for (const effect of transaction.effects) if (effect.is(showDropBar)) return effect.value
+    return value === null || !transaction.docChanged ? value : transaction.changes.mapPos(value, 1)
+  },
+})
 
 export const armedField = StateField.define<number | null>({
   create() { return null },
@@ -34,6 +49,11 @@ export const armedField = StateField.define<number | null>({
       if (effect.is(armSeam)) return effect.value
     }
     if (!transaction.docChanged && !transaction.selection) return value
+    // A transaction that names the selection it already had (a focus, the page switching dress) moves nothing, so a
+    // bar armed by hand where no blank line is (two cells that touch: `armAt`) stays up. A click is never this: the
+    // pointer's own selection always asks again.
+    if (value !== null && !transaction.docChanged && transaction.selection
+      && transaction.selection.eq(transaction.startState.selection) && !transaction.isUserEvent("select.pointer")) return value
     const head = transaction.state.selection.main
     // The Mac's rule lets an armed offset stand while the caret sits ON it,
     // because there a click in a bar leaves the caret at the first character
@@ -65,6 +85,8 @@ export const armedTypeField = StateField.define<CellKind>({
 
 /** Where the note's left margin is, so the + sits outside the words. */
 export const PLUS_LEADING = 6
+/** How far (px) a press in a seam must travel before it picks cells (the Mac's CellInsertions.dragThreshold, in points). */
+const SEAM_DRAG = 10
 
 /** The boxes the seams are built from, measured off the laid-out lines. */
 export function cellBoxes(view: EditorView): CellBox[] {
@@ -217,6 +239,57 @@ export function seamAtY(view: EditorView, y: number): Seam | null {
   return seamAt(y, seamsAround(view, cellIndexAtY(view, y)))
 }
 
+// MARK: - Where the pointer is: ONE answer for the cursor and the click (Mac 17f0f82)
+
+/**
+ * The things inside the page that answer for the pointer themselves — the bracket column, an ink cell's resize strip,
+ * an evaluation cell's controls — and so are never a seam's, for the cursor or for the click.
+ */
+export const OWN_POINTER = [".wm-gutter", ".wm-cell-resize", ".wm-eval-badge", ".wm-eval-lang", ".wm-eval-spin", ".wm-eval-notice"]
+const OWN_POINTER_SELECTOR = OWN_POINTER.join(", ")
+
+/** What a press at a point of the page does, as far as the seams are concerned: open the + menu, arm a bar, or neither. */
+export type PointerPlace = { kind: "plus"; seam: Seam } | { kind: "seam"; seam: Seam } | null
+
+/**
+ * THE hit-test of the seam layer, asked by the cursor and by the press alike, so the pointer can never promise what a
+ * click does not do (Sean, 2026-10-05: "a horizontal text selector cursor between cells when clicking would put a
+ * horizontal input cursor between cells"). A seam is the whole width of the page between two cells, except where
+ * something answers for itself (`OWN_POINTER`) and the scroll bar; the + is pressable only where it is DRAWN — on the
+ * armed bar when one is up, else on the seam under the pointer (the Mac's `pressesPlus(drawnOn: armed ?? seam)`).
+ */
+export function pointerPlace(view: EditorView, target: EventTarget | null, clientX: number, clientY: number): PointerPlace {
+  if (target instanceof Element && target.closest(OWN_POINTER_SELECTOR)) return null
+  const scroller = view.scrollDOM.getBoundingClientRect()
+  if (clientX < scroller.left || clientX >= scroller.left + view.scrollDOM.clientWidth) return null
+  if (clientY < scroller.top || clientY >= scroller.top + view.scrollDOM.clientHeight) return null
+  const box = view.contentDOM.getBoundingClientRect()
+  const x = clientX - box.left
+  const y = clientY - box.top
+  const seam = seamAtY(view, y)
+  if (!seam) return null
+  const armed = view.state.field(armedField, false) ?? null
+  if ((armed ?? seam.offset) === seam.offset && onPlus(x, y, seam, PLUS_LEADING)) return { kind: "plus", seam }
+  return { kind: "seam", seam }
+}
+
+/**
+ * Arm the bar at `offset` (a cell's start, or the note's end) as a click there does: the caret goes on the blank line
+ * the bar stands on, where there is one, so the bar is a reading of the caret as it always is; where there is none (the
+ * two ends of the note, two cells that touch) the caret waits at the offset and the bar is armed by hand.
+ */
+export function armAt(view: EditorView, offset: number): void {
+  const doc = view.state.doc
+  const at = Math.min(Math.max(offset, 0), doc.length)
+  let caret = at
+  if (at > 0 && at < doc.length) {
+    const line = doc.lineAt(at - 1)
+    if (line.text.trim().length === 0
+      && armIn({ location: line.from, length: 0 }, doc, () => notebook(view.state).cells, null) === at) caret = line.from
+  }
+  view.dispatch({ selection: { anchor: caret }, effects: armSeam.of(at), userEvent: "select" })
+}
+
 /** The seam that opens a cell at `offset` (a cell's start, or the note's end), or null. */
 export function seamAtOffset(view: EditorView, offset: number): Seam | null {
   const cells = notebook(view.state).cells
@@ -227,6 +300,26 @@ export function seamAtOffset(view: EditorView, offset: number): Seam | null {
     index = cells.length - 1
   }
   return seamsAround(view, index).find((seam) => seam.offset === offset) ?? null
+}
+
+/**
+ * The seam AFTER the cell on show at height `y` of the page (the Mac's rule for a drop over a cell: it goes under
+ * it), as its offset: the next cell's start, or the note's length.
+ */
+export function seamAfterCellAt(view: EditorView, y: number): number {
+  const cells = notebook(view.state).cells
+  const length = view.state.doc.length
+  if (cells.length === 0) return length
+  let index = cellIndexAtY(view, y)
+  if (insideHidden(view.state, cells[index]!.range)) {
+    const before = shownBeyond(view, cells, index, -1)
+    index = before >= 0 ? before : shownBeyond(view, cells, index, 1)
+  }
+  if (index < 0 || index >= cells.length) return length
+  // Past any run of extra blank lines (a cell of its own to the parser, not a place a picture goes after).
+  let next = shownBeyond(view, cells, index, 1)
+  while (next < cells.length && cells[next]!.block.kind === "blank") next = shownBeyond(view, cells, next, 1)
+  return next < cells.length ? cells[next]!.range.location : length
 }
 
 /** The cursor is the bar, so no caret blinks anywhere else while it is up. */
@@ -247,6 +340,9 @@ class SeamLayer {
    */
   invalidate(): void { /* (nothing is kept: see `seamsAround`) */ }
 
+  /** Where the pointer was last seen over the page (client px), so a scroll or an edit under a still pointer asks again. */
+  private last: { x: number; y: number } | null = null
+
   constructor(private readonly view: EditorView, private readonly onPlusPressed: (seam: Seam) => void) {
     this.dom = document.createElement("div")
     this.dom.className = "wm-seams"
@@ -254,75 +350,130 @@ class SeamLayer {
     view.scrollDOM.addEventListener("mousemove", this.move)
     view.scrollDOM.addEventListener("mouseleave", this.leave)
     view.scrollDOM.addEventListener("mousedown", this.press, true)
+    view.scrollDOM.addEventListener("scroll", this.scrolled, { passive: true })
     this.draw()
   }
 
-  private y(event: MouseEvent): number {
-    const box = this.view.contentDOM.getBoundingClientRect()
-    return event.clientY - box.top
-  }
-
-  private x(event: MouseEvent): number {
-    const box = this.view.contentDOM.getBoundingClientRect()
-    return event.clientX - box.left
-  }
-
   /**
-   * The bracket column is not the page's to answer for (Mac 17f0f82: "one owner and one answer for every place the
-   * pointer can be"). The seams run under it, so without this a pointer over a bracket also lit a faint bar and set
-   * the row-resize cursor on the page under the gutter's hand, and a press there could arm the bar at either end.
+   * ONE OWNER FOR THE POINTER over the page (Mac 17f0f82): the cursor is said by `pointerPlace`, the very call the press
+   * makes, as an attribute on the scroller that the theme turns into the cursor for everything in it (`pointerCursors`)
+   * — the vertical I-beam over a seam, the hand over the +. Nothing else on the page sets it, so the pointer has one
+   * answer at every point and cannot flip between two on the way across (row-resize on the scroller lost to a drawn
+   * block's own I-beam, which is how a seam over the edge of a block said two things).
    */
-  private inGutter(event: MouseEvent): boolean {
-    return event.target instanceof Element && event.target.closest(".wm-gutter") !== null
+  private show(place: PointerPlace): void {
+    const want = place ? place.kind : ""
+    const scroller = this.view.scrollDOM
+    if ((scroller.dataset.wmPointer ?? "") === want) return
+    if (want) scroller.dataset.wmPointer = want
+    else delete scroller.dataset.wmPointer
+  }
+
+  /** The pointer is at a client point over `target`: the faint bar it lights, and its cursor. */
+  private point(target: EventTarget | null, x: number, y: number): void {
+    const place = pointerPlace(this.view, target, x, y)
+    const offset = place ? place.seam.offset : null
+    if (offset !== this.hovered) { this.hovered = offset; this.draw() }
+    this.show(place)
   }
 
   private move = (event: MouseEvent) => {
-    if (this.inGutter(event)) { this.leave(); return }
-    const seam = seamAtY(this.view, this.y(event))
-    const offset = seam ? seam.offset : null
-    if (offset !== this.hovered) { this.hovered = offset; this.draw() }
-    // The + is a button, so it takes the pointing hand — the same cursor
-    // the brackets use, so the app says "this does something" one way.
-    const onIt = seam ? onPlus(this.x(event), this.y(event), seam, PLUS_LEADING) : false
-    this.view.scrollDOM.style.cursor = onIt ? "pointer" : (seam ? "row-resize" : "")
+    this.last = { x: event.clientX, y: event.clientY }
+    this.point(event.target, event.clientX, event.clientY)
+  }
+
+  /** The page moved under a pointer that did not (the wheel, a keyboard scroll): what is under it now. */
+  private scrolled = () => this.again()
+
+  /** Ask again for the pointer where it was last seen: the page under it scrolled or was laid out again. */
+  again(): void {
+    if (!this.last) return
+    const { x, y } = this.last
+    this.point(document.elementFromPoint(x, y), x, y)
   }
 
   private leave = () => {
-    if (this.view.scrollDOM.style.cursor !== "") this.view.scrollDOM.style.cursor = ""
+    this.last = null
+    this.show(null)
     if (this.hovered === null) return
     this.hovered = null
     this.draw()
   }
 
+  /**
+   * A press is answered by `pointerPlace`, as the cursor was: on the + it opens the kinds; anywhere else in a seam it
+   * ARMS THAT BAR, always (`armAt`) — not left to the editor's own click, which on two cells that touch put the caret in
+   * one of them, and on the rendered page opened the block whose edge the seam runs over. Shift still reaches.
+   */
   private press = (event: MouseEvent) => {
-    if (event.button !== 0 || this.inGutter(event)) return
-    const seam = seamAtY(this.view, this.y(event))
-    if (!seam) return
-    if (onPlus(this.x(event), this.y(event), seam, PLUS_LEADING)) {
+    if (event.button !== 0) return
+    const place = pointerPlace(this.view, event.target, event.clientX, event.clientY)
+    if (!place) return
+    if (place.kind === "plus") {
       event.preventDefault()
       event.stopPropagation()
-      this.onPlusPressed(seam)
+      this.onPlusPressed(place.seam)
       return
     }
-    // The two ends of the page are seams no caret can name — there is no
-    // blank line in them — so a click there arms them by hand. Everywhere
-    // else the caret lands on the blank line and the arming is a reading
-    // of where it is, exactly as on the Mac.
-    const length = this.view.state.doc.length
-    if (seam.offset === 0 || seam.offset === length) {
-      event.preventDefault()
+    if (event.shiftKey) return
+    event.preventDefault()
+    event.stopPropagation()
+    armAt(this.view, place.seam.offset)
+    this.view.focus()
+    this.follow(place.seam.offset, event.clientY)
+  }
+
+  /**
+   * A drag from a seam picks WHOLE CELLS (the Mac's CellInsertions.mouseDragged): past `SEAM_DRAG`, from the cell next
+   * to the seam on the side the drag goes (settled by the first real move, then kept) to the cell under the pointer,
+   * held as a bracket drag holds them. A press that does not travel stays the armed bar.
+   */
+  private follow(offset: number, startY: number): void {
+    let anchor: Range | null = null
+    const ranges = (): Range[] => notebook(this.view.state).cells
+      .filter((cell) => cell.block.kind !== "blank" && !insideHidden(this.view.state, cell.range))
+      .map((cell) => cell.range)
+    const onMove = (move: MouseEvent) => {
+      if ((move.buttons & 1) === 0) { done(); return }
+      const travelled = move.clientY - startY
+      if (anchor === null && Math.abs(travelled) < SEAM_DRAG) return
+      const cells = ranges()
+      if (cells.length === 0) return
+      if (anchor === null) {
+        anchor = travelled > 0
+          ? cells.find((r) => r.location >= offset) ?? cells[cells.length - 1]!
+          : [...cells].reverse().find((r) => end(r) <= offset) ?? cells[0]!
+      }
+      const y = move.clientY - this.view.contentDOM.getBoundingClientRect().top
+      const at = notebook(this.view.state).cells[cellIndexAtY(this.view, y)]?.range
+      const over = at ? [...cells].reverse().find((r) => r.location <= at.location) ?? cells[0]! : null
+      if (!over) return
+      const wanted = between(anchor, over, cells)
+      if (wanted.length === 0) return
+      const now = this.view.state.selection.ranges
+      if (now.length === wanted.length && wanted.every((r, i) => now[i]!.from === r.location && now[i]!.to === end(r))) return
       this.view.dispatch({
-        selection: { anchor: seam.offset },
-        effects: armSeam.of(seam.offset),
+        selection: EditorSelection.create(wanted.map((r) => EditorSelection.range(r.location, end(r))), wanted.length - 1),
+        effects: setHolding.of(true),
+        userEvent: "select.pointer",
       })
-      this.view.focus()
+      const box = this.view.scrollDOM.getBoundingClientRect()
+      if (move.clientY > box.bottom - 24) this.view.scrollDOM.scrollTop += 24
+      else if (move.clientY < box.top + 24) this.view.scrollDOM.scrollTop -= 24
     }
+    const done = () => {
+      document.removeEventListener("mousemove", onMove, true)
+      document.removeEventListener("mouseup", done, true)
+    }
+    document.addEventListener("mousemove", onMove, true)
+    document.addEventListener("mouseup", done, true)
   }
 
   draw(): void {
     const armed = this.view.state.field(armedField, false) ?? null
+    const dropping = this.view.state.field(dropBarField, false) ?? null
     const marked = armed ?? this.hovered
-    if (marked === null && this.hovered === null) {
+    if (marked === null && this.hovered === null && dropping === null) {
       // Nothing to show: no measuring, and no DOM unless there was some. The layer is
       // as tall as the page only while it is drawing — left at the height of a longer
       // note it would keep the scroll area open under a shorter one.
@@ -348,6 +499,14 @@ class SeamLayer {
     // The faint bar shows even when a solid one is drawn elsewhere (Sean,
     // 2026-09-21), so the pointer always says where a click would go.
     if (hoveredSeam && hoveredSeam.offset !== armedSeam?.offset) bar(hoveredSeam, true)
+    // Where a dragged selection would be docked: its own heavier bar (the + is the cursor's, not the drop's).
+    const dropSeam = dropping === null ? null : seamAtOffset(this.view, dropping)
+    if (dropSeam) {
+      const line = document.createElement("div")
+      line.className = "wm-bar wm-bar-drop"
+      line.style.top = `${Math.round(dropSeam.line) - 2}px`
+      this.dom.appendChild(line)
+    }
 
     const markedSeam = marked === armed ? armedSeam : marked === this.hovered ? hoveredSeam : null
     if (markedSeam) {
@@ -367,8 +526,41 @@ class SeamLayer {
     this.view.scrollDOM.removeEventListener("mousemove", this.move)
     this.view.scrollDOM.removeEventListener("mouseleave", this.leave)
     this.view.scrollDOM.removeEventListener("mousedown", this.press, true)
+    this.view.scrollDOM.removeEventListener("scroll", this.scrolled)
+    delete this.view.scrollDOM.dataset.wmPointer
     this.dom.remove()
   }
+}
+
+/**
+ * The cursors the seam layer says (`SeamLayer.show`), for everything on the page — a drawn block's own I-beam, a gap
+ * line, the margin — but the things that answer for themselves (`OWN_POINTER`, and what is inside them). Over the words
+ * the page's own cursor is the I-beam, said once on the content.
+ */
+// (Chained, not one `:not(a, b)`: the theme's selectors are split at every comma, inside parentheses too.)
+const notOwn = OWN_POINTER.map((one) => `:not(${one}):not(${one} *)`).join("")
+const pointerCursors = EditorView.theme({
+  ".cm-content": { cursor: "text" },
+  [`.cm-scroller[data-wm-pointer=seam], .cm-scroller[data-wm-pointer=seam] ${notOwn}`]: { cursor: "vertical-text !important" },
+  [`.cm-scroller[data-wm-pointer=plus], .cm-scroller[data-wm-pointer=plus] ${notOwn}`]: { cursor: "pointer !important" },
+})
+
+/** Make a cell of `kind` at the seam `offset` now, empty, with the caret in it where its words go (the + menu's choice). */
+export function openCellAt(view: EditorView, offset: number, kind: CellKind): void {
+  const at = Math.min(Math.max(offset, 0), view.state.doc.length)
+  const opened = openCell(kind, view.state.doc.toString(), at, "")
+  rewrite(view, opened.markdown, opened.caret)
+}
+
+/**
+ * A command that WRITES something (maths from the palette) at an armed bar writes it in a new cell there, the Mac's
+ * `perform(opensACell: true)`: the bar opens a body-text cell and the caller then runs where the caret is, in it.
+ * Returns whether a cell was opened.
+ */
+export function openBarForWriting(view: EditorView): boolean {
+  if ((view.state.field(armedField, false) ?? null) === null) return false
+  view.dispatch({ effects: setArmedType.of({ kind: "text" }) })
+  return openArmed(view, "")
 }
 
 /**
@@ -442,12 +634,15 @@ export function seamLayer(onPlusPressed: (view: EditorView, seam: Seam) => void)
   return ViewPlugin.fromClass(
     class {
       layer: SeamLayer
-      measure = { key: "wm-seams", read: () => null, write: () => this.layer.draw() }
+      // (And the pointer is asked again: what is under a still pointer changed with the page.)
+      measure = { key: "wm-seams", read: () => null, write: () => { this.layer.draw(); this.layer.again() } }
       constructor(view: EditorView) {
         this.layer = new SeamLayer(view, (seam) => onPlusPressed(view, seam))
         // End-to-end scripts (their preload adds e2ePerf) hold the local seams to the whole-page ones: C:/CLAUDIO/agents/e2e/e3/seams-local.mjs.
         if ((globalThis as { wm?: { e2ePerf?: unknown } }).wm?.e2ePerf) {
-          (view as unknown as { __wmSeams: unknown }).__wmSeams = { pageSeams: () => pageSeams(view), seamAtY: (y: number) => seamAtY(view, y), seamAtOffset: (o: number) => seamAtOffset(view, o), around: (i: number) => seamsAround(view, i), indexAtY: (y: number) => cellIndexAtY(view, y) }
+          (view as unknown as { __wmSeams: unknown }).__wmSeams = { pageSeams: () => pageSeams(view), seamAtY: (y: number) => seamAtY(view, y), seamAtOffset: (o: number) => seamAtOffset(view, o), around: (i: number) => seamsAround(view, i), indexAtY: (y: number) => cellIndexAtY(view, y),
+          place: (x: number, y: number) => { const p = pointerPlace(view, document.elementFromPoint(x, y), x, y); return p && { kind: p.kind, offset: p.seam.offset } },
+          armed: () => view.state.field(armedField, false) ?? null }
         }
       }
       update(update: ViewUpdate) {
@@ -457,7 +652,8 @@ export function seamLayer(onPlusPressed: (view: EditorView, seam: Seam) => void)
         if (update.docChanged || update.geometryChanged) this.layer.invalidate()
         const armed = update.state.field(armedField, false) ?? null
         const was = update.startState.field(armedField, false) ?? null
-        if (update.docChanged || update.geometryChanged || armed !== was) {
+        const dropMoved = update.state.field(dropBarField, false) !== update.startState.field(dropBarField, false)
+        if (update.docChanged || update.geometryChanged || armed !== was || dropMoved) {
           update.view.requestMeasure(this.measure)
         }
       }
@@ -469,6 +665,7 @@ export function seamLayer(onPlusPressed: (view: EditorView, seam: Seam) => void)
 export const seamExtensions = (onPlusPressed: (view: EditorView, seam: Seam) => void): Extension => [
   armedField,
   armedTypeField,
+  dropBarField,
   typingAtTheBar,
   // An attribute the editor owns, not a class toggled by hand: CodeMirror
   // rewrites the root's class list whenever focus changes, which wiped a
@@ -478,6 +675,7 @@ export const seamExtensions = (onPlusPressed: (view: EditorView, seam: Seam) => 
   Prec.high(barKeys),
   Prec.high(pasteAtTheBar),
   hideCaret,
+  pointerCursors,
   seamLayer(onPlusPressed),
   // A bar that is the cursor LIGHTS NOTHING: the cell the caret is parked
   // against must not be drawn as the cell being typed in.

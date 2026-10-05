@@ -31,7 +31,7 @@
 
 import { EditorState, StateField, Transaction, type Extension } from "@codemirror/state"
 import { isolateHistory, redo, undo, undoDepth, redoDepth } from "@codemirror/commands"
-import { bounds, itemId, type Drawing } from "@writemind/core"
+import { bounds, changedInkCells, inkCells, isHidden, itemId, type Drawing } from "@writemind/core"
 import type { DrawingHistory } from "./drawingHistory"
 
 /** The numbering of edits for ONE note. */
@@ -73,6 +73,12 @@ export class EditClock {
     const now = typeof performance !== "undefined" ? performance.now() : Date.now()
     this.shared = { stamp: ++this.n, left: edits, until: now + ms }
   }
+
+  /**
+   * Lets go of what `together` left unused, at once (docking, docs\PLAN-docking-ink-cells.md (e)): a dock whose
+   * words could not be written must not glue the NEXT edit, made within the two seconds, to a stamp of its own.
+   */
+  endTogether(): void { this.shared = null }
 }
 
 interface Undone { stamp: number; at: number }
@@ -228,8 +234,10 @@ function stepOnce(which: "undo" | "redo", across: Across): Taken {
  * out of sight would look like a key that did nothing.
  */
 export function changedBox(before: Drawing, after: Drawing, pane: { width: number; height: number }) {
-  const seen = new Map(before.items.map((item) => [itemId(item), item]))
-  const now = new Map(after.items.map((item) => [itemId(item), item]))
+  // Hidden items are not on the page (a picture read into words, an ink cell: its ink is in the note's flow, and its
+  // bounds would scroll an Undo of a cell stroke to the top of the note). `changedCells` answers for the cells.
+  const seen = new Map(before.items.filter((item) => !isHidden(item)).map((item) => [itemId(item), item]))
+  const now = new Map(after.items.filter((item) => !isHidden(item)).map((item) => [itemId(item), item]))
   let box: { x: number; y: number; width: number; height: number } | null = null
   const add = (item: Drawing["items"][number]) => {
     const one = bounds(item, pane)
@@ -242,4 +250,12 @@ export function changedBox(before: Drawing, after: Drawing, pane: { width: numbe
   for (const [id, item] of now) if (seen.get(id) !== item) add(item)
   for (const [id, item] of seen) if (!now.has(id)) add(item)
   return box as { x: number; y: number; width: number; height: number } | null
+}
+
+/** The ink cells an edit changed, added or took away, by id (an Undo inside a cell is shown by scrolling to it). */
+export function changedCells(before: Drawing, after: Drawing): string[] {
+  const ids = new Set(changedInkCells(before, after).map((cell) => cell.id))
+  const now = new Set(inkCells(after).map((cell) => cell.id))
+  for (const cell of inkCells(before)) if (!now.has(cell.id)) ids.add(cell.id)
+  return [...ids]
 }

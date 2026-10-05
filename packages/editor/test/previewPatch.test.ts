@@ -24,9 +24,12 @@ const LINES = [
   "", "", "", "   ", "text of a paragraph", "more words here", "  indented words", "# Heading", "## Sub heading", "### Third",
   "# Heading", "## Sub heading", "- bullet", "- [ ] todo", "- [x] done", "* star item", "1. one", "> quote", "---", "```", "```ts",
   "  ```", "let a = 1", "```wl", "Sqrt[x]", "`inline` code", "text with trailing  ",
+  // Picture and ink cells (docs\PLAN-docking-ink-cells.md): never a block of the page's own, never open.
+  "![](.drawings/media/cafe.png)", "![ink](.drawings/media/ink-0f8b2c1e-3a4d-4e5f-9a6b-7c8d9e0f1a2b.svg)",
 ]
 const randomDoc = (lines: number): string => Array.from({ length: lines }, () => pick(LINES)).join("\n") + (rnd() < 0.3 ? "\n" : "")
-const FRAGMENTS = ["\n", "\n\n", "\n\n\n", "x", "# ", "- ", "```", "\n```\n", "> ", "---", " ", "a b c", "\n# H\n", "- [ ] ", "1. ", "```ts\n", "\n\n\n\n", "\n\nword\n\n"]
+const FRAGMENTS = ["\n", "\n\n", "\n\n\n", "x", "# ", "- ", "```", "\n```\n", "> ", "---", " ", "a b c", "\n# H\n", "- [ ] ", "1. ", "```ts\n", "\n\n\n\n", "\n\nword\n\n",
+  "![](b.png)", "\n![](c.png)\n"]
 
 const extensions: Extension = [notebookField, renderedField, holdingField, foldField, armedField, previewField]
 
@@ -69,13 +72,13 @@ function agree(state: EditorState, label: string): void {
   expect(patched.heldOnly).toBe(built.heldOnly)
 }
 
-function randomStep(state: EditorState): TransactionSpec {
+function randomStep(state: EditorState, fragments: string[] = FRAGMENTS): TransactionSpec {
   const length = state.doc.length
   const kind = rnd()
   if (kind < 0.55) {
     const from = Math.floor(rnd() * (length + 1))
     const to = rnd() < 0.35 ? from : Math.min(length, from + Math.floor(rnd() * (rnd() < 0.15 ? 80 : 6)))
-    const insert = rnd() < 0.2 ? "" : pick(FRAGMENTS) + (rnd() < 0.3 ? pick(FRAGMENTS) : "")
+    const insert = rnd() < 0.2 ? "" : pick(fragments) + (rnd() < 0.3 ? pick(fragments) : "")
     const caret = from + insert.length
     // usually the caret goes with the typing, sometimes it stays where it was
     return rnd() < 0.8 ? { changes: { from, to, insert }, selection: { anchor: caret } } : { changes: { from, to, insert } }
@@ -115,6 +118,30 @@ describe("the rendered page, patched", () => {
       }
     }
     expect(steps).toBeGreaterThan(2000)
+  })
+
+  // Tables (one cell from header to last row; a header can be the last line of the paragraph above it).
+  it("is the page built from nothing with tables in the note", () => {
+    seed = 43
+    const lines = ["", "", "words", "more words", "# Heading", "- bullet", "| a | b |", "| a | b |", "|---|---|", "|---|---|",
+      "| 1 | 2 |", "a | b", "|:-:|", "| x \\| y |", "  | a | b |"]
+    const fragments = ["\n", "\n\n", "|", " | ", "|---|---|", "x", "- ", "\n| a | b |\n|---|---|\n", "\n| 1 | 2 |"]
+    let steps = 0
+    for (let chain = 0; chain < 30; chain++) {
+      const doc = Array.from({ length: 4 + Math.floor(rnd() * 30) }, () => pick(lines)).join("\n")
+      let state = EditorState.create({ doc, extensions })
+      state = state.update({ effects: setRendered.of(true), selection: { anchor: 0 } }).state
+      agree(state, `tables chain ${chain} start`)
+      for (let step = 0; step < 40; step++) {
+        const spec = randomStep(state, fragments)
+        let tr: Transaction
+        try { tr = state.update(spec) } catch { continue }
+        state = tr.state
+        agree(state, `tables chain ${chain} step ${step}: ${JSON.stringify(spec)}`)
+        steps++
+      }
+    }
+    expect(steps).toBeGreaterThan(900)
   })
 
   it("survives the rendered switch being turned off and on mid-chain, and an empty note", () => {

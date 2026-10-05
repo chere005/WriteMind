@@ -51,8 +51,15 @@ export const WTI = { INTERFACE: 1, STATUS: 2, DEFCONTEXT: 3, DEFSYSCTX: 4, DEVIC
 export const WT_MSG = { PACKET: 0, CTXOPEN: 1, CTXCLOSE: 2, CTXUPDATE: 3, CTXOVERLAP: 4, PROXIMITY: 5, INFOCHANGE: 6, CSRCHANGE: 7 } as const
 export const WT_DEFBASE = 0x7ff0
 
-/** Pen buttons by logical number (bit n of the low word of PK_BUTTONS). Names from CSR_BTNNAMES: tip, barrel, barrel 2. */
-export const BTN = { TIP: 0x1, LOWER: 0x2, UPPER: 0x4 } as const
+/**
+ * Pen buttons by logical number (bit n of the low word of PK_BUTTONS). The Wacom driver reports the CLICK a switch is set to, not
+ * which switch it is: left = button 0, middle = button 1, right = button 2. So "lower" is the right-click button (DOM button 2, the
+ * same as a Windows Ink barrel press on the page) and "upper" the middle-click one, on the sheet and on the page alike. Measured on
+ * Sean's CTL-472, 2026-10-05: the button he calls his SECOND, on the driver's Right Click, arrives as 0x4; his FIRST, on Pan/Scroll,
+ * arrives as nothing at all (the driver keeps it) until it is set to Middle Click in Wacom Tablet Properties. Which jobs they do is
+ * renderer/penButtons.ts DEFAULT_BUTTONS.
+ */
+export const BTN = { TIP: 0x1, LOWER: 0x4, UPPER: 0x2 } as const
 
 // ---- packet decoding ---------------------------------------------------------
 

@@ -339,8 +339,8 @@ export function TopBar({
         <button className={`icon-button${erasing ? " on" : ""}`} disabled={off} data-bar="erase"
                 aria-pressed={erasing}
                 title={erasing
-                  ? "Erase is on: touch a stroke with the pen (or the mouse) to rub it out. Click to put it down."
-                  : "Erase: rub out whole strokes by touching them — no eraser end or side button needed"}
+                  ? "Erase is on (the note's page): touch a stroke with the pen (or the mouse) to rub it out. Click to put it down."
+                  : "Erase on the note's page: rub out whole strokes by touching them — no eraser end or side button needed (the tablet sheet has its own Erase)"}
                 onClick={() => setEraser(!erasing)}>⌫</button>
         <button className={`icon-button${selecting ? " on" : ""}`} disabled={off} data-bar="select"
                 aria-pressed={selecting}

@@ -10,8 +10,9 @@ import {
   allOccurrences, applySpan, codeBlock, justTypedTrigger, selectNextOccurrence, substring, wordRange,
   type Range, type SpanStyle,
 } from "@writemind/core"
-import { applyEdit, atBar, notebook } from "./notebook"
-import { openArmed, setArmedType } from "./seams"
+import { applyEdit, notebook } from "./notebook"
+import { armedField, openArmed, setArmedType } from "./seams"
+import { makesCellAfter } from "./dock"
 import { followLink } from "./preview/follow"
 
 const selection = (view: EditorView): Range => {
@@ -89,11 +90,18 @@ export const extraKeys: Extension = keymap.of([
  * that is tagged already when the caret is not in one.
  */
 export const tagFence = (language: string): Command => (view) => {
-  // At a bar the block is made there, now (Mac 0fdd031), and then tagged like any block the caret is in.
-  if (atBar(view)) { view.dispatch({ effects: setArmedType.of({ kind: "code" }) }); openArmed(view, "") }
-  const head = view.state.selection.main.head
-  const cell = notebook(view.state).cells.find((c) =>
-    c.block.kind === "code" && head >= c.range.location && head <= c.range.location + c.range.length)
+  const inCode = () => {
+    const head = view.state.selection.main.head
+    return notebook(view.state).cells.find((c) =>
+      c.block.kind === "code" && head >= c.range.location && head <= c.range.location + c.range.length)
+  }
+  // At a bar (either page) the block is made there, now (Mac 0fdd031); with nothing selected in a cell of words it is
+  // made after that cell (`makesCellAfter`); and then it is tagged like any block the caret is in.
+  if ((view.state.field(armedField, false) ?? null) !== null) {
+    view.dispatch({ effects: setArmedType.of({ kind: "code" }) })
+    openArmed(view, "")
+  } else if (!inCode()) makesCellAfter({ kind: "code" }, () => false)(view)
+  const cell = inCode()
   if (cell) {
     const line = view.state.doc.lineAt(cell.range.location)
     const indent = /^\s*/.exec(line.text)![0]

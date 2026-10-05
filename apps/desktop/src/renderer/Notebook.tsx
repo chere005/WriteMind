@@ -12,13 +12,14 @@ import { history, historyKeymap, defaultKeymap, standardKeymap } from "@codemirr
 import { keymap } from "@codemirror/view"
 import {
   cellBrackets, folding, foldField, foldedKeys, linkClicks, linkTrigger, mathRendering, notebookDecorations, notebookKeys,
-  notebookState, notebookTheme, textConventions, pasteHtmlAsText, hiddenMarkerDeletion, find, preview, rendered, renderedField, markersField, seamExtensions, setArmedType, armSeam,
+  notebookState, notebookTheme, textConventions, pasteHtmlAsText, hiddenMarkerDeletion, find, preview, rendered, renderedField, markersField, seamExtensions, openCellAt,
   setFolds, setPreview, setRendered, setMarkers, listStyleSource, revealAt,
 } from "@writemind/editor"
 import { ALL_KINDS, KIND_GROUPS, kindName, openCell, type CellKind, type ListStyle, type Seam } from "@writemind/core"
 import { textTimeline } from "./editTimeline"
 import { historyOf, stashText, takeText } from "./noteHistory"
-import { evaluationCells, evalHost } from "@writemind/editor"
+import { evaluationCells, evalHost, inkCellPainter, pictureCells, type InkCellPainter } from "@writemind/editor"
+import { tables } from "@writemind/editor"
 import { evalHostOfApp } from "./evalHost"
 import "./editor.css"
 
@@ -57,10 +58,14 @@ interface Props {
   onLink?(file: string, caret: number): void
   /** A link was followed (a click on the rendered page, Alt-click on the markdown). */
   onFollow?(file: string, href: string): void
+  /** What draws and resizes the note's ink cells (docs\PLAN-docking-ink-cells.md (c)); none: ink cells are read-only. */
+  inkPainter?: InkCellPainter | null
+  /** The + menu's Drawing Cell at a bar: the app writes the ink cell's line and its sidecar item there. */
+  onInsertInkCell?(offset: number): void
 }
 
 export function Notebook({ file, text, version, restore, rendered: showRendered, markers: showMarkers, listStyle, onChange, onReady,
-  onViewState, onLink, onFollow }: Props) {
+  onViewState, onLink, onFollow, inkPainter, onInsertInkCell }: Props) {
   const host = useRef<HTMLDivElement | null>(null)
   const view = useRef<EditorView | null>(null)
   const latest = useRef(onChange)
@@ -79,6 +84,17 @@ export function Notebook({ file, text, version, restore, rendered: showRendered,
   markersRef.current = showMarkers
   const listRef = useRef<ListStyle>(listStyle ?? "dots")
   listRef.current = listStyle ?? "dots"
+  const painterRef = useRef(inkPainter ?? null)
+  painterRef.current = inkPainter ?? null
+  const insertInkRef = useRef(onInsertInkCell)
+  insertInkRef.current = onInsertInkCell
+  // ONE painter object for the editor's whole life (the facet never changes); it asks whatever the app gives now.
+  const painter = useRef<InkCellPainter>({
+    aspect: (id) => painterRef.current?.aspect(id) ?? null,
+    minAspect: (id) => painterRef.current?.minAspect(id) ?? 0,
+    paint: (id, canvas, size) => painterRef.current?.paint(id, canvas, size),
+    resized: (id, aspect) => painterRef.current?.resized(id, aspect),
+  }).current
   const [menu, setMenu] = useState<{ x: number; y: number; seam: Seam } | null>(null)
   // The right-click menu: Windows has no native one in this shell, and a page
   // you cannot right-click Copy/Paste on feels broken on that platform.
@@ -118,8 +134,13 @@ export function Notebook({ file, text, version, restore, rendered: showRendered,
         const box = editor.contentDOM.getBoundingClientRect()
         setMenu({ x: box.left + 24, y: box.top + seam.line - editor.scrollDOM.scrollTop + 8, seam })
       }),
+      // Tables: the grid in the markdown, Tab / Shift+Tab cell to cell, Return adds a row (ahead of the page's Return).
+      tables,
       // The rendered page: blocks drawn, the open one styled markdown; Return, Backspace, arrows.
       preview,
+      // Picture and ink cells, both panes: block widgets the caret and text go above and below.
+      pictureCells,
+      inkCellPainter.of(painter),
       notebookKeys,
       textConventions,
       pasteHtmlAsText,
@@ -267,16 +288,13 @@ export function Notebook({ file, text, version, restore, rendered: showRendered,
     const editor = view.current
     if (!editor || !menu) return
     setMenu(null)
-    // The + does not open the cell: it says what the next character will
-    // open, and the bar stays armed. Arming it again keeps the choice.
-    // The caret goes to the blank line the bar stands on (or the end of the
-    // page the bar is at), so the bar is the cursor and nothing else is.
-    const at = menu.seam.offset === 0 || menu.seam.offset >= editor.state.doc.length
-      ? menu.seam.offset : menu.seam.offset - 1
-    editor.dispatch({
-      selection: { anchor: at },
-      effects: [armSeam.of(menu.seam.offset), setArmedType.of(kind)],
-    })
+    // A Drawing Cell is made at once, by the app: its line names a cell in the drawing (the bar's typing never makes
+    // one), and the pointer becomes a pen for that cell alone (inkScope.ts).
+    if (kind.kind === "ink") { insertInkRef.current?.(menu.seam.offset); editor.focus(); return }
+    // THE CELL IS MADE NOW, empty, with the caret in it where its words go and the keyboard in the editor (Sean,
+    // 2026-10-05: "selecting a cell type ... should create a new cell with the cursor ready to start typing"). The
+    // Mac's + only names what the next character will open, with the bar still up; the port no longer waits for it.
+    openCellAt(editor, menu.seam.offset, kind)
     editor.focus()
   }
 

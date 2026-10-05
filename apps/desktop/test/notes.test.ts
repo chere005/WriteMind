@@ -467,9 +467,10 @@ describe("trusting the watcher", () => {
     const home = scratch()
     const a = note(home, "a.md", "# One\n")
     await projectTree([home], home, "P")
-    writeFileSync(a, "# Two\n")
-    // size differs, so the stat tells (no watcher on: every look is a full one)
-    expect(titles(await projectTree([home], home, "P"))).toEqual(["Two"])
+    // The size differs, so the stat tells even inside one tick of the file clock (no watcher on: every look is a full
+    // one). ("# Two\n" was as long as "# One\n": the test then hung on the file time changing, and failed now and then.)
+    writeFileSync(a, "# Two words\n")
+    expect(titles(await projectTree([home], home, "P"))).toEqual(["Two words"])
     setWatched([home])
     await projectTree([home], home, "P")
     writeFileSync(a, "# Three\n")

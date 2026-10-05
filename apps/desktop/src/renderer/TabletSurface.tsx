@@ -6,7 +6,10 @@
  * alike). The MOUSE (and touch) never writes: a drag pulls the dashed box that selects a section of the sheet to
  * bring into the notebook, as the Mac's box does over the camera's picture. The box is moved by dragging inside
  * it, resized by its corner handles, cleared by Esc or a click outside it; a double click takes the whole
- * sheet. (The pen's side button, set to Select, boxes too; the Erase button makes any pointer rub out.)
+ * sheet. (A pen side button HELD while the pen touches does its hold action here too: Select boxes, Erase rubs
+ * out whole strokes; pressed in the air it does nothing here, and its double tap — Undo / Redo by default — takes
+ * back the sheet's own strokes, penActions.ts. The header's Erase makes any pointer rub out and its Select makes the pen
+ * pull the box: the SHEET's own pair, penSettings `sheetTools`, never the notebook toolbar's ⌫ / ⬚.)
  *
  * Built to feel like a pad. Pointer events arrive far faster than frames, so every coalesced sample is kept (the
  * stroke's real shape) and the ink canvas is only touched once a frame, and then only for the segments that are
@@ -18,9 +21,9 @@
 
 import { forwardRef, useCallback, useEffect, useImperativeHandle, useLayoutEffect, useRef, useState } from "react"
 import { isBoxDrag, type Point, type Rect, type Size } from "@writemind/core"
-import { pressAction } from "./penButtons"
-import { penNear, penSettings, usePenSettings } from "./penSettings"
-import { setTabletUndo } from "./tabletFocus"
+import { holdBegins, inContact, penLifted, pressAction } from "./penButtons"
+import { penNear, penSettings, sheetPressSettings, useSheetTools } from "./penSettings"
+import { setTabletUndo, watchSheetPen } from "./tabletFocus"
 import {
   boxFromPoints, fitRect, hitBox, moveBox, paintStrokes, resizeBox, SHEET_REF, strokeUnder,
   type BoxHandle, type BoxHit, type InkStroke, type TabletPage,
@@ -48,6 +51,8 @@ interface Props {
   onBox(rect: Rect | null): void
   /** The page changed (a stroke, an erase, an undo): the buttons may need to update. */
   onEdited(): void
+  /** A sheet bound to an ink cell (cellSheets.ts): the cell, in FRACTIONS of the sheet. The rest is shaded and a stroke stops at its edge. */
+  frame?: Rect | null
 }
 
 /** How near a stroke the eraser has to be, in points. */
@@ -59,8 +64,11 @@ const DOUBLE_MS = 450
 const HANDLES: BoxHandle[] = ["nw", "ne", "sw", "se"]
 
 type Gesture =
-  | { kind: "draw"; stroke: InkStroke; drawn: number; pen: boolean }
-  | { kind: "erase"; marked: boolean }
+  // A stroke and an erase belong to the sheet they began on (a key can open another tab while the pen is down).
+  // `out`: on a sheet bound to a drawing cell, the pen left the cell: the stroke was made up to its edge, and a new one
+  // begins where it comes back in (nothing is drawn outside the cell, nothing is pinned to its border).
+  | { kind: "draw"; stroke: InkStroke; drawn: number; pen: boolean; page: TabletPage; out?: boolean }
+  | { kind: "erase"; marked: boolean; page: TabletPage }
   | {
     kind: "box"; mode: "new" | "move" | "resize"
     startPx: Point; start: Point; origin: Rect | null; handle: BoxHandle | null; dragged: boolean
@@ -71,7 +79,7 @@ const CURSORS: Record<Exclude<BoxHit, null>, string> = {
 }
 
 export const TabletSurface = forwardRef<SurfaceHandle, Props>(function TabletSurface(
-  { page, colour, width, box, onBox, onEdited }, handle) {
+  { page, colour, width, box, onBox, onEdited, frame: cellBox = null }, handle) {
   const host = useRef<HTMLDivElement | null>(null)
   const wrap = useRef<HTMLDivElement | null>(null)
   const [fit, setFit] = useState({ x: 0, y: 0, width: 0, height: 0 })
@@ -84,10 +92,11 @@ export const TabletSurface = forwardRef<SurfaceHandle, Props>(function TabletSur
   const lastClick = useRef<{ time: number; x: number; y: number } | null>(null)
   const frame = useRef<number | null>(null)
   const everything = useRef(true)
-  const settings = usePenSettings()
+  // The sheet's OWN Erase / Select (the header's buttons), never the notebook toolbar's (penSettings.ts).
+  const tools = useSheetTools()
   const paper = usePaper()
-  const latest = useRef({ colour, width, onBox, onEdited, page, box, paper })
-  latest.current = { colour, width, onBox, onEdited, page, box, paper }
+  const latest = useRef({ colour, width, onBox, onEdited, page, box, paper, cellBox })
+  latest.current = { colour, width, onBox, onEdited, page, box, paper, cellBox }
 
   const toPixel = useCallback((point: Point): Point =>
     ({ x: point.x * size.current.width, y: point.y * size.current.height }), [])
@@ -177,8 +186,10 @@ export const TabletSurface = forwardRef<SurfaceHandle, Props>(function TabletSur
       window.removeEventListener("resize", measure)
       ratio?.removeEventListener("change", onRatio)
       if (frame.current !== null) cancelAnimationFrame(frame.current)
+      frame.current = null
     }
-  }, [schedule])
+    // Another sheet (a tab): listen to it and paint it whole. Its size is the same (every sheet has the tablet's shape).
+  }, [schedule, page])
 
   // The paper, on its own canvas under the ink: painted when the paper, the sheet's size or the display's scale changes (never per stroke).
   useLayoutEffect(() => {
@@ -203,9 +214,15 @@ export const TabletSurface = forwardRef<SurfaceHandle, Props>(function TabletSur
     return did
   }, [schedule])
 
+  // The pen over the sheet's side of the pane (or last there): its double taps and ExpressKeys toggle the sheet's tools.
   useEffect(() => {
-    setTabletUndo((which) => {
-      const focused = wrap.current !== null && wrap.current.contains(document.activeElement)
+    const element = host.current
+    return element ? watchSheetPen(element.closest(".camera") ?? element) : undefined
+  }, [])
+
+  useEffect(() => {
+    setTabletUndo((which, byPen) => {
+      const focused = !byPen && wrap.current !== null && wrap.current.contains(document.activeElement)
       return (hovered.current || focused) ? act(which) : false
     })
     return () => setTabletUndo(null)
@@ -236,19 +253,27 @@ export const TabletSurface = forwardRef<SurfaceHandle, Props>(function TabletSur
     size: () => size.current,
   }), [act, schedule])
 
-  const at = (event: { clientX: number; clientY: number }): { px: Point; unit: Point } => {
+  /** `unit`: on the sheet (on a bound sheet, at the cell's edge); `raw`: where it really is; `inside`: in the cell (always, on a plain sheet). */
+  const at = (event: { clientX: number; clientY: number }): { px: Point; unit: Point; raw: Point; inside: boolean } => {
     const rect = wrap.current!.getBoundingClientRect()
     const x = event.clientX - rect.left, y = event.clientY - rect.top
     // A stroke that strays past the edge (the pen is captured) stops at the sheet's edge.
-    const clamp = (value: number) => Math.min(1, Math.max(0, value))
+    const clamp = (value: number, from = 0, to = 1) => Math.min(to, Math.max(from, value))
+    // On a sheet bound to a cell, at the cell's edge.
+    const f = latest.current.cellBox ?? { x: 0, y: 0, width: 1, height: 1 }
+    const raw = { x: x / Math.max(1, rect.width), y: y / Math.max(1, rect.height) }
+    const e = 1e-6
     return {
       px: { x, y },
-      unit: { x: clamp(x / Math.max(1, rect.width)), y: clamp(y / Math.max(1, rect.height)) },
+      unit: { x: clamp(raw.x, f.x, f.x + f.width), y: clamp(raw.y, f.y, f.y + f.height) },
+      raw,
+      inside: !latest.current.cellBox
+        || (raw.x >= f.x - e && raw.x <= f.x + f.width + e && raw.y >= f.y - e && raw.y <= f.y + f.height + e),
     }
   }
 
   const eraseAt = (g: Extract<Gesture, { kind: "erase" }>, point: Point) => {
-    const p = latest.current.page
+    const p = g.page
     const index = strokeUnder(p.strokes, point, size.current, ERASE_RADIUS, size.current.width / SHEET_REF)
     if (index < 0) return
     if (!g.marked) { p.mark(); g.marked = true }
@@ -256,24 +281,30 @@ export const TabletSurface = forwardRef<SurfaceHandle, Props>(function TabletSur
     schedule(true)
   }
 
+  /** The pen touched the sheet at its last event: a hold begins only where a touch begins (penButtons.holdBegins). */
+  const touching = useRef(false)
+
   const down = (event: PointerEvent) => {
     if (event.pointerType === "touch" && penNear()) { event.preventDefault(); return }
     const pen = event.pointerType === "pen"
+    if (pen) touching.current = inContact(event)
     if (!pen && event.button !== 0) return
     event.preventDefault()
-    let action = pressAction(event, penSettings())
-    // A pen button with nothing to do here (a tap action the runtime fires, Pan) does nothing on the sheet.
+    let action = pressAction(event, sheetPressSettings())
+    // Nothing to do here: a side button pressed in the air (its double tap is the runtime's, penActions.ts), or Pan.
     if (action === "ignore" || action === "pan") return
     wrap.current?.focus({ preventScroll: true })
     // Keep the gesture when the pointer strays past the edge (a synthetic event has no pointer to capture: the feed keeps the target itself).
     try { wrap.current?.setPointerCapture(event.pointerId) } catch { /* not an active pointer */ }
     // THE SPLIT: only the pen writes. Anything else that would have drawn pulls the box.
     if (action === "draw" && !pen) action = "select"
-    const { px, unit: point } = at(event)
+    const { px, unit: point, raw, inside } = at(event)
+    // A bound sheet: the shaded margin round the cell takes no stroke.
+    if (action === "draw" && !inside) return
     if (action === "erase") {
-      const g: Gesture = { kind: "erase", marked: false }
+      const g: Gesture = { kind: "erase", marked: false, page: latest.current.page }
       gesture.current = g
-      eraseAt(g, point)
+      eraseAt(g, latest.current.cellBox ? raw : point)
     } else if (action === "select") {
       const current = latest.current.box
       const hit = current ? hitBox(current, point, size.current) : null
@@ -284,7 +315,7 @@ export const TabletSurface = forwardRef<SurfaceHandle, Props>(function TabletSur
     } else {
       const pressure = event.pressure > 0 ? event.pressure : 0.5
       gesture.current = {
-        kind: "draw", drawn: 0, pen,
+        kind: "draw", drawn: 0, pen, page: latest.current.page,
         stroke: {
           colorHex: latest.current.colour,
           width: latest.current.width * SHEET_REF / Math.max(1, size.current.width),
@@ -298,12 +329,20 @@ export const TabletSurface = forwardRef<SurfaceHandle, Props>(function TabletSur
 
   const move = (event: PointerEvent) => {
     const g = gesture.current
+    if (event.pointerType === "pen") {
+      const was = touching.current
+      touching.current = inContact(event)
+      // A side button held in the air, then the pen touches: its hold begins here (this touch is a pointermove).
+      if (!g && holdBegins(was, event)) { down(event); return }
+      // A pen gesture lasts while the pen touches: lifting it with a side button still held ends it.
+      if (g && penLifted(event)) { up(event); return }
+    }
     if (!g) {
       // The mouse over the box says what a drag would do.
       if (event.pointerType !== "pen" && wrap.current) {
         const current = latest.current.box
         const hit = current ? hitBox(current, at(event).unit, size.current) : null
-        wrap.current.style.cursor = settings.eraser ? "cell" : hit ? CURSORS[hit] : "crosshair"
+        wrap.current.style.cursor = tools.eraser ? "cell" : hit ? CURSORS[hit] : "crosshair"
       }
       return
     }
@@ -312,12 +351,29 @@ export const TabletSurface = forwardRef<SurfaceHandle, Props>(function TabletSur
     const all = samples.length > 0 ? samples : [event]
     if (g.kind === "draw") {
       for (const sample of all) {
-        g.stroke.points.push(at(sample).unit)
+        const here = at(sample)
+        if (!here.inside && g.out) continue
+        if (here.inside && g.out) {
+          // Back in the cell: a new stroke begins here.
+          const { points: _points, pressures, ...rest } = g.stroke
+          g.stroke = { ...rest, points: [], ...(pressures ? { pressures: [] } : {}) }
+          g.drawn = 0
+          g.out = false
+        }
+        g.stroke.points.push(here.unit)
         g.stroke.pressures?.push(sample.pressure > 0 ? sample.pressure : 0.5)
+        if (!here.inside) {
+          // Out of the cell: the stroke ends at its edge, and is made now.
+          g.out = true
+          paint()
+          g.page.add(g.stroke)
+          schedule(true)
+          latest.current.onEdited()
+        }
       }
       schedule()
     } else if (g.kind === "erase") {
-      for (const sample of all) eraseAt(g, at(sample).unit)
+      for (const sample of all) { const here = at(sample); eraseAt(g, latest.current.cellBox ? here.raw : here.unit) }
     } else {
       const here = at(event)
       if (!g.dragged && !isBoxDrag(here.px.x - g.startPx.x, here.px.y - g.startPx.y)) return
@@ -329,6 +385,7 @@ export const TabletSurface = forwardRef<SurfaceHandle, Props>(function TabletSur
   }
 
   const up = (event: PointerEvent) => {
+    if (event.type === "pointerup" || event.type === "pointercancel") touching.current = false
     const g = gesture.current
     // The last samples are painted now, not left to a frame that will find no stroke.
     if (g?.kind === "draw") paint()
@@ -338,7 +395,11 @@ export const TabletSurface = forwardRef<SurfaceHandle, Props>(function TabletSur
     }
     if (!g) return
     if (g.kind === "draw") {
-      latest.current.page.add(g.stroke)
+      // Already made where it left a bound sheet's cell.
+      if (g.out) return
+      g.page.add(g.stroke)
+      // Begun on a sheet that is no longer open: it went to that sheet, and this one is painted as it is.
+      if (g.page !== latest.current.page) schedule(true)
       latest.current.onEdited()
     } else if (g.kind === "erase") {
       if (g.marked) latest.current.onEdited()
@@ -363,7 +424,7 @@ export const TabletSurface = forwardRef<SurfaceHandle, Props>(function TabletSur
     }
   }
 
-  const erasing = settings.eraser
+  const erasing = tools.eraser
   return (
     <div className="tablet-host" ref={host} data-tablet="host"
          onPointerDown={(event) => { if (event.target === host.current) latest.current.onBox(null) }}>
@@ -380,6 +441,13 @@ export const TabletSurface = forwardRef<SurfaceHandle, Props>(function TabletSur
         {/* The ink is first in the tree (what reads "the sheet's canvas" reads the ink); the paper sits under it by z-order. */}
         <canvas ref={canvas} className="ink" data-layer="ink" style={{ width: "100%", height: "100%" }} />
         <canvas ref={backdrop} className="paper" data-layer="paper" style={{ width: "100%", height: "100%" }} />
+        {cellBox && (
+          <div className="box-clip">
+            <div className="cell-frame" data-tablet="cell-frame" style={{
+              left: `${cellBox.x * 100}%`, top: `${cellBox.y * 100}%`, width: `${cellBox.width * 100}%`, height: `${cellBox.height * 100}%`,
+            }} />
+          </div>
+        )}
         {box && (
           <div className="box-clip">
             <div className="box" data-tablet="box" style={{

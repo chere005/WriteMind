@@ -101,6 +101,23 @@ export const previewTheme = EditorView.theme({
   ".wm-pv-code-inline": { fontFamily: MONO, fontSize: "14.2px", color: "var(--wm-code)" },
   ".wm-pv-mark-hl": { backgroundColor: "rgba(255, 213, 0, 0.28)", color: "inherit", borderRadius: "2px" },
   ".wm-pv-link": { color: "var(--wm-accent)", textDecoration: "underline", cursor: "pointer" },
+  // A table: a grid of thin rules, the header in bold on a faint tint; a table wider than the column scrolls inside
+  // its own box (the paper sets the same box: export BLOCK_CSS `.table`).
+  ".wm-pv-table": { overflowX: "auto" },
+  ".wm-pv-table table": { borderCollapse: "collapse", maxWidth: "100%" },
+  ".wm-pv-table th, .wm-pv-table td": {
+    border: "1px solid var(--wm-rule)",
+    padding: "4px 10px",
+    verticalAlign: "top",
+    textAlign: "left",
+    whiteSpace: "pre-wrap",
+    overflowWrap: "break-word",
+    minWidth: "2em",
+  },
+  ".wm-pv-table th": {
+    fontWeight: "600",
+    backgroundColor: "color-mix(in srgb, var(--wm-text) 5.5%, transparent)",
+  },
   // The rule's clickable body is its own height (9px, the Mac's), not padding leaking into the gaps either side.
   ".wm-pv-rule": { padding: "4px 2px" },
   ".wm-pv-rule hr": { border: "0", borderTop: "1px solid var(--wm-rule)", margin: "0" },

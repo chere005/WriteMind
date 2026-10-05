@@ -13,8 +13,8 @@
 import { EditorSelection, Prec, type Extension } from "@codemirror/state"
 import { EditorView, keymap, type Command } from "@codemirror/view"
 import {
-  backspaceInEmptyBlock, end, furnitureBehind, minimalChange, outdentForBackspace, returnInBlock, touchingRuns,
-  type Edit,
+  backspaceInEmptyBlock, end, furnitureBehind, minimalChange, outdentForBackspace, returnInBlock, staysClosed,
+  touchingRuns, type Edit, type PositionedBlock,
 } from "@writemind/core"
 import { awayField, putAway } from "./away"
 import { furnitureAt, reminderAt } from "./furniture"
@@ -25,6 +25,7 @@ import { holdingField } from "./hold"
 import { notebook } from "../notebook"
 import { renderedField } from "../rendered"
 import { armedField, armSeam } from "../seams"
+import { holdPictureCell } from "../pictureCells"
 
 const on = (view: EditorView): boolean => view.state.field(renderedField, false) === true
 const barUp = (view: EditorView): boolean => (view.state.field(armedField, false) ?? null) !== null
@@ -207,9 +208,47 @@ const comeBack: Command = (view) => {
 }
 
 /**
+ * The bar above (or `below`) a picture or ink cell, as the cursor: the caret goes on the blank line there when there
+ * is one (and the bar is read off it, as anywhere), else beside the cell with the bar armed by hand. A picture cell is
+ * never typed in, so walking the page with the arrows goes bar → bar over it (docs\PLAN-docking-ink-cells.md (c)).
+ */
+function armBeside(view: EditorView, cell: PositionedBlock, below: boolean): true {
+  const state = view.state
+  const doc = state.doc
+  const blankAt = (pos: number) => pos >= 0 && pos <= doc.length && doc.lineAt(pos).text.trim().length === 0
+  if (below) {
+    const after = end(cell.range)
+    if (after < doc.length && blankAt(after + 1)) {
+      view.dispatch({ selection: EditorSelection.cursor(after + 1), scrollIntoView: true })
+      return true
+    }
+    const cells = notebook(state).cells
+    const next = cells.find((c) => c.range.location > after && c.block.kind !== "blank")
+    view.dispatch({
+      selection: EditorSelection.cursor(after),
+      effects: armSeam.of(next ? next.range.location : doc.length),
+      scrollIntoView: true,
+    })
+    return true
+  }
+  const start = cell.range.location
+  if (start > 0 && blankAt(start - 1)) {
+    view.dispatch({ selection: EditorSelection.cursor(doc.lineAt(start - 1).from), scrollIntoView: true })
+    return true
+  }
+  view.dispatch({ selection: EditorSelection.cursor(start), effects: armSeam.of(start), scrollIntoView: true })
+  return true
+}
+
+/** The picture or ink cell that starts at `pos`, if one does. */
+const pictureCellAt = (view: EditorView, pos: number): PositionedBlock | undefined =>
+  notebook(view.state).cells.find((cell) => cell.range.location === pos && staysClosed(cell.block) && cell.range.length > 0)
+
+/**
  * An arrow off the bar: into the cell beside it, which is the other half of
  * walking cell, bar, cell. At the two ends of the note there is no cell that
- * way and the bar simply stays.
+ * way and the bar simply stays. A picture or ink cell is stepped OVER, to the
+ * bar on its far side.
  */
 const stepFromBar = (up: boolean): Command => (view) => {
   if (!on(view)) return false
@@ -222,9 +261,11 @@ const stepFromBar = (up: boolean): Command => (view) => {
   let target: number | null = null
   if (up) {
     const above = [...cells].reverse().find((cell) => cell.range.location < armed)
+    if (above && staysClosed(above.block)) return armBeside(view, above, false)
     if (above) target = end(above.range)
   } else {
     const below = cells.find((cell) => cell.range.location >= armed)
+    if (below && staysClosed(below.block)) return armBeside(view, below, true)
     if (below) target = below.range.location
   }
   if (target !== null) {
@@ -285,9 +326,11 @@ const vertical = (down: boolean): Command => (view) => {
   const doc = state.doc
   const all = notebook(state).cells
   const cells = all.map((cell) => cell.range)
-  const runs = touchingRuns(cells)
+  const runs = touchingRuns(cells, (i) => staysClosed(all[i]!.block))
   const index = all.findIndex((cell) => cell.range.length > 0 && main.head >= cell.range.location
     && main.head <= end(cell.range))
+  // Beside a picture or ink cell (the caret before or after it): the bar on the side the arrow points to.
+  if (index >= 0 && staysClosed(all[index]!.block)) return armBeside(view, all[index]!, down)
   let target: number | null = null
   // In an open code block the ``` lines are shut to a strip of padding, too thin for the editor's own arrow to land
   // on: up from the first line of code (down from the last) is onto the fence, which opens for its language.
@@ -327,6 +370,9 @@ const vertical = (down: boolean): Command => (view) => {
     else if (line.from > 0) target = doc.lineAt(line.from - 1).from
   }
   if (target === null) return false
+  // Onto a picture or ink cell that touches this block: the bar between them (down: above it; up: under it).
+  const picture = pictureCellAt(view, target)
+  if (picture) return armBeside(view, picture, !down)
   view.dispatch({ selection: EditorSelection.cursor(target), scrollIntoView: true })
   return true
 }
@@ -417,12 +463,14 @@ const marginPresses = EditorView.domEventHandlers({
     const target = event.target instanceof Element ? event.target : null
     if (!target || target.closest(".wm-pv, .cm-line, .wm-gutter, .wm-seams")) return false
     if (!view.contentDOM.contains(target) && target !== view.scrollDOM) return false
-    const blocks = Array.from(view.contentDOM.querySelectorAll<HTMLElement>(".wm-pv"))
+    const blocks = Array.from(view.contentDOM.querySelectorAll<HTMLElement>(".wm-pv, .wm-cellpic"))
     const dom = blocks.find((block) => {
       const box = block.getBoundingClientRect()
       return event.clientY >= box.top && event.clientY < box.bottom
     })
     if (!dom) return false
+    // Beside a picture or ink cell: the cell is held, as a click on it does.
+    if (dom.classList.contains("wm-cellpic")) { event.preventDefault(); holdPictureCell(view, dom); return true }
     press(view, dom, event)
     return true
   },

@@ -224,10 +224,11 @@ describe("a PDF capture as a picture", () => {
     const first = await readPdfPicture(file)
     expect(first!.svg).toContain("M0 0L5 0L5 5L0 5Z")
     expect(await readPdfPicture(file)).toBe(first)
-    writeFileSync(file, simple("0 0 6 6 re f"))
+    // A different size too: two writes inside one tick of the file clock keep the same mtime (Windows, ~15 ms).
+    writeFileSync(file, simple("0 0 16 16 re f"))
     const later = await readPdfPicture(file)
     expect(later).not.toBe(first)
-    expect(later!.svg).toContain("M0 0L6 0L6 6L0 6Z")
+    expect(later!.svg).toContain("M0 0L16 0L16 16L0 16Z")
     writeFileSync(file, "nope")
     expect(await readPdfPicture(file)).toBeNull()
   })

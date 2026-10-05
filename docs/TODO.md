@@ -21,10 +21,26 @@ transcribed scanner, no CodeMirror language packages), Alt-D, the
 rendered-page toggle, and evaluation cells (```` ```eval python ```` and friends: Shift+Enter runs one in the main
 process and writes the answer under it, Ctrl+9 makes one, `In[n]` / `Out[n]` in the margin). The editor-level e2e scripts are in the repo now:
 `e2e/suites/editor` and `e2e/suites/cells` (`npm run e2e -- --suite editor`;
-`docs/TESTING.md`).
+`docs/TESTING.md`). A new install opens on `WriteMind Quick Reference.md` (once per notes folder,
+`main/welcome.ts`; PARITY "The Quick Reference").
 
 ## Not ported yet, in the order they are worth doing
 
+- **Tables, from scratch: part one DONE, the rest to build** (tables lane, 2026-10-05; port-first: the Mac took
+  tables out whole on 2026-09-20 to rebuild them, `C:\GIT\WriteMind` TODO "Tables, from scratch"; PARITY "Tables").
+  DONE: a GitHub pipe table is ONE cell (`markdown/table.ts`, the parser and `positionedUpdate` agree on random
+  edits), a real table on the rendered page and in the PDF / HTML export, a framed monospaced grid in the markdown
+  (pipes and rule dimmed, never re-padded), Tab / Shift+Tab cell to cell, Tab past the last cell and Return add a
+  row, Return on an empty last row ends the table. TO BUILD, in order: (1) editing IN the drawn table on the rendered
+  page (a cell opens as its own little field, the grid does not change size as it opens; today a click opens the
+  table's markdown, which is shorter than the drawn grid, so the cells below move up); (2) a table button on the
+  toolbar and a key (the Mac had Ctrl+Cmd+T) with a rows x columns picker, and a "Table" kind on the + menu;
+  (3) add / remove / move a row or a column (a context menu on a cell; the old Mac `MarkdownTable` had the
+  arithmetic: `git -C C:\GIT\WriteMind show 6109a18`); (4) tidy the columns (re-pad the markdown so the pipes line
+  up) as an explicit command, never on its own; (5) a grid with no pipes at the ends drawn open (the Mac's old
+  "grid or no grid" choice), if Sean still wants it; (6) paste a table from a spreadsheet / web page as a pipe table;
+  (7) the camera / tablet reading a ruled table off a page into one (the Mac's old `DrawnTable`); (8) a table wider
+  than the column: it scrolls on the page and is cut at the column's edge on paper — wrap or shrink instead?
 - **Evaluation cells, what is left** (eval lane, 2026-10-05; the rest is built: `docs/PARITY.md` ▸ "Evaluation
   cells"). (1) **C, C++ and Rust have never run on Windows**: none of `gcc`/`clang`/`cl` or `rustc` is on this
   machine; they are unit-tested with the process layer faked. Install one and run
@@ -83,7 +99,9 @@ process and writes the answer under it, Ctrl+9 makes one, `In[n]` / `Out[n]` in 
   none), a text box's font size (not in the Mac's model either), a sweep of
   the orphaned files in `.drawings/media` (every paste and crop adds one and
   nothing removes them; projects can add note roots, so the sweep has to
-  know every root before it may delete). Pressure strokes are smoothed now.
+  know every root before it may delete; and it must keep what core `mediaInUse` says,
+  i.e. `mediaFiles(markdown)` of every note as well as `drawingMediaFiles` of every
+  sidecar, or it deletes docked pictures and ink-cell snapshots). Pressure strokes are smoothed now.
   **Toured and fixed 2026-10-03 (d2-undo-tour):** the geometry was quadratic
   in a stroke's length (erase, drag and repaint on a page of hand writing),
   the mouse wheel did nothing with the pen down, an arrow being drawn had no
@@ -113,6 +131,8 @@ process and writes the answer under it, Ctrl+9 makes one, `In[n]` / `Out[n]` in 
   page up by itself; the writing comes in as traced OUTLINES (an SVG,
   `capture/inkVector.ts`); Raw; the dashed box with Image / Writing / Text and
   click-clears (with no box, click-takes-all) / double-click fills the WINDOW with the picture (Mac 0edfc08, camera lane 2026-10-05); Resize by Square (`cameraZoom.ts`);
+  **Hold image** (Sean 2026-10-05, port-only: the picture held still, every capture from it; PARITY "Hold image";
+  e2e `e2e/suites/camera/03-hold-image.mjs`; needs Sean: a real camera, and whether the header is the right place);
   the camera menu with a tick, Turn Camera Off (the pane stays, with a list),
   the source remembered across launches, hot-plug, the Mac's four stand-ins
   for no picture with Windows' words, the quarter-turn buttons remembered,
@@ -135,6 +155,13 @@ process and writes the answer under it, Ctrl+9 makes one, `In[n]` / `Out[n]` in 
   (6) FEATURES.md still describes a chevron beside the capture button that the
   Mac's code no longer has (the three modes are the box's choices; the port also
   has Writing / Page / Raw buttons).
+- **Scanned pages as tabs: a STUB** (sheet-tabs lane, 2026-10-05; Sean: "stub it in for future pending features in
+  document scanner mode"). The video pane's tab row is real on the tablet (each tab a sheet, PARITY "Sheets as
+  tabs") but in camera mode it shows one "Camera" tab and a disabled "+" (`SheetStrip.tsx` `CameraTabs`). What it is
+  for: each page scanned under the document camera kept as its own tab (the picture, its box, its learned page shape,
+  what was read off it), so a stack of pages can be scanned first and brought in later, or brought in again. Not built:
+  the pages' store (it could share `main/sheets.ts` / `sheetSet.ts`, with pictures as files beside it), "+" taking a
+  scan into a new tab, and what Writing / Page / Raw do on a stored page rather than the live picture.
 - **The rendered page: DONE** (e1-preview, 2026-10-03; "Write in the preview").
   The toggle (◧ on the bar, Ctrl+T) draws every block — headings as
   headings, real bullets, to-do boxes that tick, quotes, coloured code, maths,
@@ -243,6 +270,7 @@ process and writes the answer under it, Ctrl+9 makes one, `In[n]` / `Out[n]` in 
   turns `√x` into `Sqrtx` (no brackets), as the Swift does; typeset it is a
   symbol named Sqrtx. `Sqrt[x]` needs the radicand found (a bracketed run, or
   the next token).
+- **Pen side buttons, needs Sean's hands (pen-buttons lane, 2026-10-05):** built and e2e-tested with synthetic events only (KEYS.md "Pen buttons"). On the CTL-472, on the note's page AND on the sheet: hold the LOWER button and touch/drag across ink (rubs it out), double-tap it in the air (Undo), the UPPER held + drag (marquee; drag inside it moves it), double-tap (Redo); a single tap must do nothing and no right-click menu may appear. Unknown until then: whether Windows Ink delivers a side button pressed in the AIR to the page at all (handled three ways: a pen event, nothing, or the driver's right / middle mouse click; if the page's double tap does nothing, set the Wacom side switches to Right Click / Middle Click with "hover click"). Lower vs upper might be swapped in Wintab's numbering (`main/pen/wintab.ts` BTN); swap there if so.
 - **Wacom, needs Sean's hands (wr-wacom-core, 2026-10-04):** (1) on the real CTL-472 touch the top-left then the bottom-right corner once (the line on the sheet) and check that the corners of the tablet land on the corners of the sheet, pressure varies and the side button boxes; (2) the system mapping (pen confined to the sheet) was only tested with fakes: watch `pen.log` for `map-honoured` / `map-refused`; if refused, nothing is lost (the pen simply is not confined; Retry is in the Pen popover). Not built: a mapping for a turned (Portrait) sheet, per-monitor DPI changes while the pen is down.
 - **The Wacom tablet, what is left** (Wacom lane, 2026-10-03; the Grab / overlay parts are history, see PARITY "Sean's verdict"). DONE: Pad mode was
   REMOVED on purpose (Sean never asked for full screen; nothing in the app
@@ -335,6 +363,13 @@ process and writes the answer under it, Ctrl+9 makes one, `In[n]` / `Out[n]` in 
   evaluation cells' bracket when that lane adds one (`takes` already answers "the two in it"); the seam bar runs
   8 px wider than the held / washed boxes on each side (the Mac's bar is drawn from its own inset; not compared on
   screen).
+- **Pointer and new cells** (cells-ui lane, 2026-10-05; PARITY "The pointer over cells, and a new cell ready to type
+  in"). Done: the vertical I-beam over exactly where a click arms a bar (one hit-test, both pages), every seam armed by
+  its click (cells that touch too), the + and every cell-making command make the cell at once with the caret in it,
+  Code Block after the caret's cell, Maths at a bar, a drawing cell's scoped pen. Left / Sean's hands: the feel of
+  the cursor with a REAL mouse and the Intuos pen in Pen mode (CDP mouse events and synthetic pen events only); a
+  drag that starts in a seam picks whole cells (the Mac's bar-drag; gate r6, proven by smoke on the markdown pane only); an empty
+  Body Text cell made from the + stays behind if nothing is typed in it (the Mac waits for the first character).
 - **The editor, what is left** (e2-editor-polish, 2026-10-03; `PARITY.md` "The editor, polished"). Done: Markers and Preview as two
   switches (Ctrl+Alt+M), the List key and menu on the chevron's style, the tab title following the heading, tabs (middle click, wheel,
   overflow list, Close Others, deleted / renamed / trashed notes), the whole /link flow incl. renames, hot exit (unsaved text in the session),
@@ -394,3 +429,15 @@ process and writes the answer under it, Ctrl+9 makes one, `In[n]` / `Out[n]` in 
 - Camera round 3 (camera lane, 2026-10-05; PARITY "Camera and capture, third round"): Input Devices ▸ Aspect Ratio, double-click for the window-filling picture (never the display), captures at 0.9 of the pane, the traced pen thinned to a third and cleaned again, Esc / click-away for the Pen popover: done. Left: the shapes in the sidebar's video popover (Sidebar.tsx, editor lane); a real camera (only Chromium's fake device was used); the Aa dot gap on small boxes of the sheet (above).
 
 - Export + keys (2026-10-05; PARITY "Export and keys"): Mac e8b3266 is in (one Export… panel, every key in one list, the Mac's new keys). Left: move `C:\CLAUDIO\agents\e2e\export\*.mjs` into `e2e/suites/` (Export is covered only by those scripts so far); the older `C:\CLAUDIO\agents\e2e\p1\t-export*.mjs` click the menu id `exportPDF`, which is now `export`; Use Selection for Find has no key (Ctrl+E is Export); keys the Mac added AFTER e8b3266 belong to the lanes that port those features and go into `shared/commands.ts` + `shared/keyList.ts` + `docs/KEYS.md` together (`keyList.test.ts` fails until all three agree; ⌘9 → Ctrl+9 Evaluation Cell is in all three, re-checked 10:56). Sean's hands: the real Windows save dialog's "Save as type" list (PDF / Project) has only been answered ahead of time by the e2e, never seen.
+
+- Docking and ink cells, CORE (2026-10-05; PARITY "Docking and ink cells: the model"; plan `docs/PLAN-docking-ink-cells.md`): the picture line, the `picture` block, the `cell` drawing item, the ink cell model, the SVG snapshot writer/reader, the media rule and the PDF arms are in `packages/core` with tests. Left for later rounds: a picture inside an ink cell does not show in the cell's snapshot when the snapshot is shown AS AN IMAGE (an svg loaded as an image loads no other file; strokes do show); adopting a cell pasted from another note (`readInkSnapshot` is written, nothing calls it); forking ink ids on Duplicate Cell / duplicateNote; undocking; the Mac reading `../` media paths and `cell` items (it drops an unknown item kind).
+
+- Docking and ink cells, EDITOR (2026-10-05; PARITY "Picture and ink cells on the page"): the picture / ink widgets in both panes, the caret above and below, the resize strip, the registry and the dock helpers are in `packages/editor`; e2e `C:\CLAUDIO\agents\e2e\dock\picture-cells.mjs` (46 checks; to move into `e2e/suites/`). Left: the alt words of a picture cell cannot be edited in place (the whole line is one widget on both sides; hold + retype, or Undo); a picture's ROTATION or crop is not kept when docked (size rule only); the read-only snapshot of an ink cell is not resizable; Sean's hands: how a real pen feels on the 8 px resize strip (with the pen down Canvas hands a press on `.wm-cell-resize` to the strip: dock lane, e2e dock/s3.mjs), and the caret beside a photo with Up / Down on the markdown side (CodeMirror's own arrows; the rendered page walks bar → bar).
+
+- Docking and ink cells, DOCK (2026-10-05; PARITY "Docking, and drawing in ink cells"): drawing / erasing / picking / moving in ink cells, the dock handle (click and drag, into a cell), Drawing Cell (Insert, Ctrl+0, + menu), one Undo for every dock, the snapshots, the PDF arms and moved notes' media are in. e2e `C:\CLAUDIO\agents\e2e\dock\s1.mjs` … `s4.mjs` (to move into `e2e/suites/`). Left: undocking; shapes / arrows / text boxes, crop and read-into-words inside cells; a cell that grows as you write past its bottom; orphan cell items stay in the sidecar after their line is deleted (Undo needs them; nothing prunes them). Sean's hands: the Intuos pen drawing, erasing (lower button held) and selecting (upper button held) inside a cell, double taps there, resizing a cell with the pen, the feel of the dock drag.
+- A drawing cell opened as a tablet sheet (cell-to-sheet lane, 2026-10-05; PARITY "A drawing cell opened as a tablet sheet"): right-click ▸ Open in Tablet Sheet / Delete Drawing Cell, the bound tab, writing into the cell as one note undo step, restarts. e2e `C:\CLAUDIO\agents\e2e\cell-to-sheet\cell-sheet.mjs first|restart` (to move into `e2e/suites/`). Left: ~~writing on a tab whose note is not in front~~ (no longer a way of working: sheet-note-sync, 2026-10-05, opens a bound tab only with its note in front; `pending` is left for a sheets file from before); the "cell gone" path is proven with a fake app only; after a restart, writing done while the note was away replaces the cell's strokes with re-made copies (their ids, groups and transforms baked; nothing is lost); a very flat cell is a thin band of the tablet (the frame keeps the cell's shape, never stretched); the sheet's strokes are converted at the cell's shown width, so a stroke written after the window was resized is a little thinner or thicker than the sheet showed. Gate r6 (fixed): close asks while writing waits; Undo while away is the sheet's own; the margin takes no stroke; a cell scrolled away keeps its width (last shown, else the column). Still open (gate r6): the binding is dropped for good when the cell is missing for 1.2 s, so Undo past the cell's creation then a late Redo leaves the tab a plain sheet and a second Open in Tablet Sheet makes "<note> Drawing 2" (keep the ref dormant while the note is in front and rebind if the same id comes back); a stroke that leaves the cell and comes back in is two strokes, two note undo steps. Sean's hands: writing in the frame with the real Intuos, how the band feels on a flat cell.
+
+- Gate (2026-10-05, docking / ink cells / pen buttons round; PARITY "Gate fixes for docking..."): fixed at the gate, see PARITY. Left, LOW: (1) the bottom 8 px of every live ink cell is an invisible resize zone with the pen down (a stroke started there resizes the cell): put the grip below the drawing area, or show it on pen hover and take only a press that began there; (2) inside a cell only a MOVE is kept inside it: a scale, a turn, or a stroke run past the cell's left, right or top edge leaves ink clipped out of sight that the strip cannot bring back (it changes the height only): clamp scale / turn like `keptInside`, and a committed stroke's points; (3) after a dock, a refused note save (the file changed on disk) still writes the sidecar, so the docked ink is on disk only as an orphan cell (plus the Recovered text): hold the sidecar while the note is stale, or show orphan cell items on open; (4) a routed arrow whose BOTH ends let go when their objects are docked becomes a straight line at the next `reconnect` (an unrouted line keeps no bends); (5) `pdfPicture.test` "reads it again only when changed" was seen flaky by the dock lane (passed in the gate's full run); (6) the gate smoke `C:\CLAUDIO\agents\e2e\gate\smoke.mjs` and the lanes' `C:\CLAUDIO\agents\e2e\dock\*.mjs` are to move into `e2e/suites/`; `e2e/suites/tablet/01-sheet-as-camera.mjs` crashes at line 55 (no `.camera-bar [data-tablet=box]`, older than this round); the old `C:\CLAUDIO\agents\e2e\wacom\buttons-*.mjs` expect the old button model.
+
+- Quick Reference (welcome lane, 2026-10-05; PARITY "The Quick Reference"): a new install opens on `WriteMind Quick Reference.md`, once per notes folder. Left: (1) its FEATURE list is written by hand (`shared/welcome.ts` `WELCOME_FEATURES`; the keys table is generated): add a line there when a feature lands (it reaches new installs only; nobody's existing note changes); ~~(2) ask Sean: it opens in the markdown pane~~ (Sean, 2026-10-05: "open on rendered page": its first open on a new install is rendered, nothing else changes; `renderer/welcomeView.ts`); (3) move `C:\CLAUDIO\agents\e2e\welcome\welcome.mjs` into `e2e/suites/` (it starts its own instances: it needs `WRITEMIND_WELCOME=1`, because test instances are left alone without it).
+- The sheet and the note follow each other (sheet-note-sync lane, 2026-10-05; PARITY "The sheet and the note follow each other"): a picked drawing tab brings its note, another note sends the sheet back to the last plain tab. e2e `C:\CLAUDIO\agents\e2e\sheet-note-sync\sync.mjs` and `welcome-rendered.mjs` (to move into `e2e/suites/`). Left: there is no Ctrl+Tab between note tabs to test (none exists); a restart with a drawing tab open is unit-tested only; the Quick Reference's feature list does not mention drawing tabs yet (`shared/welcome.ts`). Sean's hands: the pen's Next / Previous Sheet buttons onto a drawing tab.

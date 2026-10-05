@@ -13,6 +13,8 @@
  */
 
 import { range, type Range } from "../text/range"
+import { inkCellId, mediaFile, pictureLine } from "./images"
+import { delimiterAligns, hasPipe, headerCells, tableOf, type TableAlign } from "./table"
 
 export type { Range }
 
@@ -39,6 +41,18 @@ export type Block =
    * and whatever is left in the middle is a cell of its own.
    */
   | { kind: "blank"; lines: number }
+  /**
+   * A line that is nothing but one image (`images.ts`): a picture CELL, which text never overlaps. `file` is the
+   * media file it names inside the project's own `.drawings/media` (null for a picture that lives elsewhere), and
+   * `ink` the id of the ink cell it is when that file is an `ink-<uuid>.svg` snapshot.
+   */
+  | { kind: "picture"; alt: string; path: string; file: string | null; ink: string | null }
+  /**
+   * A GitHub-style pipe table (`table.ts`): the header's words, each column's alignment, and the body rows, every
+   * row as wide as the header. ONE cell, from the header line to its last row. Port-first: the Mac took tables out on
+   * 2026-09-20 to rebuild them from scratch, and this is the first part of that rebuild.
+   */
+  | { kind: "table"; header: string[]; align: TableAlign[]; rows: string[][] }
 
 export interface PositionedBlock {
   block: Block
@@ -126,6 +140,18 @@ export function blocks(markdown: string): Block[] {
 }
 
 /**
+ * Whether a line (trimmed) carries an open table on as one of its rows: it has an unescaped pipe and it starts no
+ * block of its own (`- a | b` is a list item, `> a | b` a quote, and either ends the table).
+ */
+function continuesTable(line: string): boolean {
+  if (!hasPipe(line)) return false
+  if (line.startsWith("|")) return true
+  return !line.startsWith("```") && !line.startsWith(">") && !isRule(line) && heading(line) === null
+    && pictureLine(line) === null && todoItem(line) === null && bulletItem(line) === null
+    && dashItem(line) === null && numberedItem(line) === null
+}
+
+/**
  * The parser as a MACHINE that is fed one line at a time. The whole-document `positioned` feeds it every line; the
  * incremental `positionedUpdate` starts it at the beginning of the block an edit touched and stops it as soon as it
  * is back in step with the blocks it parsed last time. One machine, so the two cannot disagree (a differential test
@@ -141,6 +167,14 @@ class Machine {
   private quote: string[] = []
   private code: string[] | null = null
   private codeLanguage: string | null = null
+  /** The raw lines of an open table: the header, the delimiter row, the body rows so far. */
+  private table: string[] | null = null
+  // The open paragraph's LAST line, which a delimiter row under it turns into a table's header: how many cells it
+  // has as a header (-1: it cannot be one), where it starts, the line as written, and where the line before it ended.
+  private paraHeader = -1
+  private paraLastStart = 0
+  private paraLastRaw = ""
+  private paraPrevEnd = 0
 
   // Where the open block started, and where its last line ended.
   blockStart: number
@@ -180,13 +214,18 @@ class Machine {
     if (this.dashes.length) { this.emit({ kind: "dashes", items: this.dashes }); this.dashes = [] }
     if (this.numbered.length) { this.emit({ kind: "numbered", items: this.numbered }); this.numbered = [] }
     if (this.quote.length) { this.emit({ kind: "quote", text: this.quote.join(" ") }); this.quote = [] }
+    if (this.table !== null) {
+      const parts = tableOf(this.table)
+      if (parts) this.emit({ kind: "table", header: parts.header, align: parts.align, rows: parts.rows })
+      this.table = null
+    }
     this.blockEnd = kept
   }
 
   /** The first line of a block sets its start; every line extends its end. */
   private openIfNeeded(): void {
     if (!this.paragraph.length && !this.bullets.length && !this.todos.length && !this.dashes.length
-      && !this.numbered.length && !this.quote.length && this.code === null) {
+      && !this.numbered.length && !this.quote.length && this.code === null && this.table === null) {
       this.blockStart = this.lineStart
     }
   }
@@ -263,6 +302,16 @@ class Machine {
       return
     }
 
+    // An open table takes every line that is one of its rows; any other line (a blank one too) ends it.
+    if (this.table !== null) {
+      if (!blank && continuesTable(line)) {
+        this.table.push(rawLine)
+        this.lineStart += size
+        return
+      }
+      this.flush(previousEnd)
+    }
+
     if (line.startsWith("```")) {
       this.flush(previousEnd)
       this.blockStart = this.lineStart
@@ -273,6 +322,23 @@ class Machine {
       return
     }
     if (blank) { this.flush(); this.lineStart += size; return }
+    // A delimiter row (`|---|:--:|`) under a paragraph line that can be a header, with as many cells: that line and
+    // this one open a table, and the lines of the paragraph before it (if any) are a paragraph of their own. The one
+    // place a line changes what the line BEFORE it was; `positionedUpdate` restarts before such a table for it.
+    if (this.paragraph.length && this.paraHeader > 0) {
+      const aligns = delimiterAligns(line)
+      if (aligns && aligns.length === this.paraHeader) {
+        const header = this.paraLastRaw
+        const headerStart = this.paraLastStart
+        this.paragraph.pop()
+        if (this.paragraph.length) this.flush(this.paraPrevEnd)
+        this.blockStart = headerStart
+        this.table = [header, rawLine]
+        this.paraHeader = -1
+        this.lineStart += size
+        return
+      }
+    }
     if (isRule(line)) {
       this.flush(previousEnd); this.blockStart = this.lineStart; this.emit({ kind: "rule" })
       this.lineStart += size; return
@@ -281,6 +347,16 @@ class Machine {
     if (head) {
       this.flush(previousEnd); this.blockStart = this.lineStart
       this.emit({ kind: "heading", level: head.level, text: head.text })
+      this.lineStart += size; return
+    }
+    // A line that is one image and nothing else is a cell of its own, like a heading: it ends the block above it
+    // (`![](x)` straight under a paragraph line splits from it, the Mac's rule) and is emitted by its own line. An
+    // image inside a list item or a quote is not the whole line, and stays where it is.
+    const picture = pictureLine(line)
+    if (picture) {
+      this.flush(previousEnd); this.blockStart = this.lineStart
+      const file = mediaFile(picture.path)
+      this.emit({ kind: "picture", alt: picture.alt, path: picture.path, file, ink: inkCellId(file) })
       this.lineStart += size; return
     }
     if (line.startsWith(">")) {
@@ -321,6 +397,10 @@ class Machine {
     }
     if (this.bullets.length || this.todos.length || this.dashes.length || this.numbered.length || this.quote.length) this.flush(previousEnd)
     this.openIfNeeded()
+    this.paraPrevEnd = previousEnd
+    this.paraLastStart = this.lineStart
+    this.paraLastRaw = rawLine
+    this.paraHeader = headerCells(rawLine)
     // The first line keeps the spaces it was written with, so an indented
     // paragraph is drawn indented. Four spaces is NOT a code block here —
     // code is what is inside ```, ` or `` and nothing else.
@@ -413,6 +493,10 @@ export function positionedUpdate(old: PositionedBlock[], hull: Hull, doc: LineSo
   // run it counts began earlier).
   let keep = firstAtOrAfter(old, edited.from) - 1
   while (keep >= 0 && old[keep]!.block.kind === "blank") keep--
+  // Nor is a table straight under a paragraph line: its header was that paragraph's last line until the delimiter row
+  // came, and an edit that unmakes the table gives the line back to the paragraph above. Start at the paragraph.
+  while (keep > 0 && old[keep]!.block.kind === "table" && old[keep - 1]!.block.kind === "paragraph"
+    && old[keep - 1]!.range.location + old[keep - 1]!.range.length + 1 === old[keep]!.range.location) keep--
   const restart = keep >= 0 ? old[keep]!.range.location : 0
   if (keep < 0) keep = 0
   const machine = new Machine(restart)
@@ -432,7 +516,7 @@ export function positionedUpdate(old: PositionedBlock[], hull: Hull, doc: LineSo
       break
     }
   }
-  // (A heading or a rule is emitted by the very line that opens it; the old suffix has it already.)
+  // (A heading, a rule or a picture is emitted by the very line that opens it; the old suffix has it already.)
   if (sync >= 0) {
     const last = machine.out[machine.out.length - 1]
     if (last && last.range.location === old[sync]!.range.location + delta) machine.out.pop()

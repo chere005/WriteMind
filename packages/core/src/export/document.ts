@@ -23,7 +23,8 @@
 import { positioned, type PositionedBlock } from "../markdown/parser"
 import { end } from "../text/range"
 import type { Drawing } from "../drawing/model"
-import { BLOCK_CSS, blockHtml, PAGE } from "./blocks"
+import { inkCellOf } from "../drawing/inkCell"
+import { BLOCK_CSS, blockHtml, PAGE, type BlockMedia } from "./blocks"
 import { inkPieces, type InkOptions } from "./drawing"
 import { PAPER_HEX } from "./inline"
 import { layoutSheets, type PagePiece } from "./pagePlan"
@@ -94,9 +95,18 @@ export function runGaps(markdown: string, cells: readonly PositionedBlock[]): nu
   return out
 }
 
+/**
+ * What the paper draws picture and ink cells with: an ink cell inlined from THIS drawing (always current, never its
+ * snapshot file) at the column's width, a picture from `url` (null for a file that is not there).
+ */
+export function blockMediaFor(drawing: Drawing, pane: { width: number; height: number },
+  url: (file: string) => string | null): BlockMedia {
+  return { url, ink: (id) => inkCellOf(drawing, id), column: columnWidth(pane) }
+}
+
 /** Every cell of the note as HTML, in order, with the offset it was parsed from. */
-export function noteBlocks(markdown: string, paper: string = PAPER_HEX): { id: number; html: string }[] {
-  return positioned(markdown).map((one) => ({ id: one.range.location, html: blockHtml(one.block, paper) }))
+export function noteBlocks(markdown: string, paper: string = PAPER_HEX, media?: BlockMedia): { id: number; html: string }[] {
+  return positioned(markdown).map((one) => ({ id: one.range.location, html: blockHtml(one.block, paper, media) }))
 }
 
 /**
@@ -132,6 +142,8 @@ export interface PrintInput extends InkOptions {
   markdown: string
   drawing: Drawing
   pane: { width: number; height: number }
+  /** Picture and ink cells (`blockMediaFor`); the same one `noteBlocks` was measured with. */
+  media?: BlockMedia
 }
 
 export interface Printed { html: string; pages: number; sheets: NonNullable<ReturnType<typeof layoutSheets>> | null }
@@ -145,7 +157,7 @@ export function printHtml(input: PrintInput, measured: Measured[]): Printed {
   const column = columnWidth(size)
   const paper = input.paper ?? PAPER_HEX
   const cells = positioned(input.markdown)
-  const blocks = cells.map((one) => ({ id: one.range.location, html: blockHtml(one.block, paper) }))
+  const blocks = cells.map((one) => ({ id: one.range.location, html: blockHtml(one.block, paper, input.media) }))
   const extra = runGaps(input.markdown, cells)
 
   // The same column the preview builds: the cells in order, one gap apart.

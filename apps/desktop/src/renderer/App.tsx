@@ -6,16 +6,23 @@
  * live in the core, and this file may not have an opinion about any of them.
  */
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react"
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react"
 import { EditorView } from "@codemirror/view"
-import { findNextMatch, revealAt } from "@writemind/editor"
+import { columnBox, cursorSeam, findNextMatch, revealAt, type InkCellPainter } from "@writemind/editor"
 import {
   anchorOffset, bounds as itemBounds, capturePlacedCentre, decodeDrawing, emptyDrawing, insertBlock, insertionPointBelow,
   languageTitle, listTitle, makeNote, newID, noTransform, parseCameraAspect, parseLink, placedCentre, PRESET_COLOURS, readDrawing,
-  resolveLinkTarget, shifted, textFingerprint, writeDrawing,
+  resolveLinkTarget, shifted, textFingerprint, writeDrawing, inkCellOf, inkFileName, visibleItems, withInkCell,
   type CanvasItem, type CodeLanguage, type Drawing, type ListStyle, type Note, type Placement,
 } from "@writemind/core"
 import { Canvas, type CanvasMode } from "./Canvas"
+import { depthOf, insertInkCell } from "./dock"
+import { scopePenTo } from "./inkScope"
+import { dockHostFor, inkPainter, shownWidth, snapshotNow, snapshotsAfterSave, snapshotsOnOpen, syncInkCells } from "./inkCells"
+import { cellSheetsSaw, setCellSheetHost } from "./cellSheets"
+import { CellMenu } from "./CellMenu"
+import { renameBoundNotes } from "./tabletSheets"
+import { NO_WELCOME, welcomeFor, welcomeStep, type WelcomeView } from "./welcomeView"
 import { DrawingHistory } from "./drawingHistory"
 import { useUndo } from "./useUndo"
 import { lazyText } from "./lazyText"
@@ -32,7 +39,8 @@ import { Sidebar, SidebarBar } from "./Sidebar"
 import { TopBar, TOOL_GROUPS, type ToolGroupId } from "./TopBar"
 import { runEditorCommand } from "./editorCommands"
 import { useChrome } from "./useChrome"
-import { putToolsDown, usePenSettings } from "./penSettings"
+import { putToolsDown, usePenSettings, useSheetTools } from "./penSettings"
+import { usePenOnSheet } from "./tabletFocus"
 import { registerPenHandlers, runPenCommand } from "./penActions"
 import { cycleColour, stepWidth, PEN_WIDTHS } from "./penButtons"
 import { setPenLook } from "./penCursor"
@@ -105,6 +113,8 @@ export function App() {
   const [saved, setSaved] = useState<Date | null>(null)
   const [stale, setStale] = useState(false)
   const [view, setView] = useState<EditorView | null>(null)
+  const viewRef = useRef<EditorView | null>(null)
+  viewRef.current = view
   // Remembered across launches, as the Mac keeps `showSidebar` in its defaults.
   const [showSidebar, setShowSidebar] = useState<boolean>(() => remembered<boolean>("showSidebar", true))
   useEffect(() => { remember("showSidebar", showSidebar) }, [showSidebar])
@@ -118,6 +128,15 @@ export function App() {
   const lastQuery = useRef("")
   // The rendered page: the same editor with the markdown's marks put away.
   const [rendered, setRendered] = useState(false)
+  // A NEW INSTALL's quick reference opens on the rendered page, its first open only (welcomeView.ts). Before the
+  // paint, so it never shows as markdown first.
+  const [welcome, setWelcome] = useState<WelcomeView>(NO_WELCOME)
+  useEffect(() => { void window.wm.welcomed?.().then((note) => { if (note) setWelcome(welcomeFor(note)) }, () => undefined) }, [])
+  useLayoutEffect(() => {
+    const step = welcomeStep(welcome, current, rendered)
+    if (step.state !== welcome) setWelcome(step.state)
+    if (step.rendered !== undefined) setRendered(step.rendered)
+  }, [welcome, current, rendered])
   // View ▸ Hide / Show Markdown Markers: a second, independent switch (the Mac keeps it in its defaults, shown by default).
   const [markers, setMarkers] = useState<boolean>(() => remembered<boolean>("markers", true))
   // BOTH PANES, EVERY LAUNCH (the Mac: "default video always to side by
@@ -330,11 +349,15 @@ export function App() {
 
   /** The same for the drawing's sidecar. True when it reached its file. */
   const writeDrawingNow = useCallback(async (file: string, leaving: boolean): Promise<boolean> => {
-    const json = writeDrawing(drawingRef.current)
+    const drawn = drawingRef.current
+    const json = writeDrawing(drawn)
     const key = `drawing:${file}`
     try {
       await window.wm.writeDrawing(file, json)
       if (openRef.current === file && writeDrawing(drawingRef.current) === json) drawingDirty.current = false
+      // Each ink cell whose strokes, size or very existence changed since its snapshot was last written: written
+      // again, so other markdown viewers show what the sidecar now holds (docs\PLAN-docking-ink-cells.md (f)).
+      snapshotsAfterSave(file, drawn, (id) => shownWidth(viewRef.current, id))
       clearProblem(key)
       return true
     } catch (error) {
@@ -395,6 +418,8 @@ export function App() {
     setDocument(contents)
     setDrawing(decoded.drawing)
     drawingDirty.current = false
+    // An ink cell whose snapshot is missing (a sidecar from before, a lost file) gets one.
+    snapshotsOnOpen(note.path, decoded.drawing, () => null)
     if (decoded.damaged) {
       const left = decoded.dropped > 0 ? ` (${decoded.dropped} object${decoded.dropped === 1 ? "" : "s"} left out)` : ""
       const where = kept
@@ -446,17 +471,85 @@ export function App() {
 
   const changeDrawing = useCallback((next: Drawing) => {
     drawingDirty.current = true
+    // At once, not at the next render: a dock writes the words and the drawing in one go, and what it wrote is
+    // read back before React has drawn it (an ink cell's widget, its snapshot).
+    drawingRef.current = next
+    pendingDrawing.current = null
     setDrawing(next)
   }, [])
 
   /** A change made outside the canvas (a paste, a capture): one Undo takes it back. */
   const drawingRef = useRef(drawing)
   drawingRef.current = drawing
+  /** The drawing a dock is about to apply, while its line is written (DockDeps.ahead). */
+  const pendingDrawing = useRef<Drawing | null>(null)
   const editDrawing = useCallback((next: Drawing) => {
     history.record(drawingRef.current)
     changeDrawing(next)
   }, [changeDrawing, history])
   useUndo({ view, history, drawing, apply: changeDrawing })
+
+  // INK CELLS (docs\PLAN-docking-ink-cells.md). The editor draws each cell's line as a widget and paints its canvas
+  // with this one painter, from the drawing as it is now; a resize by the cell's bottom edge is one undo step.
+  const historyRef = useRef(history)
+  historyRef.current = history
+  const painter = useRef<InkCellPainter | null>(null)
+  painter.current ??= inkPainter(() => pendingDrawing.current ?? drawingRef.current, (id, aspect) => {
+    const whole = drawingRef.current
+    const cell = inkCellOf(whole, id)
+    if (!cell || Math.abs(cell.aspect - aspect) < 1e-6) return
+    historyRef.current.record(whole)
+    changeDrawing(withInkCell(whole, { ...cell, aspect }))
+  })
+  // Every change of the drawing reaches the cells: their aspects, and a repaint of the ones that changed.
+  const synced = useRef<{ view: EditorView | null; drawing: Drawing | null }>({ view: null, drawing: null })
+  useEffect(() => {
+    if (!view || !view.dom.isConnected) return
+    const was = synced.current
+    syncInkCells(view, was.view === view ? was.drawing : null, drawing)
+    synced.current = { view, drawing }
+  }, [view, drawing])
+  // TABLET SHEETS BOUND TO INK CELLS (cellSheets.ts: right-click a drawing cell ▸ Open in Tablet Sheet). The sheet
+  // writes into the cell through this note's own history and `changeDrawing`: one undo step per change.
+  // A bound tab picked by hand brings its note to the front and its cell into view (sheetFollow.ts).
+  const openNoteRef = useRef(openNote)
+  openNoteRef.current = openNote
+  const rootRef = useRef(root)
+  rootRef.current = root
+  useEffect(() => setCellSheetHost({
+    bring: async (note) => {
+      if (openRef.current === note) return
+      const known = openList.current.find((one) => one.path === note)
+        ?? (rootRef.current ? notesIn(rootRef.current).find((one) => one.path === note) : undefined)
+      // Read first when it is not a known note: a note that is gone rejects here, before anything is switched.
+      const text = known ? "" : await window.wm.readNote(note)
+      await openNoteRef.current(known ?? makeNote(note, Date.now(), text))
+    },
+    reveal: (ref) => {
+      let tries = 0
+      const look = () => {
+        const editor = viewRef.current
+        const at = editor && openRef.current === ref.note ? editor.state.doc.toString().indexOf(inkFileName(ref.cell)) : -1
+        if (!editor || at < 0) { if (++tries < 30) requestAnimationFrame(look); return }
+        // Already whole in view: left alone. Else the cell is brought to the middle (its top 24 px down when taller).
+        const box = editor.scrollDOM.getBoundingClientRect()
+        const shown = editor.dom.querySelector(`[data-ink-cell="${ref.cell}"]`)?.getBoundingClientRect()
+        if (shown && shown.top >= box.top && shown.bottom <= box.bottom) return
+        const block = editor.lineBlockAt(at)
+        const margin = Math.max(24, (editor.scrollDOM.clientHeight - block.height) / 2)
+        editor.dispatch({ effects: EditorView.scrollIntoView(block.from, { y: "start", yMargin: margin }) })
+      }
+      requestAnimationFrame(look)
+    },
+    front: () => (openRef.current ? { note: openRef.current, drawing: drawingRef.current } : null),
+    edit: (next, record) => { if (record) historyRef.current.record(drawingRef.current); changeDrawing(next) },
+    // A cell not drawn now (scrolled away) is as wide as the column it is made at.
+    width: (id) => shownWidth(viewRef.current, id) ?? (viewRef.current ? columnBox(viewRef.current).width || null : null),
+    title: (note) => openList.current.find((one) => one.path === note)?.title ?? leaf(note).replace(/\.[^.]+$/, ""),
+    showTablet: () => { setCameraPick(TABLET_SOURCE); remember("videoSource", TABLET_SOURCE); setShowCamera(true) },
+  }), [changeDrawing])
+  // Before the paint: a note coming to the front and the sheet that follows it (sheetFollow.ts) show in one frame.
+  useLayoutEffect(() => { cellSheetsSaw(current, drawing) }, [current, drawing])
 
   // The sidecar saves on the same debounce as the note, and separately
   // from it: a drawing is never part of the markdown.
@@ -784,6 +877,31 @@ export function App() {
   // The session: what is open, what is in front, where the caret was — one per project.
   const sessionRef = useRef<SessionApi | null>(null)
   const { project, switching } = useProject({ session: sessionRef, reload, lastTree })
+
+  // DOCKING (docs\PLAN-docking-ink-cells.md (d)): the editor's side of it, for the drawing layer's dock handle, and a
+  // new empty ink cell (Insert ▸ Drawing Cell, Ctrl+0, the + menu's Drawing Cell). A picture line's path climbs out
+  // of the note's section folders to its project folder's `.drawings/media` (`depth`), so other viewers find it.
+  const depth = useMemo(() => (current
+    ? depthOf(current, (project?.folders ?? []).map((one) => one.path), platform?.root ?? null) : 0),
+  [current, project, platform])
+  const dockHost = useMemo(() => (view
+    ? dockHostFor(view, depth, (next) => { pendingDrawing.current = next }, () => pendingDrawing.current ?? drawingRef.current)
+    : undefined), [view, depth])
+  const insertInk = useCallback((offset?: number) => {
+    const editor = viewRef.current
+    const file = openRef.current
+    if (!editor || !file || !dockHost) return
+    const width = columnBox(editor).width
+    const id = insertInkCell({
+      history, drawing: () => drawingRef.current, apply: changeDrawing, words: dockHost.words, depth,
+      ahead: dockHost.ahead,
+    }, offset ?? cursorSeam(editor.state), width)
+    const cell = id ? inkCellOf(drawingRef.current, id) : null
+    // Its line points at its snapshot at once: an empty svg of its size.
+    if (cell) snapshotNow(file, cell, width)
+    // The pointer becomes a pen for this cell alone (inkScope.ts: Sean, 2026-10-05).
+    if (id) scopePenTo(id)
+  }, [changeDrawing, depth, dockHost, history])
   // "None of the project's folders is there" is taken back when one is (a drive plugged in, a share back).
   useEffect(() => {
     if (problemText.current === NO_FOLDER_TEXT && project?.folders.some((one) => one.exists)) clearProblem()
@@ -863,6 +981,8 @@ export function App() {
         ? to + path.slice(from.length) : path)
     setOpen((was) => was.map((note) => ({ ...note, path: rename(note.path) })))
     for (const note of openList.current) if (rename(note.path) !== note.path) renameNote(note.path, rename(note.path))
+    // A tablet sheet bound to a cell of a moved note follows it (cellSheets.ts).
+    renameBoundNotes(from, to)
     for (const [path, state] of [...viewStates.current]) {
       if (rename(path) !== path) { viewStates.current.delete(path); viewStates.current.set(rename(path), state) }
     }
@@ -1061,6 +1181,9 @@ export function App() {
   // The pen's buttons and ExpressKeys, for what only this component owns: the
   // pen's colour and width and whether the pen is down (penActions.ts).
   const penTools = usePenSettings()
+  // The Pen menu's Erase / Select checks: the tools of the surface the pen is on (the sheet has its own, penActions.ts).
+  const sheetTools = useSheetTools()
+  const toolsHere = usePenOnSheet() ? sheetTools : penTools
   useEffect(() => registerPenHandlers({
     togglePen: toggleMode,
     nextColour: () => setPenColour((now) => cycleColour(now, PRESET_COLOURS.slice(0, 4), 1)),
@@ -1131,6 +1254,8 @@ export function App() {
       case "insertImage": if (hasNote) void choosePicture(); return
       case "insertTextBox": if (hasNote) arm({ kind: "shape", shape: "text" }); return
       case "insertMath": if (hasNote) window.dispatchEvent(new Event(MATH_OPEN_EVENT)); return
+      // An empty ink cell at the armed bar, else after the caret's cell (one Undo takes its line and its item).
+      case "insertInkCell": if (hasNote) insertInk(); return
       // Find: ⌘F opens the bar on the selection's words, ⌘G / ⇧⌘G go on, ⌘E takes the selection, ⌥⌘F replaces.
       case "find": case "findReplace": case "findNext": case "findPrevious": case "useSelectionForFind": case "jumpToSelection": {
         if (!hasNote || !view) return
@@ -1181,8 +1306,8 @@ export function App() {
       cameraId: sourceId,
       cameraAspect: aspect,
       penDown: mode === "pen",
-      penErase: penTools.eraser,
-      penSelect: penTools.selectTool,
+      penErase: toolsHere.eraser,
+      penSelect: toolsHere.selectTool,
       penAlwaysDraws: penTools.penDraws,
     },
   })
@@ -1278,12 +1403,14 @@ export function App() {
                         restore={viewStates.current.get(current) ?? null} rendered={rendered}
                         markers={markers} listStyle={listStyle}
                         onChange={change} onReady={setView}
-                        onViewState={onViewState} onLink={onLink} onFollow={onFollow} />
+                        onViewState={onViewState} onLink={onLink} onFollow={onFollow}
+                        inkPainter={painter.current} onInsertInkCell={(offset) => insertInk(offset)} />
               <Canvas key={current ?? ""} drawing={drawing} onChange={changeDrawing} mode={mode} history={history}
                       colorHex={penColour} penWidth={penWidth}
                       placing={placing} onPlaced={placed}
                       scroller={view ? view.scrollDOM : null}
-                      onReadPicture={readOn ? onReadPicture : undefined} />
+                      onReadPicture={readOn ? onReadPicture : undefined}
+                      dock={dockHost} />
             </div>
             <div className="footer">
               <span>{title}</span>
@@ -1293,9 +1420,11 @@ export function App() {
               </span>}
               {readNotice && <span data-footer="read-notice" role="status">{readNotice}</span>}
               {mode === "pen" && <span>Pen</span>}
-              {drawing.items.length > 0 && (
-                <span>{drawing.items.length === 1 ? "1 object" : `${drawing.items.length} objects`}</span>
-              )}
+              {/* (What floats on the page: an ink cell's item is in the note's flow, and a picture read into words is put away.) */}
+              {(() => {
+                const objects = visibleItems(drawing).length
+                return objects > 0 && <span>{objects === 1 ? "1 object" : `${objects} objects`}</span>
+              })()}
               <span>{words === 1 ? "1 word" : `${words} words`}</span>
               {saved && <span>Saved {saved.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</span>}
             </div>
@@ -1345,6 +1474,7 @@ export function App() {
         />
       )}
       {showKeys && <KeyList platform={kind} onClose={() => setShowKeys(false)} />}
+      <CellMenu />
     </div>
   )
 }

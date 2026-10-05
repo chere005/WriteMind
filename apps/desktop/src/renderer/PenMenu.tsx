@@ -4,10 +4,12 @@
  * Retry for the system mapping. Nothing else.
  */
 
-import { useEffect, useRef, useState } from "react"
+import { Fragment, useEffect, useRef, useState } from "react"
 import { useOnScreen } from "./useOnScreen"
 import { setButton, setPenDraws, setPressure, usePenSettings } from "./penSettings"
-import { ACTION_CHOICES, ACTION_WORDS, SLOTS, SLOT_NAMES } from "./penButtons"
+import {
+  ACTION_WORDS, DOUBLE_CHOICES, HOLD_CHOICES, buttonRows, buttonSummary, type HoldAction, type TapAction,
+} from "./penButtons"
 import { heldAction, heldSlot, usePenLive } from "./penLive"
 import { OrientationSelect } from "./OrientationSelect"
 import { acceptStatus, changeSettings, usePenFeedStore } from "./penFeed"
@@ -49,17 +51,16 @@ export function PenMenu() {
   }, [open])
   const held = heldAction(live)
   const heldName = heldSlot(live) && held && held !== "none" ? ACTION_WORDS[held] : null
-  const summary = SLOTS.filter((slot) => slot !== "tipAlt")
-    .map((slot) => `${SLOT_NAMES[slot]}: ${ACTION_WORDS[settings.buttons[slot]]}`).join(". ")
+  const summary = buttonSummary(settings.buttons)
   return (
     <span className="pen-menu" ref={root}>
       <button className={`icon-button pen-chip pen-${settings.seen}${open ? " on" : ""}`} data-pen="chip"
               title={`${WORDS[settings.seen]} ${summary}.${settings.eraser ? " Erase tool is on." : ""}${settings.selectTool ? " Select tool is on." : ""}${heldName ? ` Button held now: ${heldName}.` : ""}`}
               onClick={() => setOpen((was) => !was)}>
-        <span className="pen-dot" />Pen{heldName ? ` · ${heldName}` : settings.eraser ? " · Erase" : settings.selectTool ? " · Select" : settings.sideButton === "erases" ? " · ⌫" : ""}
+        <span className="pen-dot" />Pen{heldName ? ` · ${heldName}` : settings.eraser ? " · Erase" : settings.selectTool ? " · Select" : ""}
       </button>
       {open && (
-        <div ref={pop} className="style-pop pen-pop" onMouseDown={(event) => event.stopPropagation()}>
+        <div ref={pop} className="style-pop pen-pop" style={{ width: 400 }} onMouseDown={(event) => event.stopPropagation()}>
           <p>{WORDS[settings.seen]}</p>
           <label>
             <input type="checkbox" checked={settings.penDraws}
@@ -73,21 +74,31 @@ export function PenMenu() {
           </label>
 
           <h4>Buttons</h4>
-          {SLOTS.map((slot) => (
-            <label key={slot} className="pen-slot">
-              {SLOT_NAMES[slot]}
-              <select value={settings.buttons[slot]} data-pen={`btn-${slot}`}
-                      onChange={(event) => setButton(slot, event.target.value as typeof settings.buttons[typeof slot])}>
-                {ACTION_CHOICES.map((choice) => (
-                  <option key={choice.action} value={choice.action}>{choice.label}</option>
-                ))}
-              </select>
-            </label>
-          ))}
+          <div className="pen-buttons" data-pen="buttons"
+               style={{ display: "grid", gridTemplateColumns: "auto 1fr 1fr", gap: "4px 6px", alignItems: "center" }}>
+            <span />
+            <span className="hint" style={{ margin: 0 }}>Hold</span>
+            <span className="hint" style={{ margin: 0 }}>Double-tap</span>
+            {buttonRows(settings.buttons).map((row) => (
+              <Fragment key={row.slot}>
+                <span>{row.name}</span>
+                <select value={row.hold} data-pen={`btn-${row.slot}`} aria-label={`${row.name}: hold`} style={{ minWidth: 0 }}
+                        onChange={(event) => setButton(row.slot, "hold", event.target.value as HoldAction)}>
+                  {HOLD_CHOICES.map((choice) => <option key={choice.action} value={choice.action}>{choice.label}</option>)}
+                </select>
+                {row.double === null ? <span className="hint" style={{ margin: 0 }}>—</span> : (
+                  <select value={row.double} data-pen={`dbl-${row.slot}`} aria-label={`${row.name}: double-tap`} style={{ minWidth: 0 }}
+                          onChange={(event) => setButton(row.slot, "double", event.target.value as TapAction)}>
+                    {DOUBLE_CHOICES.map((choice) => <option key={choice.action} value={choice.action}>{choice.label}</option>)}
+                  </select>
+                )}
+              </Fragment>
+            ))}
+          </div>
           <p className="hint">
-            Hold = works while the button is down during a drag. Tap = fires once when the button is
-            pressed and let go without the tip touching. Leave the side buttons at Wacom's default
-            (Right Click / Middle Click): WriteMind reads them as pointer buttons.
+            Hold = the button held while the pen touches (Select: a drag inside the selection moves it). Double-tap =
+            the button pressed twice quickly without the tip touching; a single press does nothing. Leave the side
+            buttons at Wacom's Right Click (lower) and Middle Click (upper): WriteMind reads them itself.
           </p>
 
           <h4>Tablet orientation</h4>

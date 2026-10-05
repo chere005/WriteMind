@@ -29,7 +29,7 @@ export const feedConfig = (c) => js(`window.wm.pen.e2e.config(${JSON.stringify(c
 
 /** The sheet's stored strokes (fractions of the sheet), as the page keeps them for the checks. */
 export const sheetStrokes = () => js(`JSON.stringify(window.__wmSheet.strokes)`).then((s) => JSON.parse(s))
-export const clearSheet = () => js(`window.__wmSheet.strokes = []; window.__wmSheet.clear?.(); true`)
+export const clearSheet = () => js(`window.__wmSheet.clear?.(); window.__wmSheet.strokes = []; true`)
 
 let clock = 0
 /** One sample with defaults (a hovering pen at the middle). Times advance 8 ms a sample unless `t` is given. */

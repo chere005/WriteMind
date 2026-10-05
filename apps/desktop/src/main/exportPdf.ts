@@ -12,11 +12,11 @@
  */
 
 import { app, BrowserWindow, dialog } from "electron"
-import { promises as fs } from "node:fs"
+import { existsSync, promises as fs } from "node:fs"
 import path from "node:path"
 import { pathToFileURL } from "node:url"
 import {
-  exportPane, measureHtml, noteBlocks, printHtml, readDrawing, suggestedName, type Drawing, type Measured,
+  blockMediaFor, exportPane, measureHtml, noteBlocks, printHtml, readDrawing, suggestedName, type Drawing, type Measured,
 } from "@writemind/core"
 
 export interface ExportRequest {
@@ -53,8 +53,15 @@ export async function renderNotePdf(request: Omit<ExportRequest, "title" | "note
     webPreferences: { sandbox: true, contextIsolation: true, nodeIntegration: false, javascript: true },
   })
   try {
+    // Picture cells load from their files (a missing one is a one-line placeholder, as on screen); ink cells are
+    // inlined from the sidecar at the column's width, never from their snapshot (docs\PLAN-docking-ink-cells.md (g)).
+    const pictureAt = (name: string): string | null => {
+      const file = mediaFile(name)
+      return existsSync(file) ? pictureUrl(name) ?? pathToFileURL(file).href : null
+    }
+    const media = blockMediaFor(drawing, size, pictureAt)
     // 1. The cells, laid out in the pane's column and measured.
-    const blocks = noteBlocks(request.markdown)
+    const blocks = noteBlocks(request.markdown, undefined, media)
     const measure = path.join(folder, "measure.html")
     await fs.writeFile(measure, measureHtml(blocks, size), "utf8")
     await win.loadFile(measure)
@@ -64,6 +71,7 @@ export async function renderNotePdf(request: Omit<ExportRequest, "title" | "note
     const printed = printHtml({
       markdown: request.markdown, drawing, pane: size,
       mediaUrl: (name) => pictureUrl(name) ?? pathToFileURL(mediaFile(name)).href,
+      media,
     }, heights)
     const print = path.join(folder, "print.html")
     await fs.writeFile(print, printed.html, "utf8")

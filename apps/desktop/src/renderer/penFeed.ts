@@ -75,7 +75,8 @@ const isEnterLeave = (type: SynthEvent["type"]): boolean => type === "pointerent
 export function createDispatcher(env: DispatchEnv, hooks: { onTip?(): void; onThrow?(error: unknown): void } = {}): Dispatcher {
   const synth = createSynth()
   let hover: Element | null = null
-  let down: { target: Element; x: number; y: number } | null = null
+  /** `tip`: the contact began with the tip (a side button pressed in the air never clicks: its taps are the pen's own). */
+  let down: { target: Element; x: number; y: number; tip: boolean } | null = null
   let last = { x: 0, y: 0 }
 
   const emit = (ev: SynthEvent, x: number, y: number): void => {
@@ -88,7 +89,7 @@ export function createDispatcher(env: DispatchEnv, hooks: { onTip?(): void; onTh
         break
       case "pointerdown":
         target = env.elementAt(x, y) ?? fallback
-        down = { target, x, y }
+        down = { target, x, y, tip: ev.button === 0 }
         hover = target
         break
       case "pointermove": case "pointerup":
@@ -107,7 +108,7 @@ export function createDispatcher(env: DispatchEnv, hooks: { onTip?(): void; onTh
     if (ev.type === "pointerup" && down) {
       const started = down
       down = null
-      if (Math.hypot(x - started.x, y - started.y) < CLICK_SLOP_PX) {
+      if (started.tip && Math.hypot(x - started.x, y - started.y) < CLICK_SLOP_PX) {
         const button = env.clickable(started.target)
         if (button) button.click()
       }

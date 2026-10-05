@@ -11,12 +11,15 @@
  */
 
 import {
-  bulletItem, codeTokens, dashItem, fenceLanguage, fenced, inlineSegments, isMathFence, colouring,
+  bulletItem, codeTokens, dashItem, drawnRows, fenceLanguage, fenced, inlineSegments, isMathFence, colouring,
   numberedItem, todoItem,
   type Block, type InlineSegment,
 } from "@writemind/core"
 import { safeSpanStyle } from "../decorations"
 import { mathElement } from "../math"
+import { pictureCellDom, pictureHeightEstimate, pictureSource } from "../pictureDom"
+
+export { pictureSource }
 
 export interface RenderContext {
   /** Something drawn changed size after it was drawn — a picture arrived. */
@@ -28,13 +31,6 @@ const make = <K extends keyof HTMLElementTagNameMap>(tag: K, className?: string,
   if (className) node.className = className
   parent?.appendChild(node)
   return node
-}
-
-/** Where a picture's file is, as the page can ask for it: the app's own media scheme, or what was written. */
-export function pictureSource(src: string): string {
-  if (/^(data:|wm:|blob:|https?:)/i.test(src)) return src
-  const name = src.split(/[\\/]/).pop() ?? src
-  return `wm://media/${encodeURIComponent(name)}`
 }
 
 /** A run of the note's own words, drawn in whatever the markdown made it. */
@@ -263,6 +259,29 @@ function codeBlock(source: string, context: RenderContext): HTMLElement {
   return holder
 }
 
+/**
+ * A table, as a real one: the header in bold over a rule, the body rows under it, each column aligned the way its
+ * delimiter cell says, every cell's words inline markdown. Each cell's words carry their place in the table's source,
+ * so a click in a cell opens the table with the caret on that word (an empty cell: where its words would go).
+ */
+function tableBlock(block: Extract<Block, { kind: "table" }>, source: string, context: RenderContext): HTMLElement {
+  const holder = make("div", "wm-pv wm-pv-table")
+  const table = make("table", undefined, holder)
+  const width = block.header.length
+  drawnRows(source, width).forEach((cells, index) => {
+    const section = index === 0 ? make("thead", undefined, table) : (table.tBodies[0] ?? make("tbody", undefined, table))
+    const row = make("tr", undefined, section)
+    cells.forEach((cell, column) => {
+      const box = make(index === 0 ? "th" : "td", undefined, row)
+      const align = block.align[column]
+      if (align) box.style.textAlign = align
+      if (cell.source.length === 0) box.dataset.at = String(cell.at)
+      else inline(box, cell.source, cell.at, context)
+    })
+  })
+  return holder
+}
+
 function ruleBlock(): HTMLElement {
   const holder = make("div", "wm-pv wm-pv-rule")
   make("hr", undefined, holder)
@@ -279,6 +298,10 @@ export function renderBlock(block: Block, source: string, context: RenderContext
     case "code": return codeBlock(source, context)
     case "rule": return ruleBlock()
     case "blank": return make("div", "wm-pv wm-pv-blank")
+    // A picture or ink cell: on the page it is `pictureCells`' widget (the page skips it); this is the same picture,
+    // for anyone else drawing a block (an ink cell here is its snapshot).
+    case "picture": return pictureCellDom(block, () => context.remeasure())
+    case "table": return tableBlock(block, source, context)
   }
 }
 
@@ -295,6 +318,9 @@ export function estimatedHeight(block: Block, source: string): number {
     case "code": return Math.max(1, lines - 2) * 20.6 + 14
     case "rule": return 9
     case "blank": return lines * 22
+    case "picture": return pictureHeightEstimate(block.path)
+    // A row is a line of body text, its padding and its rule (`.wm-pv-table td`); the delimiter row is not drawn.
+    case "table": return (block.rows.length + 1) * 31 + 2
   }
 }
 

@@ -16,10 +16,10 @@ import {
 import { promises as fs } from "node:fs"
 import path from "node:path"
 import { fileURLToPath, pathToFileURL } from "node:url"
-import { capabilitiesFor } from "@writemind/core"
+import { capabilitiesFor, mediaFiles } from "@writemind/core"
 import {
   createNote, createSection, duplicateNote, existing, findMedia, isProjectFolder, mediaPath, moveSection,
-  placeNote, projectTree, readDrawing, readNote, renameNote, renameSection, reorder, saveMedia,
+  placeNote, projectTree, readDrawing, readNote, renameNote, renameSection, reorder, saveInkSnapshot, saveMedia,
   fileChanged, forgetTrust, setExcluded, setProjectFolders, setWatched, wroteRecently, writeDrawing, writeNote,
 } from "./notes"
 import { pictureFiles } from "./macDrawing"
@@ -38,6 +38,8 @@ import { exportFile } from "./exportFile"
 import { rememberWindow, windowPlacement } from "./windowMemory"
 import { installPerfProbe } from "./perfProbe"
 import { registerEval } from "./eval/ipc"
+import { registerSheets } from "./sheets"
+import { takeWelcomed, welcomeOnce, welcomeWanted } from "./welcome"
 import type { Runner as EvalRunner } from "./eval/runner"
 import { MIN_WINDOW } from "../shared/layout"
 
@@ -423,6 +425,9 @@ app.whenReady().then(async () => {
   ipcMain.handle("notes:reveal", () => shell.openPath(project.folders[0] ?? notesRoot()))
   ipcMain.handle("media:save", (_event, bytes: Uint8Array, extension: string, note?: string | null) =>
     saveMedia(notesRoot(), bytes, extension, note ?? null))
+  // An ink cell's snapshot, `ink-<id>.svg` beside the note's other media (docs\PLAN-docking-ink-cells.md (f)).
+  ipcMain.handle("media:inkSnapshot", (_event, note: string, id: string, svg: string, onlyIfMissing?: boolean) =>
+    saveInkSnapshot(notesRoot(), note, id, svg, onlyIfMissing === true))
   /** The words in a picture, by whichever reader this machine has. */
   const ocr = ocrFor(here)
   ipcMain.handle("vision:read", async (_event, file: string) =>
@@ -442,6 +447,8 @@ app.whenReady().then(async () => {
   ipcMain.handle("ocr:cancel", (_event, id: string) => { ocr.cancel(String(id)) })
   // Evaluation cells: run ONE cell on a press, take a run back, say where the tools are (main/eval).
   evalRunner = registerEval(ipcMain)
+  // The tablet's sheets (tabs) and their ink: userData/sheets.json.
+  registerSheets(ipcMain)
   /** What the reader is, what it can read, and how to add Japanese - for the diagnostics. */
   ipcMain.handle("ocr:status", async () => ({
     ...(await readerFor(here)), probe: await windowsOcr(here), addJapanese: ADD_JAPANESE_OCR, busy: ocr.busy, reads: ocr.started,
@@ -465,13 +472,15 @@ app.whenReady().then(async () => {
     // (a Mac notebook's traced capture is a PDF: it is printed as the SVG of its paths, read here because the
     // printer asks for a picture's address synchronously)
     const drawn = new Map<string, string>()
-    if (request.drawing) {
-      for (const name of pictureFiles(request.drawing)) {
-        const file = await findMedia(notesRoot(), name)
-        if (!isPdfPicture(file)) continue
-        const picture = await readPdfPicture(file).catch(() => null)
-        if (picture) drawn.set(name, svgDataUrl(picture.svg))
-      }
+    // The markdown's own pictures too (picture cells, ink cells' snapshots, inline pictures): found now, so the
+    // printer's synchronous `mediaFile` knows where they are and a missing one prints as its one-line placeholder.
+    // A docked traced capture (a .pdf picture cell) is drawn as its SVG too, as it is while floating and on screen.
+    const names = new Set([...mediaFiles(request.markdown), ...(request.drawing ? pictureFiles(request.drawing) : [])])
+    for (const name of names) {
+      const file = await findMedia(notesRoot(), name)
+      if (!isPdfPicture(file) || drawn.has(name)) continue
+      const picture = await readPdfPicture(file).catch(() => null)
+      if (picture) drawn.set(name, svgDataUrl(picture.svg))
     }
     return {
       mediaFile: (name: string) => mediaPath(notesRoot(), name),
@@ -559,6 +568,13 @@ app.whenReady().then(async () => {
       return true
     })
   }
+
+  // A NEW INSTALL opens on the quick reference (main/welcome.ts): written once, before the page reads the tree.
+  if (welcomeWanted()) {
+    await welcomeOnce(notesRoot(), project.folders).catch((error) => console.error("WriteMind: no quick reference", error))
+  }
+  // ...and its first open is on the rendered page: the page asks once which note was written now.
+  ipcMain.handle("welcome:take", () => takeWelcomed())
 
   await createWindow()
 

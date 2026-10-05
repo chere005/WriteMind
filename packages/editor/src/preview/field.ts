@@ -24,7 +24,7 @@ import { RangeSet, StateField, type EditorState, type Extension, type Range as C
 import { Decoration, EditorView, WidgetType, type DecorationSet } from "@codemirror/view"
 import {
   cellStatesSparse, end, firstCellFromBy, isMathFence, PREVIEW_BLOCK_GAP, isStructuralLine, structuralLineStarts, toggleTodo, fenced,
-  fenceLanguage, todoItem, type Block, type CellState, type PositionedBlock, type Range,
+  fenceLanguage, staysClosed, todoItem, type Block, type CellState, type PositionedBlock, type Range,
 } from "@writemind/core"
 import { awayField } from "./away"
 import { armedField } from "../seams"
@@ -176,7 +176,9 @@ const isArmed = (state: EditorState): boolean => (state.field(armedField, false)
 function openCells(state: EditorState, cells: readonly PositionedBlock[]): Map<number, CellState> {
   if (state.field(awayField, false)) return new Map()
   const holding = state.field(holdingField, false) ?? false
-  return cellStatesSparse(cells, (cell) => cell.range, selectionOf(state), holding, isArmed(state))
+  // A picture or ink cell never opens and never joins a run (core `staysClosed`): it is drawn by `pictureCells`.
+  return cellStatesSparse(cells, (cell) => cell.range, selectionOf(state), holding, isArmed(state),
+    (cell) => staysClosed(cell.block))
 }
 
 /** An empty block with the caret in it says what it is for: where, or -1. */
@@ -225,6 +227,8 @@ function entriesIn(state: EditorState, cells: readonly PositionedBlock[], states
       continue
     }
     if (cell.block.kind === "blank" || cell.range.length <= 0) continue
+    // A picture or ink cell is the same block widget on both sides of the toggle (`pictureCells`), not a block here.
+    if (cell.block.kind === "picture") continue
     if (insideHidden(state, cell.range)) continue
     const source = state.sliceDoc(cell.range.location, end(cell.range))
     // Maths on its own line is typeset by the notebook's own maths layer, which

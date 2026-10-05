@@ -15,6 +15,8 @@
  * ours back and would go on to save over it.
  */
 
+import { inkFileName, isInkId } from "@writemind/core"
+
 type Json = Record<string, unknown>
 
 const KINDS = ["stroke", "image", "shape", "connector"] as const
@@ -72,11 +74,21 @@ export function pictureFiles(text: string): string[] {
   try {
     const parsed = JSON.parse(text) as { items?: unknown[] }
     const found: string[] = []
-    for (const item of parsed.items ?? []) {
-      if (!isObject(item) || item.kind !== "image") continue
-      const inner = isObject(item.image) ? item.image : item
-      if (typeof inner.file === "string" && inner.file !== "") found.push(inner.file)
+    const walk = (items: unknown[], nested: boolean): void => {
+      for (const item of items) {
+        if (!isObject(item)) continue
+        // An ink cell (docs\PLAN-docking-ink-cells.md): its snapshot `ink-<id>.svg`, and the pictures inside it.
+        if (item.kind === "cell" && !nested) {
+          if (typeof item.id === "string" && isInkId(item.id)) found.push(inkFileName(item.id))
+          if (Array.isArray(item.items)) walk(item.items, true)
+          continue
+        }
+        if (item.kind !== "image") continue
+        const inner = isObject(item.image) ? item.image : item
+        if (typeof inner.file === "string" && inner.file !== "") found.push(inner.file)
+      }
     }
+    walk(parsed.items ?? [], false)
     return found
   } catch {
     return []

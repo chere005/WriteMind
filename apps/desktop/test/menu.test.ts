@@ -128,9 +128,9 @@ describe("the application menu is the Mac's", () => {
     expect(sub(menu(), "File").find((one) => one.label === "Close Tab")!.enabled).toBe(false)
   })
 
-  it("Insert: Image…, Text Box, Maths… (port-only key), a separator, Code Block (named for its language)", () => {
-    expect(labels(sub(menu(), "Insert"))).toEqual(["Image…", "Text Box", "Maths…", "-", "Code Block"])
-    expect(labels(sub(menu({ codeLanguage: "Python" }), "Insert"))).toEqual(["Image…", "Text Box", "Maths…", "-", "Python Block"])
+  it("Insert: Image…, Text Box, Maths… (port-only key), a separator, Code Block (named for its language), Drawing Cell", () => {
+    expect(labels(sub(menu(), "Insert"))).toEqual(["Image…", "Text Box", "Maths…", "-", "Code Block", "Drawing Cell"])
+    expect(labels(sub(menu({ codeLanguage: "Python" }), "Insert"))).toEqual(["Image…", "Text Box", "Maths…", "-", "Python Block", "Drawing Cell"])
   })
 
   it("Input Devices: the cameras with a tick on the live one, the Tablet source, Turn Camera Off, Refresh", () => {

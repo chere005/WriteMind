@@ -20,10 +20,11 @@ import {
 } from "@writemind/core"
 import { heldCells } from "./brackets"
 import { codeTypingKeys } from "./codeTyping"
+import { makesCellAfter } from "./dock"
 import { extraKeys } from "./extras"
 import { setHolding } from "./preview/hold"
-import { applyEdit, atBar, notebookField } from "./notebook"
-import { openArmed, setArmedType } from "./seams"
+import { applyEdit, notebookField } from "./notebook"
+import { armedField, openArmed, setArmedType } from "./seams"
 import { backspaceMayOutdent } from "./windowed"
 
 const selection = (view: EditorView): Range => {
@@ -50,7 +51,10 @@ export const wrap = (open: string, close = open): Command =>
  * does nothing at a bar (`applyEdit`).
  */
 export const nameKind = (kind: CellKind, command: Command): Command => (view) => {
-  if (!atBar(view)) return command(view)
+  // AT ANY ARMED BAR, on either page (the Mac's `atArmedBar` asks the source pane's text view first): on the markdown
+  // side the caret sits on the blank line the bar stands on, and a quote or a heading written THERE was glued to the
+  // cells either side of it instead of being a cell of its own (Sean, 2026-10-05).
+  if ((view.state.field(armedField, false) ?? null) === null) return command(view)
   view.dispatch({ effects: setArmedType.of(kind) })
   openArmed(view, "")
   // A button on the bar has the keyboard; the cell it made is where the typing goes.
@@ -77,7 +81,7 @@ export const listStyleSource = Facet.define<() => ListStyle, () => ListStyle>({
 const chosenList: Command = (view) => list(view.state.facet(listStyleSource)())(view)
 
 export const quote: Command = nameKind({ kind: "quote" }, run((text, where) => toggleQuote(text, where)))
-export const fence: Command = nameKind({ kind: "code" }, run((text, where) => codeBlock(text, where)))
+export const fence: Command = nameKind({ kind: "code" }, makesCellAfter({ kind: "code" }, run((text, where) => codeBlock(text, where))))
 export const indentLines: Command = run((text, where) => indent(text, where))
 export const outdentLines: Command = run((text, where) => outdent(text, where))
 export const splitTheCell: Command = run((text, where) => splitCell(text, where))

@@ -1,6 +1,9 @@
 import { describe, expect, it } from "vitest"
 import { createSynth, maskOf, type SynthEvent } from "../src/shared/penEvents"
-import { DEFAULT_BUTTONS, noTap, resolvePress, tapStep, type PenAction, type PenButtonMap, type PressLike, type TapState } from "../src/renderer/penButtons"
+import {
+  DEFAULT_BUTTONS, holdBegins, inContact, noTap, resolvePress, tapStep,
+  type PenAction, type PenButtonMap, type PressLike, type TapState,
+} from "../src/renderer/penButtons"
 import type { PenSample } from "../src/shared/pen"
 
 const s = (over: Partial<PenSample> = {}): PenSample => ({
@@ -71,45 +74,51 @@ describe("the sample to event state machine (design 8.3)", () => {
   })
 })
 
-// The real penButtons decide what the synthesised events mean (design appendix A.2).
-const press = (e: SynthEvent): PressLike => ({ pointerType: "pen", button: e.button, buttons: e.buttons })
+// The real penButtons decide what the synthesised events mean (design appendix A.2). Samples are 8 ms apart.
+const press = (e: SynthEvent): PressLike => ({ pointerType: "pen", button: e.button, buttons: e.buttons, pressure: e.pressure })
 const phaseOf = (type: string): "down" | "move" | "up" | null =>
   type === "pointerdown" ? "down" : type === "pointermove" ? "move" : type === "pointerup" ? "up" : null
 
+/** `first`: what the first event that STARTS something (a pointerdown, or the touch of a held button) resolves to, past any "ignore". */
 function replay(samples: PenSample[], buttons: PenButtonMap): { first: string | null; fired: PenAction[] } {
   let tap: TapState = noTap
   const fired: PenAction[] = []
   let first: string | null = null
-  for (const e of run(samples)) {
+  let touching = false
+  run(samples).forEach((e, i) => {
     const phase = phaseOf(e.type)
-    if (!phase) continue
-    if (phase === "down" && first === null) first = resolvePress(press(e), { eraser: false, buttons }).kind
-    const step = tapStep(tap, phase, press(e), buttons)
+    if (!phase) return
+    const was = touching
+    touching = phase !== "up" && inContact(press(e))
+    if ((first === null || first === "ignore") && (phase === "down" || holdBegins(was, press(e)))) {
+      first = resolvePress(press(e), { eraser: false, buttons }).kind
+    }
+    const step = tapStep(tap, phase, press(e), buttons, i * 8)
     tap = step.state
     if (step.fire) fired.push(step.fire)
-  }
+  })
   return { first, fired }
 }
 
-describe("what the existing button logic makes of the feed", () => {
+describe("what the button logic makes of the feed", () => {
   it("a plain stroke draws", () => {
     expect(replay([s(), s(tip()), s(tip()), s()], DEFAULT_BUTTONS)).toEqual({ first: "draw", fired: [] })
   })
-  it("the lower button as a hold selects", () => {
-    expect(replay([s(), s({ lower: true }), s({ lower: true, ...tip() }), s()], DEFAULT_BUTTONS).first).toBe("select")
+  it("the lower button pressed in the air does nothing; held as the pen touches it selects (the default hold)", () => {
+    expect(replay([s(), s({ lower: true }), s({ lower: true }), s()], DEFAULT_BUTTONS)).toEqual({ first: "ignore", fired: [] })
+    expect(replay([s(), s({ ...tip(), lower: true }), s()], DEFAULT_BUTTONS).first).toBe("select")
   })
-  it("the lower button as a TAP fires once when pressed and released in the air", () => {
-    const buttons = { ...DEFAULT_BUTTONS, lower: "undo" as const }
-    expect(replay([s(), s({ lower: true }), s({ lower: true }), s()], buttons)).toEqual({ first: "tap", fired: ["undo"] })
+  it("the lower button double-tapped in the air is Redo, once; the upper is Undo (DEFAULT_BUTTONS, Sean's way round)", () => {
+    const twice = (b: Partial<PenSample>) => [s(), s(b), s(b), s(), s(), s(b), s(b), s()]
+    expect(replay(twice({ lower: true }), DEFAULT_BUTTONS).fired).toEqual(["redo"])
+    expect(replay(twice({ upper: true }), DEFAULT_BUTTONS).fired).toEqual(["undo"])
+    expect(replay([s(), s({ lower: true }), s()], DEFAULT_BUTTONS).fired).toEqual([])
   })
   it("...and not when the tip touches while it is held", () => {
-    const buttons = { ...DEFAULT_BUTTONS, lower: "undo" as const }
-    expect(replay([s(), s(tip()), s({ ...tip(), lower: true }), s(tip()), s()], buttons).fired).toEqual([])
+    expect(replay([s(), s(tip()), s({ ...tip(), lower: true }), s(tip()), s(), s({ lower: true }), s()], DEFAULT_BUTTONS).fired).toEqual([])
   })
-  it("the upper button as Pan holds; as a TAP (next colour) fires once", () => {
-    expect(replay([s(), s({ upper: true }), s({ upper: true, ...tip() }), s()], DEFAULT_BUTTONS).first).toBe("pan")
-    const buttons = { ...DEFAULT_BUTTONS, upper: "nextColour" as const }
-    expect(replay([s(), s({ upper: true }), s()], buttons).fired).toEqual(["nextColour"])
+  it("the upper button held as the pen touches erases", () => {
+    expect(replay([s(), s({ upper: true }), s({ upper: true, ...tip() }), s()], DEFAULT_BUTTONS).first).toBe("erase")
   })
   it("the eraser end erases", () => {
     expect(replay([s(), s({ eraser: true, ...tip() }), s()], DEFAULT_BUTTONS).first).toBe("erase")

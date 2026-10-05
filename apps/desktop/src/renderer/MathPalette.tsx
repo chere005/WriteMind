@@ -27,7 +27,7 @@ import {
   initialValues, insertMath, MATH_GROUPS, MATH_TEMPLATES, range, templatesIn, templateWL,
   type MathTemplate,
 } from "@writemind/core"
-import { applyEdit, mathElement } from "@writemind/editor"
+import { applyEdit, mathElement, openBarForWriting } from "@writemind/editor"
 
 /** The event the Insert > Maths... command (Ctrl+Shift+M) sends. */
 export const MATH_OPEN_EVENT = "wm:math-open"
@@ -124,6 +124,8 @@ export function MathPalette({ view, showButton = true }: { view: EditorView | nu
   const put = (display: boolean) => {
     const target = viewRef.current
     if (!target || wl.trim() === "") return
+    // At an armed bar the maths goes in a new cell there, as every command that writes does (the Mac's `perform`).
+    openBarForWriting(target)
     const selection = target.state.selection.main
     applyEdit(target, insertMath(target.state.doc.toString(),
       range(selection.from, selection.to - selection.from), wl.trim(), display))

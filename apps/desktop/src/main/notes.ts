@@ -31,8 +31,8 @@ import { promises as fs } from "node:fs"
 import { createHash } from "node:crypto"
 import path from "node:path"
 import {
-  appending, arrange, emptyOrder, forget, isInside, makeNote, mayWrite, ORDER_FILE, orderKey, placing,
-  sessionFileName, setOrder,
+  appending, arrange, emptyOrder, forget, inkFileName, isInkId, isInside, makeNote, mayWrite, mediaFiles, ORDER_FILE,
+  orderKey, placing, sessionFileName, setOrder,
   type Note, type NoteOrder,
 } from "@writemind/core"
 import { codeOf, limiter, partialOf, within, writeFileAtomic } from "./atomic"
@@ -518,8 +518,10 @@ async function storeSidecar(root: string, note: string, json: string): Promise<v
 }
 
 /** The pictures a drawing uses go to `owner`'s media folder, from wherever they are found. */
-async function bringPictures(root: string, json: string, owner: string): Promise<void> {
-  for (const name of pictureFiles(json)) {
+async function bringPictures(root: string, json: string, owner: string, more: string[] = []): Promise<void> {
+  // The sidecar's pictures (floating ones, ink cells' snapshots and the pictures inside cells: `pictureFiles`) and
+  // the files the note's markdown names (picture cells, ink cells' snapshots, inline pictures: `mediaFiles`).
+  for (const name of new Set([...pictureFiles(json), ...more])) {
     const to = path.join(owner, ".drawings", "media", path.basename(name))
     if (await fs.access(to).then(() => true, () => false)) continue
     const from = await findMedia(root, name)
@@ -537,13 +539,17 @@ async function bringPictures(root: string, json: string, owner: string): Promise
  */
 async function moveSidecar(root: string, from: string, to: string): Promise<void> {
   const text = await loadSidecar(root, from)
+  const fromOwner = ownerOf(from, root)
+  const toOwner = ownerOf(to, root)
+  // A note with no drawing can still have docked pictures and ink cells (docs\PLAN-docking-ink-cells.md (f)).
+  if (!sameFolder(fromOwner, toOwner)) {
+    const markdown = await fs.readFile(to, "utf8").catch(() => "")
+    await bringPictures(root, text ?? "", toOwner, mediaFiles(markdown))
+  }
   if (text === null) return
   const target = drawingPath(root, to)
   const source = drawingPath(root, from)
   if (source === target) return
-  const fromOwner = ownerOf(from, root)
-  const toOwner = ownerOf(to, root)
-  if (!sameFolder(fromOwner, toOwner)) await bringPictures(root, text, toOwner)
   await storeSidecar(root, to, text)
   for (const old of [source, olderDrawingPath(root, from)]) {
     if (old === target) continue
@@ -574,6 +580,33 @@ Promise<{ file: string }> {
     remember(where)
     await writeFileAtomic(where, bytes)
   }
+  found.set(file, where)
+  return { file }
+}
+
+/**
+ * An ink cell's snapshot, `ink-<id>.svg` in the media folder of `note`'s project folder (docs\PLAN-docking-ink-cells.md
+ * (f)): the svg its markdown line points at, so any markdown viewer (and the Mac) shows the cell. The only media file
+ * ever written over in place (`saveMedia` names are content hashes and never start with `ink-`). `onlyIfMissing`
+ * leaves a file that is there alone (a note being opened). The id must be a UUID: nothing else can name a file here.
+ */
+export async function saveInkSnapshot(root: string, note: string, id: string, svg: string, onlyIfMissing = false):
+Promise<{ file: string }> {
+  if (!isInkId(id)) throw new Error(`not an ink cell id: ${id}`)
+  if (!/^<svg[\s>]/.test(svg)) throw new Error("not an svg")
+  const owner = ownerOf(note, root)
+  const folder = path.join(owner, ".drawings", "media")
+  const file = inkFileName(id.toLowerCase())
+  const where = path.join(folder, file)
+  if (onlyIfMissing && await fs.access(where).then(() => true, () => false)) {
+    found.set(file, where)
+    return { file }
+  }
+  await fs.mkdir(folder, { recursive: true })
+  remember(where)
+  remember(partialOf(where))
+  await writeFileAtomic(where, svg)
+  remember(where)
   found.set(file, where)
   return { file }
 }

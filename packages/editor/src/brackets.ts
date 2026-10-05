@@ -33,6 +33,7 @@ import {
 import { notebook, selectedRanges } from "./notebook"
 import { foldField, insideHidden, toggleFold } from "./fold"
 import { moveHeldCells } from "./keys"
+import { armedField } from "./seams"
 import { holdingField, setHolding } from "./preview/hold"
 import { renderedField } from "./rendered"
 import { groupsIn } from "./eval/index"
@@ -125,7 +126,9 @@ function brackets(view: EditorView): Bracket[] {
   // The cell the caret is in — at the very end of its words too, which is
   // where a caret sits after typing (the Mac's `block(containing:)`). Found by search: the cells are in order.
   let caretCell: Range | null = null
-  if (caret.empty) {
+  // (Not while a bar is the cursor: the caret is parked against the cell below a bar between two cells that touch,
+  // and that cell is not the one being typed in — the bar lights nothing.)
+  if (caret.empty && (view.state.field(armedField, false) ?? null) === null) {
     const last = firstCellFromBy(cells, caret.from + 1, cellRange) - 1
     const r = last >= 0 ? cells[last]!.range : null
     if (r && r.length > 0 && caret.from <= r.location + r.length) caretCell = r

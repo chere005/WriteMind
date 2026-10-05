@@ -71,6 +71,9 @@ const api = {
   /** The picture goes in the project folder of `note` (else of the note in front). */
   saveMedia: (bytes: Uint8Array, extension: string, note?: string | null) =>
     ipcRenderer.invoke("media:save", bytes, extension, note ?? null),
+  /** An ink cell's snapshot `ink-<id>.svg`, in the media folder of `note`'s project folder (written over in place). */
+  writeInkSnapshot: (note: string, id: string, svg: string, onlyIfMissing?: boolean) =>
+    ipcRenderer.invoke("media:inkSnapshot", note, id, svg, onlyIfMissing === true),
   choosePicture: () => ipcRenderer.invoke("media:choose"),
   readPicture: (file: string) => ipcRenderer.invoke("vision:read", file),
   /** The words in a picture (a note's file by name, or the bytes of one), boxed and cached; `ocrCancel(id)` takes the request back. */
@@ -97,6 +100,13 @@ const api = {
   },
   /** The tablet pen's native feed (main/pen/*): see PenApi in shared/pen.ts. */
   pen,
+  /** The quick reference written at this launch (a new install), once; null otherwise (main/welcome.ts). */
+  welcomed: (): Promise<string | null> => ipcRenderer.invoke("welcome:take"),
+  /** The tablet's sheets (tabs) and their ink, kept in userData/sheets.json (main/sheets.ts). */
+  sheets: {
+    load: (): Promise<string | null> => ipcRenderer.invoke("sheets:load"),
+    save: (text: string): void => ipcRenderer.send("sheets:save", text),
+  },
   /** Evaluation cells (shared/eval.ts): run ONE cell, on Shift+Enter in it, and nothing else. */
   evaluate: {
     run: (request) => ipcRenderer.invoke(EVAL_CHANNELS.run, request),

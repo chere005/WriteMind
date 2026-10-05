@@ -221,12 +221,14 @@ describe("list styles", () => {
     expect(blocks("***")).toEqual([{ kind: "rule" }])
   })
 
-  // Tables came out of the app whole on 2026-09-20: pipes are prose.
-  it("reads a line of pipes as a paragraph", () => {
+  // Tables came out of the Mac app whole on 2026-09-20 (pipes were prose there since); the port's rebuild, part one,
+  // reads them again (tables.test.ts). A line of pipes with no delimiter row under it is still prose.
+  it("reads a header, its delimiter row and a row as one table cell", () => {
     const note = "before\n\n| a | b |\n| --- | --- |\n| 1 | 2 |\n\nafter"
     const found = blocks(note)
     expect(found).toHaveLength(3)
-    expect(found[1]).toEqual({ kind: "paragraph", text: "| a | b | | --- | --- | | 1 | 2 |" })
+    expect(found[1]).toEqual({ kind: "table", header: ["a", "b"], align: [null, null], rows: [["1", "2"]] })
+    expect(blocks("a | b is not a table")).toEqual([{ kind: "paragraph", text: "a | b is not a table" }])
   })
 })
 

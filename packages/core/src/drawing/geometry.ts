@@ -131,6 +131,9 @@ export function basePoints(item: CanvasItem, size: Size): Point[] {
         boxOf(item.shape.center, item.shape.width, item.shape.aspect, size)).flat()
     case "connector":
       return route(item.connector).map((p) => ({ x: p.x * size.width, y: p.y * size.height }))
+    // An ink cell has no outline on the page: it is where its line is (and hidden).
+    case "cell":
+      return []
   }
 }
 
@@ -253,6 +256,7 @@ const itemIdOf = (item: CanvasItem): string => {
     case "image": return item.image.id
     case "shape": return item.shape.id
     case "connector": return item.connector.id
+    case "cell": return item.cell.id
   }
 }
 
@@ -294,6 +298,8 @@ export function hitTest(item: CanvasItem, point: Point, size: Size): boolean {
       if (shape.length === 1) return distance(point, shape[0]!) <= reach
       return near(point, [shape], reach)
     }
+    case "cell":
+      return false
   }
 }
 
@@ -431,6 +437,7 @@ const withOriginal = (item: CanvasItem, transform: ItemTransform): CanvasItem =>
     case "image": return { kind: "image", image: { ...item.image, transform } }
     case "shape": return { kind: "shape", shape: { ...item.shape, transform } }
     case "connector": return { kind: "connector", connector: { ...item.connector, transform } }
+    case "cell": return item
   }
 }
 

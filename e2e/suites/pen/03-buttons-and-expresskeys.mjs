@@ -1,5 +1,9 @@
-// Pen buttons + ExpressKeys, synthetic PointerEvents (pointerType pen). 
-import { js, send, ok, finish, sleep, freshNote, saved, waitFor, pe, reloadApp, openNote } from "../../lib/harness.mjs"
+// Pen buttons + ExpressKeys on the note's page, synthetic PointerEvents (pointerType pen) and real key / mouse events.
+// Sean's model (2026-10-05): each side button has a HOLD job (while the button is held and the pen TOUCHES) and a
+// DOUBLE-TAP job (two quick presses in the air, the tip never touching). Defaults: lower = hold Erase strokes /
+// double-tap Undo, upper = hold Select / double-tap Redo. A single tap does nothing, a press held in the air does
+// nothing, and no context menu opens over the page while a pen button is in use. (penButtons.ts, penActions.ts)
+import { js, send, ok, finish, sleep, freshNote, saved, waitFor, pe, reloadApp, mouse } from "../../lib/harness.mjs"
 
 const file = await freshNote()
 await js(`localStorage.removeItem('writemind.pen')`)
@@ -27,24 +31,44 @@ const stroke = async (x0, y0, x1, y1) => {
   await pe("pointerup", x1, y1)
 }
 const strokes = async () => (await saved(file)).items.filter((i) => i.kind === "stroke").length
+const strokeList = async () => (await saved(file)).items.filter((i) => i.kind === "stroke")
 const handles = () => js(`document.querySelectorAll('.wm-handle').length`)
+const handleBox = () => js(`(()=>{const hs=[...document.querySelectorAll('.wm-handle')].map(h=>h.getBoundingClientRect());return hs.length?{x:Math.min(...hs.map(r=>r.left)),y:Math.min(...hs.map(r=>r.top)),r:Math.max(...hs.map(r=>r.right)),b:Math.max(...hs.map(r=>r.bottom))}:null})()`)
 const esc = () => js(`window.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true}))`).then(() => sleep(80))
-/** A button press: hover-style (down with the button, tip up), optional moves while held, release. */
-const press = async (button, bit, o = {}) => {
-  const x = o.x ?? X + 400, y = o.y ?? Y + 300
-  await hover(x, y)
-  if (o.late) await pe("pointermove", x, y, { button: -1, buttons: bit, pressure: 0 })
-  else await pe("pointerdown", x, y, { button, buttons: bit, pressure: 0 })
-  for (const [mx, my] of o.moves ?? []) await pe("pointermove", mx, my, { button: -1, buttons: o.touch ? bit | 1 : bit, pressure: o.touch ? 0.5 : 0 })
-  const last = o.moves?.at(-1)
-  if (o.late) await pe("pointermove", last?.[0] ?? x, last?.[1] ?? y, { button: -1, buttons: 0, pressure: 0 })
-  await pe("pointerup", last?.[0] ?? x, last?.[1] ?? y, { button, buttons: 0, pressure: 0 })
-  await sleep(80)
+const BIT = { lower: 2, upper: 4 }, BTN = { lower: 2, upper: 1 }
+/** A side button pressed and let go in the air (no tip, no pressure). */
+const airTap = async (which, x = X + 400, y = Y + 300) => {
+  await pe("pointerdown", x, y, { button: BTN[which], buttons: BIT[which], pressure: 0 })
+  await pe("pointerup", x, y, { button: BTN[which], buttons: 0, pressure: 0 })
 }
-const tap = (button, bit, o = {}) => press(button, bit, { x: X + 400, y: Y + 300, ...o })
-const setting = async (slot, action) => {
-  if (!(await js(`!!document.querySelector("[data-pen=btn-${slot}]")`))) { await js(`document.querySelector("[data-pen=chip]").click()`); await sleep(120) }
-  await js(`(() => { const s = document.querySelector("[data-pen=btn-${slot}]"); Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype,"value").set.call(s, ${JSON.stringify(action)}); s.dispatchEvent(new Event("change",{bubbles:true})) })()`)
+const doubleTap = async (which, gap = 60) => { await hover(X + 400, Y + 300); await airTap(which); await sleep(gap); await airTap(which); await sleep(250) }
+/**
+ * The button pressed in the air, the pen then TOUCHING and dragging (Chromium: that touch is a pointermove that gains
+ * the tip), lifted with the button still held (more `after` moves in the air), the button let go.
+ */
+const holdDrag = async (which, from, to, after = []) => {
+  const bit = BIT[which]
+  await hover(...from)
+  await pe("pointerdown", from[0], from[1], { button: BTN[which], buttons: bit, pressure: 0 })
+  for (let i = 0; i <= 8; i++) await pe("pointermove", from[0] + (to[0] - from[0]) * i / 8, from[1] + (to[1] - from[1]) * i / 8, { button: -1, buttons: bit | 1, pressure: 0.5 })
+  await pe("pointermove", to[0], to[1], { button: -1, buttons: bit, pressure: 0 })
+  for (const [x, y] of after) await pe("pointermove", x, y, { button: -1, buttons: bit, pressure: 0 })
+  const last = after.at(-1) ?? to
+  await pe("pointerup", last[0], last[1], { button: BTN[which], buttons: 0, pressure: 0 })
+  await sleep(150)
+}
+/** Windows Ink's way: the barrel held at contact is the button itself, with pressure and no tip bit. */
+const inkDrag = async (which, from, to) => {
+  await hover(...from)
+  await pe("pointerdown", from[0], from[1], { button: BTN[which], buttons: BIT[which], pressure: 0.5 })
+  for (let i = 1; i <= 8; i++) await pe("pointermove", from[0] + (to[0] - from[0]) * i / 8, from[1] + (to[1] - from[1]) * i / 8, { button: -1, buttons: BIT[which], pressure: 0.5 })
+  await pe("pointerup", to[0], to[1], { button: BTN[which], buttons: 0, pressure: 0 })
+  await sleep(150)
+}
+const openPop = async () => { if (!(await js(`!!document.querySelector('.pen-pop')`))) { await js(`document.querySelector("[data-pen=chip]").click()`); await sleep(120) } }
+const setting = async (sel, action) => {
+  await openPop()
+  await js(`(() => { const s = document.querySelector("[data-pen=${sel}]"); Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype,"value").set.call(s, ${JSON.stringify(action)}); s.dispatchEvent(new Event("change",{bubbles:true})) })()`)
   await sleep(40)
 }
 const closePop = async () => { await js(`document.querySelector('.pen-pop') && document.querySelector('[data-pen=chip]').click()`); await sleep(60) }
@@ -52,169 +76,145 @@ const colour = () => js(`document.querySelector('.pen-colour').value`)
 const width = () => js(`document.querySelector('select[title="Pen width"]').value`)
 const pressed = (bar) => js(`document.querySelector('[data-bar=${bar}]').getAttribute('aria-pressed')`)
 const stored = () => js(`JSON.parse(localStorage.getItem('writemind.pen')||'{}')`)
-const scrollTop = () => js(`Math.max(...[...document.querySelectorAll('*')].map(e => e.scrollTop))`)
-const resetScroll = () => js(`[...document.querySelectorAll('*')].forEach(e => { if (e.scrollTop) e.scrollTop = 0 })`).then(() => sleep(100))
-const select = (x0, y0, x1, y1) => press(2, 2, { x: x0, y: y0, moves: [[x1, y1]] })
+const columns = () => js(`['lower','upper','eraser','tipAlt'].map(k=>{const h=document.querySelector('[data-pen=btn-'+k+']');const d=document.querySelector('[data-pen=dbl-'+k+']');return k+':'+(h?h.value:'?')+'/'+(d?d.value:'-')}).join(' ')`)
+/** The upper button's hold (Select): a marquee from a to b. */
+const select = (x0, y0, x1, y1) => holdDrag("upper", [x0, y0], [x1, y1])
 
 // ---- ink to work with
 await stroke(X, Y, X + 150, Y + 10)
 await stroke(X, Y + 60, X + 150, Y + 70)
 ok("two strokes drawn with the tip", (await strokes()) === 2)
 
-// ---- defaults
-await js(`document.querySelector('[data-pen=chip]').click()`); await sleep(100)
-ok("popover shows the four selects with the Mac-idiom defaults",
-  await js(`['lower','upper','eraser','tipAlt'].map(k=>document.querySelector('[data-pen='+'btn-'+k+']').value).join()`) === "select,pan,erase,none")
+// ---- the popover: two columns per button, Sean's defaults
+await openPop()
+ok("popover: hold and double-tap per side button, hold only for the eraser end and Tip + Alt",
+  (await columns()) === "lower:erase/undo upper:select/redo eraser:erase/- tipAlt:none/-", await columns())
+ok("...with the app's words", await js(`(()=>{const t=document.querySelector('.pen-pop').textContent;return t.includes('Double-tap')&&t.includes('Erase strokes')&&t.includes('Undo')&&t.includes('Redo')})()`))
 await closePop()
 
-// ---- lower = Select (hold): hover-style, tip-first, and move-only
-await select(X - 40, Y - 40, X + 200, Y + 100)
-ok("lower button drag selects (handles), hover-style", (await handles()) >= 3)
-ok("...and drew no ink", (await strokes()) === 2)
+// ---- lower: hold erases, double-tap undoes; upper: double-tap redoes
+await holdDrag("lower", [X + 75, Y - 20], [X + 75, Y + 25])
+ok("hold lower + touch: rubs out the stroke it crosses (and draws nothing)", (await strokes()) === 1 && (await handles()) === 0)
+await doubleTap("lower")
+ok("double-tap lower = Undo: the stroke is back", (await strokes()) === 2)
+await doubleTap("upper")
+ok("double-tap upper = Redo: it is gone again", (await strokes()) === 1)
+await doubleTap("lower")
+ok("...and Undo once more brings it back", (await strokes()) === 2)
+
+// ---- single taps, a slow pair, a press held in the air: nothing
+await hover(X + 400, Y + 300)
+await airTap("lower"); await sleep(700); await airTap("upper"); await sleep(700)
+ok("a single tap of either button does nothing", (await strokes()) === 2 && (await handles()) === 0)
+await airTap("lower"); await sleep(650); await airTap("lower"); await sleep(400)
+ok("two taps too far apart are two single taps: nothing", (await strokes()) === 2)
+await hover(X + 75, Y - 20)
+await pe("pointerdown", X + 75, Y - 20, { button: 2, buttons: 2, pressure: 0 })
+for (let i = 1; i <= 6; i++) await pe("pointermove", X + 75, Y - 20 + i * 15, { button: -1, buttons: 2, pressure: 0 })
+await pe("pointerup", X + 75, Y + 70, { button: 2, buttons: 0, pressure: 0 }); await sleep(200)
+ok("the lower button held in the air over the ink does nothing (nothing erased)", (await strokes()) === 2)
+
+// ---- the hold ends where the pen lifts
+await holdDrag("lower", [X + 40, Y - 20], [X + 40, Y + 25], [[X + 40, Y + 45], [X + 40, Y + 80]])
+ok("hold lower erases while the pen touches, and stops when it lifts (the stroke below survives)", (await strokes()) === 1)
+await doubleTap("lower")
+ok("(undone)", (await strokes()) === 2)
+
+// ---- Windows Ink's barrel at contact (button 2 with pressure, no tip bit)
+await inkDrag("lower", [X + 100, Y - 20], [X + 100, Y + 25])
+ok("lower held at contact, Windows Ink style, erases too", (await strokes()) === 1)
+await doubleTap("lower")
+ok("(undone)", (await strokes()) === 2)
+
+// ---- upper: hold selects; a drag inside the selection moves it
+await select(X - 40, Y - 30, X + 200, Y + 90)
+ok("hold upper + touch: the marquee selects (handles), no ink", (await handles()) >= 3 && (await strokes()) === 2)
+const b0 = await handleBox()
+const before = JSON.stringify((await strokeList())[0])
+await holdDrag("upper", [X + 75, Y + 35], [X + 75, Y + 135])
+const b1 = await handleBox()
+ok("hold upper inside the selection drags it (moved ~100px down)", b1 && b0 && Math.abs((b1.y - b0.y) - 100) < 12, JSON.stringify({ b0, b1 }))
+ok("...the stroke itself moved", JSON.stringify((await strokeList())[0]) !== before)
+await doubleTap("lower")
+ok("double-tap Undo takes the move back", JSON.stringify((await strokeList())[0]) === before)
 await esc()
 ok("Esc clears the selection", (await handles()) === 0)
-await hover(X - 40, Y - 40); await pe("pointerdown", X - 40, Y - 40, { button: 0, buttons: 3 })
-await pe("pointermove", X + 200, Y + 100, { button: -1, buttons: 3 }); await pe("pointerup", X + 200, Y + 100, { button: 0, buttons: 0 }); await sleep(80)
-ok("lower held at contact (button 0, buttons 3) selects too", (await handles()) >= 3 && (await strokes()) === 2)
-await esc()
-await press(2, 2, { x: X - 40, y: Y - 40, late: true, moves: [[X + 200, Y + 100]] })
-ok("a button that only appears as a pointermove still selects", (await handles()) >= 3)
+await inkDrag("upper", [X - 40, Y - 30], [X + 200, Y + 30])
+ok("upper held at contact, Windows Ink style, selects too", (await handles()) >= 3)
 await esc()
 
-// ---- cursor shows the action
+// ---- the cursor says what the button will do when the pen touches
 const kind = () => js(`document.querySelector('.pen-cursor').dataset.kind`)
 const held = async (bits) => { await pe("pointermove", X + 300, Y + 300, { button: -1, buttons: bits, pressure: 0 }); await sleep(120); return kind() }
-ok("pen cursor is a select box while the lower button is down", (await held(2)) === "select")
-ok("...a hand for the upper (pan)", (await held(4)) === "pan")
-ok("...the red cross for the eraser end", (await held(32)) === "erase")
+ok("pen cursor is the red cross while the lower button is down", (await held(2)) === "erase")
+ok("...a select box for the upper", (await held(4)) === "select")
 ok("...a ring again when nothing is held", (await held(0)) === "ring")
-// (the Pen popover's Test panel and ExpressKeys table are gone: it keeps the pen toggles, buttons, orientation and Reset calibration)
 
-// ---- upper = Pan
-const t0 = await scrollTop()
-await press(1, 4, { x: X + 300, y: Y + 300, moves: [[X + 300, Y + 250], [X + 300, Y + 200], [X + 300, Y + 100]] })
-const t1 = await scrollTop()
-ok("upper button drag pans the page (scrolls ~200px)", t1 - t0 > 150 && t1 - t0 < 260, `${t0}->${t1}`)
-ok("...and drew no ink", (await strokes()) === 2)
-await resetScroll()
-
-// ---- eraser end = Erase
-await press(5, 32, { x: X + 75, y: Y + 5, moves: [[X + 80, Y + 6]] })
-ok("eraser end rubs out the stroke under it", (await strokes()) === 1)
-await js(`document.querySelector('.cm-content').focus()`)
-await js(`window.dispatchEvent(new KeyboardEvent('keydown',{key:'z',ctrlKey:true,bubbles:true}))`); await sleep(300)
-ok("Ctrl+Z brings it back", (await strokes()) === 2)
-
-// ---- lower = Erase (the old side-button choice)
-await setting("lower", "erase"); await closePop()
-ok("setting persisted", (await stored()).buttons?.lower === "erase" && (await stored()).sideButton === "erases")
-await press(2, 2, { x: X + 75, y: Y + 5, moves: [[X + 80, Y + 6]] })
-ok("lower=Erase rubs out", (await strokes()) === 1)
-await js(`window.dispatchEvent(new KeyboardEvent('keydown',{key:'z',ctrlKey:true,bubbles:true}))`); await sleep(300)
-ok("...and Undo restores", (await strokes()) === 2)
-
-// ---- lower = Add to selection (shift-extend)
-await setting("lower", "select"); await closePop()
-await select(X - 20, Y - 20, X + 200, Y + 30)
-const h1 = await handles()
-const span = () => js(`(()=>{const hs=[...document.querySelectorAll('.wm-handle')].map(h=>h.getBoundingClientRect());return Math.max(...hs.map(r=>r.bottom))-Math.min(...hs.map(r=>r.top))})()`)
-const s1 = await span()
-await setting("lower", "add"); await closePop()
-await select(X - 20, Y + 40, X + 200, Y + 100)
-const s2 = await span()
-ok("Add keeps the first selection and grows it", h1 >= 3 && s2 > s1 + 30, `${h1} ${s1} ${s2}`)
-await esc()
-
-// ---- taps
-await setting("lower", "undo"); await setting("upper", "redo"); await closePop()
-await stroke(X, Y + 120, X + 150, Y + 130)
-ok("third stroke", (await strokes()) === 3)
-await tap(2, 2)
-ok("lower tap = Undo, exactly once", (await strokes()) === 2)
-await tap(1, 4)
-ok("upper tap = Redo, exactly once", (await strokes()) === 3)
-await tap(2, 2, { moves: [[X + 400, Y + 310]], touch: true })
-ok("a button used while the tip touches is not a tap", (await strokes()) === 3)
-await tap(2, 2, { late: true })
-ok("a tap that arrives only as pointermoves fires once", (await strokes()) === 2)
-await tap(1, 4)
-
-const c0 = await colour()
-await setting("lower", "nextColour"); await closePop()
-await tap(2, 2); const c1 = await colour()
-await tap(2, 2); const c2 = await colour()
-ok("Next colour steps one preset per tap", c0 !== c1 && c1 !== c2 && c0 !== c2, `${c0} ${c1} ${c2}`)
-
-await setting("lower", "wider"); await setting("upper", "thinner"); await closePop()
-const w0 = Number(await width())
-await tap(2, 2); const w1 = Number(await width())
-await tap(1, 4); await tap(1, 4); const w2 = Number(await width())
-ok("Wider then Thinner step the width", w1 > w0 && w2 < w1, `${w0} ${w1} ${w2}`)
-
-await setting("lower", "toggleErase"); await closePop()
-await tap(2, 2)
-ok("Erase tool toggles on by a tap", (await pressed("erase")) === "true")
-await tap(2, 2)
-ok("...and off by the next", (await pressed("erase")) === "false")
-
-await setting("lower", "toggleSelect"); await closePop()
-await tap(2, 2)
-ok("Select tool toggles on by a tap", (await pressed("select")) === "true")
-await esc()
-await stroke(X - 40, Y - 40, X + 200, Y + 100)
-ok("with Select on, a tip drag selects and draws no ink", (await handles()) >= 3 && (await strokes()) === 3)
-await esc()
-await tap(2, 2)
-ok("...and the tool toggles off", (await pressed("select")) === "false")
-
-await setting("lower", "togglePenDraws"); await closePop()
-const d0 = (await stored()).penDraws
-await tap(2, 2)
-ok("Toggle pen-draws flips the setting", (await stored()).penDraws === !d0)
-await tap(2, 2)
-
-await setting("lower", "select"); await setting("upper", "clearSelection"); await closePop()
-await select(X - 20, Y - 20, X + 200, Y + 30)
-ok("selected one stroke", (await handles()) >= 3)
-await tap(1, 4)
-ok("Clear selection tap drops the handles", (await handles()) === 0)
-await select(X - 20, Y - 20, X + 200, Y + 30)
-await setting("lower", "deleteSelection"); await closePop()
-const nb = await strokes()
-await tap(2, 2)
-ok("Delete selection tap removes the held stroke", (await strokes()) === nb - 1 && (await handles()) === 0)
-
+// ---- no context menu over the page while a pen button is in use
 await js(`window.__ctx = 0; document.addEventListener('contextmenu', () => window.__ctx++, true)`)
-await setting("lower", "contextMenu"); await closePop()
-await tap(2, 2)
-ok("Right-click tap dispatches exactly one contextmenu", (await js(`window.__ctx`)) === 1)
+const text = JSON.parse(await js(`(()=>{const l=[...document.querySelectorAll('.cm-line')][3].getBoundingClientRect();return JSON.stringify({x:l.x+20,y:l.y+l.height/2})})()`))
+// (a) Windows Ink: the lower button pressed with the pen on the words is a right click (a real pen event through CDP)
+await mouse("mouseMoved", text.x, text.y, { buttons: 0, pen: true })
+await mouse("mousePressed", text.x, text.y, { button: "right", pen: true })
+await mouse("mouseReleased", text.x, text.y, { button: "right", pen: true }); await sleep(250)
+ok("a pen right-click (lower button at contact) on the words opens no menu", (await js(`!document.querySelector('.context-menu')`)) && (await js(`window.__ctx`)) === 0, `ctx=${await js(`window.__ctx`)}`)
+// (b) the driver's hover click: a MOUSE right click at the pen just after the pen's own events
+await hover(text.x, text.y); await airTap("lower", text.x, text.y)
+await mouse("mousePressed", text.x, text.y, { button: "right" })
+await mouse("mouseReleased", text.x, text.y, { button: "right" }); await sleep(250)
+ok("a right click just after a pen button opens no menu either", (await js(`!document.querySelector('.context-menu')`)) && (await js(`window.__ctx`)) === 0)
+// (c) the driver's hover click as the ONLY sign of the button (Windows Ink delivers no pen event for it): a double one = Undo
+await holdDrag("lower", [X + 75, Y - 20], [X + 75, Y + 25])
+ok("(erased one for the echo test)", (await strokes()) === 1)
+await hover(X + 400, Y + 300); await sleep(350)
+for (let i = 0; i < 2; i++) { await mouse("mousePressed", X + 400, Y + 300, { button: "right" }); await mouse("mouseReleased", X + 400, Y + 300, { button: "right" }); await sleep(60) }
+await sleep(250)
+ok("two of the driver's right clicks at the hovering pen = the lower button's double tap (Undo)", (await strokes()) === 2 && (await js(`window.__ctx`)) === 0)
+// (d) the mouse alone, once the pen has gone: its right click still opens the menu
+await sleep(1700)
+await mouse("mouseMoved", text.x + 5, text.y, { buttons: 0 }); await sleep(300)
+await mouse("mousePressed", text.x, text.y, { button: "right" })
+await mouse("mouseReleased", text.x, text.y, { button: "right" }); await sleep(300)
+ok("a plain mouse right click (no pen near) still opens the Cut / Copy / Paste menu", await js(`!!document.querySelector('.context-menu')`))
+await js(`document.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true}))`); await sleep(150)
+ok("(the menu closes with Esc)", await js(`!document.querySelector('.context-menu')`))
 
-await setting("lower", "none"); await setting("upper", "none"); await closePop()
-const nn = await strokes()
-await tap(2, 2); await tap(1, 4)
-ok("None does nothing (no ink, no change)", (await strokes()) === nn && (await handles()) === 0)
-await hover(X, Y + 200); await pe("pointerdown", X, Y + 200, { button: 0, buttons: 3 }); await pe("pointermove", X + 100, Y + 210, { button: -1, buttons: 3 }); await pe("pointerup", X + 100, Y + 210, { button: 0, buttons: 0 })
-ok("...but a tip pressed under a None button still writes", (await strokes()) === nn + 1)
-
-// ---- Tip + Alt
-await setting("tipAlt", "pan"); await closePop()
-const a0 = await scrollTop()
-await hover(X + 300, Y + 300, { alt: true })
-await pe("pointerdown", X + 300, Y + 300, { alt: true }); await pe("pointermove", X + 300, Y + 200, { alt: true }); await pe("pointerup", X + 300, Y + 200, { alt: true })
-await sleep(100)
-ok("Tip + Alt pans when assigned (and writes nothing)", (await scrollTop()) - a0 > 60 && (await strokes()) === nn + 1, `${a0}->${await scrollTop()}`)
-await resetScroll()
-await setting("tipAlt", "none"); await closePop()
-
-// ---- the sheet: a button with no sheet meaning must not draw there
-await setting("lower", "select"); await setting("upper", "pan"); await closePop()
-
-// ---- persistence across reload
-await setting("lower", "wider"); await setting("upper", "toggleErase"); await setting("eraser", "undo"); await setting("tipAlt", "add"); await closePop()
+// ---- the popover: another job per column, kept across a reload
+await setting("dbl-lower", "nextColour"); await setting("btn-lower", "select"); await closePop()
+const c0 = await colour()
+await doubleTap("lower"); const c1 = await colour()
+ok("double-tap lower set to Next colour steps the colour once", c0 !== c1, `${c0} ${c1}`)
+await holdDrag("lower", [X - 40, Y - 30], [X + 200, Y + 30])
+ok("hold lower set to Select pulls the marquee", (await handles()) >= 3 && (await strokes()) === 2)
+await esc()
+await setting("dbl-upper", "toggleErase"); await closePop()
+await doubleTap("upper")
+ok("double-tap upper set to Erase tool turns the tool on", (await pressed("erase")) === "true")
+await doubleTap("upper")
+ok("...and off", (await pressed("erase")) === "false")
+await setting("dbl-upper", "wider"); await closePop()
+const w0 = Number(await width()); await doubleTap("upper")
+ok("double-tap Wider widens the line", Number(await width()) > w0)
+const s = await stored()
+ok("stored as both jobs per button (and the hold actions for an older WriteMind)",
+  s.slots?.lower?.hold === "select" && s.slots?.lower?.double === "nextColour" && s.slots?.upper?.double === "wider" && s.buttons?.lower === "select", JSON.stringify(s))
 await reloadApp()
-await js(`document.querySelector('[data-pen=chip]').click()`); await sleep(150)
-ok("settings survive a reload", await js(`['lower','upper','eraser','tipAlt'].map(k=>document.querySelector('[data-pen=btn-'+k+']').value).join()`) === "wider,toggleErase,undo,add")
-await setting("lower", "select"); await setting("upper", "pan"); await setting("eraser", "erase"); await setting("tipAlt", "none"); await closePop()
+await openPop()
+ok("settings survive a reload", (await columns()) === "lower:select/nextColour upper:select/wider eraser:erase/- tipAlt:none/-", await columns())
+await closePop()
+
+// ---- an older WriteMind's store is migrated: old defaults become the new ones, a deliberate choice is kept
+await js(`localStorage.setItem('writemind.pen', JSON.stringify({ penDraws: true, pressure: true, sideButton: 'selects', buttons: { lower: 'select', upper: 'pan', eraser: 'erase', tipAlt: 'none' } }))`)
+await reloadApp(); await openPop()
+ok("a 0.4.0 store with the old defaults comes up with the new defaults", (await columns()) === "lower:erase/undo upper:select/redo eraser:erase/- tipAlt:none/-", await columns())
+await closePop()
+await js(`localStorage.setItem('writemind.pen', JSON.stringify({ sideButton: 'selects', buttons: { lower: 'add', upper: 'nextColour', eraser: 'erase', tipAlt: 'pan' } }))`)
+await reloadApp(); await openPop()
+ok("...and a deliberate choice is kept (a hold as the hold, a one-shot as the double tap)", (await columns()) === "lower:add/undo upper:select/nextColour eraser:erase/- tipAlt:pan/-", await columns())
+await closePop()
+await js(`localStorage.removeItem('writemind.pen')`)
+await reloadApp()
+await reopen()
 
 // ---- ExpressKeys: real key events through the browser's input pipeline
 const CTRL = 2, ALT = 1
@@ -223,7 +223,6 @@ const chord = async (k, code, vk, mods, extra = {}) => {
   await send("Input.dispatchKeyEvent", { type: "keyUp", key: k, code, windowsVirtualKeyCode: vk, modifiers: mods })
   await sleep(120)
 }
-await reopen()
 await js(`document.querySelector('.cm-content').focus()`)
 const e0 = await colour()
 await chord("4", "Digit4", 52, CTRL | ALT)
@@ -273,14 +272,14 @@ await chord("2", "Digit2", 50, CTRL | ALT)
 await chord("z", "KeyZ", 90, CTRL)
 
 // ---- regression: the mouse
-const mouse = (type, x, y, o = {}) => send("Input.dispatchMouseEvent", { type, x, y, button: "left", buttons: type === "mouseReleased" ? 0 : 1, clickCount: 1, modifiers: o.modifiers ?? 0 })
+const mouseEv = (type, x, y, o = {}) => send("Input.dispatchMouseEvent", { type, x, y, button: "left", buttons: type === "mouseReleased" ? 0 : 1, clickCount: 1, modifiers: o.modifiers ?? 0 })
 const m0 = await strokes()
-await mouse("mouseMoved", X + 500, Y + 400, { buttons: 0 })
-await mouse("mousePressed", X + 500, Y + 400); await mouse("mouseMoved", X + 560, Y + 440); await mouse("mouseReleased", X + 560, Y + 440)
+await mouseEv("mouseMoved", X + 500, Y + 400, { buttons: 0 })
+await mouseEv("mousePressed", X + 500, Y + 400); await mouseEv("mouseMoved", X + 560, Y + 440); await mouseEv("mouseReleased", X + 560, Y + 440)
 await sleep(100)
 ok("a mouse drag in cursor mode draws no ink", (await strokes()) === m0)
-await mouse("mouseMoved", X - 40, Y - 40, { buttons: 0 })
-await mouse("mousePressed", X - 40, Y - 40, { modifiers: CTRL }); await mouse("mouseMoved", X + 100, Y + 20, { modifiers: CTRL }); await mouse("mouseMoved", X + 200, Y + 100, { modifiers: CTRL }); await mouse("mouseReleased", X + 200, Y + 100, { modifiers: CTRL })
+await mouseEv("mouseMoved", X - 40, Y - 40, { buttons: 0 })
+await mouseEv("mousePressed", X - 40, Y - 40, { modifiers: CTRL }); await mouseEv("mouseMoved", X + 100, Y + 20, { modifiers: CTRL }); await mouseEv("mouseMoved", X + 200, Y + 100, { modifiers: CTRL }); await mouseEv("mouseReleased", X + 200, Y + 100, { modifiers: CTRL })
 await sleep(120)
 ok("Ctrl-drag with the mouse is still the marquee", (await handles()) >= 3)
 

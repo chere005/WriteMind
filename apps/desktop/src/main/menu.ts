@@ -164,6 +164,7 @@ export function buildMenu(options: MenuOptions): MenuItemConstructorOptions[] {
     SEPARATOR,
     item("codeBlock", state.codeLanguage ? `${state.codeLanguage} Block` : "Code Block",
       { enabled: state.hasNote }),
+    item("insertInkCell", "Drawing Cell", { enabled: state.hasNote }),
   ]
 
   // Port-only (the Mac has no tablet): the pen's tools, on keys the tablet's
@@ -189,6 +190,8 @@ export function buildMenu(options: MenuOptions): MenuItemConstructorOptions[] {
     item("penSendWriting", "Send Writing", { enabled: sheet }),
     item("penSendPage", "Send Page", { enabled: sheet }),
     item("penClearSheet", "Clear Sheet", { enabled: sheet }),
+    item("penNextSheet", "Next Sheet", { enabled: sheet }),
+    item("penPrevSheet", "Previous Sheet", { enabled: sheet }),
   ]
 
   const devices: MenuItemConstructorOptions[] = [

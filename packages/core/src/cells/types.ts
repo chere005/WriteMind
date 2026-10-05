@@ -12,7 +12,7 @@
  * fences all leave the caret where the words belong.
  */
 
-import { end, range, replacing, type Edit, type Range } from "../text/range"
+import { edit, end, lineRange, range, replacing, type Edit, type Range } from "../text/range"
 import { positioned } from "../markdown/parser"
 import {
   codeBlock, headingName, HEADING_LADDER, listTitle, LIST_STYLES, setHeading,
@@ -35,6 +35,17 @@ export type CellKind =
    * KIND_GROUPS: five environments would swamp the + menu for a cell its own key (Ctrl+9) already makes.
    */
   | { kind: "evaluation"; evaluator: Evaluator }
+  /**
+   * An INK cell (docsPLAN-docking-ink-cells.md): a cell you draw in with the pen. The + menu offers it (its last
+   * group) and Ctrl+0 makes one, but its line names a cell in the drawing sidecar, so the APP makes it
+   * (`insertInkCell`): `opening` has nothing to write for it, and the bar's typing never makes one.
+   */
+  | { kind: "ink" }
+  /**
+   * A docked picture (the Mac's `Kind.picture(line:)`): `line` is the `![](.drawings/media/<file>)` that docking
+   * writes, so a dock at an armed bar goes through the one block builder every other kind does. Not in the menu.
+   */
+  | { kind: "picture"; line: string }
 
 /** A rung of the ladder as a kind — Body Text being the plain paragraph. */
 export function kindForHeading(level: Heading): CellKind {
@@ -50,6 +61,8 @@ export function kindName(kind: CellKind): string {
     case "quote": return "Quote"
     case "code": return "Code Block"
     case "evaluation": return `${evaluatorTitle(kind.evaluator)} Evaluation Cell`
+    case "ink": return "Drawing Cell"
+    case "picture": return "Picture"
   }
 }
 
@@ -58,6 +71,7 @@ export function sameKind(a: CellKind, b: CellKind): boolean {
   if (a.kind === "heading" && b.kind === "heading") return a.level === b.level
   if (a.kind === "list" && b.kind === "list") return a.style === b.style
   if (a.kind === "evaluation" && b.kind === "evaluation") return a.evaluator === b.evaluator
+  if (a.kind === "picture" && b.kind === "picture") return a.line === b.line
   return true
 }
 
@@ -71,6 +85,8 @@ export const KIND_GROUPS: CellKind[][] = [
   HEADING_LADDER.filter((level) => level !== 0).map((level): CellKind => ({ kind: "heading", level })),
   [...LIST_STYLES.map((style): CellKind => ({ kind: "list", style })), { kind: "quote" }],
   [{ kind: "code" }],
+  // Last, on its own: the cell you draw in (the app makes it; see `{ kind: "ink" }`).
+  [{ kind: "ink" }],
 ]
 
 export const ALL_KINDS: CellKind[] = KIND_GROUPS.flat()
@@ -98,7 +114,31 @@ export function opening(kind: CellKind, markdown: string, caret: number): Edit |
     case "evaluation":
       // The same fenced block the Insert menu writes, with the info string that makes it one the note runs.
       return codeBlock(markdown, selection, evaluatorFence(kind.evaluator))
+    case "ink":
+      // The app writes an ink cell's line, because it also puts the cell in the drawing.
+      return null
+    case "picture":
+      return pictureOpening(kind.line, markdown, place)
   }
+}
+
+/**
+ * A picture's line written at the caret: over the caret's line when that line is empty (the new cell `openCell` just
+ * made), else as a cell of its own after the caret's line. The caret ends at the end of the picture line.
+ */
+function pictureOpening(line: string, markdown: string, caret: number): Edit {
+  const here = lineRange(markdown, caret)
+  // (lineRange may take the newline at its end; the line's words are what is before it.)
+  let to = here.location + here.length
+  if (to > here.location && markdown.charCodeAt(to - 1) === 10) to--
+  if (markdown.slice(here.location, to).trim() === "") {
+    return edit(range(here.location, to - here.location), line, range(here.location + line.length, 0))
+  }
+  const opened = insertBlock(markdown, to)
+  const added = opened.markdown.length - markdown.length
+  const lead = opened.markdown.slice(to, opened.caret)
+  const trail = opened.markdown.slice(opened.caret, to + added)
+  return edit(range(to, 0), lead + line + trail, range(to + lead.length + line.length, 0))
 }
 
 /**

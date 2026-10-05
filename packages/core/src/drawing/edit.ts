@@ -75,6 +75,7 @@ export function restyledItem(item: CanvasItem, patch: StylePatch): CanvasItem {
       return same ? item : { kind: "connector", connector }
     }
     case "image":
+    case "cell":
       return item
   }
 }
@@ -172,6 +173,9 @@ export function copiedItems(items: CanvasItem[], ids: Set<string>): CanvasItem[]
           ...(c.overrides ? { overrides: c.overrides.map((o) => ({ ...o })) } : {}),
         } }
       }
+      // (A cell is hidden and never picked; a copy of one is its own cell, with its own copy of its ink.)
+      case "cell":
+        return { kind: "cell", cell: { ...item.cell, id, items: copiedItems(item.cell.items, new Set(item.cell.items.map(itemId))) } }
     }
   })
 }

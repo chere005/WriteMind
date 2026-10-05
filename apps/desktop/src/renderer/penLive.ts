@@ -11,7 +11,7 @@
  */
 
 import { useEffect, useSyncExternalStore } from "react"
-import { buttonsOf, slotOf, type PenAction, type Slot } from "./penButtons"
+import { buttonsOf, slotOf, type HoldAction, type Slot } from "./penButtons"
 import { penSettings } from "./penSettings"
 
 export interface PenLive {
@@ -93,9 +93,10 @@ export function heldSlot(state: PenLive = live): Slot | null {
   })
 }
 
-export function heldAction(state: PenLive = live): PenAction | null {
+/** The HOLD action of that button: what the pen will do when it touches. */
+export function heldAction(state: PenLive = live): HoldAction | null {
   const slot = heldSlot(state)
-  return slot ? buttonsOf(penSettings())[slot] : null
+  return slot ? buttonsOf(penSettings())[slot].hold : null
 }
 
 export function usePenLive(options: { pressure?: boolean } = {}): PenLive {

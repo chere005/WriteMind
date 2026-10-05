@@ -1,5 +1,6 @@
 // A pen stroke is saved with one pressure per point; the eraser end rubs it out; the barrel button drags a
-// marquee (and draws no ink). Synthetic pen PointerEvents on the drawing layer. (Was pen.mjs.)
+// marquee while the pen touches (the upper one; the lower one erases), and draws no ink. Synthetic pen PointerEvents on the
+// drawing layer. (Was pen.mjs.)
 import { ok, finish, js, sleep, freshNote, setPen, canvasBox, pe, saved, handles } from "../../lib/harness.mjs"
 
 const file = await freshNote()
@@ -26,13 +27,14 @@ await pe("pointermove", x + 210, y + 200, { button: -1, buttons: 32 })
 await pe("pointerup", x + 210, y + 200, { buttons: 0 })
 ok("the eraser end removed the stroke", (await strokes()).length === nBefore - 1)
 
-// barrel button drag = marquee (select), not ink
+// the upper barrel button held while the pen touches = marquee (select), not ink (Windows Ink: the barrel at contact is
+// the button itself with pressure, no tip bit)
 await pe("pointerdown", x + 100, y + 300, { pressure: 0.5 })
 for (let i = 1; i <= 5; i++) await pe("pointermove", x + 100 + i * 10, y + 300, { pressure: 0.5 })
 await pe("pointerup", x + 150, y + 300, { buttons: 0 })
 const before = (await saved(file)).items.length
-await pe("pointerdown", x + 50, y + 250, { button: 2, buttons: 2 })
-await pe("pointermove", x + 300, y + 350, { button: -1, buttons: 2 })
+await pe("pointerdown", x + 50, y + 250, { button: 1, buttons: 4 })
+await pe("pointermove", x + 300, y + 350, { button: -1, buttons: 4 })
 await pe("pointerup", x + 300, y + 350, { buttons: 0 })
 await sleep(300)
 ok("the barrel-button drag selected the stroke (handles shown)", (await handles()).length >= 3)

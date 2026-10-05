@@ -19,10 +19,38 @@ import {
   thinnedWriting, writingBox, writingMask, type Rect, type Size,
 } from "@writemind/core"
 import { grayOf, measuredPage, straightened, type Corners } from "./capturePipeline"
-import type { CaptureMode } from "./cameraSettings"
+import type { CaptureMode, Rotation } from "./cameraSettings"
 
 /** The longest side of the picture the page finder looks at: it is cheap at this size and no less sure. */
 const FINDER_SIDE = 960
+
+/** A frame of `raw` size after the pane's quarter turns: a quarter turn either way swaps its sides. */
+export const uprightSize = (raw: Size, rotation: Rotation): Size =>
+  rotation === 90 || rotation === 270 ? { width: raw.height, height: raw.width } : { width: raw.width, height: raw.height }
+
+/**
+ * The canvas transform (`setTransform(a, b, c, d, e, f)`) that draws a frame of `raw` size upright, turned CLOCKWISE
+ * by `rotation` as the pane's CSS `rotate()` shows it. One transform for the live video and for a held still, so the
+ * two are taken the same way round.
+ */
+export function uprightTransform(rotation: Rotation, raw: Size): [number, number, number, number, number, number] {
+  if (rotation === 90) return [0, 1, -1, 0, raw.height, 0]
+  if (rotation === 180) return [-1, 0, 0, -1, raw.width, raw.height]
+  if (rotation === 270) return [0, -1, 1, 0, 0, raw.width]
+  return [1, 0, 0, 1, 0, 0]
+}
+
+/** `source` (a video frame, or the held still) drawn upright on a canvas of its own: one picture for a whole capture. */
+export function uprightPicture(source: CanvasImageSource, raw: Size, rotation: Rotation): HTMLCanvasElement {
+  const size = uprightSize(raw, rotation)
+  const canvas = document.createElement("canvas")
+  canvas.width = size.width
+  canvas.height = size.height
+  const context = canvas.getContext("2d", { willReadFrequently: true })!
+  context.setTransform(...uprightTransform(rotation, raw))
+  context.drawImage(source, 0, 0, raw.width, raw.height)
+  return canvas
+}
 
 /** A page found in the frame, in the frame's own pixels (y down). */
 export interface DetectedPage {

@@ -1,9 +1,9 @@
 /**
- * The tablet sheet's memory and what taking from it means. The video pane
- * (CameraPane) shows THE sheet and takes from it through one function: the strokes with their pressures, the Page picture, the Box
+ * What taking from the tablet sheet means. The video pane (CameraPane) shows the OPEN sheet (tabletSheets.ts: one
+ * per tab) and takes from it through one function: the strokes with their pressures, the Page picture, the Box
  * section, the flow-chart reader, the learned page shape, the placement.
  *
- * No React in here. The sheet outlives the view (putting the video away does not wipe the page).
+ * No React in here. The sheets outlive the view (putting the video away does not wipe them; they are kept on disk).
  */
 
 import {
@@ -11,12 +11,13 @@ import {
 } from "@writemind/core"
 import { bandUnder, chartSummary, sheetChartLabelled } from "./capturePipeline"
 import { wordsForChart } from "./ocrClient"
-import { currentTurns, subscribeOrientation, tabletAspect } from "./orientation"
-import { sheetAspectFor } from "../shared/orientation"
 import {
-  inkExtent, landStrokes, paintStrokes, regionOfSheetBox, screenAspect, SHEET_REF, splitByRegion, TabletPage, type InkStroke,
+  inkExtent, landStrokes, paintStrokes, regionOfSheetBox, SHEET_REF, splitByRegion, type InkStroke,
 } from "./tabletPage"
 import { inkOn, paintPaper, type Paper } from "./tabletPaper"
+import { currentSheet, currentSheetAspect } from "./tabletSheets"
+
+export { currentSheet, currentSheetAspect }
 
 export interface Capture {
   /** The picture's bytes, ready for `saveMedia`. Absent when the writing comes in as strokes. */
@@ -31,18 +32,8 @@ export interface Capture {
   chart?: CanvasItem[]
 }
 
-/**
- * The sheet's shape: the screen's, turned by the tablet's orientation (landscape on a
- * landscape display unless the tablet is turned a quarter turn).
- */
-export const currentSheetAspect = (): number => sheetAspectFor(tabletAspect() ?? screenAspect(), currentTurns())
-
-/** The one sheet. Its shape follows the orientation; its strokes are fractions of it and never change with it. */
-export const sheet = new TabletPage(currentSheetAspect())
-subscribeOrientation(() => sheet.setAspect(currentSheetAspect()))
-
 /** The sheet's size in reference units: what widths and the page arithmetic are measured in. */
-export const sheetUnits = (aspect: number = sheet.aspect): Size =>
+export const sheetUnits = (aspect: number = currentSheet().aspect): Size =>
   ({ width: SHEET_REF, height: SHEET_REF / aspect })
 
 /**
@@ -95,6 +86,8 @@ export async function takeFromSheet(mode: "ink" | "page", options: {
 }): Promise<SheetTake> {
   const { box, shown, pane, penColour, penWidth, paper } = options
   const clearAfter = mode === "ink"
+  // The OPEN sheet, as it is now: switching tabs while the reader works does not move what was taken.
+  const sheet = currentSheet()
   if (shown.width <= 0 || shown.height <= 0) return { trouble: "no sheet to take from" }
   if (sheet.strokes.length === 0) return { trouble: "nothing written yet" }
   const region = regionOfSheetBox(box, shown)
@@ -104,7 +97,7 @@ export async function takeFromSheet(mode: "ink" | "page", options: {
 
   // The page arithmetic runs on the sheet in REFERENCE units, so it is the
   // same whatever size the sheet was shown at when it was written.
-  const units = sheetUnits()
+  const units = sheetUnits(sheet.aspect)
   const portrait = units.height >= units.width
   const measured = Math.max(units.width, units.height) / Math.max(1, Math.min(units.width, units.height))
   const page = resolveShape(measured, learned.shape)
@@ -160,8 +153,4 @@ export async function takeFromSheet(mode: "ink" | "page", options: {
   }
 }
 
-// End-to-end scripts (WRITEMIND_E2E, whose preload adds `e2eWindow`) read the
-// stored strokes to check that they are normalised; nothing else does.
-if (typeof window !== "undefined" && (window as unknown as { wm?: { e2eWindow?: unknown } }).wm?.e2eWindow) {
-  ;(window as unknown as Record<string, unknown>).__wmSheet = sheet
-}
+// (End-to-end scripts read the open sheet as `window.__wmSheet`: tabletSheets.ts.)

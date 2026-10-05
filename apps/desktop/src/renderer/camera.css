@@ -25,6 +25,13 @@
   transform-origin: 50% 50%;
 }
 .camera.zooming { cursor: crosshair; }
+/* Hold image: the still in the video's place (sized and turned like it in CameraPane), the video playing on under it. */
+.camera .stage canvas.still { position: absolute; left: 50%; top: 50%; transform-origin: 50% 50%; }
+/* The pane takes the keyboard when its picture is clicked (Esc lets go of a held picture); no ring round the picture. */
+.camera:focus { outline: none; }
+/* Held reads as pressed (sunk in); a pointer still resting on it after letting go must not look held, so its hover is quieter. */
+.camera .camera-corner [data-camera="hold"]:hover:not(.on):not(:disabled) { background: rgba(255, 255, 255, 0.2); }
+.camera .camera-corner [data-camera="hold"].on { box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.55); }
 /* A pen drags the box too: nothing in here is for the browser to pan. */
 .camera { touch-action: none; }
 
@@ -72,6 +79,7 @@
   background: rgba(0, 0, 0, 0.5); padding: 3px 10px; border-radius: 999px;
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
+.camera .note .camera-name .held-word { color: var(--wm-accent); font-weight: 600; margin-right: 6px; }
 
 /* No picture: no camera selected, access off, unavailable. */
 .camera .placeholder {

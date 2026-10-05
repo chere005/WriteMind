@@ -127,6 +127,13 @@ export const notebookTheme = EditorView.theme({
     opacity: "0.85",
   },
   ".wm-bar-faint": { opacity: "0.22" },
+  // Where a dragged selection would be docked (`showDropBar`): heavier than the cursor's bar, with a halo.
+  ".wm-bar-drop": {
+    height: "4px",
+    opacity: "1",
+    borderRadius: "2px",
+    boxShadow: "0 0 0 3px color-mix(in srgb, var(--wm-accent) 22%, transparent)",
+  },
   ".wm-plus": {
     position: "absolute",
     borderRadius: "50%",

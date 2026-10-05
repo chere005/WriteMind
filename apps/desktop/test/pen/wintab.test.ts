@@ -155,11 +155,14 @@ describe("WTInfo structures", () => {
 })
 
 describe("normalising (device frame: y is NOT flipped, nothing is rotated)", () => {
-  it("scales pressure and reads the three pen buttons (tip, barrel = lower, barrel 2 = upper)", () => {
+  it("scales pressure and reads the three pen buttons (tip, right click = lower, middle click = upper)", () => {
     const s = normalisePacket({ ...blank(), pressure: 16383, buttons: BTN.TIP | BTN.UPPER, x: 4750, y: 7600 }, cfg(), 5)
     expect(s.p).toBeCloseTo(0.5, 3)
     expect(s).toMatchObject({ tip: true, lower: false, upper: true, eraser: false, inRange: true, backend: "wintab", t: 5, x: 0.5, y: 0.5 })
     expect(normalisePacket({ ...blank(), buttons: BTN.LOWER }, cfg(), 0)).toMatchObject({ tip: false, lower: true, upper: false, p: 0 })
+    // Sean's CTL-472: the lower switch (Right Click) arrives as 0x4, a Middle Click switch as 0x2
+    expect(normalisePacket({ ...blank(), buttons: 0x4 }, cfg(), 0)).toMatchObject({ lower: true, upper: false })
+    expect(normalisePacket({ ...blank(), buttons: 0x2 }, cfg(), 0)).toMatchObject({ lower: false, upper: true })
   })
   it("pressure with no tip bit still counts as a tip; a threshold can demand more", () => {
     expect(normalisePacket({ ...blank(), pressure: 5 }, cfg(), 0).tip).toBe(true)

@@ -3,6 +3,12 @@
 The menu bar, the toolbar tooltips and the key handler all read ONE table:
 `apps/desktop/src/shared/commands.ts`. A key shown is a key that works.
 
+**The Quick Reference** a new install opens on (`WriteMind Quick Reference.md`, `shared/welcome.ts`) reads its
+keys table from that same table: a short curated list of command ids (`WELCOME_KEYS`), Windows and Mac chords
+from `acceleratorFor`, so it cannot drift. `apps/desktop/test/welcome.test.ts` fails when one of its ids is gone
+or has no key on Windows. Run the cell (Shift+Enter) is the one row that is not a menu key: the test finds it in
+the editor's keymap instead.
+
 **The Mac's ⌘ is Ctrl.** The Mac's ⌃ chords keep what the editor already used
 on Windows where Ctrl alone is free. Where the Mac's chord would collide with
 something on Windows (the ⌃⌘ and ⌥⌘ pairs, which are one Ctrl+Alt on a PC), it
@@ -38,7 +44,7 @@ ONE LIST, the Mac's README table and `Shortcut` enum (Mac e8b3266, 2026-09-21: S
 table is `shared/keyList.ts` row for row, and **`apps/desktop/test/keyList.test.ts` fails** when a key moves,
 is added or is taken away until this table says so too; the same test holds the list to the menu bar, fails
 on any chord two commands want, and fails when the editor's keymaps bind a menu chord outside
-`shared/commands.ts`. Help ▸ Keyboard Shortcuts (F1) shows the same rows in the app. The Mac column is the
+`shared/commands.ts`. Help ▸ Keyboard Shortcuts (F1) shows the same rows in the app, with the ten number keys (Ctrl / ⌘ + 1 … 9, 0: the cell kinds) taken out of their menus and shown first as one group (`shared/keyGroups.ts`, Sean 2026-10-05). The Mac column is the
 Mac app's own chord; "—" is a port-only key.
 
 | Menu | Command | Windows / Linux | Mac |
@@ -95,6 +101,7 @@ Mac app's own chord; "—" is a port-only key.
 | Insert | Image… | Ctrl+Shift+I | ⇧⌘I |
 | Insert | Maths… | Ctrl+Shift+M | — |
 | Insert | Code Block | Ctrl+8 | ⌘8 |
+| Insert | Drawing Cell | Ctrl+0 | — |
 | Pen | Pen Down / Up | Ctrl+Alt+1 | — |
 | Pen | Erase Tool | Ctrl+Alt+2 | — |
 | Pen | Select Tool | Ctrl+Alt+3 | — |
@@ -108,6 +115,8 @@ Mac app's own chord; "—" is a port-only key.
 | Pen | Send Writing | Ctrl+Alt+W | — |
 | Pen | Send Page | Ctrl+Alt+Shift+W | — |
 | Pen | Clear Sheet | Ctrl+Alt+X | — |
+| Pen | Next Sheet | Ctrl+Alt+PageDown | — |
+| Pen | Previous Sheet | Ctrl+Alt+PageUp | — |
 | Input Devices | Refresh Device List | Ctrl+Alt+R | ⌥⌘R |
 | Help | Keyboard Shortcuts | F1 | — |
 
@@ -170,19 +179,42 @@ one of them declines on the markdown side:
 | Page Up / Page Down (+ Shift) | the window moves a page and the caret goes to the block at the same height |
 | Escape | at a bar, takes it back (the caret returns to the block above); over held cells, lets go of them; in an open block, closes it — the block is drawn again and the caret is put away (Mac `move(.out)`); the next arrow, Home or End only brings the caret back where it was, a character goes in where it was |
 | a character at a bar | opens a block there with that character in it; Return opens an empty one; the + on the bar chooses the kind first |
-| Ctrl+1…7, Ctrl+Shift+L, Ctrl+Q (quote), Ctrl+8 and the list / quote / code buttons at a bar | MAKES that kind of block at the bar now, its marker in and the caret where the words go (Mac 0fdd031); bold, indent and the other commands with no kind still do nothing at a bar |
+| Ctrl+1…7, Ctrl+Shift+L, Ctrl+Q (quote), Ctrl+8 and the list / quote / code buttons at a bar | MAKES that kind of block at the bar now — on the markdown side too (2026-10-05) — its marker in and the caret where the words go (Mac 0fdd031); bold, indent and the other commands with no kind still do nothing at a bar. The + on a bar MAKES the chosen kind of cell at once, the caret in it (2026-10-05; the Mac only names the kind for the next character); Insert ▸ Maths… at a bar puts the maths in a new cell there |
 | a character over held cells | replaces them |
 | Alt-click on the words of a link | follows it from inside an open block (a plain click puts the caret in it) |
+
+## Tables (both modes; port-first, part one of "Tables, from scratch")
+
+In a pipe table (the markdown pane, or a table opened on the rendered page by a click on a cell). Heard by
+`packages/editor/src/tables.ts` at the highest precedence, ahead of Tab's indent and the page's Return; the rules are
+core `tableTab` / `tableReturn`. No table button or menu key yet (docs/TODO.md).
+
+| Key | What it does |
+|---|---|
+| Tab | the next cell (along the row, then the first cell of the next; the delimiter row is stepped over), its words selected so typing replaces them (an empty cell: the caret in it). Past the last cell of the last row: a new empty row, caret in its first cell |
+| Shift+Tab | the previous cell; stays on the first cell of the header |
+| Return | a new empty row under the caret's row (under the delimiter row when the caret is in the header), caret in its first cell; never splits the table. On an EMPTY last row: the row goes and the table ends, the caret after a blank line below it (as an empty item ends a list). At the very start of the header: an ordinary Return (room above the table) |
+| Tab / Return with a selection over two lines | not the table's: Tab indents, Return is the ordinary one |
 
 ## Evaluation cells (both modes; Mac 0bf52b5 … 859aa6c)
 
 | Key | What it does |
 |---|---|
 | Shift+Enter in an evaluation cell (```` ```eval python ````, `eval wl`, `eval c`, `eval c++`, `eval rust`) | runs THAT cell: the answer goes under it as an ```` ```out ```` cell (replacing the last one), and the bar is left under the answer. Anywhere else Shift+Enter is what it always was. Not a menu key, on purpose (an accelerator would take Shift+Enter from every field) |
+| Ctrl+8 (Insert ▸ Code Block) with nothing selected in a cell of words | a new, empty code cell AFTER that cell, the caret in it (2026-10-05; Ctrl+9's rule). At a bar: there. Round a selection: fences it. On an empty line: there |
 | Ctrl+9 (Format ▸ Evaluation Cell) | at a bar: a new evaluation cell there, caret inside. In a fenced cell: that cell becomes one, keeping its code. Anywhere else: a new one after the caret's cell. The environment is Wolfram until one has been picked from a cell's mark, then the last one picked |
 | a click on the mark left of an unrun cell (`WL ▾`, `PY ▾`, …), or on the language under a cell's `In[n]` | the environment menu ("not installed" beside a tool this machine has not got); picking one rewrites the fence |
 | a click on the spinner under a running cell's mark | stops the run (the child and what it started are killed) |
 | Ctrl+Z after a run | takes the answer out (it is its own undo step) |
+
+## Drawing cells and docking (docs/PLAN-docking-ink-cells.md)
+
+| Key | What it does |
+|---|---|
+| Ctrl+0 (Insert ▸ Drawing Cell; the + menu's Drawing Cell at a bar) | an empty ink cell (200 px tall) at the armed bar, else after the caret's cell; one Ctrl+Z takes its line and its sidecar item out. The pen draws, erases and selects in it as on the page. AND THE POINTER BECOMES A PEN FOR THAT CELL (2026-10-05): with the pen up, a press in the new cell draws there (its box is ringed, the cursor a crosshair); a press anywhere else ends it and is just a click (the caret; never a stroke, not even from a pen that always draws); Escape ends it; Ctrl+P (the pen for the whole page) ends it too |
+| the dock handle (⤵, right of a picked set of floating strokes and / or pictures on the page) | a click docks them at the cursor (the armed bar, else after the caret's cell): one picture → a picture cell, anything else → one ink cell. A drag shows the drop bar under the pointer and docks where it is let go; over an ink cell (it lights up) they go INTO it. Escape or letting go outside the note docks nothing. One Ctrl+Z (or the pen's lower-button double tap) puts them back on the page and takes the line out |
+| arrows, Backspace / Delete, Ctrl+C / Ctrl+X / Ctrl+V, Ctrl+G with strokes picked IN an ink cell | nudge, delete, copy, cut, paste (back into the same cell), group, as on the page |
+| a right-click on a drawing cell (either pane, pen up or down; the pen's Right-click action too) | its menu: **Open in Tablet Sheet** (the video pane shows the Tablet, on a sheet tab "<note> Drawing" BOUND to the cell: writing there writes into the cell, one Ctrl+Z in the note per stroke or erase) and **Delete Drawing Cell** (its line goes, as Delete on the held cell; Ctrl+Z brings it back). A read-only ink line keeps the notebook's Cut / Copy / Paste menu |
 
 ## The maths palette (Insert ▸ Maths…, the ƒ(x) button)
 
@@ -207,12 +239,25 @@ source under the menu; Ctrl/Cmd-click is the drawing layer's, as on words.
 - **Ctrl+Z / Ctrl+Y (Ctrl+Shift+Z)** while the pen or mouse is over the
   tablet sheet (or it has focus) act on the *sheet's strokes*, not the note;
   with nothing to take back there, the key falls through to the note's undo.
-  (`tabletFocus.ts`, asked first by `useUndo`.)
-- **Pen side button**: selects like ⌘ (default) or erases — Pen chip ▸ *Pen
-  side button*. On the sheet, a selecting side button (or Ctrl) drags the
-  dashed box. The pen's eraser end always erases.
-- **⌫ Erase** (toolbar pen group, and on the sheet): touch a stroke to rub it
-  out; picking the ✎ pen or a shape tool turns it off.
+  (`tabletFocus.ts`, asked first by `useUndo`.) On a sheet BOUND to a drawing
+  cell (right-click the cell ▸ Open in Tablet Sheet) there is nothing of the
+  sheet's own to take back: Ctrl+Z, the header's Undo and the pen's double tap
+  are the note's Undo, and the sheet follows the cell.
+- **Pen side buttons** (Pen chip ▸ *Buttons*, see below): on the sheet the
+  lower one held while the pen touches rubs out strokes, the upper one held
+  drags the dashed box; a double tap in the air is Undo / Redo of the
+  *sheet's* strokes (with nothing there, the note's). The eraser end always
+  erases.
+- **⌫ Erase** (toolbar pen group): touch a stroke on the note's page to rub
+  it out; picking the ✎ pen, Ctrl+P or a shape tool turns it off.
+- **Erase / Select on the sheet** (the sheet's header): the SHEET's own pair
+  (one for every sheet tab, not remembered). Nothing done in the notebook turns
+  them off, and they never light the toolbar's ⌫ / ⬚. Select makes the pen
+  pull the dashed box, as the mouse does.
+- **Erase Tool / Select Tool** by the pen (a double tap set to "Erase tool
+  on/off" / "Select tool on/off", or the ExpressKey Ctrl+Alt+2 / Ctrl+Alt+3, or
+  the Pen menu) toggle the tools of the surface the pen is over, or was last
+  over: the sheet's on the sheet's side of the pane, the toolbar's elsewhere.
 
 ## No full screen (Sean's rule)
 
@@ -236,34 +281,46 @@ types it, nothing happens; remap it to Send Writing (Ctrl+Alt+W).
 The Mac has a mouse and modifier keys; a pen tablet has buttons on the pen
 and keys on the tablet. Both are given the Mac's idioms.
 
-**The pen's buttons** (Pen chip ▸ *What the pen's buttons do*, remembered).
+**The pen's buttons** (Pen chip ▸ *Buttons*, two columns, remembered).
 Chromium delivers a 2-button Wacom pen as: tip = button 0 / `buttons` bit 1;
 lower side button = button 2 / bit 2 (right click); upper side button =
 button 1 / bit 4 (middle click; some drivers send both as the lower one, and
 then they cannot be told apart); eraser end = button 5 / bit 32. A button
-pressed while hovering is a `pointerdown`; with the tip already down it is
-only a `pointermove` that gained a bit; held at contact it is button 0 with
-the bit set. All three are read (`penButtons.ts`, tested).
+pressed while hovering is a `pointerdown` (or, on Windows Ink, possibly only
+the driver's right / middle mouse click at the pen, which is read as the
+button); the pen then touching is a `pointermove` that gains the tip; held
+at contact it is button 0 with the bit set, or (Windows Ink) the button
+itself with pressure. All are read (`penButtons.ts`, tested).
 
-| Slot | Default | Mac equivalent |
+Each side button has two jobs (Sean, 2026-10-05):
+
+| Button | Hold (held while the pen touches) | Double-tap (twice in the air) |
 |---|---|---|
-| Lower side button | Select (hold) | ⌘-drag marquee |
-| Upper side button | Pan (hold) | a finger turning the page |
-| Eraser end | Erase (hold) | — |
-| Tip + Alt | None | — |
+| Lower side button | Erase strokes (whole strokes it touches) | Undo |
+| Upper side button | Select: the marquee; a drag inside the selection moves it | Redo |
+| Eraser end | Erase strokes | — |
+| Tip + Alt | Nothing | — |
 
-Choices: *hold* actions work while the button is down during a gesture —
-Select (⌘), Add to selection (⇧), Erase, Pan; *tap* actions fire once when
-the button is pressed and let go WITHOUT the tip touching — Undo, Redo, Erase
-tool on/off, Select tool on/off, Next colour, Wider, Thinner, Pen-always-draws
-on/off, Delete selection, Clear selection, Right-click; None. A button with
-no action does nothing (a tip pressed under it still writes). The pen cursor
-shows the held action: dashed square (select, + for add), red cross (erase),
-hand (pan); the Pen chip names it too. The popover's **Test buttons** lamps
-show what the system reports (tip, lower, upper, eraser, a pressure bar).
+Undo / Redo are the note's ONE timeline (words and drawing, the same as
+Ctrl+Z / Ctrl+Y); over the tablet sheet, its own strokes first. A double tap
+is two press-and-release of the same button without the tip touching, the
+second press within 400 ms of the first release, each press under 500 ms. A
+single tap does nothing; a button held in the air does nothing; lifting the
+pen ends the hold. No context menu opens over the page or the sheet while a
+pen button is in use.
+
+Hold choices: Erase strokes, Select, Add to selection (⇧), Pan the page,
+Nothing (the pen then simply writes). Double-tap choices: Undo, Redo, Erase
+tool on/off, Select tool on/off, Next colour, Wider pen, Thinner pen, Pen
+always draws on/off, Delete selection, Clear selection, Right-click, Nothing.
+A stored 0.4.0 setting is migrated: the old defaults (lower Select, upper
+Pan) become the new ones; a deliberate hold choice stays the hold, a one-shot
+choice becomes that button's double tap. The pen cursor shows the held
+button's hold: dashed square (select, + for add), red cross (erase), hand
+(pan); the Pen chip names it too.
 
 Doing everything with the pen alone: the toolbar's **⬚ Select tool** (or
-the Select tap action / its ExpressKey) turns a plain tip into the cursor:
+a button's "Select tool on/off" double tap / its ExpressKey) turns a plain tip into the cursor:
 drag an object to move it, drag on nothing to pull a marquee; the handles
 turn, scale, delete (✕) and group; **Delete selection** / **Clear selection**
 are assignable to a button or ExpressKey (the Mac's ⌫ and Esc).
@@ -287,6 +344,7 @@ is AltGr the chord still means its physical key.
 | Clear Selection | Ctrl+Alt+0 |
 | Send Writing / Send Page | Ctrl+Alt+W / Ctrl+Alt+Shift+W |
 | Clear Sheet | Ctrl+Alt+X |
+| Next / Previous Sheet (the sheet's tabs; onto a drawing tab, its note comes to the front) | Ctrl+Alt+PageDown / Ctrl+Alt+PageUp |
 | Undo / Redo | Ctrl+Z / Ctrl+Y |
 
 Suggested layouts (also in the popover, with copy buttons): 4 keys — Undo,
@@ -332,5 +390,6 @@ A press on the words lets go of the pick, which gives the keys back.
 | same | click | one click puts the box away; with no box, it draws a box round the whole picture (the gesture the double-click used to be) |
 | same | double-click | the picture fills the WINDOW (sidebar and notes out of sight; never the display, never full screen); double-click again, or the faint ✕ over its top-left corner, to come back. Hiding the video leaves it too. Not remembered across a launch (Mac commit 0edfc08) |
 | same | Esc | puts the box away, and lets go of Resize by Square when it is armed |
+| same, the picture held (Hold image) | Esc | with the pane focused (its picture or one of its buttons was clicked last), back to the live picture; a box or an armed Resize by Square goes first, one per press. Esc in the notes leaves it held |
 | Input Devices | Ctrl+Alt+R | Refresh Device List (the other camera commands are menu items) |
 | Input Devices ▸ Aspect Ratio | menu, no key | the viewfinder's shape: Free, 1:1, 4:3, 3:4, 3:2, 2:3, 16:9, 9:16 (ticked; remembered) (Mac commit c98c067) |

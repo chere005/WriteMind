@@ -65,6 +65,12 @@ describe("sample -> pointer events on the sheet", () => {
     expect(clicked).toEqual(["strip-button"])
   })
 
+  it("a side button pressed in the air over a button never clicks it (its taps are the pen's own: Undo, Redo)", () => {
+    const { d, clicked } = rig()
+    d.batch([sample(0.5, 0.0), sample(0.5, 0.0, { lower: true }), sample(0.5, 0.0), sample(0.5, 0.0, { upper: true }), sample(0.5, 0.0)])
+    expect(clicked).toEqual([])
+  })
+
   it("a drag that leaves the button does not click it", () => {
     const { d, clicked } = rig()
     d.batch([sample(0.5, 0.0, { tip: true, p: 0.5 }), sample(0.9, 0.0, { tip: true, p: 0.5 }), sample(0.9, 0.0)])

@@ -127,6 +127,9 @@ export const COMMANDS: CommandDef[] = [
   // Port-only key: the Mac opens the maths popover from the bar only.
   c("insertMath", "Maths…", "page", "CmdOrCtrl+Shift+M"),
   c("codeBlock", "Code Block", "editor", "CmdOrCtrl+8"),
+  // An empty ink cell (docs\PLAN-docking-ink-cells.md): at the armed bar, else after the caret's cell. Port-only;
+  // Ctrl+0 follows Ctrl+8 Code Block and Ctrl+9 Evaluation Cell.
+  c("insertInkCell", "Drawing Cell", "page", "CmdOrCtrl+0"),
   // Pen (port-only): the tablet's ExpressKeys type these. Ctrl+Alt+digit and
   // a few Ctrl+Alt+letters, none of which anything else uses.
   c("penToggle", "Pen Down", "page", "CmdOrCtrl+Alt+1"),
@@ -142,6 +145,9 @@ export const COMMANDS: CommandDef[] = [
   c("penSendWriting", "Send Writing", "page", "CmdOrCtrl+Alt+W"),
   c("penSendPage", "Send Page", "page", "CmdOrCtrl+Alt+Shift+W"),
   c("penClearSheet", "Clear Sheet", "page", "CmdOrCtrl+Alt+X"),
+  // The tablet's sheets are tabs; the hand without the pen changes sheet (the pen cannot reach the tabs: the whole tablet is the sheet).
+  c("penNextSheet", "Next Sheet", "page", "CmdOrCtrl+Alt+PageDown"),
+  c("penPrevSheet", "Previous Sheet", "page", "CmdOrCtrl+Alt+PageUp"),
   // Input Devices
   c("cameraOff", "Turn Camera Off", "page"),
   c("cameraRefresh", "Refresh Device List", "page", "CmdOrCtrl+Alt+R", "Alt+Cmd+R"),

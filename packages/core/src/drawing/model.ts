@@ -112,11 +112,26 @@ export interface SegmentOverride {
 export const isRouted = (c: { startNode: string | null; endNode: string | null }): boolean =>
   c.startNode !== null || c.endNode !== null
 
+/**
+ * An INK CELL (docsPLAN-docking-ink-cells.md (b)): a cell of the note you draw in with the pen. Its line in the
+ * markdown is `![ink](.drawings/media/ink-<id>.svg)`; its strokes live here, in the sidecar, as ONE item of the
+ * drawing. `aspect` is its height over its width (shown height = column width × aspect, so a wider window scales the
+ * ink uniformly). Its `items` are in fractions of the cell's WIDTH on both axes, so every function of this layer works
+ * on them unchanged when handed `cellFrame(W) = { width: W, height: W }` and points local to the cell's top-left. They
+ * are never cells themselves.
+ */
+export interface InkCell { id: string; aspect: number; items: CanvasItem[] }
+
 export type CanvasItem =
   | { kind: "stroke"; stroke: Stroke }
   | { kind: "image"; image: ImageItem }
   | { kind: "shape"; shape: ShapeItem }
   | { kind: "connector"; connector: ConnectorItem }
+  /**
+   * An ink cell, kept as an item (not a field beside `items`) so every place that rebuilds a drawing as `{ items }`
+   * keeps it. It is HIDDEN on the page (`isHidden`): nothing that paints, picks, erases or measures the page sees it.
+   */
+  | { kind: "cell"; cell: InkCell }
 
 export interface Drawing { items: CanvasItem[] }
 
@@ -128,6 +143,7 @@ export function itemId(item: CanvasItem): string {
     case "image": return item.image.id
     case "shape": return item.shape.id
     case "connector": return item.connector.id
+    case "cell": return item.cell.id
   }
 }
 
@@ -137,6 +153,8 @@ export function itemTransform(item: CanvasItem): ItemTransform {
     case "image": return item.image.transform
     case "shape": return item.shape.transform
     case "connector": return item.connector.transform
+    // A cell does not move on the page: it goes where its line is.
+    case "cell": return noTransform()
   }
 }
 
@@ -146,6 +164,7 @@ export function withTransform(item: CanvasItem, transform: ItemTransform): Canva
     case "image": return { kind: "image", image: { ...item.image, transform } }
     case "shape": return { kind: "shape", shape: { ...item.shape, transform } }
     case "connector": return { kind: "connector", connector: { ...item.connector, transform } }
+    case "cell": return item
   }
 }
 
@@ -156,6 +175,7 @@ export function itemGroup(item: CanvasItem): string | null {
     case "image": return item.image.group
     case "shape": return item.shape.group
     case "connector": return null
+    case "cell": return null
   }
 }
 
@@ -165,11 +185,13 @@ export function withGroup(item: CanvasItem, group: string | null): CanvasItem {
     case "image": return { kind: "image", image: { ...item.image, group } }
     case "shape": return { kind: "shape", shape: { ...item.shape, group } }
     case "connector": return item
+    case "cell": return item
   }
 }
 
+/** A picture put away (read into words), and every ink cell: not on the page. */
 export const isHidden = (item: CanvasItem): boolean =>
-  item.kind === "image" && item.image.hidden
+  (item.kind === "image" && item.image.hidden) || item.kind === "cell"
 
 export const visibleItems = (drawing: Drawing): CanvasItem[] =>
   drawing.items.filter((item) => !isHidden(item))
@@ -266,6 +288,107 @@ const strokeOf = (given: Record<string, unknown>): Stroke => {
   }
 }
 
+/** The aspect a cell read without one gets: the default height (200) at the snapshot's default width (720). */
+const DEFAULT_CELL_ASPECT = 200 / 720
+
+/**
+ * One item of a sidecar, or null when it cannot be one (null, not an object, a kind this build does not know, a
+ * stroke with no points). A cell's own items are read by this same reader; one of them that is damaged is dropped
+ * and counted in `counter`, and a cell inside a cell is no item.
+ */
+function itemOf(raw: unknown, counter: { dropped: number }, nested = false): CanvasItem | null {
+  if (!isRecord(raw)) return null
+  const given = raw
+  const kind = text(given.kind, "")
+  if (kind === "stroke") {
+    // (A stroke with no points has no ink to draw, hit or save.)
+    if (list(given.points).length === 0) return null
+    return { kind: "stroke", stroke: strokeOf(given) }
+  }
+  if (kind === "image") {
+    return {
+      kind: "image",
+      image: {
+        id: text(given.id, newID()),
+        file: text(given.file, ""),
+        center: point(given.center, { x: 0.5, y: 0.5 }),
+        width: number(given.width, 0.35),
+        aspect: number(given.aspect, 1),
+        transform: transformOf(given.transform),
+        hidden: given.hidden === true,
+        group: groupOf(given.group),
+      },
+    }
+  }
+  if (kind === "shape") {
+    // A kind from a newer build (a hexagon, say) is not one we can draw: it comes in as a rectangle in
+    // the same box, with its words, rather than as a name the painter would throw on (which left every
+    // object after it unpainted, and still pickable).
+    const named = given.shapeKind ?? given.kindName
+    const shapeKind: ShapeKind = isShapeKind(named) ? named : "rectangle"
+    return {
+      kind: "shape",
+      shape: {
+        id: text(given.id, newID()),
+        kind: shapeKind,
+        center: point(given.center, { x: 0.5, y: 0.5 }),
+        width: number(given.width, 0.18),
+        aspect: number(given.aspect, defaultAspect(shapeKind)),
+        colorHex: text(given.colorHex, "#1C1C1E"),
+        lineWidth: number(given.lineWidth, 2),
+        fillHex: typeof given.fillHex === "string" ? given.fillHex : null,
+        label: text(given.label, ""),
+        transform: transformOf(given.transform),
+        group: groupOf(given.group),
+      },
+    }
+  }
+  if (kind === "connector") {
+    return {
+      kind: "connector",
+      connector: {
+        id: text(given.id, newID()),
+        start: point(given.start, { x: 0.3, y: 0.5 }),
+        end: point(given.end, { x: 0.7, y: 0.5 }),
+        startNode: groupOf(given.startNode),
+        endNode: groupOf(given.endNode),
+        startHead: oneOf(given.startHead, HEADS, "none"),
+        endHead: oneOf(given.endHead, HEADS, "arrow"),
+        line: oneOf(given.line, LINES, "solid"),
+        colorHex: text(given.colorHex, "#1C1C1E"),
+        lineWidth: number(given.lineWidth, 2),
+        transform: transformOf(given.transform),
+        bends: list(given.bends).map((p) => point(p, { x: 0, y: 0 })),
+        // Present only when a hand dragged a segment, so a plain line
+        // reads back exactly as it was written.
+        ...(Array.isArray(given.overrides) && given.overrides.length > 0
+          ? {
+            overrides: (given.overrides as unknown[]).map((o) => {
+              const given2 = isRecord(o) ? o : {}
+              return {
+                index: number(given2.index, 0),
+                vertical: given2.vertical === true,
+                value: number(given2.value, 0),
+              }
+            }),
+          }
+          : {}),
+      },
+    }
+  }
+  if (kind === "cell" && !nested) {
+    const items: CanvasItem[] = []
+    for (const one of list(given.items)) {
+      const item = itemOf(one, counter, true)
+      if (item === null) counter.dropped++
+      else items.push(item)
+    }
+    const aspect = number(given.aspect, DEFAULT_CELL_ASPECT)
+    return { kind: "cell", cell: { id: text(given.id, newID()), aspect: aspect > 0 ? aspect : DEFAULT_CELL_ASPECT, items } }
+  }
+  return null
+}
+
 /** What reading a sidecar found, beyond the drawing: whether anything had to be thrown away to make it. */
 export interface DecodedDrawing {
   drawing: Drawing
@@ -302,6 +425,7 @@ export function decodeDrawing(json: string | null): DecodedDrawing {
     const items: CanvasItem[] = []
     let dropped = 0
     let damaged = false
+    const counter = { dropped: 0 }
     if (parsed.items !== undefined && !Array.isArray(parsed.items)) damaged = true
     if (parsed.strokes !== undefined && !Array.isArray(parsed.strokes)) damaged = true
 
@@ -312,85 +436,11 @@ export function decodeDrawing(json: string | null): DecodedDrawing {
     }
 
     for (const raw of list(parsed.items)) {
-      if (!isRecord(raw)) { dropped++; continue }
-      const given = raw
-      const kind = text(given.kind, "")
-      if (kind === "stroke") {
-        // (A stroke with no points has no ink to draw, hit or save.)
-        if (list(given.points).length === 0) { dropped++; continue }
-        items.push({ kind: "stroke", stroke: strokeOf(given) })
-      } else if (kind === "image") {
-        items.push({
-          kind: "image",
-          image: {
-            id: text(given.id, newID()),
-            file: text(given.file, ""),
-            center: point(given.center, { x: 0.5, y: 0.5 }),
-            width: number(given.width, 0.35),
-            aspect: number(given.aspect, 1),
-            transform: transformOf(given.transform),
-            hidden: given.hidden === true,
-            group: groupOf(given.group),
-          },
-        })
-      } else if (kind === "shape") {
-        // A kind from a newer build (a hexagon, say) is not one we can draw: it comes in as a rectangle in
-        // the same box, with its words, rather than as a name the painter would throw on (which left every
-        // object after it unpainted, and still pickable).
-        const named = given.shapeKind ?? given.kindName
-        const shapeKind: ShapeKind = isShapeKind(named) ? named : "rectangle"
-        items.push({
-          kind: "shape",
-          shape: {
-            id: text(given.id, newID()),
-            kind: shapeKind,
-            center: point(given.center, { x: 0.5, y: 0.5 }),
-            width: number(given.width, 0.18),
-            aspect: number(given.aspect, defaultAspect(shapeKind)),
-            colorHex: text(given.colorHex, "#1C1C1E"),
-            lineWidth: number(given.lineWidth, 2),
-            fillHex: typeof given.fillHex === "string" ? given.fillHex : null,
-            label: text(given.label, ""),
-            transform: transformOf(given.transform),
-            group: groupOf(given.group),
-          },
-        })
-      } else if (kind === "connector") {
-        items.push({
-          kind: "connector",
-          connector: {
-            id: text(given.id, newID()),
-            start: point(given.start, { x: 0.3, y: 0.5 }),
-            end: point(given.end, { x: 0.7, y: 0.5 }),
-            startNode: groupOf(given.startNode),
-            endNode: groupOf(given.endNode),
-            startHead: oneOf(given.startHead, HEADS, "none"),
-            endHead: oneOf(given.endHead, HEADS, "arrow"),
-            line: oneOf(given.line, LINES, "solid"),
-            colorHex: text(given.colorHex, "#1C1C1E"),
-            lineWidth: number(given.lineWidth, 2),
-            transform: transformOf(given.transform),
-            bends: list(given.bends).map((p) => point(p, { x: 0, y: 0 })),
-            // Present only when a hand dragged a segment, so a plain line
-            // reads back exactly as it was written.
-            ...(Array.isArray(given.overrides) && given.overrides.length > 0
-              ? {
-                overrides: (given.overrides as unknown[]).map((o) => {
-                  const given2 = isRecord(o) ? o : {}
-                  return {
-                    index: number(given2.index, 0),
-                    vertical: given2.vertical === true,
-                    value: number(given2.value, 0),
-                  }
-                }),
-              }
-              : {}),
-          },
-        })
-      } else {
-        dropped++
-      }
+      const item = itemOf(raw, counter)
+      if (item === null) dropped++
+      else items.push(item)
     }
+    dropped += counter.dropped
     return { drawing: { items }, damaged: damaged || dropped > 0, dropped }
   } catch {
     // Not reachable by any text the checks above let through, and kept anyway: this function's one promise
@@ -402,17 +452,24 @@ export function decodeDrawing(json: string | null): DecodedDrawing {
 /** The drawing alone (see decodeDrawing, which also says whether anything was thrown away). */
 export const readDrawing = (json: string | null): Drawing => decodeDrawing(json).drawing
 
+/** One item as the sidecar holds it, flat, with the kind named so the reader can tell them apart. */
+function writeItem(item: CanvasItem): Record<string, unknown> {
+  switch (item.kind) {
+    case "stroke": return { kind: "stroke", ...item.stroke }
+    case "image": return { kind: "image", ...item.image }
+    // The shape's own kind is written beside the item's, because both
+    // are called "kind" and only one of them says "this is a shape".
+    case "shape": return { ...item.shape, kind: "shape", shapeKind: item.shape.kind }
+    case "connector": return { kind: "connector", ...item.connector }
+    // A cell's items are written by this same writer (a cell never holds a cell).
+    case "cell": return {
+      kind: "cell", id: item.cell.id, aspect: item.cell.aspect,
+      items: item.cell.items.filter((one) => one.kind !== "cell").map(writeItem),
+    }
+  }
+}
+
 /** And written back, flat, with the kind named so the reader can tell them apart. */
 export function writeDrawing(drawing: Drawing): string {
-  const items = drawing.items.map((item) => {
-    switch (item.kind) {
-      case "stroke": return { kind: "stroke", ...item.stroke }
-      case "image": return { kind: "image", ...item.image }
-      // The shape's own kind is written beside the item's, because both
-      // are called "kind" and only one of them says "this is a shape".
-      case "shape": return { ...item.shape, kind: "shape", shapeKind: item.shape.kind }
-      case "connector": return { kind: "connector", ...item.connector }
-    }
-  })
-  return JSON.stringify({ items }, null, 1)
+  return JSON.stringify({ items: drawing.items.map(writeItem) }, null, 1)
 }

@@ -9,10 +9,11 @@
  * once a frame — no React render per move, hovering included. A real mouse
  * event gives the OS cursor back.
  *
- * The cursor SAYS WHAT THE PEN WILL DO: a dashed square while the lower
- * button (or the Select tool) is selecting, with a + when it extends, the
- * red cross while erasing, a hand while a button pans. (data-kind: ring,
- * arrow, erase, select, add, pan.)
+ * The cursor SAYS WHAT THE PEN WILL DO when it touches: a dashed square
+ * while a button whose hold is Select is down (the upper, by default) or the
+ * Select tool is on, with a + when it extends, the red cross while erasing
+ * (the lower button, by default), a hand while a button pans. (data-kind:
+ * ring, arrow, erase, select, add, pan.)
  *
  * While a pen is active the page also stops behaving as if a mouse were
  * hovering: the mouse-only compatibility events a pen hover generates
@@ -21,9 +22,10 @@
  * suppressed except in text fields.
  */
 
-import { penNear, penSettings } from "./penSettings"
+import { penNear, penSettings, sheetTools } from "./penSettings"
+import { penOnSheet } from "./tabletFocus"
 import { heldAction, subscribeLive, watchLive } from "./penLive"
-import { installPenActions, penMenuAllowed } from "./penActions"
+import { installPenActions, penButtonInUse, penMenuAllowed } from "./penActions"
 
 let colour = "#2D7DD2"
 let width = 3
@@ -39,6 +41,8 @@ let frame: number | null = null
 let at = { x: 0, y: 0 }
 let over: Element | null = null
 
+/** The note's page (words, ink, cells) and the tablet sheet: where a pen's right click never opens a menu. */
+const PAGE = ".editor, .cm-editor, .wm-canvas, .tablet-host, .tablet"
 const CHROME = ".top-bar, .sidebar, .sidebar-bar, .tab-bar, .camera-bar, .pad-strip, .footer, button, select, input, .style-pop, .video-pop, .kind-menu, .context-menu, .bar-context"
 
 function paintLook(): void {
@@ -53,7 +57,8 @@ function draw(): void {
   if (!element) return
   const chrome = over instanceof Element && over.closest(CHROME) !== null
   const held = heldAction()
-  const tool = penSettings()
+  // Over the tablet sheet's side, the sheet's own Erase / Select; elsewhere the notebook's.
+  const tool = penOnSheet() ? sheetTools() : penSettings()
   const next = held === "erase" ? "erase" : held === "select" ? "select" : held === "add" ? "add"
     : held === "pan" ? "pan" : tool.eraser ? "erase" : tool.selectTool ? "select"
       : chrome ? "arrow" : "ring"
@@ -103,11 +108,20 @@ export function installPenCursor(): void {
   }
   for (const type of ["mousemove", "mouseover", "mouseenter"]) window.addEventListener(type, quiet, true)
 
-  // Press-and-hold is a right click to Windows Ink; the pen has no use for the menu.
+  // Press-and-hold is a right click to Windows Ink, and so is the lower side button (with the pen touching, or
+  // the driver's hover click): the pen has no use for the menu. Over the note's page and the tablet sheet it is
+  // stopped here, first, so that no menu of the page's own (the notes' Cut / Copy / Paste) hears it either; while a
+  // side button is in use that holds even in a text field there. Over the chrome (sidebar, bars) only the browser's
+  // own menu is refused, as before: the app's menus there stay reachable by press-and-hold.
   window.addEventListener("contextmenu", (event) => {
     if (penMenuAllowed()) return
-    if (!document.documentElement.classList.contains("pen-active") || !penNear(1500)) return
-    if (event.target instanceof Element && event.target.closest("input, textarea, select")) return
+    const target = event.target instanceof Element ? event.target : null
+    const page = target?.closest(PAGE) != null
+    const button = penButtonInUse()
+    const near = document.documentElement.classList.contains("pen-active") && penNear(1500)
+    if (!button && !near) return
+    if (!button && target?.closest("input, textarea, select")) return
     event.preventDefault()
+    if (page) event.stopImmediatePropagation()
   }, true)
 }

@@ -10,6 +10,7 @@
 
 import { useEffect, useRef } from "react"
 import { keyList } from "../shared/keyList"
+import { withNumberKeysFirst } from "../shared/keyGroups"
 import { returnFocus } from "./focusReturn"
 import "./keyList.css"
 
@@ -27,7 +28,8 @@ function Chord({ keys }: { keys: string }) {
 
 export function KeyList({ platform, onClose }: { platform: string; onClose(): void }) {
   const sheet = useRef<HTMLDivElement>(null)
-  const groups = keyList(platform)
+  // The ten number keys (the cell kinds) first, as one group; then every other key by its menu.
+  const groups = withNumberKeysFirst(keyList(platform), platform)
 
   useEffect(() => {
     sheet.current?.focus()
@@ -41,7 +43,7 @@ export function KeyList({ platform, onClose }: { platform: string; onClose(): vo
              if (event.key === "Escape") { event.preventDefault(); event.stopPropagation(); onClose() }
            }}>
         <h3>Keyboard Shortcuts</h3>
-        <p>Every key WriteMind binds, by the menu it is in. A command with no key is in its menu only.</p>
+        <p>Every key WriteMind binds: the number keys that make cells first, then the rest by the menu they are in. A command with no key is in its menu only.</p>
         <div className="key-groups">
           {groups.map((group) => (
             <section key={group.menu} className="key-group" data-menu={group.menu}>

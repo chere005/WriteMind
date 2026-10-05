@@ -10,7 +10,7 @@
  * so the CodeMirror page and the test runner ask the same ones.
  */
 
-import { blockContaining, listContinuation, removeBlock } from "./editing"
+import { blockContaining, insertBlock, listContinuation, removeBlock } from "./editing"
 import { openCell, type CellKind } from "./types"
 import { GAP_HEIGHT, seams, structuralLines, plusTarget, type CellBox, type Seam } from "./seams"
 import { firstCellFromBy, picked } from "./selection"
@@ -255,6 +255,13 @@ export function stillHeld(landing: Range, text: string): Range[] {
   return picked(positioned(text).map((block) => block.range), [landing])
 }
 
+/**
+ * A cell that is DRAWN and never typed in: a picture cell or an ink cell (a line that is nothing but one image). It
+ * never opens (its markdown is never shown on the page: a caret beside it leaves it drawn) and never joins a run of
+ * touching cells. It can still be held.
+ */
+export const staysClosed = (block: Block | null | undefined): boolean => block?.kind === "picture"
+
 /** Return adds a line to a list, a quote or a fenced block; anywhere else it starts the next block. */
 export function keepsNewlines(block: Block | null | undefined): boolean {
   switch (block?.kind) {
@@ -280,13 +287,13 @@ export type CellState = "closed" | "open" | "held"
  * new line as raw source. Returns, for every cell, the first and the last of
  * the run of touching cells it belongs to.
  */
-export function touchingRuns(cells: Range[]): { first: number; last: number }[] {
+export function touchingRuns(cells: Range[], apart?: (index: number) => boolean): { first: number; last: number }[] {
   const out: { first: number; last: number }[] = []
   let start = 0
   for (let i = 0; i < cells.length; i++) {
     const next = cells[i + 1]
     const joined = next !== undefined && cells[i]!.length > 0 && next.length > 0
-      && next.location === end(cells[i]!) + 1
+      && next.location === end(cells[i]!) + 1 && !(apart && (apart(i) || apart(i + 1)))
     if (!joined) {
       for (let k = start; k <= i; k++) out[k] = { first: start, last: i }
       start = i + 1
@@ -303,9 +310,19 @@ export function touchingRuns(cells: Range[]): { first: number; last: number }[] 
  * selection that happens to be exactly one cell's words is a text selection in
  * that cell and the cell stays open; with it, the same selection is the cell
  * held and nothing opens. A bar that is the cursor opens nothing either.
+ *
+ * `apart` names the cells that stay closed (`staysClosed`: a picture or ink cell): never open, never in a run; held
+ * still works.
  */
-export function cellStates(cells: Range[], selection: Range[], holding: boolean, armed: boolean): CellState[] {
-  const own = cells.map((cell): CellState => {
+export function cellStates(cells: Range[], selection: Range[], holding: boolean, armed: boolean,
+  apart?: (index: number) => boolean): CellState[] {
+  const own = cells.map((cell, index): CellState => {
+    if (apart?.(index)) {
+      // Drawn, or held; never open.
+      const held = cell.length > 0 && selection.some((r) => r.length > 0 && r.location <= cell.location
+        && end(r) >= end(cell) && (holding || r.location < cell.location || end(r) > end(cell)))
+      return held ? "held" : "closed"
+    }
     if (cell.length <= 0) {
       // An empty cell is only ever open: there is nothing in it to draw.
       return !armed && selection.some((r) => r.length === 0 && r.location === cell.location) ? "open" : "closed"
@@ -331,7 +348,7 @@ export function cellStates(cells: Range[], selection: Range[], holding: boolean,
     if (isHeld) return "held"
     return isOpen ? "open" : "closed"
   })
-  const runs = touchingRuns(cells)
+  const runs = touchingRuns(cells, apart)
   return own.map((state, index) => {
     const run = runs[index]!
     for (let k = run.first; k <= run.last; k++) if (own[k] === "open") return "open"
@@ -343,10 +360,11 @@ export function cellStates(cells: Range[], selection: Range[], holding: boolean,
  * `cellStates`, but only for the cells that are not closed, as a map from the cell's place in the list: with a caret
  * (or any selection) it is the few cells the selection reaches, found by search, instead of a state for every cell of
  * a note of five thousand on every keystroke. A differential test holds it to `cellStates` on random notes and
- * selections. `of` says how to read a cell's range (the editor's cells carry one).
+ * selections. `of` says how to read a cell's range (the editor's cells carry one); `apart`, which cells stay closed
+ * (`cellStates`; the editor passes `(cell) => staysClosed(cell.block)`).
  */
 export function cellStatesSparse<T>(cells: readonly T[], of: (cell: T) => Range, selection: Range[], holding: boolean,
-  armed: boolean): Map<number, CellState> {
+  armed: boolean, apart?: (cell: T, index: number) => boolean): Map<number, CellState> {
   const own = new Map<number, CellState>()
   for (const r of selection) {
     const from = r.location
@@ -367,6 +385,7 @@ export function cellStatesSparse<T>(cells: readonly T[], of: (cell: T) => Range,
         if (wholly && (beyond || holding)) now = "held"
         else if (!holding && ((from >= cell.location && from <= end(cell)) || (to >= cell.location && to <= end(cell)))) now = "open"
       }
+      if (now === "open" && apart?.(cells[i]!, i)) continue
       if (now === "closed") continue
       // A cell held by any range is held; open only when no range holds it.
       if (now === "held" || own.get(i) === undefined) own.set(i, now)
@@ -377,6 +396,7 @@ export function cellStatesSparse<T>(cells: readonly T[], of: (cell: T) => Range,
     const a = of(cells[i]!)
     const b = i + 1 < cells.length ? of(cells[i + 1]!) : undefined
     return b !== undefined && a.length > 0 && b.length > 0 && b.location === end(a) + 1
+      && !(apart && (apart(cells[i]!, i) || apart(cells[i + 1]!, i + 1)))
   }
   const result = new Map<number, CellState>(own)
   const opened = [...own].filter(([, state]) => state === "open").map(([i]) => i).sort((a, b) => a - b)
@@ -411,6 +431,13 @@ export function returnInBlock(markdown: string, selection: Range): Edit | null {
   if (!cell) return null
   const at = cell.range
   if (cell.block.kind === "code") return null
+  if (staysClosed(cell.block)) {
+    // A picture or ink cell is never split: Return before it opens a cell above it, anywhere else one below it.
+    const place = caret <= at.location ? at.location : end(at)
+    const opened = insertBlock(markdown, place)
+    const added = opened.markdown.length - markdown.length
+    return edit(range(place, 0), opened.markdown.slice(place, place + added), range(opened.caret, 0))
+  }
 
   // A list item, wherever the parser put it: "- " with nothing after it is a
   // paragraph of one dash to the parser, and it is still a list item here.
@@ -425,7 +452,8 @@ export function returnInBlock(markdown: string, selection: Range): Edit | null {
     // An empty item: it goes, and what is above it and what is below it
     // become two blocks. The list is every cell touching this one.
     const index = cells.findIndex((c) => c.range.location === at.location && c.range.length === at.length)
-    const run = touchingRuns(cells.map((c) => c.range))[index] ?? { first: index, last: index }
+    const run = touchingRuns(cells.map((c) => c.range), (i) => staysClosed(cells[i]!.block))[index]
+      ?? { first: index, last: index }
     const whole = range(cells[run.first]!.range.location,
       end(cells[run.last]!.range) - cells[run.first]!.range.location)
     const text = substring(markdown, whole)

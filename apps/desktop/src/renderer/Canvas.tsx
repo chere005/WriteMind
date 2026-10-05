@@ -14,7 +14,7 @@
  * the hit test below arrange between them.
  */
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react"
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react"
 import { createPortal } from "react-dom"
 import {
   applyMatrix, matrixOf, angleAbout, attachableAt, baseBounds, baseCenter, basePoints, bounds, boundsOf, connectorPaths,
@@ -23,14 +23,18 @@ import {
   segmentMidpoints, shifted, strokeCurve, TEXT_BOX, textBoxAspect, textBoxHeight, readableInk,
   indexAt, isHidden, itemId, itemTransform, newID, noTransform, placedItem, polylines, rectFrom,
   removing, route, scaleFactor, stillPicked, strokesSwept, toggle, toggled, transformed, whole, withTransform,
-  type CanvasItem, type ConnectorItem, type Drawing, type ItemTransform, type Order, type Placement,
-  type Measure, type Point, type Rect, type ShapeKind, type Size, type StylePatch,
+  cellFrame, dockable, inkCellOf, toPage, withInkCell,
+  type CanvasItem, type Column, type ConnectorItem, type Drawing, type InkCell, type ItemTransform, type Order,
+  type Placement, type Measure, type Point, type Rect, type ShapeKind, type Size, type StylePatch,
 } from "@writemind/core"
+import { inkCellPlaces, repaintInkCells, type DropTarget } from "@writemind/editor"
 import type { DrawingHistory } from "./drawingHistory"
+import { dockedAsCell, dockInto, type DockDeps, type Words } from "./dock"
 import { StyleBar } from "./StyleBar"
 import { penSettings, usePenSettings } from "./penSettings"
-import { resolvePress, slotOf } from "./penButtons"
+import { holdBegins, inContact, insideBox, penLifted, resolvePress, slotOf } from "./penButtons"
 import { registerPenHandlers } from "./penActions"
+import { endInkScope, inkScope, scopedPress, subscribeInkScope } from "./inkScope"
 import { layerKey } from "./layerKeys"
 
 export type CanvasMode = "cursor" | "pen"
@@ -64,6 +68,62 @@ interface Props {
   onReadPicture?(file: string, id: string): void
   /** The app's undo for the drawing: shared, so a paste or a capture can be taken back too. */
   history: DrawingHistory
+  /** The editor's side of docking (inkCells.ts `dockHostFor`): no dock handle without it. */
+  dock?: DockHost
+}
+
+/**
+ * What the drawing layer needs of the editor to dock picked objects into the note (docs\PLAN-docking-ink-cells.md
+ * (d)): the words, what is under the pointer during a drag (shown as it is found: the drop bar on a seam, `.wm-drop`
+ * on an ink cell), and the text column.
+ */
+export interface DockHost {
+  words: Words
+  /** The drop target under a client point, shown; null outside the note. */
+  target(x: number, y: number): DropTarget | null
+  /** Put the drop bar and a lit cell away. */
+  clear(): void
+  /** The text column in CLIENT px (the layer makes it page px). */
+  column(): Column
+  depth: number
+  /** Told the drawing a dock is about to apply (DockDeps.ahead). */
+  ahead?(next: Drawing | null): void
+}
+
+/**
+ * WHERE A GESTURE WORKS (docs\PLAN-docking-ink-cells.md (b)): the page, or one live ink cell. A cell's items are
+ * fractions of its shown width `W` on both axes, so every function of the layer works on them unchanged with
+ * `size = cellFrame(W)` and points local to the cell's top-left. A gesture keeps the surface it began on: a stroke
+ * started in a cell and run out of it is clipped there, an erase started on the page never touches a cell's ink.
+ */
+interface Surface {
+  /** The ink cell's id; null for the page. */
+  cell: string | null
+  /** Its top-left, in page px (the layer's document coordinates). */
+  origin: Point
+  /** What its items are measured in: the pane, or `cellFrame(W)`. */
+  size: Size
+  /** The cell's box in page px (its live ink is clipped to it, a move stays inside it); null for the page. */
+  clip: Rect | null
+}
+
+/** A move of the docking handle past this many px is a drag (to a seam or a cell); less is a click (at the cursor). */
+const DRAG_THRESHOLD = 4
+
+const NOTHING: Drawing = { items: [] }
+
+/** The layer a surface works on: the page's drawing, or one cell's own items; null when the cell is gone. */
+const layerIn = (drawing: Drawing, cell: string | null): Drawing | null => {
+  if (cell === null) return drawing
+  const found = inkCellOf(drawing, cell)
+  return found ? cellLayers(found) : null
+}
+/** One `{ items }` per cell object, so a pick in a cell does not see a "new" layer on every render. */
+const layerCache = new WeakMap<InkCell, Drawing>()
+const cellLayers = (cell: InkCell): Drawing => {
+  let held = layerCache.get(cell)
+  if (!held) { held = { items: cell.items }; layerCache.set(cell, held) }
+  return held
 }
 
 // `base` is the drawing as it was when the gesture began. A move is worked
@@ -82,6 +142,11 @@ type Gesture =
   | { kind: "rotating"; from: number; pivot: Point; snapshot: Map<string, ItemTransform>; base: Drawing }
   | { kind: "segment"; id: string; index: number; vertical: boolean; base: Drawing }
   | { kind: "cropping"; corner: number }
+  /**
+   * The dock handle held (docs\PLAN-docking-ink-cells.md (d)): `from` / `to` in CLIENT px, `scroll` the page's scroll
+   * at the press (the ghost follows the pointer while the wheel scrolls the page under it).
+   */
+  | { kind: "docking"; ids: Set<string>; from: Point; to: Point; scroll: number; dragging: boolean; target: DropTarget | null }
 
 /** A picture being cropped: the kept part, as fractions of the picture. */
 interface Crop { id: string; rect: Rect }
@@ -171,14 +236,15 @@ function picture(file: string, onLoad: () => void): HTMLImageElement | null {
 // other paste is the notebook's. Pictures are files in one media folder shared
 // by every note, so they come across by name.
 
-interface ObjectClip { token: string; items: CanvasItem[]; pastes: number }
+/** `from` is the surface the objects were copied on (an ink cell's id, or null for the page): they paste back onto it. */
+interface ObjectClip { token: string; items: CanvasItem[]; pastes: number; from: string | null }
 let objectClipboard: ObjectClip | null = null
 
-function copyObjects(items: CanvasItem[], ids: Set<string>): void {
+function copyObjects(items: CanvasItem[], ids: Set<string>, from: string | null): void {
   const copied = copiedItems(items, ids)
   if (copied.length === 0) return
   const token = newID().slice(0, 8)
-  objectClipboard = { token, items: copied, pastes: 0 }
+  objectClipboard = { token, items: copied, pastes: 0, from }
   const text = `WriteMind objects [${token}]`
   // The page's own copy command, with the text put on it: the app's permission
   // handler does not grant the async clipboard API, and this needs no grant.
@@ -192,7 +258,7 @@ function copyObjects(items: CanvasItem[], ids: Set<string>): void {
 
 export function Canvas({
   drawing, onChange, mode, colorHex, penWidth, placing, onPlaced, scroller, onSelectionChanged,
-  onReadPicture, history,
+  onReadPicture, history, dock,
 }: Props) {
   const host = useRef<HTMLDivElement | null>(null)
   const canvas = useRef<HTMLCanvasElement | null>(null)
@@ -207,9 +273,25 @@ export function Canvas({
   // (they are set by a click, a marquee, a paste); an id whose object was undone away, deleted, erased or put
   // away (a picture read into words) is dropped from them at once, so a pick nobody can see is no pick: it
   // used to keep the arrows, Ctrl+C / Ctrl+X and Backspace swallowed with no handles on screen.
-  const [pickedIds, setSelection] = useState<Set<string>>(new Set())
-  const selection = useMemo(() => stillPicked(drawing, pickedIds), [drawing, pickedIds])
-  useEffect(() => { if (selection !== pickedIds) setSelection(selection) }, [selection, pickedIds])
+  //
+  // A PICK IS ON ONE SURFACE: the page (`on` null) or one ink cell (its id); its ids are that surface's items.
+  const [pick, setPick] = useState<{ on: string | null; ids: Set<string> }>(() => ({ on: null, ids: new Set() }))
+  const pickedIds = pick.ids
+  /** The surface the gesture under way works on (`begin` picks it); a new pick lands on it unless told otherwise. */
+  const surfaceRef = useRef<Surface>({ cell: null, origin: { x: 0, y: 0 }, size: { width: 0, height: 0 }, clip: null })
+  const setSelection = useCallback((ids: Set<string>, on?: string | null) => {
+    setPick({ ids, on: ids.size === 0 ? null : on !== undefined ? on : surfaceRef.current.cell })
+  }, [])
+  const pickLayer = useMemo(() => layerIn(drawing, pick.on) ?? NOTHING, [drawing, pick.on])
+  const selection = useMemo(() => stillPicked(pickLayer, pickedIds), [pickLayer, pickedIds])
+  useEffect(() => { if (selection !== pickedIds) setSelection(selection, pick.on) }, [selection, pickedIds, pick.on, setSelection])
+  // The cells move with the words (text typed above one, a window made wider): a pick in a cell is put back on it.
+  const [placesMoved, setPlacesMoved] = useState(0)
+  const pickOn = useRef<string | null>(null)
+  pickOn.current = pick.on
+  useEffect(() => inkCellPlaces.subscribe(() => {
+    if (pickOn.current !== null) setPlacesMoved((n) => n + 1)
+  }), [])
   const [gesture, setGesture] = useState<Gesture | null>(null)
   /** The pointer that began the gesture: moves and lifts from any other (a palm, a stray mouse) are not its. */
   const owner = useRef<number | null>(null)
@@ -236,16 +318,72 @@ export function Canvas({
   /** Enter on an open crop box: set up below, where the crop is. */
   const confirmCrop = useRef<() => void>(() => {})
 
-  const box = useMemo(() => boundsOf(drawing, selection, size), [drawing, selection, size])
+  // MARK: - Surfaces
+
+  // (These helpers read only refs, so a callback made on an earlier render can call them.)
+  const scrollerRef = useRef(scroller)
+  scrollerRef.current = scroller
+  /** A live ink cell as a surface, measured now; null when it is not on the screen (or not live). */
+  const cellSurfaceOf = (id: string): Surface | null => {
+    const element = host.current
+    const within = scrollerRef.current
+    const place = element && within ? inkCellPlaces.byId(id, within) : null
+    if (!element || !place || !place.live) return null
+    const cell = place.box()
+    if (!(cell.width > 0)) return null
+    const pane = element.getBoundingClientRect()
+    const origin = { x: cell.left - pane.left, y: cell.top - pane.top + scrollRef.current }
+    return { cell: id, origin, size: cellFrame(cell.width), clip: { ...origin, width: cell.width, height: cell.height } }
+  }
+  /** The page as a surface. */
+  const pageSurface = (): Surface => ({ cell: null, origin: { x: 0, y: 0 }, size: latest.current.size, clip: null })
+  /** The surface under a client point: a live ink cell, else the page. */
+  const surfaceUnder = (x: number, y: number): Surface => {
+    const within = scrollerRef.current
+    const place = within ? inkCellPlaces.at(x, y, within) : null
+    return (place && place.live ? cellSurfaceOf(place.id) : null) ?? pageSurface()
+  }
+  /** An ink cell's resize strip under a client point (the editor's `.wm-cell-resize`), or null. */
+  const stripAt = (x: number, y: number): HTMLElement | null => {
+    const within = scrollerRef.current
+    if (!within) return null
+    for (const strip of within.querySelectorAll<HTMLElement>(".wm-cell-resize")) {
+      const r = strip.getBoundingClientRect()
+      if (r.width > 0 && x >= r.left && x <= r.right && y >= r.top && y <= r.bottom) return strip
+    }
+    return null
+  }
+  /** The surface the pick is on, measured now; null when its cell is off the screen. */
+  const pickedSurface = (): Surface | null => {
+    const on = latest.current.pick.on
+    return on === null ? pageSurface() : cellSurfaceOf(on)
+  }
+  /** The layer a surface works on, as it is now. */
+  const layerOf = (s: Surface): Drawing | null => layerIn(latest.current.drawing, s.cell)
+  /** A point of a pointer event in a surface's own coordinates. */
+  const docOn = (s: Surface, event: { clientX: number; clientY: number }): Point => {
+    const rect = host.current!.getBoundingClientRect()
+    return { x: event.clientX - rect.left - s.origin.x, y: event.clientY - rect.top + scrollRef.current - s.origin.y }
+  }
+
+  // The selection's box, in page px whatever surface it is on (the handles and the dashed box stand on it).
+  const box = useMemo(() => {
+    if (pick.on === null) return boundsOf(drawing, selection, size)
+    const s = cellSurfaceOf(pick.on)
+    const b = s ? boundsOf(pickLayer, selection, s.size) : null
+    return b && s ? { x: b.x + s.origin.x, y: b.y + s.origin.y, width: b.width, height: b.height } : null
+    // (`placesMoved`: the cell moved under the pick.)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [drawing, selection, size, pick.on, pickLayer, placesMoved])
 
   const latest = useRef({
     drawing, selection, gesture, placing, mode, size, colorHex, penWidth, onChange, onPlaced, box,
-    crop, styling,
+    crop, styling, pick, pickLayer, dock,
   })
   latest.current = {
     ...latest.current,
     drawing, selection, gesture, placing, mode, size, colorHex, penWidth, onChange, onPlaced, box,
-    crop, styling,
+    crop, styling, pick, pickLayer, dock,
   }
 
   /**
@@ -255,6 +393,24 @@ export function Canvas({
    */
   const publish = useCallback((next: Drawing) => {
     latest.current.onChange(reconnect(next, latest.current.size))
+  }, [])
+
+  /**
+   * THE ONE FUNNEL FROM A SURFACE'S LAYER TO THE WHOLE DRAWING: the page's layer IS the drawing; a cell's layer goes
+   * back into its item, its lines put back on its nodes in the cell's own frame (never the pane's). History records
+   * the WHOLE drawing, so Undo needs nothing new.
+   */
+  const commit = (s: Surface, next: Drawing): Drawing => {
+    if (s.cell === null) return reconnect(next, latest.current.size)
+    const whole_ = latest.current.drawing
+    const cell = inkCellOf(whole_, s.cell)
+    return cell ? withInkCell(whole_, { ...cell, items: reconnect(next, s.size).items }) : whole_
+  }
+  const commitRef = useRef(commit)
+  commitRef.current = commit
+  /** A surface's layer, changed as it goes (a move, a scale, a turn: recorded once at the release). */
+  const publishOn = useCallback((s: Surface, next: Drawing) => {
+    latest.current.onChange(commitRef.current(s, next))
   }, [])
 
   // The same for a drawing that changed UNDER us — a capture added chart
@@ -287,7 +443,7 @@ export function Canvas({
   // capture) arrive picked up, with the handles on them, as a shape does.
   useEffect(() => {
     const ids = history.takeSelection((id) => drawing.items.some((item) => itemId(item) === id))
-    if (ids) setSelection(whole(new Set(ids), drawing.items))
+    if (ids) setSelection(whole(new Set(ids), drawing.items), null)
   }, [drawing, history])
 
   // MARK: - Painting
@@ -416,6 +572,9 @@ export function Canvas({
 
     const g = live.current
     const context = top.getContext("2d", { desynchronized: true })!
+    // The gesture's surface: a stroke or a marquee in an ink cell is drawn at the cell, in its frame, clipped to it.
+    const s = surfaceRef.current
+    const frameSize = s.cell === null ? now.size : s.size
     if (g?.kind === "drawing" && g.points.length > 0) {
       if (overlayReset.current) {
         context.setTransform(1, 0, 0, 1, 0, 0)
@@ -423,12 +582,18 @@ export function Canvas({
         overlayDrawn.current = 0
         overlayReset.current = false
       }
-      context.setTransform(ratio, 0, 0, ratio, 0, -scrolled * ratio)
+      context.setTransform(ratio, 0, 0, ratio, s.origin.x * ratio, (s.origin.y - scrolled) * ratio)
+      if (s.clip) {
+        context.save()
+        context.beginPath()
+        context.rect(0, 0, s.clip.width, s.clip.height)
+        context.clip()
+      }
       overlayInk.current = true
       if (g.pressures) {
         // A pen stroke is drawn as it is committed: a smooth line of varying width, piece by piece.
         // `overlayDrawn` counts the pieces already down.
-        const pts = g.points, w = now.size.width, h = now.size.height
+        const pts = g.points, w = frameSize.width, h = frameSize.height
         overlayDrawn.current = strokePressure(context, pts.length, (i) => ({ x: pts[i]!.x * w, y: pts[i]!.y * h }),
           g.pressures, now.penWidth, overlayDrawn.current, false)
       }
@@ -442,16 +607,31 @@ export function Canvas({
             points: from === 0 ? g.points : g.points.slice(from),
             transform: noTransform(), group: null,
           },
-        }, now.size)
+        }, frameSize)
         overlayDrawn.current = g.points.length
       }
-    } else if (g && (g.kind === "marquee" || g.kind === "connecting" || (g.kind === "placing" && now.placing))) {
+      if (s.clip) context.restore()
+    } else if (g && (g.kind === "marquee" || g.kind === "connecting" || g.kind === "docking"
+      || (g.kind === "placing" && now.placing))) {
       // What is being dragged out is painted on the overlay, from scratch each frame: the
       // base layer (every object on the page) is not repainted for a rubber band.
       context.setTransform(1, 0, 0, 1, 0, 0)
       context.clearRect(0, 0, top.width, top.height)
-      context.setTransform(ratio, 0, 0, ratio, 0, -scrolled * ratio)
-      if (g.kind === "marquee") {
+      context.setTransform(ratio, 0, 0, ratio, s.origin.x * ratio, (s.origin.y - scrolled) * ratio)
+      if (g.kind === "docking") {
+        // The ghost of what is being docked follows the pointer (and the page, should the wheel scroll it).
+        const b = now.box
+        if (b && g.dragging) {
+          const dx = g.to.x - g.from.x, dy = g.to.y - g.from.y + (scrolled - g.scroll)
+          context.strokeStyle = "rgba(109,169,240,0.95)"
+          context.fillStyle = "rgba(109,169,240,0.14)"
+          context.lineWidth = 1.5
+          context.setLineDash([5, 3])
+          context.fillRect(b.x + dx, b.y + dy, b.width, b.height)
+          context.strokeRect(b.x + dx, b.y + dy, b.width, b.height)
+          context.setLineDash([])
+        }
+      } else if (g.kind === "marquee") {
         const rect = rectFrom(g.from, g.to)
         context.strokeStyle = "rgba(109,169,240,0.9)"
         context.fillStyle = "rgba(109,169,240,0.12)"
@@ -518,6 +698,10 @@ export function Canvas({
       baseDirty.current = true
       overlayReset.current = true
       schedule()
+      // The ink cells' canvases too: their backing stores follow the density.
+      const within = scrollerRef.current
+      const views = new Set(within ? inkCellPlaces.all(within).map((place) => place.view) : [])
+      for (const view of views) repaintInkCells(view)
     }, 300)
     return () => window.clearInterval(timer)
   }, [schedule])
@@ -609,64 +793,90 @@ export function Canvas({
     }
   }, [])
 
+  /** A pointer's point on the surface of the gesture (`surfaceRef`): the page's document px, or a cell's own px. */
   const doc = useCallback((event: { clientX: number; clientY: number }): Point => {
     const rect = host.current!.getBoundingClientRect()
-    return { x: event.clientX - rect.left, y: event.clientY - rect.top + scrollRef.current }
+    const o = surfaceRef.current.origin
+    return { x: event.clientX - rect.left - o.x, y: event.clientY - rect.top + scrollRef.current - o.y }
   }, [])
 
-  const change = useCallback((next: Drawing) => {
+  /** `next` is the new LAYER of surface `s` (the page's drawing, or a cell's items); one undo step. */
+  const change = useCallback((next: Drawing, s: Surface) => {
     // An edit that changed nothing (a delete of ids that are gone) is no edit: no phantom undo step, and Redo lives.
-    const held = latest.current.drawing
+    const held = layerIn(latest.current.drawing, s.cell)
+    if (!held) return
     if (next === held || (next.items.length === held.items.length && next.items.every((item, i) => item === held.items[i]))) return
-    history.record(held)
-    publish(next)
-  }, [history, publish])
+    history.record(latest.current.drawing)
+    latest.current.onChange(commitRef.current(s, next))
+  }, [history])
 
   /** An edit that arrives in bursts (a colour dragged, an arrow key held): one undo for the burst (`DrawingHistory.recordBurst`). */
-  const burst = useCallback((next: Drawing) => {
-    const held = latest.current.drawing
-    if (next === held) return
-    history.recordBurst(held, performance.now())
-    publish(next)
-  }, [history, publish])
+  const burst = useCallback((next: Drawing, s: Surface) => {
+    const held = layerIn(latest.current.drawing, s.cell)
+    if (!held || next === held) return
+    history.recordBurst(latest.current.drawing, performance.now())
+    latest.current.onChange(commitRef.current(s, next))
+  }, [history])
+
+  const pickedRef = useRef(pickedSurface)
+  pickedRef.current = pickedSurface
 
   const applyStyle = useCallback((patch: StylePatch) => {
-    burst(restyled(latest.current.drawing, latest.current.selection, patch))
+    const s = pickedRef.current()
+    if (s) burst(restyled(latest.current.pickLayer, latest.current.selection, patch), s)
   }, [burst])
 
   const orderSelection = useCallback((how: Order) => {
-    const held = latest.current.drawing
+    const s = pickedRef.current()
+    const held = latest.current.pickLayer
     const items = reordered(held.items, latest.current.selection, how)
-    if (items !== held.items) change({ items })
+    if (s && items !== held.items) change({ items }, s)
   }, [change])
 
   /** A copy of what is picked, a little way down and to the right, picked in turn. */
   const duplicate = useCallback(() => {
-    const { drawing: held, selection: picked, size: now } = latest.current
-    const copies = shifted(copiedItems(held.items, picked), 16, 16, now)
+    const s = pickedRef.current()
+    if (!s) return
+    const { pickLayer: held, selection: picked } = latest.current
+    const copies = shifted(copiedItems(held.items, picked), 16, 16, s.size)
     if (copies.length === 0) return
-    change({ items: [...held.items, ...copies] })
-    setSelection(new Set(copies.map(itemId)))
-  }, [change])
+    change({ items: [...held.items, ...copies] }, s)
+    setSelection(new Set(copies.map(itemId)), s.cell)
+  }, [change, setSelection])
 
+  /** The whole drawing as a gesture began: what its Undo goes back to. */
+  const gestureWhole = useRef<Drawing>(drawing)
   /** A gesture begins: it is state once, and a ref from then on. `pointerId` is the pointer that owns it. */
   const start = useCallback((next: Gesture, pointerId: number) => {
     live.current = next
     owner.current = pointerId
     overlayReset.current = true
+    gestureWhole.current = latest.current.drawing
     setGesture(next)
   }, [])
 
   // MARK: - The gestures
 
-  /** Rub out the topmost stroke under `point`; the move is one undo, at the lift. */
-  const eraseAt = useCallback((point: Point) => {
-    const held = latest.current.drawing
-    const size = latest.current.size
+  /** A surface's layer with strokes rubbed out, as the whole drawing (no lines to put back: strokes hold none). */
+  const rubbedOut = (s: Surface, ids: Set<string>): Drawing | null => {
+    const whole_ = latest.current.drawing
+    if (s.cell === null) return removing(whole_, ids)
+    const cell = inkCellOf(whole_, s.cell)
+    return cell ? withInkCell(whole_, { ...cell, items: removing({ items: cell.items }, ids).items }) : null
+  }
+  const rubbedRef = useRef(rubbedOut)
+  rubbedRef.current = rubbedOut
+
+  /** Rub out the topmost stroke under `point` (on the gesture's surface); the move is one undo, at the lift. */
+  const eraseAt = useCallback((point: Point, s: Surface = surfaceRef.current) => {
+    const held = layerIn(latest.current.drawing, s.cell)
+    if (!held) return
+    const size = s.cell === null ? latest.current.size : s.size
     for (let index = held.items.length - 1; index >= 0; index--) {
       const item = held.items[index]!
       if (item.kind !== "stroke" || isHidden(item) || !hitTest(item, point, size)) continue
-      const next = removing(held, new Set([itemId(item)]))
+      const next = rubbedRef.current(s, new Set([itemId(item)]))
+      if (!next) return
       latest.current = { ...latest.current, drawing: next }
       latest.current.onChange(next)
       return
@@ -678,11 +888,13 @@ export function Canvas({
    * samples count: a quick sweep reports a point every 20 to 30 points, and testing the points alone let the
    * eraser step over the strokes between them.
    */
-  const eraseAlong = useCallback((from: Point, to: Point) => {
-    const held = latest.current.drawing
-    const ids = strokesSwept(held, from, to, latest.current.size)
+  const eraseAlong = useCallback((from: Point, to: Point, s: Surface = surfaceRef.current) => {
+    const held = layerIn(latest.current.drawing, s.cell)
+    if (!held) return
+    const ids = strokesSwept(held, from, to, s.cell === null ? latest.current.size : s.size)
     if (ids.size === 0) return
-    const next = removing(held, ids)
+    const next = rubbedRef.current(s, ids)
+    if (!next) return
     latest.current = { ...latest.current, drawing: next }
     latest.current.onChange(next)
   }, [])
@@ -696,7 +908,7 @@ export function Canvas({
           ? { kind: "shape" as const, shape: { ...item.shape, label: text } }
           : item),
     }
-    if (JSON.stringify(next) !== JSON.stringify(held)) change(next)
+    if (JSON.stringify(next) !== JSON.stringify(held)) change(next, pageSurface())
   }, [change])
 
   // The pen, and the hand holding it. A tablet laptop sends both: the pen draws,
@@ -740,8 +952,8 @@ export function Canvas({
     let lastX: number | null = event.pointerType === "pen" ? event.clientX : null
     const move = (e: PointerEvent) => {
       if (e.pointerId !== event.pointerId) return
-      // A pen panning with a side button: letting the button go ends it.
-      if (e.pointerType === "pen" && e.buttons === 0) { up(e); return }
+      // A pen panning with a side button: lifting the pen (or letting the button go) ends it.
+      if (penLifted(e)) { up(e); return }
       scroller.scrollTop -= e.clientY - last
       lastX !== null && (scroller.scrollLeft -= e.clientX - lastX)
       last = e.clientY
@@ -760,7 +972,6 @@ export function Canvas({
 
   const begin = useCallback((event: PointerEvent) => {
     const pen = event.pointerType === "pen"
-    const size = latest.current.size
     if (event.pointerType === "touch") {
       if (performance.now() - penSeenAt.current < 1200) {
         // A palm beside the pen.
@@ -774,17 +985,43 @@ export function Canvas({
         return
       }
     }
+    // AN INK CELL'S RESIZE STRIP IS NOT THE PAGE: with the layer over the note (the pen down, a tool armed) a plain
+    // press on a cell's bottom strip is handed to the strip, so the pen resizes a cell as the mouse does (the strip
+    // captures the pointer, and the rest of the drag is its own).
+    const strip = (event.buttons & ~1) === 0 ? stripAt(event.clientX, event.clientY) : null
+    if (strip) {
+      if (!(event.target instanceof Node && strip.contains(event.target))) {
+        event.preventDefault(); event.stopPropagation()
+        strip.dispatchEvent(new PointerEvent("pointerdown", {
+          bubbles: true, cancelable: true, composed: true, pointerId: event.pointerId, pointerType: event.pointerType,
+          isPrimary: event.isPrimary, clientX: event.clientX, clientY: event.clientY, screenX: event.screenX,
+          screenY: event.screenY, button: 0, buttons: event.buttons, pressure: event.pressure,
+        }))
+      }
+      return
+    }
+    // THE SURFACE (docs\PLAN-docking-ink-cells.md (b)): a live ink cell under the pointer, else the page. The
+    // gesture keeps it to the end, and `doc()` answers in its coordinates; so a pen-button hold (the press block
+    // below) erases or selects in a cell exactly as on the page.
+    if (live.current === null) surfaceRef.current = surfaceUnder(event.clientX, event.clientY)
     // Erasing: the pen's eraser end (button 5, buttons bit 32), the pen's side
     // button when it is set to erase (for a pen with no eraser end), or the
     // Erase tool on the toolbar. It rubs out whole strokes in either mode,
     // whatever the pen is set to (penButtons.ts decides, for both surfaces).
     const press = resolvePress(event, penSettings())
-    // A pen button with a TAP action (or none) is not a gesture: the runtime
-    // in penActions.ts fires it on the release. Nothing here starts.
-    if (press.kind === "tap" || press.kind === "ignore") {
+    // A pen side button pressed in the air is not a gesture (its double tap is
+    // the runtime's, penActions.ts). Nothing here starts.
+    if (press.kind === "ignore") {
       if (pen) { event.preventDefault(); event.stopPropagation() }
       return
     }
+    // A PEN FOR ONE NEW INK CELL (inkScope.ts): with the pen up, a press in that cell draws there; a press anywhere
+    // else ends it and is the click it would have been — never a stroke, even from a pen that always draws.
+    const scopeSays = live.current !== null ? "none" : scopedPress(inkScope(), latest.current.mode === "pen",
+      surfaceRef.current.cell, press.kind === "draw" && pen && penSettings().penDraws)
+    if (scopeSays === "end" || scopeSays === "end-swallow-stroke") endInkScope()
+    if (scopeSays === "end-swallow-stroke") return
+    const scoped = scopeSays === "draw"
     if (press.kind === "erase" && (pen || event.button === 0)
       && !(event.target instanceof Element
         && event.target.closest(".wm-handle, .wm-style-bar, .wm-label-edit, .wm-textbox-edit, .wm-gutter"))) {
@@ -794,6 +1031,8 @@ export function Canvas({
       const where = doc(event)
       start({ kind: "erasing", before: held, last: where }, event.pointerId)
       eraseAt(where)
+      // Floating strokes lying over an ink cell are on top of it: the eraser rubs them out too (the move below).
+      if (surfaceRef.current.cell !== null) { const page = pageSurface(); eraseAt(docOn(page, event), page) }
       return
     }
     // A pen button is a way of asking for a gesture by hand, as ⌘ is: it is
@@ -822,31 +1061,70 @@ export function Canvas({
     // cancelling its pointerdown cancels the mousedown behind it, so a
     // Ctrl-click on a bracket (to add a cell to the selection) never arrived.
     if (event.target instanceof Element && event.target.closest(".wm-gutter")) return
-    const point = doc(event)
-    const { drawing: held, placing: armed, mode: now } = latest.current
+    const { placing: armed, mode: now } = latest.current
 
     // The arrow tool, or ⌥ held down on a node: a line is drawn from here to
     // wherever it is let go, and each end that lands on a node is attached
     // to it. ⌥ has to start ON a node, so it never steals a stroke or a pick.
+    // Lines, shapes and text boxes go on the PAGE only (this round), wherever they are pressed.
+    const page = pageSurface()
+    const onPage = docOn(page, event)
     const toolArmed = armed?.kind === "line" && armed.tool === true
     // (Not when Alt is the pen's own "Tip + Alt" button: that has its own meaning.)
-    const fromNode = toolArmed || (!armed && event.altKey && !byButton) ? attachableAt(held, point, size) : null
+    const fromNode = toolArmed || (!armed && event.altKey && !byButton)
+      ? attachableAt(latest.current.drawing, onPage, page.size) : null
     if (toolArmed || (!armed && fromNode !== null)) {
       event.preventDefault(); event.stopPropagation()
       capture(event)
-      start({ kind: "connecting", from: point, to: point, node: fromNode }, event.pointerId)
+      surfaceRef.current = page
+      start({ kind: "connecting", from: onPage, to: onPage, node: fromNode }, event.pointerId)
       return
     }
     // Something is armed: this gesture is where it goes.
     if (armed) {
       event.preventDefault(); event.stopPropagation()
-      start({ kind: "placing", from: point, to: point }, event.pointerId)
+      surfaceRef.current = page
+      start({ kind: "placing", from: onPage, to: onPage }, event.pointerId)
       return
     }
 
+    // The Select tool and the pen's Select button: a press inside the selection's box moves it (penButtons.ts),
+    // on whichever surface the selection is (the box is in the pick's own coordinates).
+    // Not with Shift (that adds to the pick), and not on an object that is not picked: a press on a small stroke inside
+    // a big picked one picks the small one (KEYS.md: "drag an object to move it").
+    if (press.kind === "select" && press.move && !event.shiftKey && latest.current.selection.size > 0) {
+      const picked = pickedSurface()
+      const layer = picked ? layerOf(picked) : null
+      const from = picked ? docOn(picked, event) : null
+      if (picked && layer && from && insideBox(from, boundsOf(layer, latest.current.selection, picked.size))) {
+        const hit = indexAt(layer, from, picked.size)
+        if (hit === null || latest.current.selection.has(itemId(layer.items[hit]!))) {
+          event.preventDefault(); event.stopPropagation()
+          surfaceRef.current = picked
+          start({ kind: "moving", from, snapshot: snapshotOf(layer, latest.current.selection), base: layer }, event.pointerId)
+          return
+        }
+      }
+    }
+
+    // A FLOATING OBJECT OVER AN INK CELL IS THE PAGE'S: inserting or docking a cell does not move floating ink, so
+    // ink that was below the caret can lie over a new cell. A press that does not draw (a pick, the Select tool, a
+    // Select hold, Ctrl) takes the page object under the pointer before anything in the cell.
+    if (live.current === null && surfaceRef.current.cell !== null
+      && (press.kind === "select" || (scoped || (pen && penSettings().penDraws) ? "pen" : now) !== "pen")
+      && indexAt(latest.current.drawing, onPage, page.size) !== null) surfaceRef.current = page
+
+    // Everything else works on the gesture's surface: the page, or the ink cell it began in.
+    const surface = surfaceRef.current
+    const held = layerOf(surface) ?? latest.current.drawing
+    const size = surface.cell === null ? latest.current.size : surface.size
+    const point = doc(event)
+    /** The pick so far, when it is on this surface (a pick is on one surface only). */
+    const here = latest.current.pick.on === surface.cell ? latest.current.selection : new Set<string>()
+
     // A tablet pen writes whatever the mode is (the mouse keeps selecting)
     // unless the person turned that off.
-    const mode = pen && penSettings().penDraws ? "pen" : now
+    const mode = scoped || (pen && penSettings().penDraws) ? "pen" : now
     // The Select tool: a press on an object picks it up and moves it, a press
     // on nothing pulls a rectangle — the cursor mode, plus a marquee, with no key.
     const byHand = press.kind === "select" && !press.tool
@@ -888,19 +1166,19 @@ export function Canvas({
     if (earlier && earlier.id === id && performance.now() - earlier.at < 450
       && pressed.kind === "shape" && isNode(pressed.shape.kind)) {
       lastPress.current = null
-      setSelection(new Set([id]))
+      setSelection(new Set([id]), surface.cell)
       openBox.current = false
       setLabelling({ id, text: pressed.shape.label })
       return
     }
     const picked = event.shiftKey
-      ? new Set([...latest.current.selection, ...whole(new Set([id]), held.items)])
-      : (latest.current.selection.has(id)
-        ? latest.current.selection
+      ? new Set([...here, ...whole(new Set([id]), held.items)])
+      : (here.has(id)
+        ? here
         : whole(new Set([id]), held.items))
-    setSelection(picked)
+    setSelection(picked, surface.cell)
     start({ kind: "moving", from: point, snapshot: snapshotOf(held, picked), base: held }, event.pointerId)
-  }, [doc, eraseAt, start, scrollWithFinger])
+  }, [doc, eraseAt, start, scrollWithFinger, setSelection])
 
   useEffect(() => {
     // THE LISTENER GOES ON THE PARENT, not on the layer. With the pen up
@@ -913,28 +1191,27 @@ export function Canvas({
     if (!element) return
     const down = (event: PointerEvent) => begin(event)
     element.addEventListener("pointerdown", down, true)
-    // A side button pressed while the pen hovers is a pointerdown on most
-    // builds; where it is only a pointermove that gains a button bit, it
-    // starts the gesture all the same (once: `pressed` is the guard).
-    let pressed = false
-    const noted = (event: PointerEvent) => { if (event.pointerType === "pen") pressed = true }
-    const lifted = (event: PointerEvent) => { if (event.pointerType === "pen") pressed = false }
+    // A side button pressed while the pen hovers does nothing; the pen then
+    // TOUCHING with it held begins its hold gesture, and that touch is only a
+    // pointermove that gains the contact (penButtons.holdBegins).
+    let touching = false
+    const noted = (event: PointerEvent) => { if (event.pointerType === "pen") touching = inContact(event) }
     const late = (event: PointerEvent) => {
-      if (event.pointerType !== "pen" || pressed || live.current) return
-      const slot = slotOf(event)
-      if (slot === null || slot === "tipAlt") return
-      pressed = true
+      if (event.pointerType !== "pen") return
+      const was = touching
+      touching = inContact(event)
+      if (live.current || !holdBegins(was, event)) return
       begin(event)
     }
     window.addEventListener("pointerdown", noted, true)
-    window.addEventListener("pointerup", lifted, true)
-    window.addEventListener("pointercancel", lifted, true)
+    window.addEventListener("pointerup", noted, true)
+    window.addEventListener("pointercancel", noted, true)
     element.addEventListener("pointermove", late, true)
     return () => {
       element.removeEventListener("pointerdown", down, true)
       window.removeEventListener("pointerdown", noted, true)
-      window.removeEventListener("pointerup", lifted, true)
-      window.removeEventListener("pointercancel", lifted, true)
+      window.removeEventListener("pointerup", noted, true)
+      window.removeEventListener("pointercancel", noted, true)
       element.removeEventListener("pointermove", late, true)
     }
   }, [begin])
@@ -960,12 +1237,16 @@ export function Canvas({
       // Only the pointer that began the gesture moves it: a palm that lands beside the pen, or a stray mouse,
       // used to add its own far-away point to the stroke being written.
       if (event.pointerId !== owner.current) return
+      // A pen gesture lasts while the pen touches: lifting it with a side button still held ends it.
+      if (penLifted(event)) { up(event); return }
       const rect = host.current!.getBoundingClientRect()
+      // The gesture's own surface: a cell's points are local to its top-left, in its own frame.
+      const s = surfaceRef.current
       const at = (e: { clientX: number; clientY: number }): Point =>
-        ({ x: e.clientX - rect.left, y: e.clientY - rect.top + scrollRef.current })
+        ({ x: e.clientX - rect.left - s.origin.x, y: e.clientY - rect.top + scrollRef.current - s.origin.y })
       const point = at(event)
       const now = latest.current
-      const size = now.size
+      const size = s.cell === null ? now.size : s.size
       const g = live.current ?? gesture
       switch (g.kind) {
         case "drawing": {
@@ -985,9 +1266,13 @@ export function Canvas({
           // Every sample the pen reported since the last event, and the path between them.
           const samples = event.getCoalescedEvents?.() ?? []
           let from = g.last
+          // In a cell, the floating strokes over it are swept too (in page px: the cell's points plus its origin).
+          const onPage = (p: Point): Point => ({ x: p.x + s.origin.x, y: p.y + s.origin.y })
+          const page: Surface = { cell: null, origin: { x: 0, y: 0 }, size: now.size, clip: null }
           for (const sample of samples.length > 0 ? samples : [event]) {
             const to = at(sample)
             eraseAlong(from, to)
+            if (s.cell !== null) eraseAlong(onPage(from), onPage(to), page)
             from = to
           }
           g.last = from
@@ -1000,15 +1285,17 @@ export function Canvas({
           schedule()
           break
         case "moving": {
-          const translate = { dx: point.x - g.from.x, dy: point.y - g.from.y }
-          later(() => publish(edited(g.base, g.snapshot,
+          let translate = { dx: point.x - g.from.x, dy: point.y - g.from.y }
+          // In an ink cell what is moved stays inside the cell: nothing in it can go over the words.
+          if (s.clip) translate = keptInside(translate, boundsOf(g.base, new Set(g.snapshot.keys()), size), s.clip)
+          later(() => publishOn(s, edited(g.base, g.snapshot,
             (item, original) => transformed(item, original,
               { translate, pivot: { x: 0, y: 0 }, size }))))
           break
         }
         case "scaling": {
           const factor = scaleFactor(g.from, point, g.pivot)
-          later(() => publish(edited(g.base, g.snapshot,
+          later(() => publishOn(s, edited(g.base, g.snapshot,
             (item, original) => transformed(item, original,
               { scale: factor, pivot: g.pivot, size }))))
           break
@@ -1017,9 +1304,18 @@ export function Canvas({
           let turn = angleAbout(point, g.pivot) - g.from
           // ⇧ turns in 15-degree steps.
           if (event.shiftKey) { const step = Math.PI / 12; turn = Math.round(turn / step) * step }
-          later(() => publish(edited(g.base, g.snapshot,
+          later(() => publishOn(s, edited(g.base, g.snapshot,
             (item, original) => transformed(item, original,
               { rotate: turn, pivot: g.pivot, size }))))
+          break
+        }
+        case "docking": {
+          // A click stays a click until the pointer has gone a few px; from then on the drop bar (or the lit cell)
+          // follows it, and the ghost of the selection with it.
+          const dragging = g.dragging || Math.hypot(event.clientX - g.from.x, event.clientY - g.from.y) > DRAG_THRESHOLD
+          const target = dragging ? latest.current.dock?.target(event.clientX, event.clientY) ?? null : null
+          live.current = { ...g, to: { x: event.clientX, y: event.clientY }, dragging, target }
+          schedule()
           break
         }
         case "segment": {
@@ -1055,7 +1351,9 @@ export function Canvas({
       flush()
       const point = doc(event)
       const now = latest.current
-      const held = now.drawing
+      // The gesture's surface and its layer (the page's drawing, or the cell's items).
+      const s = surfaceRef.current
+      const held = layerIn(now.drawing, s.cell) ?? NOTHING
       const g = live.current ?? gesture
       if (g.kind === "drawing" && g.points.length > 1) {
         change({
@@ -1067,12 +1365,15 @@ export function Canvas({
               transform: noTransform(), group: null,
             },
           }],
-        })
+        }, s)
       } else if (g.kind === "erasing") {
-        if (held !== g.before) history.record(g.before)
+        if (now.drawing !== g.before) history.record(g.before)
       } else if (g.kind === "marquee") {
-        const touched = whole(idsTouching(held, rectFrom(g.from, point), now.size), held.items)
-        setSelection(g.additive ? new Set([...now.selection, ...touched]) : touched)
+        const touched = whole(idsTouching(held, rectFrom(g.from, point), s.cell === null ? now.size : s.size), held.items)
+        const kept = g.additive && now.pick.on === s.cell ? now.selection : new Set<string>()
+        setSelection(new Set([...kept, ...touched]), s.cell)
+      } else if (g.kind === "docking") {
+        finishDock(g, event)
       } else if (g.kind === "connecting") {
         const hit = attachableAt(held, point, now.size)
         const endNode = hit === g.node ? null : hit
@@ -1087,8 +1388,8 @@ export function Canvas({
             lineWidth: Math.min(Math.max(now.penWidth, 1.5), 6),
             transform: noTransform(), bends: [],
           }
-          change({ items: [...held.items, { kind: "connector", connector }] })
-          setSelection(new Set([connector.id]))
+          change({ items: [...held.items, { kind: "connector", connector }] }, s)
+          setSelection(new Set([connector.id]), null)
           // The bar that comes up once an arrow is drawn: its heads and its line.
           setStyling(true)
         }
@@ -1103,13 +1404,13 @@ export function Canvas({
           const width = Math.max(TEXT_BOX.minimumWidth, item.shape.width * now.size.width)
           item = { kind: "shape", shape: { ...item.shape, width: width / now.size.width,
             aspect: textBoxAspect("", width, measureTextBox) } }
-          change({ items: [...held.items, item] })
-          setSelection(new Set([itemId(item)]))
+          change({ items: [...held.items, item] }, s)
+          setSelection(new Set([itemId(item)]), null)
           openBox.current = true
           setLabelling({ id: item.shape.id, text: "" })
         } else if (item) {
-          change({ items: [...held.items, item] })
-          setSelection(new Set([itemId(item)]))
+          change({ items: [...held.items, item] }, s)
+          setSelection(new Set([itemId(item)]), null)
           if (item.kind === "connector") setStyling(true)
         }
         now.onPlaced()
@@ -1124,14 +1425,44 @@ export function Canvas({
       } else if (g.kind === "moving" || g.kind === "scaling" || g.kind === "rotating"
         || g.kind === "segment") {
         // The move already went through `onChange` as it happened; this is
-        // the one that lands on the undo stack — and only when it moved.
-        if (moved) history.record(g.base)
+        // the one that lands on the undo stack — and only when it moved. (The WHOLE drawing as it began: in a
+        // cell `g.base` is the cell's own items.)
+        if (moved) history.record(gestureWhole.current)
       }
       live.current = null
       owner.current = null
       baseDirty.current = true
       schedule()
       setGesture(null)
+    }
+
+    /** The dock handle let go: a click docks at the cursor, a drag where it was let go (or nowhere, outside the note). */
+    const finishDock = (g: Extract<Gesture, { kind: "docking" }>, at: PointerEvent) => {
+      const host_ = latest.current.dock
+      if (!host_) return
+      const target: DropTarget | null = !g.dragging ? { kind: "seam", offset: host_.words.cursorOffset() }
+        : at.type === "pointercancel" ? null : host_.target(at.clientX, at.clientY)
+      host_.clear()
+      const pane = latest.current.size
+      const deps: DockDeps = {
+        history, drawing: () => latest.current.drawing, apply: (next) => latest.current.onChange(next),
+        words: host_.words, depth: host_.depth, ...(host_.ahead ? { ahead: host_.ahead } : {}),
+      }
+      if (!target) return
+      if (target.kind === "seam") {
+        const column = host_.column()
+        const left = host.current ? host.current.getBoundingClientRect().left : 0
+        if (dockedAsCell(deps, g.ids, pane, { left: column.left - left, width: column.width }, target.offset) !== null) {
+          setSelection(new Set())
+        }
+        return
+      }
+      const place = scroller ? inkCellPlaces.byId(target.id, scroller) : null
+      if (!place || !place.live) return
+      const cell = place.box()
+      if (dockInto(deps, g.ids, pane, target.id, cell.width, { x: at.clientX - cell.left, y: at.clientY - cell.top })) {
+        setSelection(new Set())
+      }
     }
     // A pen that leaves the tablet's range mid-stroke, or a palm that the
     // system takes back, cancels rather than lifts; the stroke so far is kept.
@@ -1144,19 +1475,50 @@ export function Canvas({
       window.removeEventListener("pointerup", up)
       window.removeEventListener("pointercancel", up)
     }
-  }, [gesture, doc, change, eraseAlong, schedule, publish, history, scroller])
+  }, [gesture, doc, change, eraseAlong, schedule, publish, publishOn, history, scroller, setSelection])
 
   // The pen's Delete and Clear buttons (and the same ExpressKeys): the drawing
   // layer owns the selection, so it answers for them.
   useEffect(() => registerPenHandlers({
     deleteSelection: () => {
       const picked = latest.current.selection
-      if (picked.size === 0) return
-      change(removing(latest.current.drawing, picked))
+      const s = pickedRef.current()
+      if (picked.size === 0 || !s) return
+      change(removing(latest.current.pickLayer, picked), s)
       setSelection(new Set())
     },
     clearSelection: () => { setSelection(new Set()); if (latest.current.placing) onPlaced() },
-  }), [change, onPlaced])
+  }), [change, onPlaced, setSelection])
+
+  // MARK: - A pen for one new ink cell (inkScope.ts)
+
+  const scope = useSyncExternalStore(subscribeInkScope, inkScope)
+  // Any change of the page's mode (the pen put down, or picked up: Ctrl+P), or this note closed, ends it.
+  const scopeMode = useRef(mode)
+  useEffect(() => { if (scopeMode.current !== mode) { scopeMode.current = mode; endInkScope() } }, [mode])
+  useEffect(() => () => endInkScope(), [])
+  useEffect(() => {
+    if (scope === null || !scroller) return
+    // The cell takes the pen's cursor (editor.css `.wm-inkcell-pen`); the rest of the page keeps its own. The widget
+    // can be drawn again (scrolled away and back, the text above edited), so it is marked again whenever cells move.
+    let marked: HTMLElement | null = null
+    const mark = () => {
+      const place = inkCellPlaces.byId(scope, scroller)
+      const element = place && place.live ? place.element : null
+      if (marked && marked !== element) marked.classList.remove("wm-inkcell-pen")
+      if (element && !element.classList.contains("wm-inkcell-pen")) element.classList.add("wm-inkcell-pen")
+      marked = element
+    }
+    mark()
+    const stop = inkCellPlaces.subscribe(mark)
+    const escape = (event: KeyboardEvent) => { if (event.key === "Escape") endInkScope() }
+    window.addEventListener("keydown", escape, true)
+    return () => {
+      stop()
+      window.removeEventListener("keydown", escape, true)
+      marked?.classList.remove("wm-inkcell-pen")
+    }
+  }, [scope, scroller])
 
   // MARK: - Keys the layer watches
 
@@ -1166,6 +1528,15 @@ export function Canvas({
       if (event.target instanceof Element && event.target.closest("input, textarea")) return
       const held = latest.current.drawing
       const picked = latest.current.selection
+      // Escape during a dock drag: nothing is docked, the drop bar goes away.
+      const docking = live.current
+      if (event.key === "Escape" && docking?.kind === "docking") {
+        latest.current.dock?.clear()
+        live.current = null
+        owner.current = null
+        setGesture(null)
+        return
+      }
       if (event.key === "Escape" && latest.current.crop) { setCrop(null); return }
       if (event.key === "Escape" && latest.current.styling) {
         setStyling(false)
@@ -1179,11 +1550,12 @@ export function Canvas({
       // was nothing to do — a watcher that eats a key it did not use is
       // how typing dies.
       if (event.key.toLowerCase() === "g" && event.ctrlKey && !event.metaKey) {
-        const next = toggled(picked, held.items)
-        if (!next) return
+        const s = pickedRef.current()
+        const next = s ? toggled(picked, latest.current.pickLayer.items) : null
+        if (!next || !s) return
         event.preventDefault()
-        change({ items: next })
-        setSelection(whole(picked, next))
+        change({ items: next }, s)
+        setSelection(whole(picked, next), s.cell)
         return
       }
       if (event.key === "Escape" && (picked.size > 0 || latest.current.placing)) {
@@ -1200,7 +1572,7 @@ export function Canvas({
     }
     window.addEventListener("keydown", key)
     return () => window.removeEventListener("keydown", key)
-  }, [change, history, onPlaced, publish])
+  }, [change, history, onPlaced, publish, setSelection])
 
   // What is picked answers the arrow keys, Backspace / Delete and the copy keys BEFORE the notebook does
   // (capture phase, and the key goes no further): the caret is not moving, and no letter is taken out of
@@ -1215,7 +1587,10 @@ export function Canvas({
     let taken: string | null = null
     const keys = (event: KeyboardEvent) => {
       if (event.repeat && taken === event.key) { event.preventDefault(); event.stopPropagation(); return }
-      const { drawing: held, selection: picked, size: now, box: shown, crop: cropping } = latest.current
+      // What is picked is on one surface: the page, or an ink cell (its own items, its own frame).
+      const { pickLayer: held, selection: picked, box: shown, crop: cropping } = latest.current
+      const surface = picked.size > 0 ? pickedRef.current() : null
+      const now = surface?.size ?? latest.current.size
       const target = event.target
       const verdict = layerKey({
         key: event.key, ctrl: event.ctrlKey, meta: event.metaKey, alt: event.altKey, shift: event.shiftKey,
@@ -1224,7 +1599,7 @@ export function Canvas({
         inField: away(target),
         inSelect: target instanceof Element && target.closest("select") !== null,
         inNotebook: target instanceof HTMLElement && target.isContentEditable,
-        picked: picked.size > 0 && shown !== null,
+        picked: picked.size > 0 && shown !== null && surface !== null,
         cropOpen: cropping !== null,
         textSelected: target instanceof HTMLElement && target.isContentEditable
           && window.getSelection()?.isCollapsed === false,
@@ -1234,18 +1609,18 @@ export function Canvas({
       event.preventDefault(); event.stopPropagation()
       switch (verdict.take) {
         case "nudge":
-          burst(nudged(held, picked, verdict.dx, verdict.dy, now))
+          if (surface) burst(nudged(held, picked, verdict.dx, verdict.dy, now), surface)
           break
         case "delete":
           taken = event.key
-          change(removing(held, picked))
+          if (surface) change(removing(held, picked), surface)
           setSelection(new Set())
           break
         case "copy":
         case "cut":
-          copyObjects(held.items, whole(picked, held.items))
-          if (verdict.take === "cut") {
-            change(removing(held, picked))
+          copyObjects(held.items, whole(picked, held.items), surface?.cell ?? null)
+          if (verdict.take === "cut" && surface) {
+            change(removing(held, picked), surface)
             setSelection(new Set())
           }
           break
@@ -1265,20 +1640,33 @@ export function Canvas({
         if (event.target instanceof HTMLElement && event.target.isContentEditable) setSelection(new Set())
         return
       }
+      // Objects go back onto the surface they were copied on: the page, or their ink cell (in its own frame) while it
+      // is on the screen. A cell that is not (another note, or its line deleted) gives them to the page, in page
+      // fractions, on a 720 px column in the middle: never into a cell that cannot be seen.
+      const cell = clip.from
+      const live = cell === null ? null : cellSurfaceOf(cell)
+      const onto: Surface = live ?? pageSurface()
+      const held = layerOf(onto)
+      if (!held) return
       event.preventDefault(); event.stopPropagation()
-      const { drawing: held, size: now } = latest.current
+      const now = onto.size
+      let source = clip.items
+      if (cell !== null && live === null) {
+        const width = Math.min(720, Math.max(1, now.width))
+        source = toPage(source, now, { x: Math.max(0, (now.width - width) / 2), y: 0 }, width)
+      }
       clip.pastes += 1
       const slide = 16 * clip.pastes
-      let copies = shifted(copiedItems(clip.items, new Set(clip.items.map(itemId))), slide, slide, now)
-      // From another note, scrolled somewhere else: bring it into view.
+      let copies = shifted(copiedItems(source, new Set(source.map(itemId))), slide, slide, now)
+      // From another note, scrolled somewhere else: bring it into view (on the page).
       const where = boundsOf({ items: copies }, new Set(copies.map(itemId)), now)
       const top = scrollRef.current
-      if (where && (where.y + where.height < top || where.y > top + now.height)) {
+      if (onto.cell === null && where && (where.y + where.height < top || where.y > top + now.height)) {
         copies = shifted(copies, 0, top + 40 - where.y, now)
       }
       if (copies.length === 0) return
-      change({ items: [...held.items, ...copies] })
-      setSelection(new Set(copies.map(itemId)))
+      change({ items: [...held.items, ...copies] }, onto)
+      setSelection(new Set(copies.map(itemId)), onto.cell)
     }
     window.addEventListener("keydown", keys, true)
     window.addEventListener("keyup", lifted, true)
@@ -1288,7 +1676,7 @@ export function Canvas({
       window.removeEventListener("keyup", lifted, true)
       window.removeEventListener("paste", pasted, true)
     }
-  }, [burst, change])
+  }, [burst, change, setSelection])
 
   // MARK: - The handles
 
@@ -1305,7 +1693,17 @@ export function Canvas({
     width: Math.max(box.width, MIN_SPAN_X),
     height: Math.max(box.height, MIN_SPAN_Y),
   } : null
-  const grouping = toggle(selection, drawing.items)
+  // The pick is on the page, or in one ink cell (its own items, `pickLayer`): placing tools, crop, read and the
+  // routed-line circles are the page's only this round; docking is FROM the page.
+  const onPage = pick.on === null
+  const grouping = toggle(selection, pickLayer.items)
+  /** A gesture from a handle works on the pick's surface (null when its cell is off the screen). */
+  const fromHandle = (): Surface | null => {
+    const s = pickedSurface()
+    if (s) surfaceRef.current = s
+    return s
+  }
+  const docks = onPage && dock !== undefined && dockable(drawing, selection) !== null
   // The style bar sits under the selection, or over it when there is no room.
   const barSpot = hb ? (() => {
     const wide = 340, tall = 176
@@ -1326,36 +1724,58 @@ export function Canvas({
               title="Turn"
               onPointerDown={(event) => {
                 event.preventDefault(); event.stopPropagation()
-                const pivot = { x: box.x + box.width / 2, y: box.y + box.height / 2 }
+                const s = fromHandle()
+                if (!s) return
+                const pivot = { x: box.x + box.width / 2 - s.origin.x, y: box.y + box.height / 2 - s.origin.y }
                 start({
                   kind: "rotating",
                   from: angleAbout(doc(event.nativeEvent), pivot),
                   pivot,
-                  snapshot: snapshotOf(drawing, selection),
-                  base: drawing,
+                  snapshot: snapshotOf(pickLayer, selection),
+                  base: pickLayer,
                 }, event.pointerId)
               }}>⟳</button>
       <button className="wm-handle" style={spot(hb.x + hb.width, hb.y + hb.height, scroll)}
               title="Resize"
               onPointerDown={(event) => {
                 event.preventDefault(); event.stopPropagation()
-                const pivot = { x: box.x + box.width / 2, y: box.y + box.height / 2 }
+                const s = fromHandle()
+                if (!s) return
+                const pivot = { x: box.x + box.width / 2 - s.origin.x, y: box.y + box.height / 2 - s.origin.y }
                 start({
                   kind: "scaling",
                   from: doc(event.nativeEvent),
                   pivot,
-                  snapshot: snapshotOf(drawing, selection),
-                  base: drawing,
+                  snapshot: snapshotOf(pickLayer, selection),
+                  base: pickLayer,
                 }, event.pointerId)
               }}>⤡</button>
       <button className="wm-handle" style={spot(hb.x + hb.width, hb.y - HANDLE, scroll)}
               title="Delete"
               onPointerDown={(event) => {
                 event.preventDefault(); event.stopPropagation()
-                change(removing(drawing, selection))
+                const s = pickedSurface()
+                if (s) change(removing(pickLayer, selection), s)
                 setSelection(new Set())
               }}>✕</button>
-      {onReadPicture && selection.size === 1 && (() => {
+      {/* Dock what is picked into the note: a click puts it at the cursor (the armed bar, else after the caret's
+          cell); a drag shows the bar under the pointer and puts it where it is let go, or INTO an ink cell. */}
+      {docks && (
+        <button className="wm-handle wm-dock" data-handle="dock"
+                // Just outside the right edge, half way down: clear of Delete and Resize even on a flat stroke.
+                style={spot(hb.x + hb.width + 2 * HANDLE + 4, hb.y + hb.height / 2 - HANDLE, scroll)}
+                title="Dock into the note (click: at the cursor; drag: where you let go)"
+                onPointerDown={(event) => {
+                  event.preventDefault(); event.stopPropagation()
+                  surfaceRef.current = pageSurface()
+                  const at_ = { x: event.clientX, y: event.clientY }
+                  start({
+                    kind: "docking", ids: new Set(selection), from: at_, to: at_, scroll: scrollRef.current,
+                    dragging: false, target: null,
+                  }, event.pointerId)
+                }}>⤵</button>
+      )}
+      {onPage && onReadPicture && selection.size === 1 && (() => {
         const only = drawing.items.find((item) => itemId(item) === [...selection][0])
         if (!only || only.kind !== "image") return null
         return (
@@ -1367,7 +1787,7 @@ export function Canvas({
                   }}>Aa</button>
         )
       })()}
-      {selection.size === 1 && (() => {
+      {onPage && selection.size === 1 && (() => {
         const only = drawing.items.find((item) => itemId(item) === [...selection][0])
         if (!only || only.kind !== "image") return null
         return (
@@ -1381,7 +1801,7 @@ export function Canvas({
       })()}
       {/* The circle on each segment of a routed line: drag it and the segment
           goes with the pointer, the line routed again around it. */}
-      {drawing.items.flatMap((item) => {
+      {onPage && drawing.items.flatMap((item) => {
         if (item.kind !== "connector" || !selection.has(item.connector.id)
           || !isRouted(item.connector)) return []
         return segmentMidpoints(pixelRoute(item.connector, size)).map((segment) => (
@@ -1394,6 +1814,7 @@ export function Canvas({
                     cursor: segment.vertical ? "ew-resize" : "ns-resize" }}
                   onPointerDown={(event) => {
                     event.preventDefault(); event.stopPropagation()
+                    surfaceRef.current = pageSurface()
                     start({
                       kind: "segment", id: item.connector.id, index: segment.index,
                       vertical: segment.vertical, base: drawing,
@@ -1409,11 +1830,12 @@ export function Canvas({
                 title={grouping === "ungroup" ? "Ungroup these (⌃G does too)" : "Group these (⌃G does too)"}
                 onPointerDown={(event) => {
                   event.preventDefault(); event.stopPropagation()
-                  const next = toggled(selection, drawing.items)
-                  if (next) {
-                    change({ items: next })
+                  const s = pickedSurface()
+                  const next = s ? toggled(selection, pickLayer.items) : null
+                  if (next && s) {
+                    change({ items: next }, s)
                     // The handles go round the whole of what is held at once.
-                    setSelection(whole(selection, next))
+                    setSelection(whole(selection, next), s.cell)
                   }
                 }}>{grouping === "ungroup" ? "Ungroup" : "Group"}</button>
       )}
@@ -1424,7 +1846,8 @@ export function Canvas({
               title="Drag to move"
               onPointerDown={(event) => {
                 event.preventDefault(); event.stopPropagation()
-                start({ kind: "moving", from: doc(event.nativeEvent), snapshot: snapshotOf(drawing, selection), base: drawing }, event.pointerId)
+                if (!fromHandle()) return
+                start({ kind: "moving", from: doc(event.nativeEvent), snapshot: snapshotOf(pickLayer, selection), base: pickLayer }, event.pointerId)
               }}>✥</button>
       {/* Colour, width, fill, an arrow's heads and line, the order, a copy. */}
       <button className={`wm-handle${styling ? " wm-handle-on" : ""}`} data-handle="style"
@@ -1435,7 +1858,7 @@ export function Canvas({
                 setStyling((was) => !was)
               }}>◐</button>
       {styling && barSpot && (
-        <StyleBar items={drawing.items.filter((item) => selection.has(itemId(item)))}
+        <StyleBar items={pickLayer.items.filter((item) => selection.has(itemId(item)))}
                   left={barSpot.left} top={barSpot.top}
                   onPatch={applyStyle} onOrder={orderSelection} onDuplicate={duplicate}
                   onClose={() => setStyling(false)} />
@@ -1563,7 +1986,7 @@ export function Canvas({
     change({
       items: held.items.map((item) =>
         itemId(item) === crop.id ? cropped(item, rect, saved.file, aspect, now) : item),
-    })
+    }, pageSurface())
     setCrop(null)
   }
   confirmCrop.current = () => { void applyCrop() }
@@ -1616,7 +2039,7 @@ export function Canvas({
 
   return (
     <div className="wm-canvas" ref={host}
-         style={{ pointerEvents: grabs ? "auto" : "none", cursor: eraserOn ? "cell" : selectOn ? "crosshair" : cursorFor(mode, placing, command) }}>
+         style={{ pointerEvents: grabs ? "auto" : "none", cursor: eraserOn ? "cell" : selectOn ? "crosshair" : cursorFor(scope !== null ? "pen" : mode, placing, command) }}>
       {/* The committed ink, in the scroller so it scrolls with the words (`band`); over the page when there is none. */}
       {scroller
         ? createPortal(<canvas ref={canvas} className="wm-ink" style={INK_IN_SCROLLER} />, scroller)
@@ -1687,6 +2110,20 @@ const pressureOf = (event: PointerEvent): number =>
 
 const normalise = (point: Point, size: Size): Point =>
   ({ x: point.x / Math.max(size.width, 1), y: point.y / Math.max(size.height, 1) })
+
+/**
+ * A move inside an ink cell, kept inside it: `box` is what moves, as it was (cell px), `cell` the cell's box. What is
+ * bigger than the cell is centred in it on that axis.
+ */
+function keptInside(translate: { dx: number; dy: number }, box: Rect | null, cell: Rect): { dx: number; dy: number } {
+  if (!box) return translate
+  const keep = (value: number, low: number, high: number): number =>
+    low > high ? (low + high) / 2 : Math.min(Math.max(value, low), high)
+  return {
+    dx: keep(translate.dx, -box.x, cell.width - (box.x + box.width)),
+    dy: keep(translate.dy, -box.y, cell.height - (box.y + box.height)),
+  }
+}
 
 const snapshotOf = (drawing: Drawing, ids: Set<string>): Map<string, ItemTransform> => {
   const out = new Map<string, ItemTransform>()
@@ -1875,6 +2312,35 @@ function paint(context: CanvasRenderingContext2D, item: CanvasItem, size: Size,
       return
     }
   }
+}
+
+/**
+ * An ink cell's committed ink, painted into its widget's own canvas (docs\PLAN-docking-ink-cells.md (b)): the same
+ * `paint()` per item as the page, in the cell's frame (`cellFrame(W)`), clipped to the cell. The canvas is in the
+ * editor's DOM, so the ink moves in the same frame as the words round it. `size` is the cell's drawing area in CSS
+ * px; the backing store follows the screen's density. `onLoad` is called when a picture inside it arrives.
+ */
+export function paintInkCell(target: HTMLCanvasElement, cell: InkCell, size: Size, onLoad: () => void = () => {}): void {
+  const ratio = window.devicePixelRatio || 1
+  const w = Math.max(1, Math.round(size.width * ratio))
+  const h = Math.max(1, Math.round(size.height * ratio))
+  if (target.width !== w || target.height !== h) { target.width = w; target.height = h }
+  const context = target.getContext("2d")
+  if (!context) return
+  context.setTransform(1, 0, 0, 1, 0, 0)
+  context.clearRect(0, 0, w, h)
+  if (!(size.width > 0 && size.height > 0)) return
+  context.setTransform(ratio, 0, 0, ratio, 0, 0)
+  context.save()
+  context.beginPath()
+  context.rect(0, 0, size.width, size.height)
+  context.clip()
+  const frame = cellFrame(size.width)
+  for (const item of cell.items) {
+    if (isHidden(item)) continue
+    paint(context, item, frame, onLoad)
+  }
+  context.restore()
 }
 
 /**

@@ -19,7 +19,7 @@ session,features}` = `editor/03..06`, `02`; `buttons/b1` = `pen/03-buttons-and-e
 | Typing, list continuation, Ctrl-B/I/U/Shift-X, Ctrl-1..8, Tab/Shift-Tab, Ctrl-D/M, undo/redo, Alt-D, code auto-pair | works | t02.mjs |
 | Caret visible on dark theme (was black on dark), selection colour (was pale on dark), active-line band removed | fixed | theme.ts, t03 |
 | Cell brackets: click, shift, ctrl, drag-down picks a run live, drag of a HELD bracket moves the run, edge auto-scroll, wider hit area, hover colour | fixed (drag was missing) | t03.mjs |
-| Seams: hover, click, type opens cell, Enter opens empty cell, Escape disarms, caret hidden while armed (class was wiped by CodeMirror on focus), + menu keeps caret on the bar, menu Esc and clamps inside window, paste at a bar | fixed | t04/t05/t06.mjs |
+| Seams: hover, click, type opens cell, Enter opens empty cell, Escape disarms, caret hidden while armed (class was wiped by CodeMirror on focus), + menu keeps caret on the bar (superseded 2026-10-05: the + makes the cell at once, see "The pointer over cells"), menu Esc and clamps inside window, paste at a bar | fixed | t04/t05/t06.mjs |
 | Italic with `*`, Mac inline regexes ported; snake_case_name no longer italic | fixed | p3.mjs |
 | Folding, caret steps over folds | works | t19.mjs, old/fold.mjs |
 | Todo tick by click, rendered toggle | works | t07.mjs |
@@ -130,10 +130,26 @@ swaps the camera feed for a sheet of paper (dot grid by default) written on with
 | Straighten | hidden (nothing to square up) |
 | Auto-send after idle | **not built** |
 
-Sheet header (quiet): **Paper ▾**, Orientation, Erase, Undo (Ctrl+Z while the pen is over the pane), Clear, **Bring in: Writing | Page**, and the pen's one status word. Writing takes the brought-in region off the sheet (one Undo brings it back); Page leaves the sheet. **Paper** (`tabletPaper.ts`, remembered in localStorage): Blank, Dot grid, Lines, Grid, Isometric dots, Cornell notes; Small / Medium / Large; White / Cream / Dark (on Dark the default blue and the black preset are lifted, any chosen colour is shown as chosen). The paper is a background canvas under the ink, never ink data: Page includes it, Writing and the flow-chart reader never see it. **The Mac has no paper chooser** (its dotted notebook is the physical paper the camera recognises, `NotebookCapture.swift`), so this list is a sensible standard set pending the Mac's real list. Evidence: `test/sheetBoxPaper.test.ts`, `agents/e2e/wr-sheet/sheet.mjs`. The sheet is kept
+Sheet header (quiet): **Paper ▾**, Orientation, Erase, Select (the sheet's own pair: "The sheet's own Erase and Select" below), Undo (Ctrl+Z while the pen is over the pane), Clear, **Bring in: Writing | Page**, and the pen's one status word. Writing takes the brought-in region off the sheet (one Undo brings it back); Page leaves the sheet. **Paper** (`tabletPaper.ts`, remembered in localStorage): Blank, Dot grid, Lines, Grid, Isometric dots, Cornell notes; Small / Medium / Large; White / Cream / Dark (on Dark the default blue and the black preset are lifted, any chosen colour is shown as chosen). The paper is a background canvas under the ink, never ink data: Page includes it, Writing and the flow-chart reader never see it. **The Mac has no paper chooser** (its dotted notebook is the physical paper the camera recognises, `NotebookCapture.swift`), so this list is a sensible standard set pending the Mac's real list. Evidence: `test/sheetBoxPaper.test.ts`, `agents/e2e/wr-sheet/sheet.mjs`. The sheet is kept
 when the pane is put away. Known approximation (shared with the camera): a
 chart is fitted into the band under the capture, so it can come out a little
 smaller than the strokes it was read from.
+
+**Sheets as tabs** (sheet-tabs lane, 2026-10-05; WINDOWS-ONLY: the Mac has no tablet sheet). One slim row of tabs under the
+sheet's header (`SheetStrip.tsx`; the header's last row, so `--camera-top` counts it and it never covers the sheet). Each tab
+is its own sheet (`tabletSheets.ts`: its own ink, paper, dashed box and stroke undo); Writing / Page, Clear, Erase, Undo and
+Paper act on the open one; "+" adds "Sheet N" on the open sheet's paper; double-click renames (Enter keeps, Esc leaves it); the x
+closes one, a sheet with ink only on a second click ("Close?"), and the last sheet has no x (Clear wipes it); many tabs shrink,
+the open one keeps its width, the row scrolls and "+" stays. The pen cannot reach the row (the whole tablet is the sheet): the
+mouse clicks it, and **Pen ▸ Next / Previous Sheet** (Ctrl+Alt+PageDown / PageUp, round the end) are for the other hand.
+Switching never moves or resizes the sheet, so the pen's mapping stays. The sheets, their ink and paper and the open tab are
+**kept across restarts** in userData `sheets.json` (`main/sheets.ts`: debounced, temp file + rename, written at quit; read
+tolerantly by `sheetSet.ts`). Camera mode shows the same row as a stub (one "Camera" tab, a disabled "+"; TODO "Scanned pages as
+tabs"). Evidence: `test/sheetSet.test.ts` (add / close / rename / select / next / prev, the file round trip and bad files);
+`C:\CLAUDIO\agents\e2e\sheet-tabs\tabs.mjs` (`first`, then restart the instance, then `restart`: 48 checks, among them two sheets
+with different ink and paper, Bring in Writing takes the open one, an injected pen-feed stroke lands on the open one, the keys,
+rename, close asks, 14 tabs, the strip above the sheet, everything back after a restart, the camera stub). Needs Sean's pen: none
+of it was written with the real tablet.
 
 **Pen.** Settings ▸ Pen: *Pen side button* = Selects (like ⌘, default) or
 Erases (for a pen with no eraser end), honoured on the notes page and the
@@ -354,24 +370,39 @@ The Mac's mouse + modifier idioms, on a Wacom pen and tablet. See
 
 | Mac | Pen | Status |
 |---|---|---|
-| ⌘-drag marquee | lower side button drag (default), or the ⬚ Select tool, or Ctrl | works (`b1.mjs`) |
-| ⇧ extends the selection | assignable "Add to selection" button; Shift | works |
-| drag moves, handles scale/turn | Select tool then drag on the object; handles are pen-sized | works |
-| ⌫ deletes the held items | handle ✕, "Delete selection" button / ExpressKey Ctrl+Alt+9 | works (new) |
-| Esc clears | "Clear selection" button / ExpressKey Ctrl+Alt+0 | works (new) |
-| scroll the page | upper side button drag (Pan), Tip + Alt, a finger | works (new) |
-| right click | "Right-click" tap action | works (new) |
-| ⌘Z / ⇧⌘Z | Undo / Redo tap actions, ExpressKeys | works |
-| eraser | eraser end, lower button set to Erase, ⌫ tool | works |
-| colour, width | Next/Previous colour, Wider/Thinner (buttons and keys) | works (new) |
+| ⌘-drag marquee | upper side button held while the pen touches (default), or the ⬚ Select tool, or Ctrl | works (e2e `pen/03`) |
+| ⇧ extends the selection | assignable "Add to selection" hold; Shift | works |
+| drag moves, handles scale/turn | upper button held inside the selection drags it; Select tool then drag on the object; pen-sized handles | works (e2e `pen/03`) |
+| ⌫ deletes the held items | handle ✕, "Delete selection" double tap / ExpressKey Ctrl+Alt+9 | works |
+| Esc clears | "Clear selection" double tap / ExpressKey Ctrl+Alt+0 | works |
+| scroll the page | assignable "Pan the page" hold, Tip + Alt, a finger | works |
+| right click | "Right-click" double tap | works |
+| ⌘Z / ⇧⌘Z | lower / upper side button DOUBLE TAP (default), ExpressKeys | works (e2e `pen/03`, `tablet/02`) |
+| eraser | lower side button held while the pen touches (default), eraser end, ⌫ tool | works (e2e `pen/03`, `tablet/02`) |
+| colour, width | Next/Previous colour, Wider/Thinner (double taps and keys) | works |
+
+**Two jobs per side button (Sean, 2026-10-05):** lower = hold Erase strokes /
+double-tap Undo, upper = hold Select (inside the selection: move it) /
+double-tap Redo; a hold works only while the pen touches, a single tap or a
+press held in the air does nothing, no context menu over the page or the
+sheet while a button is in use; the same on the page, in ink cells (Canvas's
+one engine) and on the tablet sheet (DOM pen and the Wintab feed's
+synthesised events). Pure model + state machine `penButtons.ts`
+(`tapStep` with injected time, `migrateButtons`, `buttonRows`), runtime
+`penActions.ts`, popover `PenMenu.tsx` (`data-pen=btn-<slot>` = hold,
+`dbl-<slot>` = double tap). Evidence: `apps/desktop/test/penButtons.test.ts`,
+`penEvents.test.ts`, `penFeed.test.ts`; e2e `e2e/suites/pen/03-buttons-and-expresskeys.mjs`
+(54 checks: page, Windows-Ink-style barrel at contact, driver right-click
+echo, no menu, migration) and `e2e/suites/tablet/02-buttons-on-the-sheet.mjs`
+(17 checks: DOM pen and the inject feed).
 
 Not verified on hardware: everything was driven with synthetic pen
-`PointerEvent`s (button/buttons combinations above) and real key events, not
-a real Wacom. Open: a driver that sends both side buttons as the lower one
-cannot give them different jobs; the old `sideButton` setting is migrated into
-the lower button; `data-pen="side-button"` is now `data-pen="btn-lower"`.
-E2E: `C:\CLAUDIO\agents\e2e\wacom\` (`buttons-page.mjs` notes page + keys,
-`buttons-sheet.mjs` sheet).
+`PointerEvent`s, CDP pen / mouse input and the inject backend, not a real
+Wacom. How Windows Ink delivers a side button pressed in the AIR to Chromium
+is unknown here (a pen event with the bit, nothing at all, or the driver's
+mouse click — all three are handled); with Wintab on the sheet it is a
+button bit in the packet. A driver that sends both side buttons as the lower
+one cannot give them different jobs.
 
 ## Maths in two dimensions (Windows pass, 2026-10-03)
 
@@ -942,3 +973,200 @@ blocks, inline maths, pictures, and 500 pen strokes. CDP real input (`Input.disp
 
 Not verified: a real wheel / trackpad (CDP wheel events), a 150% display, a slower machine, the camera pane with a live
 camera (no camera in the instance; the tablet sheet idles at ~2 ms of main thread a second).
+
+## Docking and ink cells: the model (core lane, 2026-10-05)
+
+Sean, 2026-09-22 (dock floating pictures into the note) and 2026-10-05 (editable ink cells). Spec: the Mac's
+`C:GITWriteMinddocsPLAN-docking.md` (planned, not built on the Mac) and `docs/PLAN-docking-ink-cells.md`. This
+section is `packages/core` only; the widgets (editor lane) and the gestures, IPC and PDF wiring (dock lane) have their own.
+
+| Feature | Status | Evidence |
+|---|---|---|
+| The Mac's planned `MarkdownImages`: the docked line `![](<../>*.drawings/media/<file>)`, a line that is nothing but one image, the note's own media file of a path (basename; `../` for notes in section folders), every own media file a note names | done (`markdown/images.ts`) | `markdownImages.test.ts` |
+| An ink cell's line `![ink](<../>*.drawings/media/ink-<uuid>.svg)`, known by its file name only | done | `markdownImages.test.ts` |
+| The `picture` block: a line that is one image is its own cell (splits from a paragraph line above or below, Mac rule; an image in a list item, a quote, words or a fence stays where it is); the incremental parse agrees with the whole one | done | `parserPictures.test.ts` (1600 random edits) |
+| Cell kinds `{ kind: "ink" }` (+ menu's last group, "Drawing Cell"; the app makes it) and `{ kind: "picture", line }` (the dock at an armed bar goes through `openCell`) | done | `parserPictures.test.ts` |
+| A picture / ink cell never opens, never joins a run of touching cells, can be held, and Return beside it opens a cell above or below instead of splitting it (`staysClosed`, new optional `apart` argument of `touchingRuns` / `cellStates` / `cellStatesSparse`) | done in core; the editor passes `apart` | `parserPictures.test.ts` (dense = sparse on random notes) |
+| The ink cell as ONE drawing item `{ kind: "cell", cell: { id, aspect, items } }`: written and read by the same per-item reader (a damaged item inside is dropped and counted), hidden on the page, kept by every core edit, an arm in every `switch (item.kind)` | done | `drawingCells.test.ts` |
+| The cell model: items in fractions of the cell's width on both axes; page → cell a pure translation; a new cell from page ink (place kept, fitted, scaled down when too wide, `INK_PAD`, at least `INK_MIN_HEIGHT`); docking into a cell (centred on the release, clamped, the cell grows); `dockable` (one picture → picture cell; ink and pictures → ink cell; nodes or arrows → none); `minAspect` | done (`drawing/inkCell.ts`) | `inkCell.test.ts` (bounds and outlines to 0.01 px on a 1000 × 400 pane, rotated and scaled items) |
+| Media lifetime: no sweep exists; the rule for one is `mediaInUse` (markdown AND sidecars of every note) | rule written, nothing deletes | `inkCell.test.ts` |
+| The snapshot `ink-<id>.svg` (the paper's own vector writer, cell size, transparent, the cell's JSON in `<metadata id="writemind-ink">`) and its reader | done (`export/inkSnapshot.ts`); writing it to disk is the dock lane's IPC | `exportPictures.test.ts`; the file rendered standalone in Chromium and looked at |
+| PDF: a picture cell is `<img>` at the column's width capped at its own, a missing one a 21.75 px line with its alt words; an ink cell is inlined from the sidecar at the column's width (`blockMediaFor`, `BlockMedia`) | done in core; main's `renderNotePdf` passes `media` (dock lane) | `exportPictures.test.ts`; a three-cell note's measuring and printed pages rendered in Chromium and looked at: the ink cell measured 183.03 px = 832 × 0.22 |
+
+Port only (the Mac has no ink cells). The Mac drops a `cell` item it does not know (and marks the sidecar damaged), and
+does not read `../` media paths yet. Floating ink does not move when a cell is docked or inserted above it (the existing
+rule: floating objects never follow the text). Not verified here: anything on screen in the app (core has no UI).
+
+## Picture and ink cells on the page (editor lane, 2026-10-05)
+
+The widgets of `docs/PLAN-docking-ink-cells.md` (c) and the editor's half of docking (d), in `packages/editor`
+(`pictureCells.ts`, `pictureDom.ts`, `inkCellRegistry.ts`, `dock.ts`; `Notebook.tsx` wiring).
+
+| Feature | Status | Evidence |
+|---|---|---|
+| A picture line is ONE atomic block widget in both panes (the rendered page leaves it to `pictureCells`): the column's width capped at the picture's own (`display:block`), its height kept from the last load so nothing jumps; a missing file is a 21.75 px line with its alt words | done | `pictureCells.test.ts`; e2e `dock/picture-cells.mjs` (640 px photo = column width, 120 × 80 thumbnail kept, missing line 21.75 px) |
+| The caret only above and below: a line-tall caret at the picture's top left / bottom right; words typed or pasted at either edge go on a line of their own (`text\n\n` before, `\n\n text` after, typed at the EDITOR's caret: the browser's own caret cannot stand there); Backspace / Delete that would join or take the line holds the cell, the next one deletes it | done | `pictureCells.test.ts`; e2e (typing, Ctrl+Z, held delete) |
+| A live ink cell: column × `aspect`, faint card, a `<canvas>` the app's painter draws, an 8 px bottom strip that resizes it (one `resized` at the release, never under `minAspect`); no cell in the drawing, or a second line of the same id: read-only snapshot | done; painting is the dock lane's | `pictureCells.test.ts`; e2e (box = text column to 1 px in both panes; a 60 px drag makes it 60 px taller and the words under it move 60 px) |
+| A click on a picture cell (or beside it, on the rendered page) holds it; seams, brackets and the + menu treat it as a cell; + ▸ Drawing Cell calls the app's `onInsertInkCell` | done | e2e (click holds, lit) |
+| Rendered page: Up / Down walk bar → bar OVER a picture cell, a picture never opens or joins a run (`staysClosed` passed to `cellStatesSparse` and `touchingRuns`) | done | e2e (six Downs and an Up, armed offsets checked) |
+| `inkCellPlaces` (where every ink widget is, live or not, measured now; mounts, unmounts and geometry heard), `cursorSeam`, `dropTargetAt` (an ink cell, a seam, or the seam after the cell under the pointer), `showDropBar` / `showDropTarget`, `insertCellLine` (own cell, bar armed under it, ONE history event), `columnBox` | done | `dockSeams.test.ts`; e2e (drop targets, drop bar and lit cell looked at, insert + one Ctrl+Z) |
+
+Not verified: the ink drawn inside a cell and the dock gestures (dock lane), a real pen on the resize strip, any cell
+with the app's painter (App.tsx was not wired to `inkPainter` when this ran: the e2e made the cell live through the
+aspects map).
+
+## Docking, and drawing in ink cells (dock lane, 2026-10-05)
+
+Sean 2026-09-22 (a dock button: click = at the cursor, drag = where it is let go, between cells or into a cell) and
+2026-10-05 (editable ink cells; the pen side buttons work the same in them). `docs/PLAN-docking-ink-cells.md` (b), (d)-(g);
+`Canvas.tsx` (surfaces), `renderer/dock.ts`, `renderer/inkCells.ts`, App / useUndo wiring, main IPC and PDF.
+
+| Feature | Status | Evidence |
+|---|---|---|
+| One engine on two surfaces: the pen draws, erases (Erase tool and the lower-button hold), picks (click, Ctrl or upper-button marquee), moves (kept inside the cell), scales, turns, nudges, restyles, groups, deletes, copies and pastes IN a live ink cell as on the page; the ink is painted into the cell's own canvas (it moves with the words in the same frame); a gesture keeps the surface it began on (a page erase never touches cell ink) | done | e2e `C:\CLAUDIO\agents\e2e\dock\s1.mjs` (19 checks), `s4.mjs` (7) |
+| Insert ▸ Drawing Cell, Ctrl+0 and the + menu's Drawing Cell: an empty 200 px cell at the armed bar, else after the caret's cell; its snapshot written at once; ONE Undo | done | `apps/desktop/test/dockUndo.test.ts`; e2e `s1`, `s3.mjs` (20) |
+| The dock handle (⤵) on a page pick of strokes and / or pictures: click → one picture is a picture cell, anything else ONE ink cell, after the caret's cell (or at the armed bar); drag → a ghost and the drop bar under the pointer, released on a seam = a cell there, over an ink cell (lit) = INTO it; Escape or outside the note = nothing. One Undo puts the objects back AND takes the line out; Redo docks again | done | `dockUndo.test.ts` (real CodeMirror history + DrawingHistory through `stepAcross`); e2e `s2.mjs` (22), screenshots looked at |
+| Resizing a cell by its strip is one Undo, with the pen down too (the layer hands the press to the strip); the pen's double taps (lower = Undo, upper = Redo) take back cell ink | done | e2e `s3` |
+| The snapshot `ink-<id>.svg`: written when a cell is made, rewritten after each sidecar save that changed the cell (strokes, Undo, resize), written on opening a note when missing | done | e2e `s1` (the file before and after a stroke) |
+| PDF: ink cells inlined from the sidecar, picture cells loaded from their files, a missing one its one-line alt placeholder | done (`exportPdf.ts` passes `blockMediaFor`) | e2e `s3` (print page checked, the PDF looked at) |
+| A note moved to another project folder takes its docked pictures and ink snapshots along | done, unit-tested only (`pictureFiles` walks cells; `moveSidecar` adds `mediaFiles(markdown)`) | `dockUndo.test.ts` |
+| The page itself unchanged | existing e2e green | `npm run e2e -- --suite drawing/03-ink-select-transform`, `pen/01-ink-and-eraser`, `drawing/07-mode-and-copy` |
+
+Port only (the Mac has no ink cells and no docking yet). Placing tools (shapes, arrows, text boxes), crop, labels and
+read-into-words stay on the page. Floating ink does not move when a cell is docked or inserted above it (existing rule).
+Not verified: a real Wacom pen (all pen input was synthetic PointerEvents with `buttons` bits and pressure), the feel
+of the dock drag, how a docked photo sits for Sean.
+
+
+## Gate fixes for docking, ink cells and the pen buttons (gate, 2026-10-05)
+
+| Feature | Status | Evidence |
+|---|---|---|
+| An arrow attached to a docked picture (or ink) stays: the end on it lets go, where the routing last put it | done | `inkCell.test.ts` "keeps an arrow attached to a docked picture" |
+| Floating ink lying over an ink cell is the page's: a click / Select hold picks it, the eraser over a cell also rubs out floating strokes on top | done | gate smoke E1-E3 (`C:\CLAUDIO\agents\e2e\gate\smoke.mjs`) |
+| The driver's mouse right / middle click for a side button (the echo) holds the press across the pen's hover samples; switched off per button, only by a real pen pointerdown in the air | done | `penButtons.test.ts` "THE ECHO"; gate smoke D7 |
+| A pen double tap over the page undoes the page, not the tablet sheet that kept the focus | done | `tabletFocus.ts` `byPen`; by reading |
+| Select tool / Select hold: a press on an unpicked object inside the selection's box picks it (no move of the old pick), and never with Shift | done | by reading; gate smoke D4 |
+| A docked .pdf picture (Mac traced capture) prints as its SVG | done | `main.ts` printedPictures; not run with a .pdf picture |
+| Ink copied in a cell that is no longer on the screen pastes onto the page (`toPage`) | done | `inkCell.test.ts` "comes back to the page with toPage" |
+
+Gate smoke on one isolated instance, 36 / 36 PASS: paste + dock a picture (text above and below, never under; Ctrl+Z
+floats it again; typing at its edge goes on its own line), floating ink docked as an ink cell, more ink drawn in it,
+a line typed above moves it with its ink, the strip resizes it, Insert > Drawing Cell, the side buttons (hold lower
+erases, double-tap lower undoes, hold upper selects, double-tap upper redoes, single taps do nothing, the driver's
+echo), and a PDF with both kinds of cell (looked at).
+
+## The sheet's own Erase and Select (sheet-tools lane, 2026-10-05; WINDOWS-ONLY: the Mac has no tablet sheet)
+
+Sean: "clicking in the notebook exits erase mode from the drawing side". Reproduced first (old build, isolated instance): the
+sheet's Erase lit the toolbar's ⌫ and the Pen chip, made the note's drawing layer erase (a mouse click on the words placed no
+caret), and was turned off by the toolbar ✎ button, Ctrl+P and a placement tool (all `putToolsDown`); a pen tap on the sheet then
+a click in the notebook did not turn it off.
+
+| Feature | Status | Evidence |
+|---|---|---|
+| The sheet has its OWN Erase and Select (`penSettings` `sheetTools`: one pair for every sheet tab, not remembered); `eraser` / `selectTool` are the notebook's alone (toolbar ⌫ / ⬚, `putToolsDown`) | done | `test/sheetTools.test.ts`; e2e below |
+| Sheet header: Erase and a new Select toggle (Select: the pen pulls the dashed box too); the hint line says which | done | e2e below (looked at) |
+| The pen's toggleErase / toggleSelect (double tap, ExpressKey Ctrl+Alt+2 / 3, Pen menu) act on the surface the pen is over or was last over (`tabletFocus` `penOnSheet`, pen events only, the native feed's too); the Pen menu's checks show that surface's tools; the pen cursor shows the sheet's tool over the sheet | done | e2e below (DOM pen and the inject feed) |
+
+Evidence: `C:\CLAUDIO\agents\e2e\sheet-tools\sheet-tools.mjs` (28 / 28 PASS on one isolated instance: (a)-(e) above keep the
+sheet's Erase, the toolbar stays dark, a click on the words places the caret, each surface's Erase rubs out only its own ink,
+double taps and Ctrl+Alt+2 / 3 by the pen's place, through the inject feed too). Needs Sean's pen: no real tablet moved.
+
+## Tables, from scratch: part one (tables lane, 2026-10-05; PORT-FIRST: the Mac took tables out on 2026-09-20 to rebuild them)
+
+Sean wanted his keys list "as a table". The Mac has no tables now (`C:\GIT\WriteMind` 6109a18 took the old ones out
+whole), so this is the first part of the rebuild, written in the port first; the rest is in `docs/TODO.md`.
+
+| Feature | Status | Evidence |
+|---|---|---|
+| A GitHub pipe table (header, `\|---\|:--:\|---:\|` row with alignment, body rows, inline markdown in cells, `\|` escaped, end pipes optional) is ONE cell (`Block` `table`: header, align, rows as wide as the header); a short row is padded, a long one cut | done | `core/test/tables.test.ts` |
+| Not a table: a lone line of pipes, a delimiter row of another width, a line of pipes indented two columns or more (a list item's words), pipes in a quote or a fence; a table ends at a blank line, a list item, a quote, a heading or a line with no pipe. A table straight under a paragraph line takes that line as its header (GitHub's rule) | done | `tables.test.ts`; `formatting.test.ts` (the old "pipes are prose" case turned round) |
+| `positionedUpdate` agrees with the whole parse (it restarts at the paragraph above a table that took its header from it) | done | `tables.test.ts` (4800 random table edits), `parserIncremental.test.ts` |
+| The rendered page draws a real `<table>`: ruled cells, the header bold on a tint, left / centre / right from the delimiter row; a click on a cell's word opens the table's markdown with the caret on that word | done | `editor/src/preview/render.ts`; `previewPatch.test.ts` (tables chain); e2e below (looked at) |
+| The markdown pane (and an open table on the page) sets the lines as a framed monospaced grid: header bold, pipes and the rule dimmed, the file never re-padded | done | `editor/src/tables.ts`; e2e below (looked at) |
+| PDF / HTML export prints a real table, the page's metrics, light colours | done | `export/blocks.ts` `tableHtml`; `tables.test.ts`; e2e below (the printed page looked at) |
+| Tab / Shift+Tab cell to cell; Tab past the last cell and Return add a row; Return on an empty last row ends the table (KEYS.md "Tables") | done | `tableTab` / `tableReturn` in `tables.test.ts`; e2e below |
+| Editing inside the drawn grid, a table button / key, row and column commands | not built | `docs/TODO.md` "Tables, from scratch" |
+
+Evidence: `C:\CLAUDIO\agents\e2e\tables\tables.mjs` (31 / 31 PASS on one isolated instance, real CDP keys and
+clicks: the grid in the markdown, Tab / Shift+Tab / Return, the drawn table, a click into a cell, Tab and Return on
+the rendered page, undo, File > Export as PDF and its printed page).
+
+## Hold image (hold-image lane, 2026-10-05; PORT-ONLY: Sean's ask, the Mac has no such button)
+
+| Feature | Status | Evidence |
+|---|---|---|
+| **Hold image** in the camera pane's header (after Zoom): one press copies the frame on screen into the pane's own canvas and shows it in the video's place (`useHeldFrame`, `useCameraStream.ts`); the stream plays on underneath, so letting go is live at once. Pressed look (accent, sunk in) and a quiet "Held" before the camera's name under the picture | done | `e2e/suites/camera/03-hold-image.mjs` (29 checks; `// @e2e video=moving`, the new `moving.y4m` feed in `e2e/lib/fixtures.mjs`: a block steps along the bottom one place a frame), shots `agents/shots/manual__03-hold-image__*.png` |
+| The box, Straighten's corners, Find page, Image / Writing / Text / Page / Raw all take the HELD frame: `snapshot()` reads `picture()` (the still while held), drawn upright by the one transform shared with the live video (`uprightTransform`, `cameraTake.ts`); a quarter turn or the zoom while held turns / zooms the still; the hold stays through captures | done | `apps/desktop/test/cameraHold.test.ts` (the transform against CSS `rotate()`), the e2e: two Raw captures 0.6 s apart are the held frame while the live feed moved on; Writing from a box on the held frame; a turned Raw is 480 x 640 |
+| Lets go: the button again; Esc with the pane focused (a click on the picture focuses the pane, `tabIndex=-1` in camera mode only; a box goes first); another camera, Turn Camera Off, the Tablet, any stream that stops (`live` false) | done | the e2e (each case) |
+
+Not verified: a real camera (Chromium's fake device only); Sean's own feel for where the button sits.
+
+## The Quick Reference (welcome lane, 2026-10-05; PORT-ONLY: Sean's ask, the Mac has no first-run note)
+
+| Feature | Status | Evidence |
+|---|---|---|
+| A new install (the notes folder and the project's folders hold no note, and `.writemind/welcomed` is not in the notes root) gets `WriteMind Quick Reference.md` before the page reads the tree (`main/welcome.ts`, called in `main.ts` before `createWindow`); being the only note, the session's no-session rule opens it as the one tab, in front | done | `apps/desktop/test/welcome.test.ts` (temp folders); e2e below |
+| Never again: the marker stays when the note is deleted; a folder that already has notes (top level or in a section, `.md` / `.markdown` / `.txt`) is marked and gets nothing; a file of that name is never overwritten (`wx`) | done | the test; e2e below |
+| Its text (`shared/welcome.ts`): Sean's approved feature list kept to what is built (tables, docking, drawing cells, runnable cells, sheet tabs, the pen buttons: First button (Middle Click) hold erase / double-tap undo, Second button (Right Click) hold select / double-tap redo), then the keys as ONE pipe table (What, Windows, Mac), GENERATED from `commands.ts` (`acceleratorFor`, the menus' source; Mac chords as ⌃⌥⇧⌘ glyphs), columns padded so the markdown grid lines up | done | the test (every id exists, no empty Windows chord, Shift+Enter found in the editor keymap, the note parses to one table of 25 rows, Sean's rows pinned on both platforms) |
+| Test instances (offscreen or `WRITEMIND_E2E`) are left alone unless `WRITEMIND_WELCOME=1`; `WRITEMIND_WELCOME=0` turns it off anywhere | done | the test; e2e case 4 |
+| Its FIRST open is on the rendered page (Sean, 2026-10-05: "open on rendered page"): main says once which note it wrote at this launch (`welcome:take`), `renderer/welcomeView.ts` shows that note rendered before the paint; another note in front brings the markdown pane back (unless Ctrl+T was used meanwhile); a later launch, an existing install and every other note are untouched | done (sheet-note-sync lane) | `test/welcomeView.test.ts` (6); `C:\CLAUDIO\agents\e2e\sheet-note-sync\welcome-rendered.mjs` (7 / 7: rendered on a new install, a new note in markdown, back to it in markdown, a second launch in markdown); shot `sync-welcome-rendered.png` looked at |
+
+Evidence: `C:\CLAUDIO\agents\e2e\welcome\welcome.mjs` (20 / 20 PASS; it starts its own instances welcome-a/b/c, ports 9545-9547): a fresh folder gets the note and the marker, it is the one tab and in front, the markdown pane draws the 27-line grid with its pipes lined up, Ctrl+T (a real key press) draws a real table of 25 rows; after deleting it a second launch writes nothing; a folder with `Old.md` gets nothing and opens on Old; a test instance that did not ask stays empty. Shots looked at: `agents/shots/welcome-*.png`. Not verified: a real installer (none is built yet), a Mac.
+
+## The pointer over cells, and a new cell ready to type in (cells-ui lane, 2026-10-05; Sean's ask)
+
+Sean, 2026-10-05: *"a horizontal text selector cursor between cells when clicking would put a horizontal input cursor
+between cells … selecting a cell type or pressing an input in the menu bar like code block etc should create a new cell
+with the cursor ready to start typing (… except drawing cells, where it becomes a pen that can only draw in that cell)"*.
+
+| Feature | Status | Evidence |
+|---|---|---|
+| ONE hit-test for the pointer and the click (`pointerPlace`, seams.ts; Mac 17f0f82): `vertical-text` (the Mac's `iBeamCursorForVerticalLayout`) over exactly the seams, `pointer` over the + (only where it is drawn: the armed bar, else the hovered seam), `text` over words and margins, the gutter's own hand / arrow; said as one attribute on the scroller that beats a drawn block's own I-beam; asked again on scroll and after an edit under a still pointer. Was: `row-resize` on the scroller, lost to `.wm-pv`'s I-beam over a seam that runs over a block's edge | done, both pages | `cells-ui/pointer.mjs`: 528 points per page, cursor = hit-test at all; 376 / 392 of them clicked, each click did what the cursor said; 1 px sweeps change cursor exactly as often as the place changes (no flicker); `e2e/suites/cells/03-seams.mjs` (29) and `cells/furniture.mjs` (41) still pass |
+| A click in a seam ARMS THAT BAR, always (`armAt`): the caret on the blank line where there is one, else (two cells that touch, the ends) armed by hand; a hand-armed bar survives a transaction that only names its own selection (a focus, a page switch). Was: left to CodeMirror's click, which put the caret IN a cell between touching cells, and on the rendered page opened the block under a widened seam | done | `cellsUi.test.ts`; `pointer.mjs` (touching cells) |
+| The + menu's kind MAKES the cell at once, caret in it, keyboard in the editor (PORT-FIRST: the Mac's + only names the kind for the next character) | done, every kind, both pages | `cells-ui/newcells.mjs` (13 kinds × 2 pages) |
+| Commands that name a kind (Ctrl+1…7, List, Quote, Code Block, a language's Code Block) at an armed bar make the cell there on the MARKDOWN side too (the Mac's `atArmedBar` asks the source pane first); Ctrl+8 with nothing selected in a cell of words makes a new code cell AFTER it (Ctrl+9's rule); Insert ▸ Maths… at a bar puts the maths in a new cell there (was: nothing on the rendered page, glued to the neighbours on the markdown side) | done | `cellsUi.test.ts` (17); `newcells.mjs`: menu bar items clicked through Electron's own menu, toolbar buttons with real clicks, Ctrl+8 / Ctrl+9, Maths, both pages (50 / 50) |
+| A drawing cell (Ctrl+0, Insert ▸ Drawing Cell, + ▸ Drawing Cell) scopes the pointer to a pen for THAT cell (`inkScope.ts`, Canvas `scopedPress`): with the pen up a press in it draws (box ringed, crosshair), the page keeps its pointer, a press outside ends it and is the click it would have been (never a stroke, even from a pen that always draws), Escape ends it, Ctrl+P ends it; pen mode unchanged | done (mouse and SYNTHETIC pen events) | `inkScope.test.ts`; `cells-ui/pen.mjs` (21 / 21) |
+
+Not verified: a real mouse and the real Intuos pen (the cursor's feel, the scoped pen with the tablet). Scripts:
+`C:\CLAUDIO\agents\e2e\cells-ui\{pointer,newcells,pen}.mjs` (`WM_PORT=<port>`, an instance started with `-E2E`).
+
+## A drawing cell opened as a tablet sheet (cell-to-sheet lane, 2026-10-05; PORT-ONLY: the Mac has neither)
+
+Sean: "you can also right click and open the drawing cell as a new tab in the wacom/video editor to write in".
+`renderer/cellSheet.ts` (pure: frame, coordinates, the sync), `cellPage.ts`, `cellSheets.ts` (the binding), `CellMenu.tsx`.
+
+| Feature | Status | Evidence |
+|---|---|---|
+| Right-click a live drawing cell (markdown or rendered page, pen up or down) ▸ Open in Tablet Sheet / Delete Drawing Cell; anywhere else the notebook's own menu | done | e2e below; ad-hoc check with the pen down (the layer on top) |
+| Open in Tablet Sheet: the video pane comes back on the Tablet and a sheet tab "<note> Drawing" BOUND to the cell opens (the same tab the next time; marked in the strip, closes without asking) | done | e2e below; `cellSheet.test.ts` |
+| The sheet keeps the tablet's shape (the pen's mapping never changes); the cell is the largest frame of ITS shape in the middle, the rest shaded; a stroke stops at the frame's edge | done | `cellSheet.test.ts`; e2e (a stroke run off the top ends on the frame), screenshots looked at |
+| Writing / erasing / Clear on the sheet edits the cell: one undo step of the note's timeline per stroke (at pen-up) or erase gesture, through the app's `changeDrawing` (sidecar saved, `ink-<id>.svg` rewritten, the cell repainted); strokes not touched keep their own items (moved / scaled ones included); pictures in the cell untouched | done | `cellSheet.test.ts` (round trip to 1e-9, links, one step per erase); e2e (inject-feed stroke on disk, canvas repainted, snapshot grew) |
+| No undo of its own: Ctrl+Z over the sheet, its Undo button and the pen's double tap are the note's Undo; the cell's own changes (a stroke in the note, Undo, Redo, a resize, the tablet turned) come back to the sheet | done | e2e (Ctrl+Z / Ctrl+Y in the note, the header's Undo) |
+| Bring in Writing / Page are off on a bound sheet; the paper is drawn, never written into the cell | done | e2e |
+| The binding (note file + cell id, the cell's shape, writing waiting) is kept in sheets.json and survives a restart; a moved / renamed note is followed | done | e2e restart phase; `cellSheet.test.ts` |
+| Its note not in front: the sheet shows the cell as last seen, what is written waits (`pending`, on disk too) and lands as one step when the note is. Since sheet-note-sync (below) a bound tab is open only with its note in front, so this is left for a sheets file from before and no note open at all | done | `cellSheet.test.ts` (fake app); not in e2e |
+| The cell gone from its note (still gone 1.2 s later), or the note's file gone: the tab says so quietly and is a plain sheet with its ink | done | `cellSheet.test.ts` (fake app; an Undo then Redo within the moment is not "gone"); not in e2e |
+
+Evidence: `C:\CLAUDIO\agents\e2e\cell-to-sheet\cell-sheet.mjs` (`first` 25 / 25, then a restart, `restart` 9 / 9 PASS on one
+isolated instance), `apps/desktop/test/cellSheet.test.ts` (22). Needs Sean's pen: writing in the frame with the real Intuos.
+
+## The sheet and the note follow each other (sheet-note-sync lane, 2026-10-05; PORT-ONLY: the Mac has neither)
+
+Sean: "automatically switch to the right note tab when selecting a drawing tab that matches it.. when the drawing is open,
+switching to another note tab goes back to the previous non-page specific drawing tab". Rules: `renderer/sheetFollow.ts`
+(pure); wiring: `cellSheets.ts` (the picker, the note in front), `tabletSheets.ts` (`selectSheet` / `stepSheet` go
+through the picker, `showSheet` does not; the last plain tab), App.tsx (the host's `bring` / `reveal`; the note in front
+reported in a layout effect, so the note and the sheet change in one frame).
+
+| Feature | Status | Evidence |
+|---|---|---|
+| A bound tab ("<note> Drawing") picked by hand (a click, Pen ▸ Next / Previous Sheet = Ctrl+Alt+PageDown / PageUp) brings its note to the front (its tab, else opened as from the sidebar); the tab opens when the note is there (never a frame with a drawing tab of a note away) and the cell is scrolled to the middle unless already whole in view. Its note already in front: it just opens. Note gone: no switch, the tab lets go of its cell (it says so) and opens as a plain sheet | done | `test/sheetFollow.test.ts` (21: rules + live against a fake app); e2e below |
+| A bound tab open and ANY other note to the front (note tab, sidebar, link, new note, closing the bound note's tab, no note left): the sheet goes back to the last plain tab that was open, else the first plain tab, else a new "Sheet 1"; the bound note itself to the front changes nothing; no loop (a pick only brings a note, a note only opens a plain tab or the tab that asked for it) | done | same |
+| The last plain tab is kept in sheets.json (`plain`) and survives a restart; after a restart a bound tab of a note not in front gives way once a note is in front | done | `sheetFollow.test.ts` (file round trip); e2e (`plain` on disk); the restart itself not in e2e |
+
+Evidence: `C:\CLAUDIO\agents\e2e\sheet-note-sync\sync.mjs` (49 / 49 PASS, one isolated instance, every frame recorded:
+a click and both keys bring the right note, one change per action, Sheet 1's ink intact throughout); shots
+`sync-click-bound.png`, `sync-back-to-plain.png` looked at. Not verified: Sean's pen (the keys were CDP key events).
+

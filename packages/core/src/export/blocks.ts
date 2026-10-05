@@ -25,6 +25,8 @@
  */
 
 import type { Block } from "../markdown/parser"
+import type { InkCell } from "../drawing/model"
+import { inkCellSvg } from "./inkSnapshot"
 import { codeTokens, type CodeTokenKind } from "../markdown/code"
 import { colouring } from "../eval/evaluator"
 import { INLINE_MATH_CSS, isMathFence } from "../math/typesetter"
@@ -91,11 +93,40 @@ export function codeHtml(body: string, fence: string | null): string {
 
 const SECONDARY = "#6C6C70"
 
+/**
+ * What the paper needs to draw the note's picture and ink cells (docsPLAN-docking-ink-cells.md (g)): a media file's
+ * URL for the printing page (null for a file that is not there: the cell is then the line-tall placeholder the
+ * screen shows), the live ink cell of an id (inlined from the sidecar, always current), and the text column's width.
+ */
+export interface BlockMedia {
+  url(file: string): string | null
+  ink(id: string): InkCell | null
+  column: number
+}
+
+/** A picture cell on paper: the column's width capped at the picture's own; missing, a line with its alt words. */
+function pictureHtml(block: Extract<Block, { kind: "picture" }>, paper: string, media?: BlockMedia): string {
+  const cell = block.ink && media ? media.ink(block.ink) : null
+  if (cell && media) {
+    return `<div class="pic ink">${inkCellSvg(cell, media.column, { mediaUrl: (file) => media.url(file) ?? "", paper })}</div>`
+  }
+  const url = block.file !== null ? (media?.url(block.file) ?? null)
+    : /^(https?:|data:)/i.test(block.path) ? block.path : null
+  const words = escapeHtml(block.alt || block.file || block.path)
+  if (url === null) return `<div class="pic missing">${words}</div>`
+  // A file that is there but will not load is the same placeholder (on the measuring page and the printed one alike).
+  return `<div class="pic" data-alt="${words}"><img src="${escapeHtml(url)}" alt="${escapeHtml(block.alt)}" `
+    + `onerror="var p=this.parentNode;p.className='pic missing';p.textContent=p.getAttribute('data-alt')"/></div>`
+}
+
 const row = (mark: string, content: string, markStyle = ""): string =>
   `<div class="row"><span class="mark"${markStyle ? ` style="${markStyle}"` : ""}>${mark}</span><span class="text">${content}</span></div>`
 
-/** One cell as HTML (its width is the column's; its height is whatever it comes to). */
-export function blockHtml(block: Block, paper: string = PAPER_HEX): string {
+/**
+ * One cell as HTML (its width is the column's; its height is whatever it comes to). `media` draws picture and ink
+ * cells; without it a picture cell is its placeholder line.
+ */
+export function blockHtml(block: Block, paper: string = PAPER_HEX, media?: BlockMedia): string {
   const inline = (text: string) => inlineHtml(text, paper)
   switch (block.kind) {
     case "heading": {
@@ -137,7 +168,23 @@ export function blockHtml(block: Block, paper: string = PAPER_HEX): string {
       return `<div class="blank" style="height:${Math.round(block.lines * PAGE.line * 100) / 100}px"></div>`
     case "rule":
       return `<div class="rule"><hr/></div>`
+    case "picture":
+      return pictureHtml(block, paper, media)
+    case "table":
+      return tableHtml(block, inline)
   }
+}
+
+/** A table on paper, set as the rendered page sets it (`.wm-pv-table` in @writemind/editor): the same rules and padding. */
+function tableHtml(block: Extract<Block, { kind: "table" }>, inline: (text: string) => string): string {
+  const cell = (tag: "th" | "td", words: string, column: number): string => {
+    const align = block.align[column]
+    return `<${tag}${align ? ` style="text-align:${align}"` : ""}>${inline(words)}</${tag}>`
+  }
+  const head = `<thead><tr>${block.header.map((words, column) => cell("th", words, column)).join("")}</tr></thead>`
+  const body = block.rows.length === 0 ? ""
+    : `<tbody>${block.rows.map((row) => `<tr>${row.map((words, column) => cell("td", words, column)).join("")}</tr>`).join("")}</tbody>`
+  return `<div class="table"><table>${head}${body}</table></div>`
 }
 
 /** The stylesheet for all of the above, in the document's own pixels (1 px = 1 pt of the Mac's layout) and the PAGE's own metrics. */
@@ -165,8 +212,21 @@ ${INLINE_MATH_CSS}
 .wm-math-block { display: block; text-align: center; padding: 6px 0 8px; font-size: 1.25em; }
 .wm-math-block .wm-math { display: inline-block; }
 .wm-math-block math { line-height: 1.25; }
+/* A table (tableHtml): the page's grid, in the paper's light rule colour. Wider than the column, it is cut at the
+   column's edge rather than scrolled (paper cannot scroll); its cells wrap first. */
+.table { overflow: hidden; padding: 0 2px; }
+.table table { border-collapse: collapse; max-width: 100%; font-size: ${PAGE.body}px; line-height: ${PAGE.line}px; }
+.table th, .table td { border: 1px solid #C8C8CC; padding: 4px 10px; vertical-align: top; text-align: left;
+  white-space: pre-wrap; overflow-wrap: break-word; min-width: 2em; }
+.table th { font-weight: 600; background: rgba(0, 0, 0, 0.04); }
 .rule { padding: ${PAGE.rule}px 0; }
 .rule hr { margin: 0; border: 0; border-top: 1px solid #C8C8CC; }
+/* Picture and ink cells (pictureHtml): the column's width capped at the picture's own, as on the page; a file that
+   is not there is one line tall, its alt words in the secondary colour. */
+.pic img { display: block; max-width: 100%; height: auto; }
+.pic.ink svg { display: block; }
+.pic.missing { height: ${PAGE.line}px; line-height: ${PAGE.line}px; font-size: 13px; color: ${SECONDARY}; font-style: italic;
+  overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
 code { font-family: Consolas, "Cascadia Mono", Menlo, "DejaVu Sans Mono", monospace; font-size: ${PAGE.code.size}px; background: rgba(0, 0, 0, 0.05); border-radius: 3px; padding: 0 2px; }
 a.link { color: #2D7DD2; text-decoration: underline; }
 `

@@ -84,10 +84,13 @@ describe("the input split: the pen writes, the mouse never does", () => {
     expect(pressAction({ pointerType: "pen", button: 0, buttons: 1 }, settings)).toBe("draw")
     expect(pressAction({ pointerType: "mouse", button: 0, buttons: 1 }, settings)).toBe("draw")
   })
-  it("a tap button and Pan do nothing on the sheet (they are 'ignore' / 'pan', which the surface returns on)", () => {
-    const upper = { pointerType: "pen", button: 1, buttons: 5 }
-    expect(["pan", "ignore"]).toContain(pressAction(upper, settings))
-    expect(pressAction({ pointerType: "pen", button: 2, buttons: 2 }, { ...settings, buttons: { lower: "undo" } })).toBe("ignore")
+  it("a side button in the air and Pan do nothing on the sheet (they are 'ignore' / 'pan', which the surface returns on)", () => {
+    expect(pressAction({ pointerType: "pen", button: 1, buttons: 4, pressure: 0 }, settings)).toBe("ignore")
+    expect(pressAction({ pointerType: "pen", button: 2, buttons: 2, pressure: 0 }, settings)).toBe("ignore")
+    expect(pressAction({ pointerType: "pen", button: 0, buttons: 5 }, { ...settings, buttons: { upper: { hold: "pan", double: "redo" } } })).toBe("pan")
+    // The upper button held as the pen touches: Erase (the default, DEFAULT_BUTTONS); the lower one: Select, the dashed box.
+    expect(pressAction({ pointerType: "pen", button: 0, buttons: 5 }, settings)).toBe("erase")
+    expect(pressAction({ pointerType: "pen", button: 0, buttons: 3, pressure: 0.5 }, settings)).toBe("select")
   })
 })
 

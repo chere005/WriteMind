@@ -11,7 +11,8 @@
  * privacy switch is reported as "Camera access is off").
  */
 
-import { useEffect, useRef, useState, type RefObject } from "react"
+import { useCallback, useEffect, useRef, useState, type RefObject } from "react"
+import type { Size } from "@writemind/core"
 import { describeCameraError, unpluggedProblem, type CameraProblem } from "./cameraDevices"
 
 export type CameraStatus = "idle" | "starting" | "running" | "failed"
@@ -152,4 +153,77 @@ export function useCameraStream(video: RefObject<HTMLVideoElement | null>, optio
   }, [options.enabled, wanted, options.attempt, plugged])
 
   return state
+}
+
+/**
+ * HOLD IMAGE (Sean, 2026-10-05; the port's own, the Mac has no such button): the frame on screen kept still, so a
+ * page can be framed, held, and taken without the hand or the camera moving. The still is a copy of one frame in the
+ * pane's own canvas (`still`), shown in the video's place; the box, Straighten's corners, Find page and every capture
+ * are then taken from it (`picture`). The stream plays on underneath, so letting go is the live picture at once.
+ *
+ * It lets go by itself when the picture it came from is gone: another camera picked (`source`), the camera turned off,
+ * the tablet picked, a stream that stops (unplugged, refused, restarted): `live` false.
+ */
+export interface HeldFrame {
+  /** The canvas the still is kept in, and shown from. */
+  still: RefObject<HTMLCanvasElement | null>
+  held: boolean
+  /** Keep the frame on screen now; false when there is none yet. */
+  hold(): boolean
+  letGo(): void
+  /** The held still's size (the camera's own pixels, not turned), or null when nothing is held. */
+  heldSize(): Size | null
+  /** What a capture is taken from: the still while one is held, else the video's current frame; null with no frame. */
+  picture(): { image: CanvasImageSource; size: Size } | null
+}
+
+export function useHeldFrame(video: RefObject<HTMLVideoElement | null>, options: {
+  /** The camera is delivering a picture (not the tablet, not off, not starting or failed). */
+  live: boolean
+  /** The source picked: a different one lets go. */
+  source: string | null
+}): HeldFrame {
+  const still = useRef<HTMLCanvasElement | null>(null)
+  const [held, setHeld] = useState(false)
+  /** Read by captures that were set up before the render that shows the hold. */
+  const holding = useRef(false)
+
+  const letGo = useCallback(() => {
+    holding.current = false
+    setHeld(false)
+    // The pixels go with it (a 1080p still is 8 MB).
+    const canvas = still.current
+    if (canvas && canvas.width > 0) { canvas.width = 0; canvas.height = 0 }
+  }, [])
+
+  const hold = useCallback((): boolean => {
+    const element = video.current, canvas = still.current
+    if (!element || !canvas || element.videoWidth === 0 || element.readyState < 2) return false
+    canvas.width = element.videoWidth
+    canvas.height = element.videoHeight
+    const context = canvas.getContext("2d")
+    if (!context) return false
+    context.drawImage(element, 0, 0, canvas.width, canvas.height)
+    holding.current = true
+    setHeld(true)
+    return true
+  }, [video])
+
+  const heldSize = useCallback((): Size | null => {
+    const canvas = still.current
+    return holding.current && canvas && canvas.width > 0 ? { width: canvas.width, height: canvas.height } : null
+  }, [])
+
+  const picture = useCallback((): { image: CanvasImageSource; size: Size } | null => {
+    const kept = heldSize()
+    if (kept && still.current) return { image: still.current, size: kept }
+    const element = video.current
+    if (!element || element.videoWidth === 0 || element.readyState < 2) return null
+    return { image: element, size: { width: element.videoWidth, height: element.videoHeight } }
+  }, [heldSize, video])
+
+  useEffect(() => { if (!options.live) letGo() }, [options.live, letGo])
+  useEffect(() => { letGo() }, [options.source, letGo])
+
+  return { still, held, hold, letGo, heldSize, picture }
 }
