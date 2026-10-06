@@ -79,6 +79,12 @@ class TodoWidget extends WidgetType {
 
 const HEADING_MARKS = [1, 2, 3, 4, 5, 6].map((n) => Decoration.line({ class: `wm-h${n}` }))
 const faded = Decoration.mark({ class: "wm-marker" })
+/**
+ * A code span's backticks: faded in the markdown, and on the rendered page put away EVEN on the lines the selection is
+ * in, so a drag or a double click there never takes them (Sean, 2026-10-06: "backticks should not be highlightable in
+ * rendered view"). The other marks still show there, to be edited.
+ */
+const tick = Decoration.mark({ class: "wm-marker" })
 const quoted = Decoration.line({ class: "wm-quote" })
 const codeLine = Decoration.line({ class: "wm-code-line", attributes: { spellcheck: "false" } })
 const bulletMark = Decoration.replace({ widget: new BulletWidget("•") })
@@ -175,10 +181,10 @@ function inlineSpans(source: string, offset: number, out: Entry[]): void {
     return true
   }
   const cover = (from: number, to: number): void => { covered.fill(1, from, to) }
-  const wrapped = (from: number, to: number, marker: number, close: number, deco: Decoration, claim = true) => {
-    out.push({ from: offset + from, to: offset + from + marker, deco: faded, kind: 1, atomic: true })
+  const wrapped = (from: number, to: number, marker: number, close: number, deco: Decoration, claim = true, marks = faded) => {
+    out.push({ from: offset + from, to: offset + from + marker, deco: marks, kind: 1, atomic: true })
     out.push({ from: offset + from + marker, to: offset + to - close, deco, kind: 1, atomic: false })
-    out.push({ from: offset + to - close, to: offset + to, deco: faded, kind: 1, atomic: true })
+    out.push({ from: offset + to - close, to: offset + to, deco: marks, kind: 1, atomic: true })
     if (claim) cover(from, to)
   }
 
@@ -189,7 +195,7 @@ function inlineSpans(source: string, offset: number, out: Entry[]): void {
       while ((match = pattern.exec(text))) {
         const end = match.index + match[0].length
         if (end - match.index <= width * 2 || !free(match.index, end)) continue
-        wrapped(match.index, end, width, width, CODE_MARK)
+        wrapped(match.index, end, width, width, CODE_MARK, true, tick)
       }
     }
   }
@@ -475,7 +481,7 @@ function build(state: EditorState, from: number, to: number): { all: DecorationS
   if (marksAway(state)) {
     const touched = touchedLines(state)
     for (const entry of entries) {
-      if (entry.deco === faded && !touched.has(doc.lineAt(entry.from).number)) entry.deco = hidden
+      if ((entry.deco === faded && !touched.has(doc.lineAt(entry.from).number)) || entry.deco === tick) entry.deco = hidden
     }
   }
 
@@ -634,6 +640,16 @@ export const notebookDecorations: Extension = ViewPlugin.fromClass(Decorator, {
  * marker the page hides is a marker a delete takes whole, and the editor's own
  * reading of `snake_case_name` (not an emphasis) is the one that counts.
  */
+/** The marks that SHOW (faded) between `from` and `to`; the rest are put away. For the tests. */
+export function shownMarks(state: EditorState, from: number, to: number): Range[] {
+  const { all } = build(state, from, to)
+  const shown: Range[] = []
+  for (const cursor = all.iter(); cursor.value; cursor.next()) {
+    if (cursor.value === faded || cursor.value === tick) shown.push({ location: cursor.from, length: cursor.to - cursor.from })
+  }
+  return shown
+}
+
 export function markerStructureAround(state: EditorState, from: number, to: number): MarkerStructure {
   const start = state.doc.lineAt(from).from
   const stop = state.doc.lineAt(Math.min(to, state.doc.length)).to
@@ -644,7 +660,7 @@ export function markerStructureAround(state: EditorState, from: number, to: numb
     const length = cursor.to - cursor.from
     if (length <= 0) continue
     const value = cursor.value
-    if (value === faded || value === hidden) markers.push({ location: cursor.from, length })
+    if (value === faded || value === tick || value === hidden) markers.push({ location: cursor.from, length })
     else if (value === BOLD_MARK || value === ITALIC_MARK || value === STRIKE_MARK || value === CODE_MARK) {
       styled.push({ location: cursor.from, length })
     }
