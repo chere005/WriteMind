@@ -269,9 +269,9 @@ async function createWindow(): Promise<void> {
     // because a window that does not look like the system's is the first
     // thing that says "this was ported".
     titleBarStyle: process.platform === "darwin" ? "hiddenInset" : "default",
-    // Linux window managers take the icon from the window itself; macOS
-    // and Windows take it from the bundle.
-    ...(process.platform === "linux"
+    // Linux window managers take the icon from the window itself, and so does Windows' taskbar
+    // button (a dev run's electron.exe has Electron's); macOS takes it from the bundle.
+    ...(process.platform !== "darwin"
       ? { icon: path.join(here, "../renderer/icon.png") }
       : {}),
     webPreferences: {
@@ -333,6 +333,9 @@ async function createWindow(): Promise<void> {
 // ONE WINDOW PER PROFILE. A second launch (a double-click on a shortcut that is already running) brings the
 // first one forward instead of opening a second window on the same notes — two writers on one folder is the
 // bug `mayWrite` exists for. The lock is per user-data folder, so a test instance never meets the real app.
+// WINDOWS' TASKBAR groups a window with the Start menu shortcut by this id, which electron-builder's installer gives
+// the shortcut (appId): without it the running app is a separate, Electron-iconed button.
+if (process.platform === "win32") app.setAppUserModelId("com.seancheren.writemind")
 const gotLock = app.requestSingleInstanceLock()
 if (!gotLock) {
   app.quit()
