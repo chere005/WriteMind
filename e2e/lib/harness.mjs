@@ -370,8 +370,21 @@ export async function freshNote({ video = false } = {}) {
   return file
 }
 export const sidecar = async (file) => JSON.parse((await js(`window.wm.readDrawing(${JSON.stringify(file)})`)) ?? '{"items":[]}')
-/** Wait for the 500 ms debounced save, then read the drawing back from disk. */
-export const saved = async (file) => { await sleep(900); return sidecar(file) }
+/**
+ * Wait for the 500 ms debounced save, then read the drawing back from disk. A slow machine (CI, a cold first save)
+ * can take longer than that: the sidecar is read again until it exists, and with `until` (a test of the drawing read)
+ * until it holds, for up to `ms` in all; then the last read is returned and the check that uses it fails as before.
+ */
+export const saved = async (file, until = null, ms = 5000) => {
+  const stop = Date.now() + ms
+  await sleep(900)
+  for (;;) {
+    const raw = await js(`window.wm.readDrawing(${JSON.stringify(file)})`)
+    const drawing = JSON.parse(raw ?? '{"items":[]}')
+    if ((raw != null && (!until || until(drawing))) || Date.now() >= stop) return drawing
+    await sleep(150)
+  }
+}
 export const canvasBox = async () => JSON.parse(await js(`(()=>{const b=document.querySelector('.wm-canvas').getBoundingClientRect();return JSON.stringify({x:b.x,y:b.y,w:b.width,h:b.height})})()`))
 /** Pick an Insert-menu entry (a shape, "arrow"...) so the next drag places it. */
 export const arm = (value) => js(`(()=>{

@@ -29,8 +29,9 @@ ok("placed on the pane inside it, at page scale", strokes.every(s => s.points.ev
 ok("the sheet cleared once sent", (await px()) === 0)
 
 // Undo goes last-thing-first: with the pen over the sheet the clearing is undone (the writing comes back to
-// the sheet and stays in the note); then one Ctrl+Z at the page takes the capture back from the note.
-await hover(X + 100, Y + 300, { pen: true }); await sleep(250)
+// the sheet and stays in the note); then one Ctrl+Z at the page takes the capture back from the note. (The pen
+// hovers low on the sheet, inside it whatever its height.)
+await hover(X + 100, Y + Math.round(t.h * 0.8), { pen: true }); await sleep(250)
 await key("z", { modifiers: CTRL })
 ok("Ctrl+Z over the sheet brings the cleared writing back onto it", (await px()) > 200, String(await px()))
 ok("...and leaves the capture in the note", (await saved(file)).items.length === 2)
@@ -43,19 +44,22 @@ ok("one Ctrl+Z at the page takes the capture back from the note", d.items.length
 // 2. Ctrl+Z with the pen over the sheet takes back a STROKE ON THE SHEET.
 await penStroke(seg(X + 60, Y + 250, X + 220, Y + 250, 10))
 const before = await px()
-await hover(X + 100, Y + 300, { pen: true }); await sleep(250)
+await hover(X + 100, Y + Math.round(t.h * 0.8), { pen: true }); await sleep(250)
 await key("z", { modifiers: CTRL })
 ok("Ctrl+Z over the sheet takes back the last stroke", (await px()) < before, `${await px()} vs ${before}`)
 await barBtn("clear"); await sleep(100)
 ok("Clear wipes the sheet", (await px()) === 0)
 
-// 3. The BOX: only the section in it comes in; the rest stays on the sheet.
+// 3. The BOX: only the section in it comes in; the rest stays on the sheet. (The Box button went, 2026-10-05: the
+// Select toggle makes the pen pull the dashed box, and the box gets its own row of buttons under it.)
 await penStroke(seg(X + 30, Y + 100, X + 110, Y + 100, 8))      // left
 await penStroke(seg(X + 150, Y + 100, X + 230, Y + 100, 8))     // right
-await barBtn("box")
+await barBtn("select")
 await pe("pointerdown", X + 10, Y + 60); await pe("pointermove", X + 80, Y + 120); await pe("pointermove", X + 130, Y + 150); await pe("pointerup", X + 130, Y + 150, { buttons: 0 })
 ok("the dashed box is shown", await js(`!!document.querySelector('.camera .box')`))
-ok("the Box tool lets go after one box", await js(`!document.querySelector('.camera-bar [data-tablet=box]').classList.contains('on')`))
+ok("...with its row of buttons (Erase, Bring in Writing, Bring in as Drawing Cell)", await js(`!!document.querySelector('[data-tablet=box-actions]')`))
+await barBtn("select")
+ok("the Select toggle lets go when pressed again", !(await js(`document.querySelector('.camera-bar [data-tablet=select]').classList.contains('on')`)))
 await js(`document.querySelector('.cm-content').focus()`)
 const n1 = (await saved(file)).items.length
 await takeBtn("Bring the writing in")
@@ -117,11 +121,12 @@ await barBtn("erase")
 ok("the Erase tool lets go when pressed again", !(await js(`document.querySelector('[data-tablet=erase]').classList.contains('on')`)))
 await penStroke(seg(X + 40, Y + 220, X + 200, Y + 220, 14))
 const keep = await px()
-// The lower side button: pressed in the air it does nothing; held while the pen touches it rubs out (the default hold).
-const lower = (p) => pe("pointerdown", X + 120, Y + 223, { button: 2, buttons: 2, pressure: p }).then(() => pe("pointermove", X + 125, Y + 223, { button: -1, buttons: 2, pressure: p })).then(() => pe("pointerup", X + 125, Y + 223, { button: 2, buttons: 0, pressure: 0 }))
-await lower(0); await sleep(150)
-ok("the lower button pressed in the air does nothing", (await px()) === keep)
-await lower(0.5); await sleep(150)
-ok("held while the pen touches, the lower button rubs the stroke out (default hold: Erase)", (await px()) === 0)
+// The upper side button (since 2026-10-05; the lower one selects): pressed in the air it does nothing; held while the
+// pen touches it rubs out (the default hold).
+const upper = (p) => pe("pointerdown", X + 120, Y + 223, { button: 1, buttons: 4, pressure: p }).then(() => pe("pointermove", X + 125, Y + 223, { button: -1, buttons: 4, pressure: p })).then(() => pe("pointerup", X + 125, Y + 223, { button: 1, buttons: 0, pressure: 0 }))
+await upper(0); await sleep(150)
+ok("the upper button pressed in the air does nothing", (await px()) === keep)
+await upper(0.5); await sleep(150)
+ok("held while the pen touches, the upper button rubs the stroke out (default hold: Erase)", (await px()) === 0)
 await shot("after")
 finish()

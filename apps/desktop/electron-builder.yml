@@ -16,7 +16,11 @@ copyright: Copyright © 2026 Shahean Cheren
 # tag — .github/workflows/release.yml does that on a pushed v* tag. A draft
 # first: the workflow publishes it once every file is up, so no installed copy
 # ever sees a release without its latest.yml. A local `package:win` publishes
-# nothing (no tag, no token).
+# nothing (no tag, no token). THE MAC DMGS are never published by
+# electron-builder (`--publish never`): the workflow's mac job uploads them to
+# the same draft with `gh release upload`. A Mac copy does not update itself
+# (an ad-hoc signed app cannot be replaced by Squirrel.Mac): it only offers the
+# release page, so there is no zip and no latest-mac.yml.
 publish:
   provider: github
   owner: chere005
@@ -59,15 +63,37 @@ mac:
   # left in the login keychain. The build picked the revoked one. The cure
   # is to take the dead one out (docs/BUILDING.md says how); this line
   # says which one to use once there is a choice again.
+  #
+  # THIS IS SEAN'S OWN CERTIFICATE, for his own `package:mac` on his Mac. The
+  # released dmgs are AD-HOC signed instead (there is no Developer ID, so they
+  # are not notarized either): CI passes `-c.mac.identity=-
+  # -c.forceCodeSigning=true -c.mac.timestamp=none -c.mac.notarize=false`
+  # (apps/desktop's `package:mac:adhoc`, release.yml's mac job), and
+  # docs/INSTALL-MAC.md says how a first open gets past Gatekeeper.
   identity: 744460685372E9982A2A85D7B351A9499AFF2EF6
+  # macOS 13 (Ventura) or newer: Electron 44 runs on nothing older. Quoted, so
+  # it is the string 13.0 in LSMinimumSystemVersion and not the number 13.
+  minimumSystemVersion: "13.0"
+  # NO HARDENED RUNTIME, as the Swift app has none: only notarization needs it,
+  # and with it on the camera would need an entitlement besides its wording.
+  hardenedRuntime: false
+  # ONE DMG PER CHIP, the chip in the name (WriteMind-1.0.0-mac-arm64.dmg for
+  # Apple silicon, -mac-x64.dmg for Intel). Not universal: koffi's darwin .node
+  # files and the wm-vision helper defeat @electron/universal's merge; the
+  # helper is universal itself (tools/build-vision.sh), so both dmgs carry it.
+  artifactName: ${productName}-${version}-mac-${arch}.${ext}
   target:
     - target: dmg
       arch: [arm64, x64]
-    - target: zip
-      arch: [arm64, x64]
-  # The camera prompt's wording, which macOS shows verbatim.
+  # The prompts' wording, which macOS shows verbatim. The notes live in
+  # ~/Documents/WriteMindCross, and Documents is a folder macOS asks about.
   extendInfo:
     NSCameraUsageDescription: WriteMind uses the camera to take the writing off a notebook page.
+    NSDocumentsFolderUsageDescription: WriteMind keeps your notes in the WriteMindCross folder in Documents.
+
+# No .blockmap and no update feed for a dmg: a Mac copy never downloads an update.
+dmg:
+  writeUpdateInfo: false
 
 win:
   # x64 only: one NSIS file holding two architectures is twice the download for

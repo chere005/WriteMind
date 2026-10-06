@@ -5,15 +5,16 @@ import { ok, finish, js, sleep, freshNote, setDoc, doc, sel, ranges, setSel, key
 await freshNote()
 const eq = async (name, want) => { const d = await doc(); ok(name, d === want, `${JSON.stringify(d)} want ${JSON.stringify(want)}`) }
 
-// ---- typing a page
+// ---- typing a page: what is typed into a text cell is literal (docs/PLAN-text-cells.md, 2026-10-05), its markup
+// written with backslashes; a title is made with Ctrl-1, a list carries on from one that is there
 await setDoc(""); await focus()
 await typeKeys("# My Title\n\nHello world. This is body.\n\n- one\ntwo\n\n")
-await eq("typed text makes the cells it should", "# My Title\n\nHello world. This is body.\n\n- one\n- two\n")
+await eq("typed markup stays literal in a text cell", "\\# My Title\n\nHello world. This is body.\n\n\\- one\ntwo\n\n")
 await shot("typed")
 
-// ---- lists carry on, an empty item ends the list
-await setDoc(""); await focus()
-await typeKeys("- one\ntwo\nthree\n\n")
+// ---- lists carry on, an empty item ends the list (the empty item Return leaves is the list's, not a text cell's)
+await setDoc("- one"); await setSel(5); await focus()
+await typeKeys("\ntwo\nthree\n\n")
 await eq("a bullet list carries on and an empty item ends it", "- one\n- two\n- three\n")
 await setDoc("1. a"); await setSel(4); await focus()
 await typeKeys("\nb\nc\n")
@@ -22,15 +23,16 @@ await setDoc("- [ ] task"); await setSel(10); await focus()
 await typeKeys("\nnext\n")
 await eq("a to-do list carries on with an open box", "- [ ] task\n- [ ] next\n- [ ] ")
 
-// ---- the formatting keys
+// ---- the formatting keys (a text cell formatted becomes a markdown cell: its marker goes in above the words)
+const MD = "<!-- markdown -->\n"
 await setDoc("hello world"); await setSel(0, 5); await focus()
-await key("b", { ctrl: true }); await eq("Ctrl-B wraps in **", "**hello** world")
-await key("b", { ctrl: true }); await eq("Ctrl-B again unwraps", "hello world")
-await key("i", { ctrl: true }); await eq("Ctrl-I wraps in _", "_hello_ world")
+await key("b", { ctrl: true }); await eq("Ctrl-B wraps in **", MD + "**hello** world")
+await key("b", { ctrl: true }); await eq("Ctrl-B again unwraps", MD + "hello world")
+await key("i", { ctrl: true }); await eq("Ctrl-I wraps in _", MD + "_hello_ world")
 await setDoc("hello world"); await setSel(0, 5)
-await key("u", { ctrl: true }); await eq("Ctrl-U wraps in <u>", "<u>hello</u> world")
+await key("u", { ctrl: true }); await eq("Ctrl-U wraps in <u>", MD + "<u>hello</u> world")
 await setDoc("hello world"); await setSel(0, 5)
-await key("x", { ctrl: true, shift: true }); await eq("Ctrl-Shift-X strikes through", "~~hello~~ world")
+await key("x", { ctrl: true, shift: true }); await eq("Ctrl-Shift-X strikes through", MD + "~~hello~~ world")
 await setDoc("hello"); await setSel(2)
 await key("1", { ctrl: true }); await eq("Ctrl-1 makes a title", "# hello")
 await key("7", { ctrl: true }); await eq("Ctrl-7 makes it body text again", "hello")

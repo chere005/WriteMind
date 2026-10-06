@@ -102,6 +102,20 @@ function offMarkers(tr: Transaction): Transaction | readonly [Transaction, Trans
 /** Blocks a line typed straight under one of them carries on, in markdown (a list's next item, a table's row). */
 const CARRIED_ON = new Set(["bullets", "dashes", "todos", "numbered", "quote", "table"])
 
+/**
+ * Whether `text`, a line that is an item's marker and nothing else (`2. `, `- `, `* `), is the next item of the list
+ * `above` (the cell on the line over it): a number under a numbered list, `-` or `+` under dots, `*` under dashes, either
+ * under a to-do list.
+ */
+function continuesList(text: string, above: PositionedBlock | undefined): boolean {
+  const marker = /^\s*([-+*]|\d{1,4}[.)])\s*$/.exec(text)?.[1]
+  if (!marker || !above) return false
+  const kind = above.block.kind
+  if (/^\d/.test(marker)) return kind === "numbered"
+  if (marker === "*") return kind === "dashes" || kind === "todos"
+  return kind === "bullets" || kind === "todos"
+}
+
 /** The keys and the clipboard: typing, a paste, a drop, a delete — and Return (CodeMirror's newline and its indent). */
 function literalEvent(tr: Transaction): boolean {
   if (tr.isUserEvent("input.type.compose")) return false
@@ -138,24 +152,35 @@ function literalTyping(tr: Transaction): Transaction | TransactionSpec | readonl
     }
   }
 
+  /** The cell the line above `line` is in (before the change), or undefined when that line is blank or the first. */
+  const cellAbove = (line: { number: number }): PositionedBlock | undefined => {
+    if (line.number < 2) return undefined
+    const above = oldDoc.line(line.number - 1)
+    if (above.text.trim().length === 0) return undefined
+    const j = firstCellFromBy(cells, above.from + 1, (one) => one.range) - 1
+    const over = j >= 0 ? cells[j] : undefined
+    return over && above.from >= over.range.location && above.from <= end(over.range) ? over : undefined
+  }
+
   /** Whether a line that began at `old` (before the change) is a text cell's: the cell it is in, or would join. */
   const textAt = (old: number): boolean => {
     const i = firstCellFromBy(cells, old + 1, (cell) => cell.range) - 1
     const cell = i >= 0 ? cells[i] : undefined
-    if (cell && cell.block.kind !== "blank" && old >= cell.range.location && old <= end(cell.range)) return isTextCell(cell.block)
+    const line = oldDoc.lineAt(Math.min(old, oldDoc.length))
+    if (cell && cell.block.kind !== "blank" && old >= cell.range.location && old <= end(cell.range)) {
+      // An item's marker and nothing else (`2. `, `- `: what Return in a list writes) is a paragraph to the parser,
+      // so a text cell of its own; straight under an item of its list it is that list's next item, and what is typed
+      // after it is the list's (`1. a`, Return, `b` is `2. b`, not `2\. b`). Only a line that is the whole cell's
+      // first line: `words` then `2. ` is one text cell, and stays literal.
+      if (isTextCell(cell.block) && cell.range.location === line.from && continuesList(line.text, cellAbove(line))) return false
+      return isTextCell(cell.block)
+    }
     // On a line of its own: it joins the cell ending on the line above, or it is a new cell — plain words, unless it
     // is a paste (markdown pasted between cells stays what it was).
-    const line = oldDoc.lineAt(Math.min(old, oldDoc.length))
-    if (line.number > 1) {
-      const above = oldDoc.line(line.number - 1)
-      if (above.text.trim().length > 0) {
-        const j = firstCellFromBy(cells, above.from + 1, (one) => one.range) - 1
-        const over = j >= 0 ? cells[j] : undefined
-        if (over && above.from >= over.range.location && above.from <= end(over.range)) {
-          if (isTextCell(over.block)) return true
-          if (CARRIED_ON.has(over.block.kind) || over.block.kind === "paragraph") return false
-        }
-      }
+    const over = cellAbove(line)
+    if (over) {
+      if (isTextCell(over.block)) return true
+      if (CARRIED_ON.has(over.block.kind) || over.block.kind === "paragraph") return false
     }
     return !paste
   }

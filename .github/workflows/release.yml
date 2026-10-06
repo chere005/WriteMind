@@ -1,10 +1,22 @@
-# Releases WriteMind for Windows. A pushed tag v<version> (or a manual run naming an existing tag) checks that the tag
-# is apps/desktop/package.json's version, runs the typecheck, the tests and the build, then has electron-builder make
-# the per-user NSIS installer and upload it, its .blockmap and latest.yml to a draft GitHub Release for that tag; the
-# last step publishes the draft. latest.yml on the newest release is the feed every installed copy's updater reads
-# (apps/desktop/src/main/updater.ts). docs/BUILDING.md ("Releases and updates") says how to cut a release.
+# Releases WriteMind for Windows and macOS on ONE GitHub Release. A pushed tag v<version> (or a manual run naming an
+# existing tag) runs four jobs:
 #
-# Unsigned for now: Windows SmartScreen says "Windows protected your PC" on a first install (More info > Run anyway).
+#   prepare  (ubuntu)    the tag must be apps/desktop/package.json's version; the notes are the tag's annotation (or its
+#                        commit's message); a DRAFT release is made for the tag ("WriteMind <version>"). A draft left by an
+#                        earlier run is reused; a release already published for the tag stops the run.
+#   windows  (windows)   typecheck, unit tests, build; electron-builder makes the per-user NSIS installer and uploads it,
+#                        its .blockmap and latest.yml into that draft. latest.yml on the newest release is the feed every
+#                        installed Windows copy's updater reads (apps/desktop/src/main/updater.ts).
+#   mac      (macos-15)  build (with the universal Vision helper); electron-builder makes WriteMind-<version>-mac-arm64.dmg
+#                        and -mac-x64.dmg, AD-HOC signed (there is no Developer ID, so nothing is notarized) and never
+#                        published by electron-builder; tools/verify-mac.sh checks them; gh uploads both into the draft.
+#   publish  (ubuntu)    every file is on the draft, then it is published (Latest; a version with a "-" is a pre-release).
+#
+# A failed windows or mac job leaves the release a DRAFT that no installed copy sees: fix it, then re-run the failed job
+# (publish runs after it). docs/BUILDING.md ("Releases and updates") says how to cut a release.
+#
+# Unsigned on Windows: SmartScreen says "Windows protected your PC" on a first install (More info > Run anyway). Ad hoc on
+# the Mac: Gatekeeper stops the first open (docs/INSTALL-MAC.md: Privacy & Security > Open Anyway).
 name: Release
 
 on:
@@ -24,15 +36,17 @@ concurrency:
   group: release-${{ github.event.inputs.tag || github.ref_name }}
   cancel-in-progress: false
 
+env:
+  TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
+  GH_REPO: ${{ github.repository }}
+
 jobs:
-  release:
-    name: Windows installer to GitHub Releases
-    runs-on: windows-latest
-    timeout-minutes: 45
-    env:
-      TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
-      # No certificate yet: build unsigned rather than look for one.
-      CSC_IDENTITY_AUTO_DISCOVERY: "false"
+  prepare:
+    name: Tag, notes and the draft release
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    outputs:
+      version: ${{ steps.version.outputs.version }}
     defaults:
       run:
         shell: pwsh
@@ -43,6 +57,7 @@ jobs:
           fetch-depth: 0
 
       - name: The tag is the app's version
+        id: version
         run: |
           # Case-sensitive (-cnotmatch, -cne): PowerShell's -match / -ne ignore case, and a "V0.5.1" tag would pass, then have
           # electron-builder make a release for a "v0.5.1" tag that does not exist.
@@ -56,6 +71,7 @@ jobs:
             exit 1
           }
           "VERSION=$version" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+          "version=$version" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
           Write-Output "Releasing WriteMind $version from $env:TAG"
 
       - name: Release notes from the tag's annotation (or its commit's message)
@@ -72,6 +88,50 @@ jobs:
           [IO.File]::WriteAllText($file, $notes.Trim() + "`n", [Text.UTF8Encoding]::new($false))
           Get-Content $file
 
+      - name: The draft release for the tag
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          $notes = Join-Path $env:RUNNER_TEMP "release-notes.md"
+          $title = "WriteMind $env:VERSION"
+          # Every release for this tag, drafts included (a draft is not reachable by releases/tags/<tag>). The tag passed the
+          # version pattern above, so it is safe inside the filter.
+          $filter = '.[] | select(.tag_name == "' + $env:TAG + '") | .draft'
+          $drafts = @(gh api "repos/$env:GH_REPO/releases?per_page=100" --paginate --jq $filter)
+          if ($LASTEXITCODE -ne 0) { Write-Output "::error::Could not list the releases of $env:GH_REPO"; exit 1 }
+          if ($drafts -contains "false") {
+            Write-Output "::error title=Already released::$env:TAG is a published release; it is never rebuilt. A new version needs a new tag (docs/BUILDING.md)."
+            exit 1
+          }
+          if ($drafts.Count -gt 1) {
+            Write-Output "::error title=Two drafts::$($drafts.Count) draft releases are waiting for ${env:TAG}: delete all but one on the Releases page, then re-run."
+            exit 1
+          }
+          if ($drafts.Count -eq 1) {
+            Write-Output "Reusing the draft release for $env:TAG (an earlier run's)"
+            gh release edit $env:TAG --title $title --notes-file $notes
+          } else {
+            gh release create $env:TAG --draft --verify-tag --title $title --notes-file $notes
+          }
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+  windows:
+    name: Windows installer into the draft
+    needs: prepare
+    runs-on: windows-latest
+    timeout-minutes: 45
+    env:
+      VERSION: ${{ needs.prepare.outputs.version }}
+      # No certificate yet: build unsigned rather than look for one.
+      CSC_IDENTITY_AUTO_DISCOVERY: "false"
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: refs/tags/${{ env.TAG }}
+
       - uses: actions/setup-node@v5
         with:
           node-version: 24
@@ -87,6 +147,18 @@ jobs:
       # No icon step: electron-builder.yml takes packaging/icon.png (tracked) for the exe, installer and shortcuts;
       # the git-ignored packaging/writemind.ico is only tools/setup-windows.ps1's, for dev shortcuts.
 
+      - name: Release notes from the draft (for latest.yml)
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          [Console]::OutputEncoding = [Text.UTF8Encoding]::new($false)
+          $body = (gh release view $env:TAG --json body --jq .body) -join "`n"
+          if ($LASTEXITCODE -ne 0) { Write-Output "::error::No draft release for $env:TAG (the prepare job makes it)"; exit 1 }
+          if (-not $body.Trim()) { $body = "WriteMind $env:VERSION" }
+          $file = Join-Path $env:RUNNER_TEMP "release-notes.md"
+          [IO.File]::WriteAllText($file, $body.Trim() + "`n", [Text.UTF8Encoding]::new($false))
+          Get-Content $file
+
       - name: Installer, uploaded to the draft release
         working-directory: apps/desktop
         env:
@@ -96,25 +168,6 @@ jobs:
           & (Join-Path $env:GITHUB_WORKSPACE "node_modules/.bin/electron-builder.cmd") --win nsis --x64 --publish always `
             --config electron-builder.yml "-c.releaseInfo.releaseNotesFile=$notes" "-c.releaseInfo.releaseName=WriteMind $env:VERSION"
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-
-      - name: Every file is there; publish the release
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          $names = @(gh release view $env:TAG --json assets --jq '.assets[].name')
-          if ($LASTEXITCODE -ne 0) { Write-Output "::error::No release for $env:TAG"; exit 1 }
-          Write-Output "Assets: $($names -join ', ')"
-          $missing = @()
-          if (-not ($names -contains "latest.yml")) { $missing += "latest.yml" }
-          if (-not ($names | Where-Object { $_ -like "*$env:VERSION*.exe" })) { $missing += "the installer (.exe)" }
-          if (-not ($names | Where-Object { $_ -like "*$env:VERSION*.exe.blockmap" })) { $missing += "the .blockmap" }
-          if ($missing.Count -gt 0) {
-            Write-Output "::error title=Release incomplete::Missing $($missing -join ', '); the release stays a draft."
-            exit 1
-          }
-          if ($env:VERSION -like "*-*") { gh release edit $env:TAG --draft=false --prerelease } else { gh release edit $env:TAG --draft=false --latest }
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          gh release view $env:TAG --json url --jq .url
 
       - name: Installer as a build artifact too
         if: always()
@@ -127,3 +180,88 @@ jobs:
             dist-electron/latest.yml
           if-no-files-found: ignore
           retention-days: 14
+
+  mac:
+    name: Mac dmgs (ad hoc) into the draft
+    needs: prepare
+    runs-on: macos-15
+    timeout-minutes: 45
+    env:
+      VERSION: ${{ needs.prepare.outputs.version }}
+      # Ad hoc, from the command line below: never go looking for a certificate (and there are no APPLE_* variables, so
+      # nothing is notarized).
+      CSC_IDENTITY_AUTO_DISCOVERY: "false"
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: refs/tags/${{ env.TAG }}
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - name: Build (the Vision helper universal, tools/build-vision.sh)
+        run: npm run build
+
+      # The same line as apps/desktop's package:mac:adhoc (ci.yml's mac-package job runs that script on main).
+      # electron-builder.yml's mac.identity is Sean's own certificate for a local package:mac; "-" signs ad hoc instead.
+      - name: The two dmgs, signed ad hoc, not published by electron-builder
+        working-directory: apps/desktop
+        run: |
+          "$GITHUB_WORKSPACE/node_modules/.bin/electron-builder" --mac dmg --arm64 --x64 --publish never --config electron-builder.yml \
+            "-c.mac.identity=-" "-c.forceCodeSigning=true" "-c.mac.timestamp=none" "-c.mac.notarize=false"
+
+      - name: Check them (signature, chips, helper, Info.plist, the dmgs)
+        run: bash tools/verify-mac.sh
+
+      - name: Both dmgs, uploaded to the draft release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          ls -l dist-electron/*-mac-*.dmg
+          gh release upload "$TAG" dist-electron/*-mac-*.dmg --clobber
+
+      - name: The dmgs as a build artifact too
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: writemind-${{ env.TAG }}-mac
+          path: dist-electron/*-mac-*.dmg
+          if-no-files-found: ignore
+          retention-days: 14
+
+  publish:
+    name: Every file is there; publish the release
+    needs: [prepare, windows, mac]
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      VERSION: ${{ needs.prepare.outputs.version }}
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - name: Every file is there; publish the release
+        run: |
+          $names = @(gh release view $env:TAG --json assets --jq '.assets[].name')
+          if ($LASTEXITCODE -ne 0) { Write-Output "::error::No release for $env:TAG"; exit 1 }
+          Write-Output "Assets: $($names -join ', ')"
+          $missing = @()
+          if (-not ($names -contains "latest.yml")) { $missing += "latest.yml" }
+          if (-not ($names | Where-Object { $_ -like "*$env:VERSION*.exe" })) { $missing += "the installer (.exe)" }
+          if (-not ($names | Where-Object { $_ -like "*$env:VERSION*.exe.blockmap" })) { $missing += "the .blockmap" }
+          foreach ($dmg in @("WriteMind-$env:VERSION-mac-arm64.dmg", "WriteMind-$env:VERSION-mac-x64.dmg")) {
+            if (-not ($names -contains $dmg)) { $missing += $dmg }
+          }
+          if ($missing.Count -gt 0) {
+            Write-Output "::error title=Release incomplete::Missing $($missing -join ', '); the release stays a draft."
+            exit 1
+          }
+          if ($env:VERSION -like "*-*") { gh release edit $env:TAG --draft=false --prerelease } else { gh release edit $env:TAG --draft=false --latest }
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          gh release view $env:TAG --json url --jq .url

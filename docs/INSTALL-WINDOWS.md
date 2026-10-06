@@ -135,11 +135,15 @@ git tag -a v0.6.0 -m "WriteMind 0.6.0"
 git push origin main v0.6.0
 ```
 
-The pushed tag runs `.github/workflows/release.yml` on windows-latest: it checks that the tag is
-`v` + the app's version, runs the typecheck, the unit tests and the build, has electron-builder
-make this installer and upload it with its `.blockmap` and `latest.yml` to a draft release for
-the tag (notes from the tag's annotation), checks the three files are there and publishes the
-release. Every installed copy then finds it (docs/BUILDING.md, "What an installed copy does").
+The pushed tag runs `.github/workflows/release.yml`: a first job checks that the tag is `v` + the
+app's version and makes a draft release for the tag (notes from the tag's annotation); on
+windows-latest the typecheck, the unit tests and the build run and electron-builder makes this
+installer and uploads it with its `.blockmap` and `latest.yml` into the draft; beside it, on
+macos-15, the Mac job uploads `WriteMind-<version>-mac-arm64.dmg` and `WriteMind-<version>-mac-x64.dmg`
+(signed ad hoc: docs/INSTALL-MAC.md). A last job checks that all five files are there
+(`latest.yml`, the `.exe`, its `.blockmap`, the two dmgs) and publishes the release; a failed
+Windows or Mac job leaves it a draft (re-run that job). Every installed copy then finds it
+(docs/BUILDING.md, "What an installed copy does").
 Never `--publish always` from a local machine.
 
 ## How it was checked (2026-10-05, installer lane)

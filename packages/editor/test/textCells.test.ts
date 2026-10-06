@@ -63,6 +63,23 @@ describe("typing in a text cell is literal", () => {
     expect(type(make("a\n\n\n", 3), 3, "# H", 3, "input.paste").doc.toString()).toBe("a\n\n# H\n")
   })
 
+  it("the empty item Return in a list leaves (`2. `, `- `) is the list's: what is typed after it is not escaped", () => {
+    // CI on 1b9010a (editor/01): the parser trims `2. ` to `2.`, a paragraph, so a text cell; the next key escaped it.
+    expect(type(make("1. a\n2. ", 8), 8, "b").doc.toString()).toBe("1. a\n2. b")
+    expect(type(make("1) a\n2) ", 8), 8, "b").doc.toString()).toBe("1) a\n2) b")
+    expect(type(make("- one\n- ", 8), 8, "two").doc.toString()).toBe("- one\n- two")
+    expect(type(make("* one\n* ", 8), 8, "t").doc.toString()).toBe("* one\n* t")
+    expect(type(make("- [ ] a\n- ", 10), 10, "b").doc.toString()).toBe("- [ ] a\n- b")
+    // ...and no hole: an empty text cell, a marker under words or a heading, another list's marker stay literal
+    let state = make("")
+    for (const key of ["1", ".", " ", "x"]) state = type(state, state.doc.length, key)
+    expect(state.doc.toString()).toBe("1\\. x")
+    expect(type(make("words\n2. ", 9), 9, "x").doc.toString()).toBe("words\n2\\. x")
+    expect(type(make("# H\n2. ", 7), 7, "x").doc.toString()).toBe("# H\n2\\. x")
+    expect(type(make("- a\n2. ", 7), 7, "x").doc.toString()).toBe("- a\n2\\. x")
+    expect(type(make("1. a\n\n2. ", 9), 9, "x").doc.toString()).toBe("1. a\n\n2\\. x")
+  })
+
   it("a paste into a text cell is literal", () => {
     expect(type(make("x y", 1), 1, " **b** ", 1, "input.paste").doc.toString()).toBe("x \\*\\*b**  y")
   })

@@ -15,6 +15,17 @@ The installer is not code-signed yet, so Windows SmartScreen asks first: **More 
 Installed copies check for updates on startup (Help ▸ Check for Updates…). Details:
 [docs/INSTALL-WINDOWS.md](docs/INSTALL-WINDOWS.md).
 
+## Install on macOS
+
+From the same [latest release](https://github.com/chere005/WriteMindCross/releases/latest), download
+**`WriteMind-<version>-mac-arm64.dmg`** for Apple silicon (About This Mac says **Chip**: Apple M…) or
+**`WriteMind-<version>-mac-x64.dmg`** for an Intel Mac; macOS 13 Ventura or newer. Open it and drag
+WriteMind onto Applications (it replaces an older WriteMind there). It is signed ad hoc and not
+notarized (no Apple Developer ID yet), so the first open needs a yes: on macOS 15 / 26, open it, click
+**Done**, then System Settings ▸ Privacy & Security ▸ **Open Anyway**; on macOS 13 / 14, Control-click ▸
+**Open**. Help ▸ Check for Updates… tells you when there is a newer version and opens its download page.
+Details: [docs/INSTALL-MAC.md](docs/INSTALL-MAC.md).
+
 ## The code
 
 **This repo is the cross-platform WriteMind: macOS, Windows and Linux,

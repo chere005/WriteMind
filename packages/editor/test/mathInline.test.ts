@@ -64,6 +64,20 @@ describe("inline equations in a view whose visible ranges are split (the rendere
   })
 })
 
+describe("a text cell's words are not maths", () => {
+  // CI on 1b9010a (maths/08): an escaped backtick pair typed in a text cell (`\`wl:c-d\``) was typeset, because the
+  // pattern does not know escapes. A text cell's words are literal; its markdown neighbours keep their equations.
+  const all = (doc: string) => count(inlineDecorations({ state: stateOf(doc), visibleRanges: [{ from: 0, to: doc.length }] }))
+
+  it("an escaped pair in a text cell is left as words, a marked or older-notes markdown cell still typesets", () => {
+    expect(all("a \\`wl:c-d\\` b")).toBe(0)
+    expect(all("a \\`wl:c-d` b")).toBe(0)
+    expect(all("<!-- markdown -->\na `wl:c-d` b")).toBe(1)
+    expect(all("a `wl:c-d` b")).toBe(1)
+    expect(all("plain words\n\n# Sum `wl:a+b`\n\n- item `wl:a-b`\n\nmore \\`wl:x\\` words")).toBe(2)
+  })
+})
+
 describe("the markdown decorations' window check, after an edit that grows the note", () => {
   // The first character typed in an empty note, a keystroke at the end of a short one: the view's visible ranges are
   // ALREADY in the new document's positions when a plugin is updated, and the check mapped them through the change

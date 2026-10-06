@@ -72,6 +72,20 @@ words; /link lands its selection on the link; a whole-sheet box puts its button 
 PageUp / PageDown and Escape / Backspace / Delete at a bar no longer stand the caret on a fence; the launch update
 dialog never takes Enter as Update now; a failed re-check after a failed download still shows why.
 
+**Mac release gate (two ad-hoc dmgs on the v1.0.0 release; Mac download-mode updates).** `npm test` (one full
+run): 129 files, 2300 pass, 1 skipped, 0 failed. Typecheck clean, locked build clean, x64 installer
+`dist-electron\WriteMind-Setup-1.0.0.exe` (108.6 MB) + `.blockmap` + `latest.yml` built. `release.yml` and `ci.yml`
+parsed as YAML and the job graph walked: prepare (draft) → windows + mac → publish (all five files, then
+`--draft=false --latest`); every `needs.prepare.outputs.version` resolves. electron-builder 26.15.3's own code read:
+`mac.identity "-"` takes its ad-hoc branch, `notarize: false` skips notarization, the dmg itself is left unsigned.
+Gate fixes: the version test no longer pins "1.0.0" (it would have failed the next release's windows job); the
+"Two drafts" error message lost its tag (`${env:TAG}`); a Mac update look that fails now writes why to `update.log`;
+`main.ts`'s updater comment. **Nothing ran on a Mac**: the first proof is CI's `mac-package` job (push to main or a
+manual run), whose `bash tools/verify-mac.sh` checks signature, chips, helper slices, Info.plist and both dmgs.
+
+**Final v1.0.0 gate (2026-10-05):** typecheck clean; `npm test` 129 files, 2302 pass, 1 skipped, 0 failed; locked build clean; full `npm run e2e -- --snapshot` (WM_E2E_ARGS=--disable-gpu, as CI) 10 suites, 47 scripts, 948 / 948 checks, 0 flaky, 0 leftover processes.
+Gate fixes (reload from disk): `openNote` names the new note in `openRef` before its words go on the page (two notes with the same words); a CRLF note now takes an outside drawing change and its unchanged words are not put back (`diskReload.test.ts`, 7 tests).
+
 ## This round (2026-10-05), in plain words
 
 * **The sheet follows the note** (Sean: "automatically switch to the right note tab..."). Picking a "<note>
@@ -121,8 +135,10 @@ dialog never takes Enter as Update now; a failed re-check after a failed downloa
   gives the text cell back. v1.0.0 gate (2026-10-05): typecheck clean, `npm test` 2261 passed / 1 skipped, locked
   build clean, text-cells e2e 44/44 with real keys; fixed /link's landing selection, a selection only touching a
   text cell, the T menu's Remove, a marker line inside a fence. **No GitHub Release exists yet** (tags v0.2.0–v0.5.0
-  have none): "commit, tag and push" must include the untracked `.github/workflows/release.yml`; tag `v1.0.0` then
-  builds the installer and publishes it with latest.yml (check: `gh release view v1.0.0 --json assets,isDraft`).
+  have none): push to main first and let CI's `mac-package` job go green (the dmgs are its artifact: try one on
+  your Mac, Privacy & Security ▸ Open Anyway, docs/INSTALL-MAC.md); then tag `v1.0.0`, which makes a draft, adds
+  the installer + latest.yml (windows job) and both dmgs (mac job), and publishes only when all five are there
+  (check: `gh release view v1.0.0 --json assets,isDraft`). A failed job leaves a draft: re-run that job.
 * **Wacom pen button:** Wacom Tablet Properties ▸ Pen, first button = Middle Click (docs/INSTALL-WINDOWS.md step 7).
 * **The Intuos (CTL-472), on the page and inside an ink cell:** hold the lower button and draw over strokes (they
   erase), double tap it in the air (Undo), hold the upper button and drag (a marquee selects; drag inside it moves),

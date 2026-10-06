@@ -26,6 +26,7 @@ import { NO_WELCOME, welcomeFor, welcomeStep, type WelcomeView } from "./welcome
 import { DrawingHistory } from "./drawingHistory"
 import { useUndo } from "./useUndo"
 import { lazyText } from "./lazyText"
+import { reloadFromDisk } from "./diskReload"
 import { forgetAll, historyOf, keepOnly as keepHistory, renameNote } from "./noteHistory"
 import { readPictureResult } from "./ocrClient"
 import { CameraPane, type Capture } from "./CameraPane"
@@ -243,24 +244,26 @@ export function App() {
     // A note edited in another app shows up here: the folder watcher says
     // something moved, and the open note is read again unless there is an
     // edit in hand that has not reached disk yet — that one is ours, and
-    // the save will answer for it.
+    // the save will answer for it. (Asked again after each read: diskReload.ts.)
     return window.wm.onNotesChanged(() => {
       void (async () => {
         await reload()
-        const file = openRef.current
-        if (!file || dirty.current) return
-        const fresh = await window.wm.readNote(file).catch(() => null)
-        if (fresh !== null && fresh !== textRef.current) setDocument(fresh)
-        // The sidecar too: the drawing is the note's other half, and an
-        // edit to it from outside — another window, a sync — has to show
-        // up the same way the words do.
-        if (drawingDirty.current) return
-        const sidecar = await window.wm.readDrawing(file).catch(() => null)
-        // (A file caught half written, or one that is not a sidecar, is not the drawing: the one in hand stays.)
-        const read = decodeDrawing(sidecar)
-        if (read.damaged) return
-        const next = read.drawing
-        setDrawing((was) => (writeDrawing(was) === writeDrawing(next) ? was : next))
+        await reloadFromDisk({
+          open: () => openRef.current,
+          text: () => textRef.current,
+          wordsDirty: () => dirty.current,
+          drawingDirty: () => drawingDirty.current,
+          readNote: (file) => window.wm.readNote(file).catch(() => null),
+          readDrawing: (file) => window.wm.readDrawing(file).catch(() => null),
+          setDocument,
+          setDrawing: (sidecar) => {
+            // (A file caught half written, or one that is not a sidecar, is not the drawing: the one in hand stays.)
+            const read = decodeDrawing(sidecar)
+            if (read.damaged) return
+            const next = read.drawing
+            setDrawing((was) => (writeDrawing(was) === writeDrawing(next) ? was : next))
+          },
+        })
       })()
     })
   }, [reload, setDocument])
@@ -415,6 +418,9 @@ export function App() {
     const decoded = decodeDrawing(sidecar)
     const kept = decoded.damaged && sidecar !== null ? await keepCopy(note.path, sidecar, "drawing") : null
     setOpen((was) => (was.some((other) => other.path === note.path) ? was : [...was, note]))
+    // (The ref names the new note before its words go on the page, not at the next render: a read from disk still
+    // in flight for the old note asks it — diskReload.ts — and two notes can hold the same words.)
+    openRef.current = note.path
     setCurrent(note.path)
     setDocument(contents)
     setDrawing(decoded.drawing)

@@ -7,6 +7,8 @@
  * [Update now] (the default). Update now: a quiet progress line, then the notes are written and the app restarts
  * into the new version; Later (Cancel during the download) puts that version off until the next launch.
  * Help ▸ Check for Updates… also answers here: "You're up to date (0.5.0)." or "Couldn't check for updates: …".
+ * A Mac (how: "download"): the same sheet with [Download] for [Update now] and one line, "Drag the new WriteMind into
+ * Applications to replace this one."; Download has main open the release's page and close the sheet.
  *
  * The launch look can bring the sheet up while somebody is typing: it takes the keyboard on itself, not on a
  * button, a key in its first moments is not an answer, and Enter on it never is (only the sheet Help ▸ Check for
@@ -42,6 +44,7 @@ function UpdateSheet({ view, dialog }: { view: UpdateView; dialog: Dialog }) {
   const text = updateDialogText(dialog)
   const offer = dialog.kind === "available"
   const unasked = dialog.kind === "available" && !dialog.asked
+  const download = dialog.kind === "available" && dialog.how === "download"
   const { phase } = view.status
   const line = offer ? progressLine(view.status) : null
   const downloading = offer && phase === "downloading"
@@ -110,9 +113,9 @@ function UpdateSheet({ view, dialog }: { view: UpdateView; dialog: Dialog }) {
                 {downloading ? "Cancel" : "Later"}
               </button>
             )}
-            <button data-modal="ok" data-update={offer ? "now" : "ok"} className="default"
+            <button data-modal="ok" data-update={offer ? (download ? "download" : "now") : "ok"} className="default"
                     disabled={downloading || restarting} onClick={primary}>
-              {offer ? "Update now" : "OK"}
+              {offer ? (download ? "Download" : "Update now") : "OK"}
             </button>
           </div>
         </div>

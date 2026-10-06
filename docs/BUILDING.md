@@ -24,9 +24,19 @@ is the capability rule: see `docs/PORT.md`.
 ## Packages
 
 ```sh
-npm -w @writemind/desktop run package:mac      # dmg + zip
+npm -w @writemind/desktop run package:mac      # two dmgs: arm64 and x64 (signed with Sean's certificate)
 npm -w @writemind/desktop run package:win      # nsis + portable
 npm -w @writemind/desktop run package:linux    # pacman + AppImage + deb
+```
+
+On a Mac, `package:mac:adhoc` is what a release ships: the same two dmgs
+(`WriteMind-<version>-mac-arm64.dmg`, `-mac-x64.dmg`), signed ad hoc, never
+published. It packages the existing build, so:
+
+```sh
+npm run build                                   # with the universal Vision helper (tools/build-vision.sh)
+npm -w @writemind/desktop run package:mac:adhoc
+bash tools/verify-mac.sh                        # the signature, the chips, the helper, Info.plist, the dmgs
 ```
 
 They land in `dist-electron/`. `apps/desktop/electron-builder.yml` is the
@@ -102,6 +112,24 @@ package:mac` signs without being told anything.
 `CSC_IDENTITY_AUTO_DISCOVERY=false` builds unsigned in the meantime, which
 is what a local check needs.
 
+**The released dmgs are signed AD HOC, not with that certificate.** There is
+no Apple Developer ID, so nothing can be notarized; an Apple Development
+certificate would not get past Gatekeeper either. `package:mac:adhoc` (and
+release.yml's mac job, the same line) passes `-c.mac.identity=-
+-c.forceCodeSigning=true -c.mac.timestamp=none -c.mac.notarize=false`:
+`codesign -s -` over the whole bundle, a build that fails rather than ships
+unsigned, no timestamp (an ad-hoc signature cannot have one) and no
+notarization. `mac.identity` in `electron-builder.yml` stays Sean's
+certificate, for his own `package:mac`. `hardenedRuntime` is false, as in
+the Swift app: only notarization needs it. `minimumSystemVersion` is 13.0
+(Electron 44). The Vision helper is universal (`lipo` of an arm64 and an
+x86_64 build for macOS 13), so the one build serves both dmgs; the dmgs are
+not one universal app because koffi's darwin `.node` files and the helper
+defeat `@electron/universal`. (koffi is Windows-only at run time:
+`main/pen/win32.ts` never loads it on a Mac, so the x64 dmg built on an
+Apple silicon runner carrying koffi's arm64 prebuilt is harmless.) A first
+open needs the user's yes: docs/INSTALL-MAC.md.
+
 ## "WriteMind" in the Dock, not "Electron" (macOS)
 
 A dev run (`npm run dev`, `npm start`) runs inside
@@ -135,13 +163,16 @@ macOS's icon cache: quit the app, `killall Dock`, and start it again.
 `apps/desktop/package.json` holds it, and electron-builder reads it from
 there. The Swift app's `MARKETING_VERSION` is its own and is not this one.
 
-## Releases and updates (Windows)
+## Releases and updates
 
-WriteMind for Windows is released as this repo's own GitHub Releases (the
-repo is public), and an installed copy updates itself from them —
-`electron-updater` reading the feed electron-builder writes into the
-install (`publish:` in `apps/desktop/electron-builder.yml`: provider
-github, chere005/WriteMindCross).
+WriteMind for Windows and macOS is released as this repo's own GitHub
+Releases (the repo is public), both systems on ONE release per version. An
+installed Windows copy updates itself from them — `electron-updater`
+reading the feed electron-builder writes into the install (`publish:` in
+`apps/desktop/electron-builder.yml`: provider github,
+chere005/WriteMindCross). A Mac copy only tells you and opens the release's
+page (an ad-hoc signed app cannot be updated in place by Squirrel.Mac): see
+"On a Mac" below. Linux builds do not look.
 
 ### Cutting a release (what Sean does)
 
@@ -152,26 +183,45 @@ git tag -a v0.5.1 -m "WriteMind 0.5.1"                          # the tag is the
 git push origin main v0.5.1
 ```
 
-The pushed tag starts `.github/workflows/release.yml` (windows-latest):
+The pushed tag starts `.github/workflows/release.yml`, four jobs:
 
-1. the tag must be `v` + `apps/desktop/package.json`'s version, or the run
-   stops at once and says so;
-2. `npm ci`, typecheck, the unit tests, the build;
-3. `electron-builder --win nsis --x64 --publish always`: the installer,
-   its `.blockmap` and `latest.yml` go up to a **draft** release for the
-   tag, named "WriteMind 0.5.1", whose notes are the tag's annotation —
-   or, when the annotation is only a title line, the tagged commit's
-   message (Co-Authored-By lines left out);
-4. the three files are checked and the draft is published (marked Latest;
-   a version with a `-`, like `0.6.0-preview.1`, is a pre-release, which
-   installed copies of a normal version do not take).
+1. **prepare** (ubuntu): the tag must be `v` + `apps/desktop/package.json`'s
+   version, or the run stops at once and says so; the notes are the tag's
+   annotation — or, when the annotation is only a title line, the tagged
+   commit's message (Co-Authored-By lines left out); `gh release create
+   --draft --verify-tag` makes a **draft** release for the tag, named
+   "WriteMind 0.5.1". A draft an earlier run left is reused; a release
+   already published for the tag stops the run (a new version needs a new
+   tag).
+2. **windows** (windows-latest, after prepare): `npm ci`, typecheck, the
+   unit tests, the build; `electron-builder --win nsis --x64 --publish
+   always` uploads the installer, its `.blockmap` and `latest.yml` into
+   the draft.
+3. **mac** (macos-15, after prepare, beside windows): `npm ci`, the build
+   (the universal Vision helper), `electron-builder --mac dmg --arm64 --x64
+   --publish never` signed ad hoc (the line `package:mac:adhoc` runs),
+   `bash tools/verify-mac.sh`, then `gh release upload` puts
+   `WriteMind-0.5.1-mac-arm64.dmg` and `-mac-x64.dmg` into the draft.
+4. **publish** (ubuntu, after both): the five files (`latest.yml`, the
+   `.exe`, its `.blockmap`, the two dmgs) are checked and the draft is
+   published (marked Latest; a version with a `-`, like
+   `0.6.0-preview.1`, is a pre-release, which installed copies of a normal
+   version do not take).
 
 The workflow uses the repo's own `GITHUB_TOKEN` (`contents: write`): no
-secret to add. A run that fails leaves at most a draft: fix it, then
-re-run the job, or Actions ▸ Release ▸ Run workflow with the tag.
-Never `--publish always` by hand from a local machine.
+secret to add, and no Apple one either (there is no Developer ID). A failed
+windows or mac job leaves the release a draft that no installed copy sees:
+fix it, then re-run the failed job (publish follows), or Actions ▸ Release ▸
+Run workflow with the tag (it reuses the draft). Never `--publish always`
+by hand from a local machine.
 
-### What an installed copy does
+`ci.yml`'s **mac-package** job (pushes to main and a manual run, macos-15)
+builds the same two dmgs with `package:mac:adhoc`, runs `verify-mac.sh`
+and keeps the dmgs as an artifact for 14 days; it never publishes. Its unit
+test step is allowed to fail until the suite has run green on macOS. So a
+release's mac job has been rehearsed by the last push to main.
+
+### What an installed copy does (Windows)
 
 - **Check on startup** (on unless unticked): a few seconds after launch it
   asks GitHub for the newest release, once. With it off it looks only when
@@ -204,11 +254,27 @@ Only an INSTALLED copy looks (`src/shared/update.ts`, `updateEligibility`):
 the installer's uninstaller is beside the exe and `resources\app-update.yml`
 is in the install. A development run, an end-to-end run (`WRITEMIND_E2E`),
 the portable exe, `dist-electron\win-unpacked`, and the repo's Electron
-running a build folder (like `C:\CLAUDIO\try-build`) never do. macOS and
-Linux builds do not update themselves (an unsigned Mac app cannot) and
-have no Help item for it.
+running a build folder (like `C:\CLAUDIO\try-build`) never do. Linux
+builds do not look and have no Help item for it.
 
-### Installing, unsigned
+### On a Mac
+
+A Mac copy never downloads, installs or restarts anything (an ad-hoc signed
+app cannot be replaced by Squirrel.Mac, so `electron-updater` is never
+loaded on macOS; there is no zip and no `latest-mac.yml`). A packaged
+WriteMind.app (not a dev run, not an end-to-end run) asks GitHub's
+`releases/latest` once at launch when **Check on startup** is on, and when
+asked (Help ▸ Check for Updates…). A newer published release (not a
+pre-release) that carries this Mac's dmg (`-mac-arm64.dmg` or
+`-mac-x64.dmg`, by the running app's architecture) brings up the same
+**Updates available** dialog with **Download** in place of Update now and
+one line: "Drag the new WriteMind into Applications to replace this one."
+Download opens `https://github.com/chere005/WriteMindCross/releases/tag/v<version>`
+in the browser (the address is built from the version, never taken from
+GitHub's answer). The user drags the new copy over the old one and opens it
+once with Open Anyway (docs/INSTALL-MAC.md).
+
+### Installing on Windows, unsigned
 
 Download `WriteMind-Setup-<version>.exe` from the repo's Releases page. It
 is **not signed yet**, so Windows SmartScreen says "Windows protected your
@@ -234,6 +300,14 @@ winget install --id Python.Python.3.14 -e      # or Python.Python.3.13
 winget install --id WolframResearch.WolframEngine -e
 wolframscript.exe -activate                     # signs in with YOUR Wolfram ID; nothing types it for you
 ```
+
+### Installing on a Mac
+
+`WriteMind-<version>-mac-arm64.dmg` (Apple silicon) or `-mac-x64.dmg`
+(Intel), macOS 13 or newer: drag WriteMind onto Applications, then the
+first open's Open Anyway (Privacy & Security on macOS 15 / 26,
+Control-click ▸ Open on 13 / 14). docs/INSTALL-MAC.md has the whole of it,
+the camera's repeated question after each version included.
 
 ### Trying an update without GitHub
 

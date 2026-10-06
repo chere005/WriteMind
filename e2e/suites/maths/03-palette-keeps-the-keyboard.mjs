@@ -82,7 +82,8 @@ await key("Tab")
 await key("Enter", { ctrl: true })
 await sleep(300)
 const inline = await doc()
-ok("Ctrl+Enter inserts the other way (inline) from a slot", /^Sum `wl:Integrate\[x\^2, \{x, 0, 1\}\]`/.test(inline), JSON.stringify(inline))
+// (Maths inline makes the text cell a markdown cell: its marker goes in above the words.)
+ok("Ctrl+Enter inserts the other way (inline) from a slot", /^<!-- markdown -->\nSum `wl:Integrate\[x\^2, \{x, 0, 1\}\]`/.test(inline), JSON.stringify(inline))
 
 // A click on a bare part of the palette (the heading) keeps the keyboard in it.
 await closeIfOpen()

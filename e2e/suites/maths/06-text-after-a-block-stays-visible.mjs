@@ -5,6 +5,10 @@
 //   2. Backspace at the start of the line right under a block joined that line onto the fence: "```text...".
 // Fixed 2026-10-03 (Mathslane-fix2): `insertMath` puts the caret on the line AFTER the block (templates.ts), and a
 // block whose closing fence has anything after the backticks stays source, so every word is on the page (math.ts).
+// Since text cells (2026-10-05) the block is a cell of its own, kept apart from its neighbours by blank lines: the
+// caret lands on the blank line under it, and what is typed there is a new cell between the block and the next one.
+// At the very end of the note there is no line under the block: the caret waits at the end of the closing fence with
+// the bar up just under the block, and what is typed goes into a new cell below it (never onto the fence's line).
 import { ok, finish, js, send, sleep, until, freshNote, setDoc, focus, shot, key, typeText, doc, lineTexts, clickEl, VIEW, CTRL } from "../../lib/harness.mjs"
 
 const FENCE = "```"
@@ -26,14 +30,14 @@ await sleep(350)
 await clickEl('[data-insert="1"]')
 await sleep(500)
 let text = await doc()
-ok("the block went in on its own lines, the paragraphs kept apart", text === `first paragraph\n${FENCE}wl\nIntegrate[x^2, {x, 0, 1}]\n${FENCE}\nsecond paragraph`, JSON.stringify(text))
+ok("the block went in on its own lines, the paragraphs kept apart", text === `first paragraph\n\n${FENCE}wl\nIntegrate[x^2, {x, 0, 1}]\n${FENCE}\n\nsecond paragraph`, JSON.stringify(text))
 ok("the freshly inserted block is typeset at once (the caret is not on the fence)", (await blocks()) === 1, `blocks=${await blocks()} caret=${await head()}`)
 const where = await lineOfCaret()
-ok("the caret is on the line after the block, not on the closing fence", where.text === "second paragraph" && where.col === 0, JSON.stringify(where))
+ok("the caret is on the line after the block, not on the closing fence", where.text === "" && where.col === 0, JSON.stringify(where))
 await typeText("and this follows the equation ")
 await sleep(400)
 text = await doc()
-ok("what is typed next is on a line of its own after the block", text.endsWith(`${FENCE}\nand this follows the equation second paragraph`), JSON.stringify(text))
+ok("what is typed next is on a line of its own after the block", text.endsWith(`${FENCE}\n\nand this follows the equation \n\nsecond paragraph`), JSON.stringify(text))
 await end()
 await sleep(400)
 let lines = await lineTexts()
@@ -50,14 +54,22 @@ await sleep(350)
 await clickEl('[data-insert="1"]')
 await sleep(500)
 ok("at the end of a line with more below: typeset at once, caret at the start of the next line",
-  (await blocks()) === 1 && (await lineOfCaret()).text === "beta" && (await lineOfCaret()).col === 0, JSON.stringify(await lineOfCaret()))
+  (await blocks()) === 1 && (await lineOfCaret()).text === "" && (await lineOfCaret()).col === 0, JSON.stringify(await lineOfCaret()))
+text = await doc()
+ok("...the block a cell of its own between the two lines", text === `alpha\n\n${FENCE}wl\nIntegrate[x^2, {x, 0, 1}]\n${FENCE}\n\nbeta`, JSON.stringify(text))
 await setDoc("alpha", "alpha".length)
 await focus()
 await clickEl('[data-math="button"]')
 await sleep(350)
 await clickEl('[data-insert="1"]')
 await sleep(500)
-ok("at the end of the note: typeset at once, caret on the empty line below", (await blocks()) === 1 && (await lineOfCaret()).text === "", JSON.stringify(await lineOfCaret()))
+const barUnder = await js(`(() => {
+  const block = document.querySelector('.cm-content .wm-math-block')?.getBoundingClientRect()
+  return !!block && [...document.querySelectorAll('.wm-bar')].some((b) => { const t = b.getBoundingClientRect().top; return t >= block.bottom - 4 && t <= block.bottom + 30 })
+})()`)
+const last = await lineOfCaret()
+ok("at the end of the note: typeset at once, caret at the end of the closing fence, the bar up just under the block",
+  (await blocks()) === 1 && last.text === FENCE && last.col === 3 && barUnder, JSON.stringify({ ...last, barUnder }))
 await typeText("tail")
 await sleep(300)
 lines = await lineTexts()

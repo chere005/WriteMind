@@ -29,8 +29,9 @@ export interface MenuOptions {
   /** Developer tools in the View menu. */
   dev?: boolean
   /**
-   * Help's update items (Windows; shared/update.ts updateMenu): Check for Updates…'s wording and whether it restarts
-   * into a ready update, and the Check for Updates on Startup box (greyed in a copy that does not update itself).
+   * Help's update items (Windows and Mac; shared/update.ts updateMenu): Check for Updates…'s wording and whether it
+   * restarts into a ready update (Windows only), and the Check for Updates on Startup box (greyed in a copy that does
+   * not look).
    */
   update?: { label: string; ready: boolean; checkOnStartup?: boolean; canCheck?: boolean }
   /** Run a command by id: the page's, or the main process's own. */
@@ -249,11 +250,13 @@ export function buildMenu(options: MenuOptions): MenuItemConstructorOptions[] {
 
   // Updates come with the Windows installer (main/updater.ts): Check for Updates… looks now and answers in the page's
   // own dialog ("Restart to Update to x" once one is downloaded); the box under it is the dialog's "Check on startup".
-  const updateId = options.update?.ready ? "installUpdate" : "checkForUpdates"
+  // A Mac looks too but only offers the download (its dialog's Download opens the release's page): never an install item.
+  const mac = platform === "darwin"
+  const updateId = options.update?.ready && !mac ? "installUpdate" : "checkForUpdates"
   const canCheck = options.update?.canCheck ?? false
-  const updateItems: MenuItemConstructorOptions[] = platform === "win32"
+  const updateItems: MenuItemConstructorOptions[] = platform === "win32" || mac
     ? [
-        { id: updateId, label: options.update?.label ?? "Check for Updates…", click: () => run(updateId) },
+        { id: updateId, label: mac ? "Check for Updates…" : options.update?.label ?? "Check for Updates…", click: () => run(updateId) },
         {
           id: "checkUpdatesOnStartup", label: "Check for Updates on Startup", type: "checkbox",
           checked: canCheck && (options.update?.checkOnStartup ?? true), enabled: canCheck,

@@ -7,7 +7,7 @@
 //     ranges (already in the new document's positions) through the change again, which threw "Position N is out of
 //     range"; headings, bullets and bold were raw markdown until the note was reopened.
 // Fixed 2026-10-04 (Mathslane-fix1): `linesOfRanges` in packages/editor/src/math.ts, `windowHoldsPage` in decorations.ts.
-import { ok, finish, js, sleep, until, freshNote, setDoc, focus, shot, setRendered, insertText, typeText, VIEW } from "../../lib/harness.mjs"
+import { ok, finish, js, sleep, until, freshNote, setDoc, focus, shot, setRendered, insertText, VIEW } from "../../lib/harness.mjs"
 
 const BT = "`"
 const widgets = () => js(`document.querySelectorAll('.cm-line .wm-math-inline').length`)
@@ -79,8 +79,9 @@ for (const [name, text] of Object.entries(cases)) {
   await insertText("a")
   await sleep(300)
   ok("the first character typed in an empty note crashes no plugin", (await crashes()).length === 0, JSON.stringify(await crashes()))
-  await typeText("\n\n# Title\n\n- a bullet\n\nSee ")
-  await insertText(`${BT}wl:a+b${BT} and ${BT}wl:c-d${BT} ok.`)
+  // (What is typed into a text cell is literal since 2026-10-05, so the heading, the bullet and the two equations go
+  // in as markdown by a plain dispatch, no userEvent: the same growing edit at the end of the note.)
+  await js(`${VIEW}.dispatch({ changes: { from: ${VIEW}.state.doc.length, insert: ${JSON.stringify(`\n\n# Title\n\n- a bullet\n\nSee ${BT}wl:a+b${BT} and ${BT}wl:c-d${BT} ok.`)} } })`)
   await js(`${VIEW}.dispatch({ selection: { anchor: ${VIEW}.state.doc.length } })`)
   await sleep(400)
   ok("typing at the end of a short note crashes no plugin", (await crashes()).length === 0, JSON.stringify(await crashes()))

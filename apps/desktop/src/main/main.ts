@@ -148,7 +148,7 @@ async function tellFolders(): Promise<void> {
 let pen: PenSubsystem | null = null
 /** Evaluation cells' runner (main/eval): every child it started is killed on quit and when the window closes. */
 let evalRunner: EvalRunner | null = null
-/** Updates from GitHub Releases (main/updater.ts): only an installed Windows copy looks. */
+/** Updates from GitHub Releases (main/updater.ts): an installed Windows copy installs them, a packaged Mac copy only offers the download, other copies do not look. */
 let updater: Updater | null = null
 
 // MARK: - The application menu

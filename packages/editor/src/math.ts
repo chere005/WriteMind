@@ -38,7 +38,7 @@ import {
   type DecorationSet, type ViewUpdate,
 } from "@codemirror/view"
 import {
-  INLINE_MATH_CSS, firstCellFromBy, inlineSpans, isMathFence, mathExpressionInCode, mathmlFor, positioned,
+  INLINE_MATH_CSS, firstCellFromBy, inlineSpans, isMathFence, isTextCell, mathExpressionInCode, mathmlFor, positioned,
   type InlineSpan, type MathDisplay, type MathNode, type PositionedBlock,
 } from "@writemind/core"
 import { notebook, notebookField } from "./notebook"
@@ -389,17 +389,19 @@ export function inlineDecorations(view: Pick<EditorView, "state" | "visibleRange
   const { state } = view
   // The lines of a code block are code: a `wl: in one is not maths. Which lines those are comes from the note's
   // parsed cells (a search per line that has a `wl: in it at all), not from walking every line above the page to
-  // count fences, which cost a pass over the note on every caret move.
+  // count fences, which cost a pass over the note on every caret move. A text cell's words are literal too: its
+  // backticks are escaped (`\`wl:c-d\``), and an escaped pair is not a code span, so nothing in one is maths (a
+  // paragraph with a real `wl:` span in it is a markdown cell, by the older-notes rule or by its marker).
   const cells = notebook(state).cells
-  const inCode = (pos: number): boolean => {
+  const notMaths = (pos: number): boolean => {
     const i = firstCellFromBy(cells, pos + 1, (cell) => cell.range) - 1
     if (i < 0) return false
     const cell = cells[i]!
-    return cell.block.kind === "code" && pos <= cell.range.location + cell.range.length
+    return (cell.block.kind === "code" || isTextCell(cell.block)) && pos <= cell.range.location + cell.range.length
   }
   for (const n of linesOfRanges(state.doc, view.visibleRanges)) {
     const line = state.doc.line(n)
-    if (!line.text.includes("`wl:") || inCode(line.from)) continue
+    if (!line.text.includes("`wl:") || notMaths(line.from)) continue
     INLINE.lastIndex = 0
     for (let m = INLINE.exec(line.text); m; m = INLINE.exec(line.text)) {
       const source = mathExpressionInCode(m[1]!)

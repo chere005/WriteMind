@@ -43,13 +43,23 @@ describe("the application menu is the Mac's", () => {
     expect(file({ hasNote: true }, []).find((one) => one.label === "Export…")!.enabled).toBe(true)
   })
 
-  it("Help: Keyboard Shortcuts (F1), then Check for Updates… and its startup box (Windows: main/updater.ts) and About", () => {
+  it("Help: Keyboard Shortcuts (F1), then Check for Updates… and its startup box (main/updater.ts) and About", () => {
     const help = sub(menu().map((one) => (one.role === "help" ? { ...one, label: "Help" } : one)), "Help")
     expect(labels(help)).toEqual(["Keyboard Shortcuts", "-", "Check for Updates…", "Check for Updates on Startup", "-", "About WriteMind"])
     expect(help[0]!.accelerator).toBe("F1")
     expect(help[2]!.id).toBe("checkForUpdates")
+    // A Mac looks too (download mode: its dialog opens the release's page), and never has an install item.
     const mac = sub(menu({}, "darwin").map((one) => (one.role === "help" ? { ...one, label: "Help" } : one)), "Help")
-    expect(labels(mac)).toEqual(["Keyboard Shortcuts", "-", "About WriteMind"])
+    expect(labels(mac)).toEqual(["Keyboard Shortcuts", "-", "Check for Updates…", "Check for Updates on Startup", "-", "About WriteMind"])
+    expect(mac[2]!.id).toBe("checkForUpdates")
+    const macReady = buildMenu({
+      platform: "darwin", state: initialMenuState, project, run: () => {},
+      update: { label: "Restart to Update to 1.0.1", ready: true, checkOnStartup: true, canCheck: true },
+    }).find((one) => one.role === "help")!.submenu as MenuItemConstructorOptions[]
+    expect(macReady.map((one) => one.id)).not.toContain("installUpdate")
+    expect(macReady.find((one) => one.id === "checkForUpdates")!.label).toBe("Check for Updates…")
+    const linux = sub(menu({}, "linux").map((one) => (one.role === "help" ? { ...one, label: "Help" } : one)), "Help")
+    expect(labels(linux)).toEqual(["Keyboard Shortcuts", "-", "About WriteMind"])
   })
 
   it("Project: the name, Add Folder, Remove Folder, Save, Save As, Open, New", () => {
