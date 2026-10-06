@@ -97,14 +97,32 @@ A development run from a clone (`npm run dev`) uses the same settings folder as 
 instance**: whichever starts second brings the first one's window forward and quits. Quit the
 installed WriteMind before `npm run dev` (and the other way round).
 
-## Runnable cells and the Finder's PATH
+## Runnable cells: File ▸ Language Setup…
 
-An app opened from the Finder or the Dock gets the system's short PATH (`/usr/bin:/bin:/usr/sbin:/sbin`),
-not your shell's, so tools Homebrew installed in `/opt/homebrew/bin` (or `/usr/local/bin` on Intel)
-are not found by the runnable cells, except `wolframscript`, which WriteMind looks for there. A
-Python cell uses Apple's `/usr/bin/python3` (the first use may offer to install the Command Line
-Tools). Started from Terminal, `/Applications/WriteMind.app/Contents/MacOS/WriteMind` has your
-shell's PATH. (docs/TODO.md has it as a thing to fix.)
+**File ▸ Language Setup…** shows the program each kind of runnable cell uses — Wolfram and Python,
+and C, C++ and Rust under them — and lets you choose another. An app opened from the Finder or the
+Dock gets the system's short PATH (`/usr/bin:/bin:/usr/sbin:/sbin`), not your shell's, so WriteMind
+also looks in Homebrew's folders (`/opt/homebrew/bin`, `/usr/local/bin`) and, for Wolfram, inside
+`/Applications/Wolfram Engine.app` (where the Wolfram Engine's own dmg puts `wolframscript`).
+
+- **To use another Python** — a virtual environment, a Homebrew one — press **Choose…** in the
+  Python row and pick the program or the environment's folder (⇧⌘G takes a pasted path, and the
+  picker shows hidden folders such as `.venv`). Copies WriteMind found by itself are listed under
+  **Also on this computer**, each with **Use** — with a virtual environment in use, that includes the
+  Python it was made from, so there is one click back to it. WriteMind asks the program its version
+  before it keeps the choice, and **Test** runs a small program with it.
+- **A program you chose is the only one that language uses.** If it goes (the venv deleted), the row
+  and the cell say so, and nothing runs until you choose another or press **Find Automatically**.
+- **Not installed:** **Get Python…** and **Get Wolfram Engine…** open the download pages.
+- **Only Apple's python3:** every Mac has `/usr/bin/python3`, so the Python row always finds
+  something. Without Apple's Command Line Tools it is only a stand-in (it asks to install them the
+  first time it runs): the row says so in amber — telling from the files alone, without running it —
+  with `xcode-select --install` to copy and **Get Python…**. With them it runs, and the row still
+  offers **Get Python…** for a newer, more complete Python (python.org's, or Homebrew's).
+- **The Wolfram Engine not activated yet:** the row shows the command to run once in Terminal
+  (`… -activate`, with your own Wolfram ID), with a button to copy it.
+
+The choices are kept in `~/Library/Application Support/@writemind/desktop/languages.json`.
 
 ## Uninstalling
 

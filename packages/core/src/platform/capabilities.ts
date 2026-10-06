@@ -47,6 +47,14 @@ export interface Capabilities {
   camera: boolean
   /** Export ▸ PDF. Chromium prints the page, so everyone has it. */
   pdfExport: boolean
+  /**
+   * File ▸ Language Setup…'s Install Python… and Install Wolfram Engine… (port-only): the installer's own
+   * `installer-tools.ps1` shipped beside the app AND winget on this machine, because winget is what installs. Where
+   * either is missing the screen offers Get Python… / Get Wolfram Engine… (the download page) instead.
+   */
+  installsLanguages: boolean
+  /** Its Activate… for the Wolfram Engine: the same script (it opens the engine's own sign-in), winget or not. */
+  activatesWolfram: boolean
 }
 
 /** What the shell found on this machine. */
@@ -57,9 +65,12 @@ export interface Helpers {
   engine?: OcrEngine | null
   /** Whether the reader has Japanese. */
   japanese?: boolean
+  /** Language Setup's helpers (main/helpers.ts `toolsScript`, `winget`): the shipped script, and winget. */
+  languageSetup?: { script: boolean; winget: boolean }
 }
 
 export function capabilitiesFor(_platform: string, helpers: Helpers = { ocr: false }): Capabilities {
+  const setup = helpers.languageSetup
   return {
     handwritingOCR: helpers.ocr,
     ocrEngine: helpers.ocr ? (helpers.engine ?? null) : null,
@@ -67,6 +78,8 @@ export function capabilitiesFor(_platform: string, helpers: Helpers = { ocr: fal
     findsThePage: true,
     camera: true,
     pdfExport: true,
+    installsLanguages: setup?.script === true && setup.winget === true,
+    activatesWolfram: setup?.script === true,
   }
 }
 

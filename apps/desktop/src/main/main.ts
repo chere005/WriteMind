@@ -26,7 +26,8 @@ import { pictureFiles } from "./macDrawing"
 import { rescueUnsaved } from "./rescue"
 import { findUnused, trashNoteAndDrawing, trashSectionAndDrawings, trashUnused } from "./housekeeping"
 import type { Held } from "../shared/housekeeping"
-import { ADD_JAPANESE_OCR, penHelper, readerFor, windowsOcr } from "./helpers"
+import { ADD_JAPANESE_OCR, penHelper, readerFor, toolsScript, windowsOcr, winget } from "./helpers"
+import { createToolSetup } from "./toolSetup"
 import { ocrFor } from "./ocr"
 import { buildMenu } from "./menu"
 import { initialMenuState, type MenuState } from "../shared/commands"
@@ -40,6 +41,10 @@ import { exportFile } from "./exportFile"
 import { rememberWindow, windowPlacement } from "./windowMemory"
 import { installPerfProbe } from "./perfProbe"
 import { registerEval } from "./eval/ipc"
+import { createLanguageStore, registerLanguages } from "./eval/languages"
+import { createProcessRunner } from "./eval/runner"
+import { placesFromProcess } from "./eval/tools"
+import { LANGUAGE_CHANNELS, LANGUAGES_FILE } from "../shared/languages"
 import { registerSheets } from "./sheets"
 import { startUpdater, type Updater } from "./updater"
 import { UPDATE_COMMAND_IDS } from "../shared/update"
@@ -405,6 +410,8 @@ app.whenReady().then(async () => {
   // The OCR engine is asked about NOW, in the background, so that the first
   // `app:capabilities` does not wait for a PowerShell to start.
   void windowsOcr(here)
+  // File ▸ Language Setup…'s Install and Activate: the installer's own script beside the app (Windows), and winget.
+  const languageScript = toolsScript(here)
   ipcMain.handle("app:capabilities", async () => {
     const reader = await readerFor(here)
     return {
@@ -412,8 +419,11 @@ app.whenReady().then(async () => {
       // `wm-vision` on macOS, Windows' own OCR engine on Windows,
       // `tesseract` anywhere. None is a dependency — with none
       // installed the app runs the same and simply does not offer to
-      // read a picture.
-      ...capabilitiesFor(process.platform, { ocr: reader.ocr, engine: reader.engine, japanese: reader.japanese }),
+      // read a picture. The same for setting a language up from the app.
+      ...capabilitiesFor(process.platform, {
+        ocr: reader.ocr, engine: reader.engine, japanese: reader.japanese,
+        languageSetup: { script: languageScript !== null, winget: winget() !== null },
+      }),
       platform: process.platform,
       root: notesRoot(),
     }
@@ -498,8 +508,26 @@ app.whenReady().then(async () => {
     return ocr.request({ id: String(request.id), source, ...(languages.length > 0 ? { languages } : {}) })
   })
   ipcMain.handle("ocr:cancel", (_event, id: string) => { ocr.cancel(String(id)) })
-  // Evaluation cells: run ONE cell on a press, take a run back, say where the tools are (main/eval).
-  evalRunner = registerEval(ipcMain)
+  // Evaluation cells: run ONE cell on a press, take a run back, say where the tools are (main/eval). The runner reads
+  // File ▸ Language Setup…'s choices (userData/languages.json, main/eval/languages.ts) afresh for every run.
+  const languages = createLanguageStore(path.join(app.getPath("userData"), LANGUAGES_FILE), process.platform)
+  const runner = registerEval(ipcMain, createProcessRunner(languages))
+  evalRunner = runner
+  // File ▸ Language Setup…'s questions: what is in use (the file system only), Choose…, Use, Find Automatically, Test.
+  registerLanguages(ipcMain, {
+    store: languages, runner, platform: process.platform,
+    places: () => placesFromProcess(languages.get(), languages.unreadable()),
+    // askOpen: an end-to-end script names its answer ahead of time (WRITEMIND_E2E).
+    ask: (options) => (window ? askOpen(window, options as Electron.OpenDialogOptions) : Promise.resolve({ canceled: true, filePaths: [] })),
+    open: (url) => shell.openExternal(url),
+    // Windows: the installer's script in a window of its own (main/toolSetup.ts); null everywhere else.
+    setup: languageScript
+      ? createToolSetup({ script: languageScript, userData: app.getPath("userData"), e2e: !!process.env.WRITEMIND_E2E })
+      : null,
+    winget: winget() !== null,
+    log: path.join(app.getPath("userData"), "tools-setup.log"),
+    broadcast: (report) => window?.webContents.send(LANGUAGE_CHANNELS.changed, report),
+  })
   // The tablet's sheets (tabs) and their ink: userData/sheets.json.
   registerSheets(ipcMain)
   /** What the reader is, what it can read, and how to add Japanese - for the diagnostics. */

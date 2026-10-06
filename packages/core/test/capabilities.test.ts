@@ -45,6 +45,21 @@ describe("what this build can do", () => {
     }
   })
 
+  // Port-only: File ▸ Language Setup…'s Install and Activate buttons. Off unless the shell found what does the work.
+  it("installs languages only with the shipped script AND winget, and activates Wolfram with the script alone", () => {
+    for (const platform of platforms) {
+      const none = capabilitiesFor(platform, { ocr: false })
+      expect(none.installsLanguages).toBe(false)
+      expect(none.activatesWolfram).toBe(false)
+    }
+    const both = capabilitiesFor("win32", { ocr: false, languageSetup: { script: true, winget: true } })
+    expect([both.installsLanguages, both.activatesWolfram]).toEqual([true, true])
+    const noWinget = capabilitiesFor("win32", { ocr: false, languageSetup: { script: true, winget: false } })
+    expect([noWinget.installsLanguages, noWinget.activatesWolfram]).toEqual([false, true])
+    const noScript = capabilitiesFor("win32", { ocr: false, languageSetup: { script: false, winget: true } })
+    expect([noScript.installsLanguages, noScript.activatesWolfram]).toEqual([false, false])
+  })
+
   it("names the platform the way the app says it", () => {
     expect(platformName("darwin")).toBe("macOS")
     expect(platformName("linux")).toBe("Linux")

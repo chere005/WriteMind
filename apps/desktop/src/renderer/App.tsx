@@ -13,7 +13,7 @@ import {
   anchorOffset, bounds as itemBounds, capturePlacedCentre, decodeDrawing, emptyDrawing, insertBlock, insertionPointBelow,
   languageTitle, listTitle, makeNote, newID, noTransform, parseCameraAspect, parseLink, placedCentre, PRESET_COLOURS, readDrawing,
   resolveLinkTarget, shifted, textFingerprint, writeDrawing, inkCellOf, inkFileName, visibleItems, withInkCell,
-  type CanvasItem, type CodeLanguage, type Drawing, type ListStyle, type Note, type Placement,
+  type CanvasItem, type CodeLanguage, type Drawing, type Evaluator, type ListStyle, type Note, type Placement,
 } from "@writemind/core"
 import { Canvas, clipboardDrawing, type CanvasMode } from "./Canvas"
 import { depthOf, dockNewInk, insertInkCell } from "./dock"
@@ -57,6 +57,8 @@ import { NO_FOLDER_TEXT, targetFolderOf } from "./sidebarTree"
 import { UpdateDialog } from "./UpdateDialog"
 import { CleanUpDialog } from "./CleanUpDialog"
 import { heldBy } from "./cleanUp"
+import { LanguageSetupDialog } from "./LanguageSetupDialog"
+import { setLanguageSetupOpener } from "./evalHost"
 import { FolderNotice } from "./FolderNotice"
 
 /** How long after the last keystroke the note is written. */
@@ -132,6 +134,13 @@ export function App() {
   const [showKeys, setShowKeys] = useState(false)
   // File ▸ Clean Up Unused Files… (CleanUpDialog.tsx, main/housekeeping.ts).
   const [cleanUp, setCleanUp] = useState(false)
+  // File ▸ Language Setup… (LanguageSetupDialog.tsx, main/eval/languages.ts), opened at a language from a cell's
+  // Runs As menu (`focus`), or at the top from the menu bar.
+  const [languageSetup, setLanguageSetup] = useState<{ focus: Evaluator | null } | null>(null)
+  useEffect(() => {
+    setLanguageSetupOpener((evaluator) => setLanguageSetup({ focus: evaluator }))
+    return () => setLanguageSetupOpener(null)
+  }, [])
   const lastQuery = useRef("")
   // The rendered page: the same editor with the markdown's marks put away.
   const [rendered, setRendered] = useState(false)
@@ -1257,6 +1266,7 @@ export function App() {
       case "togglePen": runPenCommand("penToggle"); return
       case "keyList": setShowKeys((was) => !was); return
       case "cleanUp": setCleanUp(true); return
+      case "languageSetup": setLanguageSetup({ focus: null }); return
       case "undoDrawing": {
         const back = history.undo(drawingRef.current)
         if (back) changeDrawing(back)
@@ -1511,6 +1521,8 @@ export function App() {
         state: view?.state ?? null, text: textRef.current, drawings: [drawingRef.current, pendingDrawing.current, clipboardDrawing()],
         open: open.map((note) => note.path),
       })} />}
+      {languageSetup && <LanguageSetupDialog platform={kind} capabilities={platform} focus={languageSetup.focus}
+                                             onClose={() => setLanguageSetup(null)} />}
       <UpdateDialog />{/* "Updates available" and Help ▸ Check for Updates…'s answers (main/updater.ts); otherwise nothing */}
       <CellMenu onPlace={arm} />
     </div>

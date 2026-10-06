@@ -68,6 +68,10 @@ export function buildMenu(options: MenuOptions): MenuItemConstructorOptions[] {
     item("export", "Export…", { enabled: state.hasNote || project.folders.length > 0 }),
     // The port's own (docs\TODO.md "Housekeeping"): drawings and pictures nothing uses, to the bin after a yes.
     item("cleanUp", "Clean Up Unused Files…", { enabled: project.folders.length > 0 }),
+    SEPARATOR,
+    // The port's own (PARITY ▸ per-tool override): one place on every platform, like Help ▸ Check for Updates…. The
+    // page's dialog (LanguageSetupDialog.tsx), no key, and always there: it is how a missing language is set up.
+    item("languageSetup", "Language Setup…"),
     ...(platform === "darwin" ? [] : [SEPARATOR, { role: "quit" as const, label: "Quit" }]),
   ]
 

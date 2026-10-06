@@ -8,6 +8,7 @@ import { contextBridge, ipcRenderer } from "electron"
 import { PEN_CHANNELS, type PenApi } from "../shared/pen"
 import { EVAL_CHANNELS, type EvalApi } from "../shared/eval"
 import { UPDATE_CHANNELS, type UpdateApi } from "../shared/update"
+import { LANGUAGE_CHANNELS, type LanguagesApi } from "../shared/languages"
 
 /** window.wm.pen: the tablet pen's feed (shared/pen.ts PenApi; every channel name is spelled once there). The E2E hooks exist only under WRITEMIND_E2E. */
 const listen = <T>(channel: string, listener: (payload: T) => void): (() => void) => {
@@ -129,6 +130,21 @@ const api = {
     cancel: (id) => ipcRenderer.invoke(EVAL_CHANNELS.cancel, id),
     tools: () => ipcRenderer.invoke(EVAL_CHANNELS.tools),
   } satisfies EvalApi,
+  /**
+   * File ▸ Language Setup… (shared/languages.ts): what each language runs with, and choosing it. The page names a
+   * language, never a program to start: the picker, the checks and the probe are all the main process's.
+   */
+  languages: {
+    report: () => ipcRenderer.invoke(LANGUAGE_CHANNELS.report),
+    choose: (evaluator) => ipcRenderer.invoke(LANGUAGE_CHANNELS.choose, evaluator),
+    use: (evaluator, file) => ipcRenderer.invoke(LANGUAGE_CHANNELS.use, evaluator, file),
+    automatic: (evaluator) => ipcRenderer.invoke(LANGUAGE_CHANNELS.automatic, evaluator),
+    test: (evaluator) => ipcRenderer.invoke(LANGUAGE_CHANNELS.test, evaluator),
+    cancel: (evaluator) => ipcRenderer.invoke(LANGUAGE_CHANNELS.cancel, evaluator),
+    setup: (action) => ipcRenderer.invoke(LANGUAGE_CHANNELS.setup, action),
+    open: (link) => ipcRenderer.invoke(LANGUAGE_CHANNELS.open, link),
+    onChanged: (listener) => listen(LANGUAGE_CHANNELS.changed, listener),
+  } satisfies LanguagesApi,
   /** End-to-end scripts only (WRITEMIND_E2E): read the menu bar and press an item. */
   ...(process.env.WRITEMIND_E2E ? {
     e2eMenu: () => ipcRenderer.invoke("e2e:menu"),

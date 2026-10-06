@@ -20,6 +20,10 @@ await build({ ...common, entryPoints: ["src/preload/preload.ts"], outfile: "out/
 import { copyFileSync, cpSync, mkdirSync, writeFileSync } from "node:fs"
 mkdirSync("out/helpers", { recursive: true })
 cpSync("src/helpers", "out/helpers", { recursive: true })
+// The Windows installer's own optional-tools script, for File > Language Setup...'s Install and Activate buttons
+// (main/toolSetup.ts, helpers.ts `toolsScript`): the same file the installer embeds from the build resources, so the
+// two cannot drift. `asarUnpack: out/helpers/**` already takes it out of the archive.
+copyFileSync("../../packaging/installer-tools.ps1", "out/helpers/installer-tools.ps1")
 // THE ICONS a Mac needs (Sean, 2026-10-05: the Dock must show WriteMind, not Electron): the rounded logo the main
 // process sets as a dev run's dock tile (main/macIdentity.ts), and the .icns electron-builder.yml gives WriteMind.app,
 // made from the Mac app's own icon set (scripts/icns.mjs). Built on every platform, so every out/ is the same.

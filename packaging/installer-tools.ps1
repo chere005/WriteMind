@@ -12,6 +12,11 @@
 #                         installer never fails because of it. The result INI holds one short status per tool
 #                         ("installed", "already installed", "failed: <why> (<winget's code>)"...), never winget's
 #                         own output: that goes to the console and nowhere else.
+#   ... -FromApp [-WolframScript <wolframscript.exe>]
+#                         the same, run by WriteMind's own File > Language Setup... (apps/desktop/src/main/toolSetup.ts;
+#                         apps/desktop/scripts/build.mjs copies this file beside the app). Only the window's title and
+#                         its words change, and Activate activates the wolframscript the cells use when it is named and
+#                         there. The installer passes neither, so what it runs is unchanged.
 #
 # The places looked in are the ones WriteMind's own lookup uses (apps/desktop/src/main/eval/tools.ts), in the same
 # order, so "already installed" here means WriteMind will find it, and the one named is the one it will use
@@ -29,7 +34,9 @@ param(
   [switch]$DryRun,
   [switch]$NoWait,
   [string]$Log = "",
-  [string]$Result = ""
+  [string]$Result = "",
+  [switch]$FromApp,
+  [string]$WolframScript = ""
 )
 
 $ErrorActionPreference = "Continue"
@@ -212,7 +219,8 @@ if ($Detect) {
 }
 
 # --- Install -----------------------------------------------------------------------------------------------------
-try { $Host.UI.RawUI.WindowTitle = "WriteMind setup - optional tools" } catch { }
+$title = $(if ($FromApp) { "WriteMind - Language Setup" } else { "WriteMind setup - optional tools" })
+try { $Host.UI.RawUI.WindowTitle = $title } catch { }
 $results = [ordered]@{ python = "not asked"; wolfram = "not asked"; activate = "not asked"; winget = "" }
 $failed = $false
 $asked = @()
@@ -220,7 +228,8 @@ if ($Python) { $asked += "Python" }
 if ($Wolfram) { $asked += "Wolfram Engine" }
 if ($Activate) { $asked += "activate the Wolfram Engine" }
 Say ""
-Say "WriteMind is installed. Now the optional tools you ticked: $($asked -join ', ')." "Cyan"
+if ($FromApp) { Say "WriteMind Language Setup: $($asked -join ', ')." "Cyan" }
+else { Say "WriteMind is installed. Now the optional tools you ticked: $($asked -join ', ')." "Cyan" }
 if ($DryRun) { Say "DRY RUN: nothing is installed or opened; this only says what would be run." "Yellow" }
 Say "If anything here fails, WriteMind still works; see $Docs"
 Say ""
@@ -338,7 +347,8 @@ if ($Wolfram) {
 }
 
 if ($Activate) {
-  $ws = FindWolframScript
+  # From the app: the wolframscript its cells actually use (Language Setup names it), when it is there.
+  $ws = if ($WolframScript -and (Test-Path -LiteralPath $WolframScript)) { $WolframScript } else { FindWolframScript }
   if ((IsActivated) -and $ws) {
     Say "[Activate] the Wolfram Engine is already activated."
     $results.activate = "already activated"
@@ -384,7 +394,8 @@ Say ""
 foreach ($key in @("python", "wolfram", "activate")) { Say ("  {0,-9} {1}" -f $key, $results[$key]) }
 Say ""
 if ($failed) {
-  Say "Something above did not install. WriteMind itself is installed and works; Python and Wolfram cells say what they need when they run." "Yellow"
+  if ($FromApp) { Say "Something above did not work. WriteMind's Language Setup says what happened; Python and Wolfram cells say what they need when they run." "Yellow" }
+  else { Say "Something above did not install. WriteMind itself is installed and works; Python and Wolfram cells say what they need when they run." "Yellow" }
   if (-not $NoWait) { Read-Host "Press Enter to close this window" | Out-Null }
   exit 1
 }

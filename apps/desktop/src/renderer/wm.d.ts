@@ -95,6 +95,8 @@ declare global {
       evaluate: import("../shared/eval").EvalApi
       /** Updates (shared/update.ts): the "Updates available" dialog (UpdateDialog.tsx); absent in an old preload. */
       update?: import("../shared/update").UpdateApi
+      /** File ▸ Language Setup… (shared/languages.ts, LanguageSetupDialog.tsx); absent in an old preload. */
+      languages?: import("../shared/languages").LanguagesApi
       onNotesChanged(listener: () => void): () => void
       onFlushRequest(listener: () => Promise<void> | void): () => void
       onEdit(listener: (which: "undo" | "redo") => void): () => void

@@ -30,9 +30,11 @@ describe("the application menu is the Mac's", () => {
   })
 
   // Mac e8b3266: Save (⌘S), and ONE Export… (⌘E) whose panel asks PDF or Project (no submenu).
-  it("File: New Note, Close Tab, Open Notes Folder, Save, Export…, Clean Up Unused Files…, Quit", () => {
+  // CHANGED for File ▸ Language Setup… (port-only): it sits after Clean Up Unused Files…, before Quit.
+  it("File: New Note, Close Tab, Open Notes Folder, Save, Export…, Clean Up Unused Files…, Language Setup…, Quit", () => {
     expect(labels(sub(menu(), "File"))).toEqual([
-      "New Note", "-", "Close Tab", "-", "Open Notes Folder", "-", "Save", "Export…", "Clean Up Unused Files…", "-", "Quit",
+      "New Note", "-", "Close Tab", "-", "Open Notes Folder", "-", "Save", "Export…", "Clean Up Unused Files…", "-",
+      "Language Setup…", "-", "Quit",
     ])
     // The port's own (main/housekeeping.ts): the page's command, greyed with no folder to look in.
     expect(sub(menu(), "File").find((one) => one.label === "Clean Up Unused Files…")!.id).toBe("cleanUp")
@@ -44,6 +46,25 @@ describe("the application menu is the Mac's", () => {
     expect(file({}).find((one) => one.label === "Export…")!.enabled).toBe(true)
     expect(file({}, []).find((one) => one.label === "Export…")!.enabled).toBe(false)
     expect(file({ hasNote: true }, []).find((one) => one.label === "Export…")!.enabled).toBe(true)
+  })
+
+  it("File ▸ Language Setup… is in one place on every platform: the page's, no key, never greyed", () => {
+    expect(labels(sub(menu({}, "linux"), "File")).slice(-5)).toEqual(["Clean Up Unused Files…", "-", "Language Setup…", "-", "Quit"])
+    expect(labels(sub(menu({}, "win32"), "File")).slice(-5)).toEqual(["Clean Up Unused Files…", "-", "Language Setup…", "-", "Quit"])
+    // A Mac quits from the app menu: Language Setup… ends its File menu.
+    expect(labels(sub(menu({}, "darwin"), "File")).slice(-3)).toEqual(["Clean Up Unused Files…", "-", "Language Setup…"])
+    for (const platform of ["win32", "darwin", "linux"]) {
+      const one = sub(menu({}, platform, []), "File").find((item) => item.label === "Language Setup…")!
+      expect(one.id).toBe("languageSetup")
+      expect(one.accelerator).toBeUndefined()
+      expect(one.enabled).not.toBe(false)
+    }
+    // The page's command: not in the key table, and it reaches the page (main.ts sends it as menu:command).
+    expect(commandById("languageSetup")).toBeUndefined()
+    const asked: string[] = []
+    const file = sub(buildMenu({ platform: "win32", state: initialMenuState, project, run: (id) => asked.push(id) }), "File")
+    ;(file.find((item) => item.id === "languageSetup")!.click as () => void)()
+    expect(asked).toEqual(["languageSetup"])
   })
 
   it("Help: Keyboard Shortcuts (F1), then Check for Updates… and its startup box (main/updater.ts) and About", () => {

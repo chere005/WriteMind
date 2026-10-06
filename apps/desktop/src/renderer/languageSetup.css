@@ -1,0 +1,47 @@
+/* File ▸ Language Setup… (LanguageSetupDialog.tsx): the shared .modal, wider, its rows in a body that scrolls. */
+.modal.languages {
+  width: min(600px, calc(100vw - 32px));
+  max-height: calc(100vh - 48px);
+  display: flex;
+  flex-direction: column;
+}
+.modal.languages .languages-body { flex: 1; min-height: 0; overflow-y: auto; margin: 0 -4px 12px; padding: 0 4px; }
+.modal.languages details { margin-top: 4px; }
+.modal.languages summary { cursor: pointer; padding: 6px 0; color: var(--wm-soft); user-select: none; }
+.modal.languages .language-row { padding: 10px 0; border-top: 1px solid var(--wm-rule); }
+.modal.languages .language-head { display: flex; align-items: baseline; gap: 8px; }
+.modal.languages .language-title { font-weight: 600; }
+.modal.languages .language-names { color: var(--wm-soft); font-size: 12px; }
+.modal.languages .language-path,
+.modal.languages .language-other-path,
+.modal.languages code {
+  font-family: ui-monospace, "Cascadia Mono", Consolas, monospace;
+  font-size: 11.5px;
+  overflow-wrap: anywhere;
+}
+.modal.languages .language-path { margin-top: 3px; }
+.modal.languages .language-source,
+.modal.languages .language-check,
+.modal.languages .language-licence,
+.modal.languages .language-setup { margin-top: 3px; color: var(--wm-soft); font-size: 12px; line-height: 1.4; }
+.modal.languages .language-check:empty { display: none; }
+/* What the last setup window said, over the line that offers it again. */
+.modal.languages .language-setup [data-language-said] + div { margin-top: 3px; }
+/* A choice that has gone, nothing found, or a Python that is only a stand-in: the eval marks' own amber
+   (packages/editor/src/eval). */
+.modal.languages .language-source.amber { color: #d97706; }
+.modal.languages p.problem { margin: 4px 0 0; }
+.modal.languages code { padding: 1px 4px; border-radius: 4px; background: var(--wm-page); border: 1px solid var(--wm-rule); }
+.modal.languages .language-command { display: inline-flex; flex-wrap: wrap; align-items: baseline; gap: 6px; }
+.modal.languages .language-actions { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
+.modal.languages .language-row button {
+  padding: 2px 10px; border-radius: 6px; font: inherit; font-size: 12px; cursor: pointer;
+  border: 1px solid var(--wm-rule); background: var(--wm-page); color: var(--wm-text);
+}
+.modal.languages .language-row button:disabled { opacity: 0.5; cursor: default; }
+.modal.languages .language-row button:focus-visible { outline: 2px solid var(--wm-accent); outline-offset: 1px; }
+.modal.languages .language-row button.link { border: 0; background: none; padding: 0; color: var(--wm-accent); text-decoration: underline; }
+.modal.languages .language-others { margin-top: 6px; font-size: 12px; color: var(--wm-soft); }
+.modal.languages .language-others ul { list-style: none; margin: 3px 0 0; padding: 0; }
+.modal.languages .language-others li { display: flex; align-items: baseline; gap: 8px; padding: 1px 0; }
+.modal.languages .language-other-path { flex: 1; min-width: 0; color: var(--wm-text); }

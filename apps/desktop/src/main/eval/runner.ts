@@ -6,6 +6,8 @@
  * A child runs with Sean's own privileges, so:
  *
  * - A RUN ONLY EVER STARTS FROM A PRESS — Shift+Enter in that cell. Never on opening a note, on a save, on a reload.
+ *   Or a press in File ▸ Language Setup…: Test runs a fixed program (`TEST_SOURCE`) and never a note's text; Choose…
+ *   and Use ask the picked program its version (`identify`).
  * - The guard against a test host is HERE, on the first line of `run`, not at the menu: a vitest run that reached
  *   the real spawn would start a compiler.
  * - The child never touches the note. The answer comes back in memory and the page writes it through the editor,
@@ -25,13 +27,22 @@ import * as os from "node:os"
 import * as path from "node:path"
 import type { Readable } from "node:stream"
 import {
-  compileArguments, evalResult, isCompiled, OUTPUT_BYTE_LIMIT, sourceFile, withoutTrailingNull, wolframNote,
-  type EvalResult, type Evaluator, type RunOutcome, type RunRequest, type ToolReport,
+  compileArguments, evalResult, isCompiled, missingToolRefusal, OUTPUT_BYTE_LIMIT, sourceFile, withoutTrailingNull,
+  wolframNote, type EvalResult, type Evaluator, type ProbeOutcome, type RunOutcome, type RunRequest, type ToolReport,
 } from "@writemind/core"
-import { findTool, flavorOf, interpreterArguments, lookedFor, placesFromProcess, toolReport, type ToolPlaces } from "./tools"
+import {
+  flavorOf, identifyArguments, interpreterArguments, placesFromProcess, toolEntry, toolReport, type ToolPlaces,
+} from "./tools"
 
-/** Long enough for a C++ compile with <iostream> in it, short enough that `while True: print()` is over quickly. */
+/**
+ * Long enough for a C++ compile with <iostream> in it, short enough that `while True: print()` is over quickly. The
+ * core's Test sentences say "20 seconds" (`tested` in probe.ts); the runner's test keeps the two in step.
+ */
 export const EVAL_TIMEOUT_MS = 20_000
+/** A version probe answers in a hundredth of a second; ten is a program that is not going to (`identified` says 10). */
+export const PROBE_TIMEOUT_MS = 10_000
+/** A version is a line or two; anything longer is not one. */
+export const PROBE_BYTE_LIMIT = 4096
 
 export interface ChildLike {
   pid?: number
@@ -63,8 +74,11 @@ export interface RunnerDeps {
     write(file: string, text: string): Promise<void>
     remove(dir: string): Promise<void>
   }
-  /** What a child's environment is: replaced, not inherited (see `childEnvironment`). */
-  environment(evaluator: Evaluator): Record<string, string>
+  /**
+   * What a child's environment is: replaced, not inherited (see `childEnvironment`). `tool` is the program the run
+   * uses, and whether it was chosen in Language Setup (then its own folder goes first on the PATH).
+   */
+  environment(evaluator: Evaluator, tool: { path: string; chosen: boolean }): Record<string, string>
   /** A test host never reaches a real child (the Mac's `TestHost.isActive`). */
   isTestHost(): boolean
   timeoutMs?: number
@@ -86,6 +100,12 @@ class CouldNotStart extends Error {}
 
 export interface Runner {
   run(request: RunRequest): Promise<RunOutcome>
+  /**
+   * Ask a program what it is (`identifyArguments`: its version), for Language Setup's Choose… and Use — the only
+   * callers (main/eval/languages.ts; a test reads the sources to keep it so). A job like a run: `cancel(id)` and
+   * `cancelAll` kill it, it runs in a scratch folder of its own, and a test host starts nothing.
+   */
+  identify(id: string, evaluator: Evaluator, file: string): Promise<ProbeOutcome>
   cancel(id: string): void
   cancelAll(): void
   tools(): ToolReport
@@ -95,8 +115,8 @@ export interface Runner {
 
 export function createRunner(deps: RunnerDeps): Runner {
   const jobs = new Map<string, Job>()
-  const timeoutMs = deps.timeoutMs ?? EVAL_TIMEOUT_MS
-  const limit = deps.byteLimit ?? OUTPUT_BYTE_LIMIT
+  const runTimeoutMs = deps.timeoutMs ?? EVAL_TIMEOUT_MS
+  const runLimit = deps.byteLimit ?? OUTPUT_BYTE_LIMIT
   const pipeGraceMs = deps.pipeGraceMs ?? PIPE_GRACE_MS
   const exe = deps.platform === "win32" ? ".exe" : ".out"
   // The scratch paths follow `deps.platform` like the binary's extension does (and like tools.ts's `joiner`), not the
@@ -108,8 +128,12 @@ export function createRunner(deps: RunnerDeps): Runner {
    * the moment a cell prints more than a pipe holds), and answer only once the process has ended AND both pipes are
    * closed — Node's `close` is exactly that.
    */
-  function spawnOne(job: Job, tool: string, args: string[], cwd: string, env: Record<string, string>): Promise<Ran> {
+  function spawnOne(job: Job, tool: string, args: string[], cwd: string, env: Record<string, string>,
+    limits: { timeoutMs?: number; byteLimit?: number } = {}): Promise<Ran> {
     if (job.cancelled) return Promise.reject(new Cancelled())
+    // A version probe is held to less than a cell: it is a line, at once, or it is not the program it says it is.
+    const timeoutMs = limits.timeoutMs ?? runTimeoutMs
+    const limit = limits.byteLimit ?? runLimit
     return new Promise<Ran>((resolve, reject) => {
       let child: ChildLike
       try {
@@ -177,7 +201,8 @@ export function createRunner(deps: RunnerDeps): Runner {
     })
   }
 
-  async function interpret(job: Job, evaluator: Evaluator, tool: string, source: string): Promise<EvalResult> {
+  async function interpret(job: Job, evaluator: Evaluator, tool: string, source: string,
+    env: Record<string, string>): Promise<EvalResult> {
     const dir = await deps.scratch.make()
     try {
       // WOLFRAM TAKES ITS SOURCE AS AN ARGUMENT, and the flag matters: `-code` shows the value of the last
@@ -191,7 +216,7 @@ export function createRunner(deps: RunnerDeps): Runner {
       } else {
         args = ["-code", source]
       }
-      const ran = await spawnOne(job, tool, args, dir, deps.environment(evaluator))
+      const ran = await spawnOne(job, tool, args, dir, env)
       const result = evalResult(ran)
       if (evaluator === "wolfram") result.stdout = withoutTrailingNull(result.stdout)
       result.note = wolframNote(result, evaluator, tool)
@@ -205,13 +230,13 @@ export function createRunner(deps: RunnerDeps): Runner {
    * C, C++ and Rust are two processes, two exit codes and two stderrs. A compile that fails IS the answer — there is
    * nothing to run and the diagnostics are the output.
    */
-  async function compileAndRun(job: Job, evaluator: Evaluator, tool: string, source: string): Promise<EvalResult> {
+  async function compileAndRun(job: Job, evaluator: Evaluator, tool: string, source: string,
+    env: Record<string, string>): Promise<EvalResult> {
     const dir = await deps.scratch.make()
     try {
       const file = p.join(dir, sourceFile(evaluator) ?? "cell.txt")
       const binary = p.join(dir, "cell" + exe)
       await deps.scratch.write(file, source)
-      const env = deps.environment(evaluator)
       const build = await spawnOne(job, tool, compileArguments(evaluator, file, binary, flavorOf(tool)), dir, env)
       if (build.status !== 0 || build.timedOut) {
         // The build's own output is the answer (Microsoft's cl writes its diagnostics to stdout, the others to stderr).
@@ -232,19 +257,21 @@ export function createRunner(deps: RunnerDeps): Runner {
   async function run(request: RunRequest): Promise<RunOutcome> {
     // A CHECK THAT CAN REACH THE REAL THING IS NOT A CHECK, and a test host that can start a compiler is worse.
     if (deps.isTestHost()) return { kind: "cancelled" }
-    const places = deps.places()
-    const tool = findTool(request.evaluator, places)
-    if (!tool) {
-      return { kind: "refused", refusal: { kind: "missingTool", evaluator: request.evaluator, looked: lookedFor(request.evaluator, places) } }
-    }
+    // The places are read afresh for every run, Language Setup's choices with them: a choice applies to the next
+    // run with no restart, and a chosen program that has gone since is refused here, before anything starts.
+    const entry = toolEntry(request.evaluator, deps.places())
+    const tool = entry.path
+    if (!tool) return { kind: "refused", refusal: missingToolRefusal(request.evaluator, entry) }
+    // ONE environment for the whole run: a compiled cell's build and its program see the same PATH.
+    const env = deps.environment(request.evaluator, { path: tool, chosen: entry.chosen !== undefined })
     // A second run under the same id takes the first back.
     cancel(request.id)
     const job: Job = { cancelled: false, children: new Set() }
     jobs.set(request.id, job)
     try {
       const result = isCompiled(request.evaluator)
-        ? await compileAndRun(job, request.evaluator, tool, request.source)
-        : await interpret(job, request.evaluator, tool, request.source)
+        ? await compileAndRun(job, request.evaluator, tool, request.source, env)
+        : await interpret(job, request.evaluator, tool, request.source, env)
       if (job.cancelled) return { kind: "cancelled" }
       return { kind: "ran", result }
     } catch (error) {
@@ -252,6 +279,33 @@ export function createRunner(deps: RunnerDeps): Runner {
       return { kind: "couldNotStart", why: error instanceof Error ? error.message : String(error) }
     } finally {
       if (jobs.get(request.id) === job) jobs.delete(request.id)
+    }
+  }
+
+  async function identify(id: string, evaluator: Evaluator, file: string): Promise<ProbeOutcome> {
+    // The same guard as a run, on the same first line: a test host never starts the program it was handed.
+    if (deps.isTestHost()) return { kind: "cancelled" }
+    const args = identifyArguments(evaluator, file)
+    // Microsoft's cl has no version to ask for (Language Setup takes it on its name and never calls this for it):
+    // nothing is started, and nothing comes back to read.
+    if (!args) return { kind: "ran", result: evalResult({ status: 0 }) }
+    cancel(id)
+    const job: Job = { cancelled: false, children: new Set() }
+    jobs.set(id, job)
+    let dir: string | null = null
+    try {
+      dir = await deps.scratch.make()
+      // The environment the program will run cells in once it is chosen: its own folder first on the PATH.
+      const ran = await spawnOne(job, file, args, dir, deps.environment(evaluator, { path: file, chosen: true }),
+        { timeoutMs: PROBE_TIMEOUT_MS, byteLimit: PROBE_BYTE_LIMIT })
+      if (job.cancelled) return { kind: "cancelled" }
+      return { kind: "ran", result: evalResult(ran) }
+    } catch (error) {
+      if (error instanceof Cancelled || job.cancelled) return { kind: "cancelled" }
+      return { kind: "couldNotStart", why: error instanceof Error ? error.message : String(error) }
+    } finally {
+      if (dir !== null) await deps.scratch.remove(dir)
+      if (jobs.get(id) === job) jobs.delete(id)
     }
   }
 
@@ -267,7 +321,7 @@ export function createRunner(deps: RunnerDeps): Runner {
     for (const id of [...jobs.keys()]) cancel(id)
   }
 
-  return { run, cancel, cancelAll, tools: () => toolReport(deps.places()), inFlight: () => jobs.size }
+  return { run, identify, cancel, cancelAll, tools: () => toolReport(deps.places()), inFlight: () => jobs.size }
 }
 
 // MARK: - The real thing
@@ -278,9 +332,14 @@ export function createRunner(deps: RunnerDeps): Runner {
  * there, and under a bare environment prints NOTHING and exits 0 on the Mac), TEMP, the PATH the tool was found on
  * (a MinGW gcc finds cc1 and as through it), and a Visual Studio prompt's INCLUDE / LIB when the app was started
  * from one. Nothing of WriteMind's own (`WRITEMIND_*`, `ELECTRON_*`, `NODE_*`) reaches a cell.
+ *
+ * A PROGRAM CHOSEN IN LANGUAGE SETUP brings its own folder to the FRONT of the PATH (`toolFolder`): a venv's `bin`
+ * is what makes its `pip` and its other programs the ones a cell finds, and a MinGW compiler chosen from a folder no
+ * PATH reaches builds programs that need its `libstdc++-6.dll` beside them. A tool found by itself leaves the PATH
+ * exactly as it was: it was found on it, or in a place the PATH has never needed.
  */
 export function childEnvironment(evaluator: Evaluator, source: NodeJS.ProcessEnv = process.env,
-  platform = process.platform): Record<string, string> {
+  platform: string = process.platform, extra: { toolFolder?: string } = {}): Record<string, string> {
   const keep = platform === "win32"
     ? ["SystemRoot", "SystemDrive", "windir", "ComSpec", "PATHEXT", "TEMP", "TMP", "USERPROFILE", "HOMEDRIVE",
       "HOMEPATH", "USERNAME", "APPDATA", "LOCALAPPDATA", "ProgramData", "ProgramFiles", "ProgramFiles(x86)",
@@ -295,6 +354,10 @@ export function childEnvironment(evaluator: Evaluator, source: NodeJS.ProcessEnv
   }
   const pathValue = source.PATH ?? source.Path
   if (typeof pathValue === "string") env.PATH = pathValue
+  if (extra.toolFolder) {
+    const separator = platform === "win32" ? ";" : ":"
+    env.PATH = env.PATH ? `${extra.toolFolder}${separator}${env.PATH}` : extra.toolFolder
+  }
   const home = source.USERPROFILE ?? source.HOME
   if (typeof home === "string") env.HOME = home
   if (evaluator === "python") {
@@ -321,20 +384,31 @@ function killTreeReal(child: ChildLike): void {
   }
 }
 
-/** The runner the app uses: the real spawn, the real file system, this machine's PATH. */
-export function createProcessRunner(): Runner {
+/**
+ * The runner the app uses: the real spawn, the real file system, this machine's PATH — and Language Setup's
+ * choices (`store`, main/eval/languages.ts), read again for every run.
+ */
+export function createProcessRunner(store?: { get(): Partial<Record<Evaluator, string>>; unreadable?(): string | null }): Runner {
   return createRunner({
     platform: process.platform,
     spawn: (command, args, options) => nodeSpawn(command, args, options),
     killTree: killTreeReal,
-    places: placesFromProcess,
+    // A settings file that could never be read refuses every language rather than guess (tools.ts `toolEntry`).
+    places: () => placesFromProcess(store?.get() ?? {}, store?.unreadable?.() ?? null),
     scratch: {
       make: () => mkdtemp(path.join(os.tmpdir(), "WriteMind-eval-")),
       write: (file, text) => writeFile(file, text, "utf8"),
       // A child killed a moment ago can still hold its files on Windows: try again a few times.
       remove: (dir) => rm(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 120 }).catch(() => undefined),
     },
-    environment: (evaluator) => childEnvironment(evaluator),
+    environment: (evaluator, tool) => processEnvironment(evaluator, tool),
     isTestHost: () => process.env.VITEST !== undefined,
   })
+}
+
+/** The real runner's environment for a run: this process's, replaced, with a CHOSEN tool's folder first on the PATH. */
+export function processEnvironment(evaluator: Evaluator, tool: { path: string; chosen: boolean },
+  source: NodeJS.ProcessEnv = process.env, platform: string = process.platform): Record<string, string> {
+  const p = platform === "win32" ? path.win32 : path.posix
+  return childEnvironment(evaluator, source, platform, tool.chosen ? { toolFolder: p.dirname(tool.path) } : {})
 }

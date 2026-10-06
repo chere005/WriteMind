@@ -15,6 +15,8 @@ import {
   MOVE_STATE_FILE, keptOldNotice, movedPath, rewriteJsonText, settleNotesFolder, type SettleOptions,
 } from "../src/main/notesFolderMove"
 import { readProjectSession } from "../src/main/project"
+import { createLanguageStore } from "../src/main/eval/languages"
+import { LANGUAGES_FILE, writeLanguageSettings } from "../src/shared/languages"
 
 const quiet = (): void => undefined
 function scratch() {
@@ -302,5 +304,24 @@ describe("what the app remembered follows the folder", () => {
     expect(json(path.join(s.userData, "Sessions", "default.json")).active).toBe(path.join(s.now, "a.md"))
     expect(json(path.join(s.userData, MOVE_STATE_FILE)).pending).toBeUndefined()
     expect((await settleNotesFolder(s.options())).outcome).toBe("new")
+  })
+
+  // File ▸ Language Setup…'s choices (main/eval/languages.ts) are a userData JSON file like the rest: a venv kept
+  // inside the notes folder is still the Python its cells run with after the move, and the store sees the new path.
+  it("a Python chosen in Language Setup from inside the old folder follows the move", async () => {
+    const s = scratch()
+    put(path.join(s.old, "a.md"), "# A\n")
+    // This system's own names: the reader drops an entry that is not an .exe on Windows (CI's verify job runs there).
+    const exe = process.platform === "win32" ? ".exe" : ""
+    const python = put(path.join(s.old, "venv", "bin", `python3${exe}`), "#!/bin/sh\n")
+    const rustc = path.join(s.base, "elsewhere", `rustc${exe}`)
+    const languages = path.join(s.userData, LANGUAGES_FILE)
+    put(languages, writeLanguageSettings({ python, rust: rustc }))
+    const store = createLanguageStore(languages, process.platform)
+    expect(store.get().python).toBe(python)
+    expect((await settleNotesFolder(s.options())).outcome).toBe("moved")
+    const moved = path.join(s.now, "venv", "bin", `python3${exe}`)
+    expect(json(languages)).toEqual({ version: 1, tools: { python: moved, rust: rustc } })
+    expect(store.get()).toEqual({ python: moved, rust: rustc })
   })
 })

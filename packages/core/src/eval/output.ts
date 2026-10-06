@@ -99,16 +99,40 @@ export function withoutTrailingNull(out: string): string {
  */
 export function wolframNote(result: EvalResult, evaluator: Evaluator, tool?: string): string | null {
   if (evaluator !== "wolfram" || result.status === 0) return result.note
+  const command = wolframCommand(tool)
+  switch (wolframTrouble(result)) {
+    case "notActivated":
+      return `Wolfram Engine is installed but not activated — run \`${command} -activate\` once in a terminal (it asks for your Wolfram ID), then try again`
+    case "noKernel":
+      return `Wolfram Engine's kernel was not found — run \`${command} -configure\` once in a terminal`
+    case null:
+      return result.note
+  }
+}
+
+/**
+ * WHICH of the two not-activated failures stderr describes, by the words it actually says (see `wolframNote`), or
+ * null for anything else. Port-only as a function of its own: File ▸ Language Setup…'s Test asks it too, so the two
+ * cannot read one engine's complaint differently.
+ */
+export function wolframTrouble(result: EvalResult): "notActivated" | "noKernel" | null {
   const errors = result.stderr.toLowerCase()
-  // THE COMMAND AS IT CAN BE TYPED: the Wolfram Engine's installer puts wolframscript in its version folder and not
-  // on the PATH, so a bare `wolframscript` in a terminal is "not recognized". The tool that was found, quoted, with
-  // PowerShell's call operator in front (Windows' default terminal: a quoted path alone is only a string there).
-  const command = tool && /[\\/]/.test(tool) ? `& "${tool}"` : "wolframscript"
-  if (errors.includes("activat")) {
-    return `Wolfram Engine is installed but not activated — run \`${command} -activate\` once in a terminal (it asks for your Wolfram ID), then try again`
-  }
-  if (errors.includes("kernel") && errors.includes("could not be determined")) {
-    return `Wolfram Engine's kernel was not found — run \`${command} -configure\` once in a terminal`
-  }
-  return result.note
+  if (errors.includes("activat")) return "notActivated"
+  if (errors.includes("kernel") && errors.includes("could not be determined")) return "noKernel"
+  return null
+}
+
+/**
+ * THE COMMAND AS IT CAN BE TYPED in the terminal of the machine it was found on (port-only). The Wolfram Engine's
+ * installer puts wolframscript in its version folder and not on the PATH, so a bare `wolframscript` in a terminal is
+ * "not recognized": the tool that was found is named. A Windows path goes in quotes with PowerShell's call operator
+ * in front (Windows' default terminal: a quoted path alone is only a string there). A Mac or Linux path is typed
+ * into zsh or bash, where `&` is a parse error, so it goes bare when nothing in it is special to a shell and in
+ * single quotes when something is (a space in "Wolfram Engine.app"), each `'` in it closed, escaped and reopened.
+ */
+export function wolframCommand(tool?: string): string {
+  if (!tool || !/[\\/]/.test(tool)) return "wolframscript"
+  if (/^[A-Za-z]:/.test(tool) || tool.includes("\\")) return `& "${tool}"`
+  if (/^[\w@%+=:,./-]+$/.test(tool)) return tool
+  return `'${tool.replace(/'/g, "'\\''")}'`
 }
