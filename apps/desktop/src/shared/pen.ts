@@ -220,13 +220,13 @@ export interface PenFeedSettings {
   /** Read the tablet pen natively while the Tablet sheet shows and the window is in front. (Which button does what is the renderer's penSettings.) */
   enabled: boolean
   /**
-   * EXPERIMENTAL, off until Sean turns it on: also open Wintab's system-cursor context over the sheet so the tablet drives the OS cursor
-   * only inside it. Untested on a real pen, and a hard kill while it is live leaves the mapping until the next launch, so it is opt-in.
+   * Also open Wintab's system-cursor context over the sheet so the tablet drives the OS cursor only inside it. ON by default
+   * (Sean, 2026-10-06: "mapping the tablet to the sheet should be the default, not experimental").
    */
   mapSheet: boolean
 }
 
-export const DEFAULT_SETTINGS: PenFeedSettings = { enabled: true, mapSheet: false }
+export const DEFAULT_SETTINGS: PenFeedSettings = { enabled: true, mapSheet: true }
 
 // ---------------------------------------------------------------------------------------------
 // Geometry and the window

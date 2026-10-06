@@ -209,7 +209,7 @@ describe("the system mapping is driven only for the real tablet", () => {
   it("wanted only once Wintab is active; told the sheet, the visit and the position (sheet frame)", async () => {
     const r = rig()
     await r.m.open(); await r.flush()
-    r.m.update({ mapSheet: true }) // the system mapping is opt-in (off by default)
+    r.m.update({ mapSheet: true }) // the system mapping (on by default)
     r.m.setSheet({ rect: { x: 10, y: 20, width: 300, height: 190 }, turns: 0 })
     expect(r.mapping.sheet).toMatchObject({ turns: 0 })
     expect(r.mapping.wanted).toBe(false) // no pen seen yet: Wintab is not the active feed
@@ -223,9 +223,10 @@ describe("the system mapping is driven only for the real tablet", () => {
     expect(r.mapping.inRange).toBe(false)
   })
 
-  it("the mapping stays off by default even with the pen in range (opt-in)", async () => {
+  it("the mapping is on by default, and off once switched off, even with the pen in range", async () => {
     const r = rig()
     await r.m.open(); await r.flush()
+    r.m.update({ mapSheet: false })
     r.m.setSheet({ rect: { x: 10, y: 20, width: 300, height: 190 }, turns: 0 })
     r.wintab!.emit([hover(1, 0.25, 0.75)])
     expect(r.mapping.wanted).toBe(false)
@@ -356,5 +357,14 @@ describe("pen-state.json", () => {
     }))
     expect("frames" in s).toBe(false) // an old file's stored calibrations are ignored
     expect(s.mapping).toEqual({ a: "honoured", b: "refused" })
+  })
+})
+
+describe("the pen state file", () => {
+  it("maps the tablet by default, and ignores an old (version 2) file's off, which was the old default", async () => {
+    const { parseState } = await import("../src/main/pen/state")
+    expect(parseState(null).settings.mapSheet).toBe(true)
+    expect(parseState(JSON.stringify({ version: 2, settings: { mapSheet: false } })).settings.mapSheet).toBe(true)
+    expect(parseState(JSON.stringify({ version: 3, settings: { mapSheet: false } })).settings.mapSheet).toBe(false)
   })
 })
