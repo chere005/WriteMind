@@ -25,6 +25,9 @@ set -u
 cd "$(dirname "$0")/.."
 dist="${1:-dist-electron}"
 failures=0
+# WRITEMIND_MAC_SIGNED=1: expect a Developer ID, the hardened runtime, the camera entitlement and a stapled ticket
+# (release.yml's mac job, when the signing secrets are set); otherwise the ad-hoc dmgs.
+signed="${WRITEMIND_MAC_SIGNED:-0}"
 
 fail() { echo "verify-mac: FAIL: $*" >&2; failures=$((failures + 1)); }
 ok() { echo "verify-mac: ok: $*"; }
@@ -82,15 +85,26 @@ check_app() {
 
   local details
   details="$(codesign -dv --verbose=2 "$app" 2>&1)"
-  if printf '%s\n' "$details" | grep -q '^Signature=adhoc$'; then
-    ok "$name: signed ad hoc"
+  local runtime=0
+  printf '%s\n' "$details" | grep -E '^CodeDirectory .*flags=' | grep -q 'runtime' && runtime=1
+  if [ "$signed" = 1 ]; then
+    if printf '%s\n' "$details" | grep -q '^Authority=Developer ID Application:'; then
+      ok "$name: signed with a Developer ID Application certificate"
+    else
+      fail "$name: not signed with a Developer ID Application certificate ($(printf '%s\n' "$details" | grep -E '^(Signature|Authority)=' | head -1))"
+    fi
+    [ "$runtime" = 1 ] && ok "$name: hardened runtime" || fail "$name: the hardened runtime is off (notarization needs it)"
+    codesign -d --entitlements - "$app" 2> /dev/null | grep -q 'com.apple.security.device.camera' \
+      && ok "$name: camera entitlement" || fail "$name: no camera entitlement"
+    spctl -a -vv "$app" > /dev/null 2>&1 && ok "$name: spctl accepts it" || fail "$name: spctl -a -vv rejects it"
+    xcrun stapler validate "$app" > /dev/null 2>&1 && ok "$name: notarization ticket stapled" || fail "$name: xcrun stapler validate failed"
   else
-    fail "$name: the signature is not ad hoc ($(printf '%s\n' "$details" | grep -E '^(Signature|Authority)=' | head -1))"
-  fi
-  if printf '%s\n' "$details" | grep -E '^CodeDirectory .*flags=' | grep -q 'runtime'; then
-    fail "$name: the hardened runtime is on (electron-builder.yml says hardenedRuntime: false)"
-  else
-    ok "$name: no hardened runtime"
+    if printf '%s\n' "$details" | grep -q '^Signature=adhoc$'; then
+      ok "$name: signed ad hoc"
+    else
+      fail "$name: the signature is not ad hoc ($(printf '%s\n' "$details" | grep -E '^(Signature|Authority)=' | head -1))"
+    fi
+    [ "$runtime" = 1 ] && fail "$name: the hardened runtime is on (package:mac:adhoc turns it off)" || ok "$name: no hardened runtime"
   fi
 
   if [ -f "$plist" ]; then
@@ -167,6 +181,9 @@ for arch in arm64 x64; do
   label="${dmg##*/}"
   ok "$label ($(du -h "$dmg" | cut -f1))"
   hdiutil verify -quiet "$dmg" > /dev/null 2>&1 && ok "$label: hdiutil verify" || fail "$label: hdiutil verify failed"
+  if [ "$signed" = 1 ]; then
+    xcrun stapler validate "$dmg" > /dev/null 2>&1 && ok "$label: notarization ticket stapled" || fail "$label: xcrun stapler validate failed"
+  fi
   mnt="$(mktemp -d)"
   mounts="$mounts $mnt"
   if hdiutil attach -quiet -nobrowse -readonly -noautoopen -mountpoint "$mnt" "$dmg" > /dev/null 2>&1; then

@@ -53,31 +53,20 @@ mac:
   # - so WriteMind.app looks like the Swift WriteMind in the Dock and in Finder.
   # Without it electron-builder would convert packaging/icon.png (512 px).
   icon: out/icons/WriteMind.icns
-  # THE IDENTITY BY ITS FINGERPRINT, not by its name — this says WHICH
-  # certificate is meant, and it is the valid one.
-  #
-  # It is not the whole fix, and that is worth knowing: electron-builder
-  # resolves the hash and then calls `codesign --sign <NAME>`, so a
-  # keychain holding two certificates with the SAME name still fails with
-  # "ambiguous". Sean's did — the first Apple Development certificate was
-  # revoked on 2026-08-09 and reissued seven minutes later, and both were
-  # left in the login keychain. The build picked the revoked one. The cure
-  # is to take the dead one out (docs/BUILDING.md says how); this line
-  # says which one to use once there is a choice again.
-  #
-  # THIS IS SEAN'S OWN CERTIFICATE, for his own `package:mac` on his Mac. The
-  # released dmgs are AD-HOC signed instead (there is no Developer ID, so they
-  # are not notarized either): CI passes `-c.mac.identity=-
-  # -c.forceCodeSigning=true -c.mac.timestamp=none -c.mac.notarize=false`
-  # (apps/desktop's `package:mac:adhoc`, release.yml's mac job), and
-  # docs/INSTALL-MAC.md says how a first open gets past Gatekeeper.
-  identity: 744460685372E9982A2A85D7B351A9499AFF2EF6
+  # SIGNED WITH A DEVELOPER ID APPLICATION CERTIFICATE and notarized. No `identity` here: electron-builder finds the
+  # certificate itself (CSC_LINK / CSC_KEY_PASSWORD in CI, the login keychain on Sean's Mac). A local build with no
+  # Developer ID in the keychain, or without the notarization credentials, uses `package:mac:adhoc`, which overrides
+  # all of this (ad hoc, no hardened runtime, no notarization). Notarization takes either APPLE_API_KEY (a PATH to the
+  # .p8) with APPLE_API_KEY_ID and APPLE_API_ISSUER, or APPLE_ID with APPLE_APP_SPECIFIC_PASSWORD and APPLE_TEAM_ID.
   # macOS 13 (Ventura) or newer: Electron 44 runs on nothing older. Quoted, so
   # it is the string 13.0 in LSMinimumSystemVersion and not the number 13.
   minimumSystemVersion: "13.0"
-  # NO HARDENED RUNTIME, as the Swift app has none: only notarization needs it,
-  # and with it on the camera would need an entitlement besides its wording.
-  hardenedRuntime: false
+  # THE HARDENED RUNTIME, which notarization needs; packaging/entitlements.mac.plist gives back what Electron, the
+  # Vision helper and the camera need under it.
+  hardenedRuntime: true
+  notarize: true
+  entitlements: ../../packaging/entitlements.mac.plist
+  entitlementsInherit: ../../packaging/entitlements.mac.plist
   # ONE DMG PER CHIP, the chip in the name (WriteMind-1.0.0-mac-arm64.dmg for
   # Apple silicon, -mac-x64.dmg for Intel). Not universal: koffi's darwin .node
   # files and the wm-vision helper defeat @electron/universal's merge; the
