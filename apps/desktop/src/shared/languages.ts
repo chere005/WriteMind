@@ -199,8 +199,9 @@ const installs = (action: "python" | "wolfram"): string => (action === "python" 
 
 /**
  * WHAT A SETUP WINDOW DID, in one sentence for the row that asked (the script's own words for each outcome are in
- * packaging/installer-tools.ps1 `WingetInstall` and its Activate step). `result` is null when the window closed
- * without writing one; `foundAfter` is whether WriteMind finds the program (or, for Activate, the licence) now.
+ * packaging/installer-tools.ps1 `WingetInstall`, `WingetOutcome` (winget's exit codes) and its Activate step).
+ * `result` is null when the window closed without writing one; `foundAfter` is whether WriteMind finds the program
+ * (or, for Activate, the licence) now.
  */
 export function setupSentence(action: SetupAction, result: Record<string, string> | null, foundAfter: boolean, log: string): string {
   if (!result) return `The setup window closed before it finished. The details are in ${log}.`

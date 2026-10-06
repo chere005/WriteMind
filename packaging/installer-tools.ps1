@@ -1,4 +1,4 @@
-# The optional tools of WriteMind's Windows installer (packaging/installer.nsh runs this; it is not installed).
+# The optional tools of WriteMind's Windows installer (packaging/installer.nsh runs this; so does the app: -FromApp).
 #
 #   -Detect -Out <ini>    what is already on this computer, as an INI the installer page reads:
 #                           [tools] python=<path or empty>  wolfram=<wolframscript.exe or empty>
