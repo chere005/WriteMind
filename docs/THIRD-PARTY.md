@@ -63,17 +63,30 @@ Packages marked *optional* are platform-specific builds; only the one for the ma
 | universalify | 2.0.1 | MIT |
 | w3c-keyname | 2.2.8 | MIT |
 
-## Build and test tools only, never shipped (401)
+## Bundled by the build: the OCR engine
+
+Not npm dependencies of the app: `apps/desktop/scripts/build.mjs` bundles these into the bundled OCR engine's
+worker and copies its WebAssembly runtime and model files (docs/OCR-BUNDLED.md).
+
+| Software | Version | Licence |
+| --- | --- | --- |
+| onnxruntime-common | 1.30.0 | MIT |
+| onnxruntime-web | 1.30.0 | MIT |
+| ch_PP-OCRv5_det_mobile.onnx (PP-OCRv5 mobile text-line detector (DB), every script; PaddleOCR PP-OCRv5, ONNX by RapidOCR) | sha256 4d97c44a20d3… | Apache-2.0 |
+| en_PP-OCRv5_rec_mobile.onnx (PP-OCRv5 mobile English recogniser (CTC): Latin letters, digits, punctuation; the first reading of every line; PaddleOCR PP-OCRv5, ONNX by RapidOCR) | sha256 c3461add59bb… | Apache-2.0 |
+| ch_PP-OCRv5_rec_mobile.onnx (PP-OCRv5 mobile multilingual recogniser (CTC): Japanese (kana, kanji), Chinese and English in one; a line's reading is taken from it when it found Japanese; PaddleOCR PP-OCRv5, ONNX by RapidOCR) | sha256 5825fc7ebf84… | Apache-2.0 |
+
+## Build and test tools only, never shipped (417)
 
 These include Electron's npm package (its runtime is listed above), electron-builder, TypeScript, Vite,
 esbuild and Vitest, and everything they depend on.
 
 | Licence | Packages |
 | --- | --- |
-| MIT | 326 |
-| ISC | 37 |
-| BSD-3-Clause | 10 |
-| Apache-2.0 | 9 |
+| MIT | 329 |
+| ISC | 38 |
+| BSD-3-Clause | 20 |
+| Apache-2.0 | 11 |
 | BlueOak-1.0.0 | 7 |
 | BSD-2-Clause | 6 |
 | CC-BY-4.0 | 1 |

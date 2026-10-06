@@ -55,6 +55,7 @@ Everything that makes WriteMind what it is was written in this repo, in TypeScri
 | The drawing model: strokes, shapes, routed arrows, groups, ink cells, sidecar files | `packages/core/src/drawing`, `apps/desktop/src/renderer` |
 | Page finding and perspective correction for the camera; ink lifted off the paper | `packages/core/src/capture` |
 | OCR results turned into markdown (lines, marks, handwriting rules) | `packages/core/src/capture/textRecognition.ts` |
+| The bundled OCR engine's pipeline round the networks (line finding, cut-out, CTC decoding, word boxes, worker threads) | `apps/desktop/src/main/bundledOcr*` |
 | PDF page layout (what goes on which sheet, where the drawing lands) | `packages/core/src/export` |
 | The editor's behaviour on top of CodeMirror: brackets, the rendered page, maths display, keys | `packages/editor` |
 | The desktop app: notes and folders, projects, the Wacom pen, the camera and tablet panes, export, updates, runnable cells | `apps/desktop` |
@@ -74,13 +75,15 @@ Shipped inside the app (all permissive licences; full list with versions in
 | [React](https://react.dev/) | MIT | The user interface around the editor (bars, panes, dialogs). |
 | [koffi](https://koffi.dev/) | MIT | Calling native libraries from Node: the Wacom driver's Wintab interface on Windows. |
 | [electron-updater](https://www.electron.build/auto-update) | MIT | Downloading and installing updates on Windows. |
+| [onnxruntime-web](https://onnxruntime.ai/) (its WebAssembly build) | MIT | Running the bundled OCR engine's networks, the same on every platform ([docs/OCR-BUNDLED.md](docs/OCR-BUNDLED.md)). |
+| [PaddleOCR](https://github.com/PaddlePaddle/PaddleOCR) PP-OCRv5 mobile models (detector, English and multilingual recognisers), as converted to ONNX by [RapidOCR](https://github.com/RapidAI/RapidOCR) | Apache-2.0 (code and weights) | The bundled OCR engine: reading printed text, handwriting and Japanese out of a picture with nothing installed. Fetched at build time from pinned, checksummed URLs. |
 
 Used from your computer, not shipped:
 
 | Software | Used for |
 | --- | --- |
 | Wacom driver (`Wintab32.dll`) | Pen input with pressure and side buttons on Windows |
-| Apple Vision (macOS) / `Windows.Media.Ocr` (Windows) / Tesseract (Linux, if installed) | Reading words out of a picture (OCR) |
+| Apple Vision (macOS) / `Windows.Media.Ocr` (Windows) / Tesseract (Linux, if installed) | Reading words out of a picture (OCR) when a build has no bundled OCR engine, or it fails |
 | Python, Wolfram Engine, C / C++ / Rust compilers | Runnable code cells, when installed (the Windows installer can fetch Python and the Wolfram Engine with winget) |
 
 Build and test tools only, never shipped: TypeScript (Apache-2.0), Vite, esbuild, Vitest and

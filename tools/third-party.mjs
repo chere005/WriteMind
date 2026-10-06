@@ -33,6 +33,23 @@ const tools = rows.filter((r) => r.dev)
 const byLicence = {}
 for (const r of tools) byLicence[r.licence] = (byLicence[r.licence] ?? 0) + 1
 
+// THE BUNDLED OCR ENGINE (docs/OCR-BUNDLED.md) is not an npm dependency of the app: scripts/build.mjs bundles
+// onnxruntime-web (and onnxruntime-common) into its worker and copies the WebAssembly runtime and the model files.
+const bundledRuntime = rows.filter((r) => r.name === "onnxruntime-web" || r.name === "onnxruntime-common")
+const models = JSON.parse(fs.readFileSync(path.join(root, "apps", "desktop", "scripts", "ocr-models.json"), "utf8")).models
+const bundled = [
+  "## Bundled by the build: the OCR engine",
+  "",
+  "Not npm dependencies of the app: `apps/desktop/scripts/build.mjs` bundles these into the bundled OCR engine's",
+  "worker and copies its WebAssembly runtime and model files (docs/OCR-BUNDLED.md).",
+  "",
+  "| Software | Version | Licence |",
+  "| --- | --- | --- |",
+  ...bundledRuntime.map((r) => `| ${r.name} | ${r.version} | ${r.licence} |`),
+  ...models.map((m) => `| ${m.file} (${m.what}; PaddleOCR PP-OCRv5, ONNX by RapidOCR) | sha256 ${m.sha256.slice(0, 12)}… | Apache-2.0 |`),
+  "",
+]
+
 const out = [
   "# Third-party software",
   "",
@@ -50,6 +67,7 @@ const out = [
   "| --- | --- | --- |",
   ...shipped.map((r) => `| ${r.name}${r.optional ? " *(optional)*" : ""} | ${r.version} | ${r.licence} |`),
   "",
+  ...bundled,
   `## Build and test tools only, never shipped (${tools.length})`,
   "",
   "These include Electron's npm package (its runtime is listed above), electron-builder, TypeScript, Vite,",
