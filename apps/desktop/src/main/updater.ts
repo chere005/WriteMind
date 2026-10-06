@@ -14,8 +14,10 @@
  * electron-updater is loaded only when this copy updates itself (an installed Windows build), and through
  * `createRequire` like koffi: it is CommonJS that requires "electron", which a bundled ESM main cannot do.
  *
- * A MAC IS IN DOWNLOAD MODE (updateEligibility's how: "download"; the app is ad-hoc signed, which Squirrel.Mac
- * cannot replace): electron-updater is never loaded. Its look is one `net.fetch` of GitHub's releases/latest
+ * A MAC INSTALLS LIKE WINDOWS when it is the Developer ID build in a place it can be replaced (`macSelfUpdates`):
+ * electron-updater's MacUpdater downloads the release's zip (latest-mac.yml, the job in release.yml uploads both)
+ * and Squirrel.Mac swaps WriteMind.app on the restart. Any other Mac copy (ad hoc, off the dmg, translocated) is in
+ * DOWNLOAD MODE (updateEligibility's how: "download"): electron-updater is never loaded. Its look is one `net.fetch` of GitHub's releases/latest
  * (RELEASES_LATEST_API, a User-Agent, given up after 10 s), read by `latestFromGitHub`, fed into the same states
  * (checking → available / latest / error) and the same dialog, launch rule and menu answer. Download (the dialog's
  * "now") opens the release's page in the browser — `releasePage`, built from the version — and closes the dialog:
@@ -24,11 +26,12 @@
 
 import { app, net, shell, type BrowserWindow, type IpcMain } from "electron"
 import { createRequire } from "node:module"
+import { spawnSync } from "node:child_process"
 import { appendFileSync, existsSync, readFileSync, readdirSync, renameSync, statSync, writeFileSync } from "node:fs"
 import path from "node:path"
 import type { AppUpdater, CancellationToken } from "electron-updater"
 import {
-  RELEASES_LATEST_API, RELEASE_CHECK_TIMEOUT_MS, STARTUP_CHECK_DELAY_MS, TEST_FIRST_CHECK_DELAY_MS, UPDATE_CHANNELS,
+  LAUNCH_RETRY_MS, LOOK_AGAIN_MS, RELEASES_LATEST_API, RELEASE_CHECK_TIMEOUT_MS, STARTUP_CHECK_DELAY_MS, TEST_FIRST_CHECK_DELAY_MS, UPDATE_CHANNELS,
   UPDATE_SETTINGS_FILE, dialogAfterLaunchCheck, dialogAfterMenuCheck, latestFromGitHub, nextStatus, oneLine,
   readUpdateSettings, releasePage, sameForDisplay, testFeed, updateEligibility, updateMenu, writeUpdateSettings,
   type UpdateAnswer, type UpdateDialog, type UpdateEvent, type UpdateHow, type UpdateMenu, type UpdateSettings,
@@ -71,6 +74,23 @@ function makeLog(file: string): (level: string, text: string) => void {
   }
 }
 
+/**
+ * Can Squirrel.Mac replace this WriteMind.app? Only a Developer ID signature (an ad-hoc one is a different app to it
+ * every build), and only where it was put: not on a mounted dmg (read-only) and not translocated by Gatekeeper (a
+ * random read-only copy). `codesign -dv` reads the signature in a few milliseconds; anything odd means no.
+ */
+function macSelfUpdates(): boolean {
+  if (process.platform !== "darwin" || !app.isPackaged) return false
+  const bundle = path.resolve(path.dirname(process.execPath), "..", "..")
+  if (!bundle.endsWith(".app") || bundle.startsWith("/Volumes/") || bundle.includes("/AppTranslocation/")) return false
+  try {
+    const read = spawnSync("/usr/bin/codesign", ["-dv", "--verbose=2", bundle], { encoding: "utf8", timeout: 5_000 })
+    return /^Authority=Developer ID Application:/m.test(`${read.stderr ?? ""}${read.stdout ?? ""}`)
+  } catch {
+    return false
+  }
+}
+
 function besideExe(): string[] {
   try { return readdirSync(path.dirname(process.execPath)) } catch { return [] }
 }
@@ -87,6 +107,7 @@ export function startUpdater(host: UpdaterHost): Updater {
     env: process.env,
     besideExe: besideExe(),
     hasFeedFile: app.isPackaged && existsSync(path.join(process.resourcesPath, "app-update.yml")),
+    macSelfUpdates: macSelfUpdates(),
   })
   const settingsFile = path.join(app.getPath("userData"), UPDATE_SETTINGS_FILE)
   let settings: UpdateSettings = readUpdateSettings(readText(settingsFile))
@@ -242,14 +263,28 @@ export function startUpdater(host: UpdaterHost): Updater {
     return inFlight
   }
 
+  /** A look nobody asked for (launch, its retries, the one every few hours): it speaks only of a version not put off. */
+  async function lookUnasked(reason: string): Promise<void> {
+    await check(reason)
+    const ask = dialogAfterLaunchCheck(status, putOff, how)
+    if (ask && !dialog) show(ask)
+  }
+
   if (looks()) {
     if (settings.checkOnStartup) {
-      timers.push(setTimeout(() => {
-        void check("launch").then(() => {
-          const ask = dialogAfterLaunchCheck(status, putOff, how)
-          if (ask && !dialog) show(ask)
+      // A launch look that fails is tried again (LAUNCH_RETRY_MS), and the app looks again every LOOK_AGAIN_MS while it
+      // runs, unless a download is under way or in; unticking Check on startup stops both.
+      let retries = 0
+      const launch = (): void => {
+        void lookUnasked(retries === 0 ? "launch" : `launch, try ${retries + 1}`).then(() => {
+          if (status.phase === "error" && retries < LAUNCH_RETRY_MS.length) timers.push(setTimeout(launch, LAUNCH_RETRY_MS[retries++]))
         })
-      }, feed ? TEST_FIRST_CHECK_DELAY_MS : STARTUP_CHECK_DELAY_MS))
+      }
+      timers.push(setTimeout(launch, feed ? TEST_FIRST_CHECK_DELAY_MS : STARTUP_CHECK_DELAY_MS))
+      timers.push(setInterval(() => {
+        if (!settings.checkOnStartup || status.phase === "downloading" || status.phase === "ready" || status.phase === "checking") return
+        void lookUnasked("again, while running")
+      }, LOOK_AGAIN_MS))
     } else {
       log("info", `not checking at launch (Check on startup is off), running ${current}`)
     }
