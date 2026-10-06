@@ -63,6 +63,9 @@ mac:
   minimumSystemVersion: "13.0"
   # THE HARDENED RUNTIME, which notarization needs; packaging/entitlements.mac.plist gives back what Electron, the
   # Vision helper and the camera need under it.
+  # By NAME, not left to discovery: the exported .p12 (and Sean's keychain) also holds an Apple Development
+  # certificate, which discovery picked first and Apple's notary rejected ("not signed with a valid Developer ID").
+  identity: "Sean Cheren (2LGYTL3FSJ)"
   hardenedRuntime: true
   notarize: true
   entitlements: ../../packaging/entitlements.mac.plist

@@ -96,6 +96,9 @@ let window: BrowserWindow | null = null
 // text when the close came straight after a keystroke). So the first close is held, the page is asked to write
 // what it has and to say when it has, and only then does the window close — never waiting more than a couple
 // of seconds for a page that has stopped answering.
+// Set when Cmd+Q / Quit began: the window's close handler below cancels that quit while the page flushes, so once the
+// window is closed the quit is asked for again (on a Mac closing the last window does not quit by itself).
+let quitting = false
 let closeApproved = false
 let askedToFlush = false
 function askPageToFlush(win: BrowserWindow, wait = 2500): Promise<void> {
@@ -306,6 +309,7 @@ async function createWindow(): Promise<void> {
       closeApproved = true
       askedToFlush = false
       if (!closing.isDestroyed()) closing.close()
+      if (quitting) app.quit()
     })
   })
   // The pen subsystem hears the window's own focus / visibility, and lets go when the window closes, its page dies or reloads.
@@ -636,7 +640,7 @@ app.whenReady().then(async () => {
   })
 })
 
-app.on("before-quit", () => { pen?.dispose(); evalRunner?.cancelAll(); void project?.remember(projectStateFile()) })
+app.on("before-quit", () => { quitting = true; pen?.dispose(); evalRunner?.cancelAll(); void project?.remember(projectStateFile()) })
 app.on("will-quit", () => { pen?.dispose(); evalRunner?.cancelAll() })
 
 app.on("window-all-closed", () => {

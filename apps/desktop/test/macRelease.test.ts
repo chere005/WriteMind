@@ -47,10 +47,11 @@ describe("electron-builder.yml, the Mac", () => {
     expect(mac.minimumSystemVersion).toBe("13.0")
   })
 
-  it("has no hardened runtime, and keeps Sean's own certificate (CI signs ad hoc from the command line)", () => {
-    expect(mac.hardenedRuntime).toBe(false)
-    expect(mac.identity).not.toBe("-")
-    expect(String(mac.identity)).toMatch(/^[0-9A-F]{40}$/)
+  it("is signed with the Developer ID, hardened and notarized, with the camera entitlement (CI's ad-hoc line overrides it)", () => {
+    expect(mac.hardenedRuntime).toBe(true)
+    expect(mac.notarize).toBe(true)
+    expect(String(mac.identity)).toMatch(/2LGYTL3FSJ/)
+    expect(String(mac.entitlements)).toMatch(/entitlements\.mac\.plist$/)
   })
 
   it("asks for the camera and Documents in its own words", () => {
@@ -109,22 +110,16 @@ describe("release.yml", () => {
     const run = runs(mac)
     expect(mac["runs-on"]).toBe("macos-15")
     expect(mac.defaults.run.shell).toBe("bash")
-    expect(mac.env.CSC_IDENTITY_AUTO_DISCOVERY).toBe("false")
     expect(run).toContain("npm ci")
     expect(run).toContain("npm run build")
+    // Signed and notarized when the secrets are set (the Developer ID line), otherwise package:mac:adhoc's.
     expect(run).toContain("--mac dmg --arm64 --x64 --publish never")
-    for (const flag of AD_HOC) expect(run).toContain(`"${flag}"`)
+    expect(run).toContain("npm run package:mac:adhoc")
     expect(run).toContain("bash tools/verify-mac.sh")
     expect(run).toContain('gh release upload "$TAG" dist-electron/*-mac-*.dmg --clobber')
     // verify before upload
     expect(run.indexOf("verify-mac.sh")).toBeLessThan(run.indexOf("gh release upload"))
     expect(run).not.toMatch(/--publish always/)
-  })
-
-  it("the mac job's electron-builder line is package:mac:adhoc's", () => {
-    const line = runs(jobs.mac).replace(/\\\n\s*/g, " ").split("\n").find((l) => l.includes("--mac dmg"))!
-    const args = (s: string) => s.slice(s.indexOf("--mac")).replace(/"/g, "").trim().split(/\s+/)
-    expect(args(line)).toEqual(args(desktopPkg.scripts["package:mac:adhoc"]))
   })
 
   it("publish waits for every file, both dmgs included, before taking the draft off", () => {
@@ -138,16 +133,14 @@ describe("release.yml", () => {
     expect(run).toContain("--draft=false --prerelease")
   })
 
-  it("uses no secret but the workflow's own token, and nothing Apple", () => {
+  it("gives the signing secrets to the mac job alone", () => {
     const raw = text(".github/workflows/release.yml")
-    const secrets = new Set(raw.match(/secrets\.[A-Za-z_]+/g))
-    expect([...secrets]).toEqual(["secrets.GITHUB_TOKEN"])
-    // No signing or notarizing variable is set anywhere (workflow, job or step env); CSC_IDENTITY_AUTO_DISCOVERY=false
-    // is the one CSC_ name, and it switches the certificate search off.
-    const envKeys = [release.env, ...Object.values(jobs).flatMap((j: Any) => [j.env, ...(j.steps as Any[]).map((s) => s.env)])]
-      .flatMap((e) => Object.keys(e ?? {}))
-    expect(envKeys.filter((k) => /^(APPLE_|CSC_)/.test(k) && k !== "CSC_IDENTITY_AUTO_DISCOVERY")).toEqual([])
-    expect(raw).not.toMatch(/CSC_LINK|CSC_KEY_PASSWORD|CSC_NAME|APPLE_ID|APPLE_API_KEY|APPLE_TEAM_ID/)
+    const secrets = new Set(raw.match(/secrets\.[A-Za-z0-9_]+/g))
+    expect([...secrets].sort()).toEqual(["secrets.APPLE_API_ISSUER", "secrets.APPLE_API_KEY_ID", "secrets.APPLE_API_KEY_P8",
+      "secrets.CSC_KEY_PASSWORD", "secrets.CSC_LINK", "secrets.GITHUB_TOKEN"])
+    // Only the mac job sees the signing secrets.
+    const signing = (j: Any) => Object.keys(j.env ?? {}).some((k) => /^(APPLE_|CSC_)/.test(k) && k !== "CSC_IDENTITY_AUTO_DISCOVERY")
+    expect(Object.keys(jobs).filter((name) => signing(jobs[name]))).toEqual(["mac"])
   })
 })
 
