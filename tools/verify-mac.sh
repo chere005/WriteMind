@@ -143,6 +143,14 @@ check_app() {
   else
     fail "$name: no Vision helper at Contents/Resources/app.asar.unpacked/out/helpers/wm-vision (was the build run on a Mac with swiftc?)"
   fi
+
+  local pen="$app/Contents/Resources/app.asar.unpacked/out/helpers/wm-pen"
+  if [ -x "$pen" ]; then
+    [ "$(archs "$pen")" = "arm64 x86_64" ] && ok "$name: wm-pen is universal" || fail "$name: wm-pen is '$(archs "$pen")', expected x86_64 and arm64"
+    codesign --verify --strict "$pen" > /dev/null 2>&1 && ok "$name: wm-pen is signed" || fail "$name: wm-pen's signature does not verify"
+  else
+    fail "$name: no executable tablet helper at Contents/Resources/app.asar.unpacked/out/helpers/wm-pen"
+  fi
 }
 
 # The apps electron-builder left: mac/ is the Intel build, mac-arm64/ Apple silicon's.

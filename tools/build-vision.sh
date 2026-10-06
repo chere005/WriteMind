@@ -32,3 +32,11 @@ done
 lipo -create -output "$out/wm-vision" "$slices/wm-vision-arm64" "$slices/wm-vision-x86_64"
 chmod +x "$out/wm-vision"
 echo "==> built $out/wm-vision ($(lipo -archs "$out/wm-vision"), macOS $min+)"
+
+# The pen helper (tools/pen/wm-pen.swift): seizes the Wacom tablet's HID device while the Tablet sheet is in front.
+for arch in arm64 x86_64; do
+  swiftc -O -target "$arch-apple-macos$min" -o "$slices/wm-pen-$arch" tools/pen/wm-pen.swift -framework IOKit
+done
+lipo -create -output "$out/wm-pen" "$slices/wm-pen-arm64" "$slices/wm-pen-x86_64"
+chmod +x "$out/wm-pen"
+echo "==> built $out/wm-pen ($(lipo -archs "$out/wm-pen"), macOS $min+)"

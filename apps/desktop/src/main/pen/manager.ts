@@ -34,6 +34,8 @@ export interface ManagerDeps {
   /** The E2E injectors (exist always, started only under E2E): `inject` in the sheet frame, `injectTablet` a fake Wintab tablet in the DEVICE frame. */
   inject: PenBackend & { push(samples: PenSample[]): void }
   injectTablet: PenBackend & { push(samples: PenSample[]): void }
+  /** The Mac: the data feed IS the mapping (wm-pen's seize), so a change of mapSheet restarts it. */
+  restartOnMapSheet?: boolean
   /** The system mapping, or null (the sheet then simply has none). */
   mapping: MappingController | null
   store: StateStore
@@ -413,11 +415,13 @@ export function createFeedManager(deps: ManagerDeps): FeedManagerEx {
     update(patch) {
       const before = store.get().settings
       const turnedOn = patch.enabled === true && !before.enabled
+      const remap = deps.restartOnMapSheet === true && typeof patch.mapSheet === "boolean" && patch.mapSheet !== before.mapSheet
       store.update((s) => {
         if (typeof patch.enabled === "boolean") s.settings.enabled = patch.enabled
         if (typeof patch.mapSheet === "boolean") s.settings.mapSheet = patch.mapSheet
       })
       if (turnedOn) panicked = null
+      if (remap) { stopOne("wintab-data"); retries = 0 }
       reconcile()
       return { ...store.get().settings }
     },

@@ -112,8 +112,9 @@ export function PenMenu() {
             {" "}Map the whole tablet to the sheet
           </label>
           <p className="hint">
-            The Wacom driver moves the cursor only inside the sheet. If the cursor ever misbehaves, switch it off or
-            restart WriteMind.
+            While the sheet is in front the whole tablet writes on it (on a Mac WriteMind takes the tablet from the
+            Wacom driver, which asks once for Input Monitoring). If the cursor ever misbehaves, switch it off or restart
+            WriteMind.
           </p>
           {status?.mapping === "refused" && (
             <p className="hint">

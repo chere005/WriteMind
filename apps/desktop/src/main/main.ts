@@ -26,7 +26,7 @@ import { pictureFiles } from "./macDrawing"
 import { rescueUnsaved } from "./rescue"
 import { findUnused, trashNoteAndDrawing, trashSectionAndDrawings, trashUnused } from "./housekeeping"
 import type { Held } from "../shared/housekeeping"
-import { ADD_JAPANESE_OCR, readerFor, windowsOcr } from "./helpers"
+import { ADD_JAPANESE_OCR, penHelper, readerFor, windowsOcr } from "./helpers"
 import { ocrFor } from "./ocr"
 import { buildMenu } from "./menu"
 import { initialMenuState, type MenuState } from "../shared/commands"
@@ -572,7 +572,7 @@ app.whenReady().then(async () => {
   // THE PEN: the tablet read by the app itself, only while the Tablet sheet is open and this window is in front.
   pen = startPenSubsystem({
     app, screen, ipc: ipcMain, powerMonitor, window: () => window, e2e: !!process.env.WRITEMIND_E2E,
-    env: process.env, platform: process.platform,
+    env: process.env, platform: process.platform, penHelper: penHelper(here),
     log: (line) => console.log(line),
   })
   // UPDATES (main/updater.ts): before the window, so the page's first question about them has an answer. Restart

@@ -24,6 +24,7 @@ import type { PenPaths, SystemMapped } from "./types"
 import { isWin32, loadWin32 } from "./win32"
 import { closeAllWintab, installWintabExitCleanup, wintabBlockedReason } from "./wintabNative"
 import { createWintabBackend } from "./wintabBackend"
+import { MacPenBackend } from "./macPenBackend"
 
 export interface PenSubsystemDeps {
   app: Pick<App, "getPath">
@@ -35,6 +36,8 @@ export interface PenSubsystemDeps {
   e2e: boolean
   env: NodeJS.ProcessEnv
   platform: string
+  /** The Mac's tablet helper (wm-pen), or null where there is none. */
+  penHelper?: string | null
   log(line: string): void
 }
 
@@ -53,7 +56,7 @@ const none = (): PenSubsystem => ({ available: false, manager: null, attachWindo
 
 /** Why the pen subsystem must not exist right now, or null when it may. Pure apart from `exists`. */
 export function penDisabledReason(input: { platform: string; env: Record<string, string | undefined>; userData: string; exists(path: string): boolean }): string | null {
-  if (input.platform !== "win32") return "native pen capture is Windows only"
+  if (input.platform !== "win32" && input.platform !== "darwin") return "native pen capture is Windows and macOS only"
   if ((input.env.WRITEMIND_PEN ?? "").trim().toLowerCase() === "off") return "pen capture is switched off (WRITEMIND_PEN=off)"
   try { if (input.exists(path.join(input.userData, "pen-off"))) return "pen capture is switched off (pen-off file)" } catch { /* a file check that throws is no reason to refuse */ }
   return null
@@ -130,12 +133,15 @@ function build(deps: PenSubsystemDeps): PenSubsystem {
     claims: { pressure: true, tilt: false, lower: true, upper: true, eraser: false },
   }
   injectTablet.setDevice(fakeDevice)
+  // THE MAC has no Wintab: its data feed is wm-pen's seize (macPenBackend.ts), which is itself the mapping.
+  const mac = deps.platform === "darwin"
   const manager = createFeedManager({
     available: true,
-    wintab: createWintabBackend("data", paths),
+    wintab: mac ? new MacPenBackend(deps.penHelper ?? null, now) : createWintabBackend("data", paths),
+    restartOnMapSheet: mac,
     inject: new InjectBackend(),
     injectTablet,
-    mapping,
+    mapping: mac ? null : mapping,
     store,
     trace,
     now,

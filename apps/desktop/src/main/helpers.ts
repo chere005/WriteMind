@@ -82,6 +82,13 @@ export function visionHelper(here: string): string | null {
   return isExecutable(where) ? where : null
 }
 
+/** The tablet helper (tools/pen/wm-pen.swift), built beside the app on macOS. */
+export function penHelper(here: string): string | null {
+  if (process.platform !== "darwin") return null
+  const where = shipped(here, "../helpers/wm-pen")
+  return isExecutable(where) ? where : null
+}
+
 /** `tesseract`, if the machine has one. */
 export function tesseract(): string | null {
   const paths = (process.env.PATH ?? "").split(path.delimiter)
