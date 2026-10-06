@@ -2,7 +2,8 @@
 ; the build resources folder, packaging/, by its name).
 ;
 ; ONE EXTRA PAGE, after the folder page: three tick boxes for the tools Python and Wolfram cells run with.
-;   [ ] Install Python (for Python cells)                 winget Python.Python.3.14, per-user (no administrator)
+;   [ ] Install Python (for Python cells)                 winget Python.Python.3.14, per-user, the py launcher too
+;                                                         (no administrator: installer-tools.ps1 $PythonSwitches)
 ;   [ ] Install Wolfram Engine (for Wolfram cells; ...)   winget WolframResearch.WolframEngine; ticking it accepts
 ;                                                         Wolfram's licence (the page links to it)
 ;   [ ] Activate the Wolfram Engine after install         a PowerShell window running  & "...\wolframscript.exe" -activate
@@ -128,6 +129,12 @@ Function wmFindPowerShell
 FunctionEnd
 
 ; What is already here, once: the helper writes an INI the page reads.
+; It runs from the page's create callback, so a detection that never ends would freeze Next for good: it starts other
+; programs (py -3 --version, the Store's python.exe alias), and nsExec gives the script a stdin pipe nobody closes.
+; The helper gives each of those ten seconds and a closed stdin (Works); this is the backstop. nsExec's /TIMEOUT
+; counts from the last output, and -Detect prints only at its end, so it is the whole run: after 60 s PowerShell is
+; stopped, Pop gives "timeout", no INI is there to read, and the page offers every box (the install step looks
+; again, probe by probe, before it installs anything).
 Function wmDetect
   ${If} $wmDetected == "1"
     Return
@@ -137,7 +144,7 @@ Function wmDetect
   Call wmFindPowerShell
   InitPluginsDir
   File "/oname=$PLUGINSDIR\wm-tools.ps1" "${BUILD_RESOURCES_DIR}\installer-tools.ps1"
-  nsExec::Exec '"$wmPowerShell" -NoProfile -NonInteractive -ExecutionPolicy Bypass -File "$PLUGINSDIR\wm-tools.ps1" -Detect -Out "$PLUGINSDIR\wm-detect.ini"'
+  nsExec::Exec /TIMEOUT=60000 '"$wmPowerShell" -NoProfile -NonInteractive -ExecutionPolicy Bypass -File "$PLUGINSDIR\wm-tools.ps1" -Detect -Out "$PLUGINSDIR\wm-detect.ini"'
   Pop $0
   ReadINIStr $wmFoundPython "$PLUGINSDIR\wm-detect.ini" tools python
   ReadINIStr $wmFoundWolfram "$PLUGINSDIR\wm-detect.ini" tools wolfram
@@ -312,13 +319,25 @@ Function wmRunTools
   ${If} ${Errors}
     StrCpy $0 "PowerShell did not start"
   ${EndIf}
+  ; Each value is one short status ("installed", "failed: <why> (<code>)"), never winget's own output: the helper
+  ; keeps that in its console.
+  ClearErrors
   ReadINIStr $2 "$PLUGINSDIR\wm-result.ini" result python
   ReadINIStr $3 "$PLUGINSDIR\wm-result.ini" result wolfram
   ReadINIStr $4 "$PLUGINSDIR\wm-result.ini" result activate
-  ClearErrors
-  DetailPrint "Python: $2. Wolfram Engine: $3. Activation: $4. (exit $0)"
-  ${If} $0 != "0"
-    MessageBox MB_OK|MB_ICONEXCLAMATION "WriteMind is installed, but not everything you ticked could be done:$\r$\n$\r$\n    Python: $2$\r$\n    Wolfram Engine: $3$\r$\n    Activation: $4$\r$\n$\r$\nWriteMind works without them; a Python or Wolfram cell says what it needs when it runs. How to add them by hand:$\r$\n${WM_DOCS}$\r$\n$\r$\nThe details are in $INSTDIR\tools-setup.log" /SD IDOK
+  ${If} ${Errors}
+    ; NO RESULT: the helper writes every key, so a missing one means it stopped before its last step - its console
+    ; closed with the X, a Group Policy execution policy that -ExecutionPolicy Bypass does not override, Constrained
+    ; Language Mode refusing its .NET calls. Blank values ("Python: . Wolfram Engine: .") would say nothing; this says
+    ; what is known.
+    ClearErrors
+    DetailPrint "The optional tools step did not finish (exit $0); see $INSTDIR\tools-setup.log"
+    MessageBox MB_OK|MB_ICONEXCLAMATION "WriteMind is installed, but the step that installs the tools you ticked did not finish (exit $0), so what it did is not known.$\r$\n$\r$\nWriteMind works without them; a Python or Wolfram cell says what it needs when it runs. How to add them by hand:$\r$\n${WM_DOCS}$\r$\n$\r$\nWhat it got to is in $INSTDIR\tools-setup.log" /SD IDOK
+  ${Else}
+    DetailPrint "Python: $2. Wolfram Engine: $3. Activation: $4. (exit $0)"
+    ${If} $0 != "0"
+      MessageBox MB_OK|MB_ICONEXCLAMATION "WriteMind is installed, but not everything you ticked could be done:$\r$\n$\r$\n    Python: $2$\r$\n    Wolfram Engine: $3$\r$\n    Activation: $4$\r$\n$\r$\nWriteMind works without them; a Python or Wolfram cell says what it needs when it runs. How to add them by hand:$\r$\n${WM_DOCS}$\r$\n$\r$\nThe details are in $INSTDIR\tools-setup.log" /SD IDOK
+    ${EndIf}
   ${EndIf}
   SetDetailsPrint lastused
   Pop $4

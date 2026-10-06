@@ -50,17 +50,22 @@ The installer's own page has three tick boxes:
 
 | Box | What it does |
 | --- | --- |
-| Install Python (for Python cells) | `winget install --id Python.Python.3.14 --exact --source winget --scope user` (python.org's installer, for this user, no administrator) |
+| Install Python (for Python cells) | `winget install --id Python.Python.3.14 --exact --source winget --scope user --override "/passive /norestart InstallAllUsers=0 InstallLauncherAllUsers=0 PrependPath=1"` (python.org's installer, for this user, no administrator: the `py` launcher goes in `%LOCALAPPDATA%\Programs\Python\Launcher` too, where left to its default it would be installed for all users and ask for an administrator) |
 | Install Wolfram Engine (for Wolfram cells; free for developers, about 3 GB download) | `winget install --id WolframResearch.WolframEngine --exact --source winget`. Ticking it accepts the [Wolfram Engine licence](https://www.wolfram.com/legal/terms/wolfram-engine.html). Windows asks to allow it: the engine installs in Program Files. |
 | Activate the Wolfram Engine after install | Opens a PowerShell window running `& "<engine folder>\wolframscript.exe" -activate`. **You** sign in there with your own Wolfram ID (a free account at wolfram.com); the installer never sees it. |
 
 - What is already on the computer shows as "already installed" / "already activated" and cannot
-  be ticked. The page looks where WriteMind itself looks (`apps/desktop/src/main/eval/tools.ts`):
-  `py` / `python` on the PATH (the Microsoft Store's placeholder only when it is a real Python),
-  `%LOCALAPPDATA%\Programs\Python\...`, `Program Files\Python3*`, `wolframscript` on the PATH,
-  `Program Files\Wolfram Research\{WolframScript, Wolfram Engine\<version>}`; "activated" means a
-  `mathpass` licence file in `%APPDATA%\WolframEngine\Licensing` (or the Mathematica / ProgramData
-  equivalents).
+  be ticked. The page looks where WriteMind itself looks (`apps/desktop/src/main/eval/tools.ts`),
+  in the same order, so the one it names is the one WriteMind will use: `py` / `python` on the
+  PATH, every copy on it (the Microsoft Store's placeholder only when it is a real Python),
+  `%LOCALAPPDATA%\Programs\Python\...`, `Program Files\Python3*` (the newest version, 64-bit
+  before 32-bit), `wolframscript` on the PATH, `Program Files\Wolfram Research\{WolframScript,
+  Wolfram Engine\<version>}` (the newest version, 14.10 after 14.9); "activated" means a
+  `mathpass` licence file in `%APPDATA%\Wolfram\Licensing` (Wolfram's place since 14.1) or
+  `%APPDATA%\WolframEngine\Licensing` (or the Mathematica / ProgramData equivalents).
+  `apps/desktop/test/installerTools.test.ts` holds the page's lookup and WriteMind's to one set
+  of folders. Looking runs `py -3 --version` and the like; each gets ten seconds, and if the whole
+  look takes more than a minute the page offers every box (the install step looks again first).
 - The activation box is available only when an engine is there or ticked; ticking the engine
   ticks it too (an engine that is not activated runs nothing).
 - The ticked tools install **after** WriteMind's own files are in place, in a console window of
@@ -68,7 +73,13 @@ The installer's own page has three tick boxes:
   only for what was ticked). The installer waits for it, then goes on to Finish.
 - **Nothing here can fail WriteMind's install.** No winget, a failed download, a cancelled
   administrator prompt: the console says what happened, the installer says it once more at the
-  end with a link here, and the log is `%LOCALAPPDATA%\Programs\WriteMind\tools-setup.log`.
+  end with a link here, and the log is `%LOCALAPPDATA%\Programs\WriteMind\tools-setup.log`. What
+  the end says is one short line per tool, the common winget outcomes in words: installed
+  (restart needed), already installed, cancelled (the prompt to allow it was declined),
+  winget is too old (update App Installer from the Microsoft Store), not available for this PC,
+  the download did not finish; anything else as `failed: winget exit code 0x...`, the code to
+  search for. If the tools step stopped before it could say anything (its console closed with
+  the X, say), the end says that it did not finish and points at the log.
 - "Configured" means nothing more to do: WriteMind finds a Python or a Wolfram Engine installed
   this way at the next cell run, without a restart of Windows or of WriteMind, even though the
   PATH of an already-running program does not change (it looks in the install folders above).
@@ -76,7 +87,7 @@ The installer's own page has three tick boxes:
 ### Adding them later, by hand
 
 ```powershell
-winget install --id Python.Python.3.14 -e --scope user
+winget install --id Python.Python.3.14 -e --scope user --override "/passive /norestart InstallAllUsers=0 InstallLauncherAllUsers=0 PrependPath=1"
 winget install --id WolframResearch.WolframEngine -e
 & "C:\Program Files\Wolfram Research\Wolfram Engine\15.0\wolframscript.exe" -activate   # your own Wolfram ID
 ```
@@ -103,7 +114,8 @@ powershell -NoProfile -ExecutionPolicy Bypass -File packaging\installer-tools.ps
 ```
 
 `WRITEMIND_TOOLS_PRETEND=missing` in the environment makes it (and the installer it runs from)
-report nothing found, to see the page and the dry run as on a bare machine.
+report nothing found, to see the page and the dry run as on a bare machine. A dry run never
+fails (exit 0): what a real run would stop at, it says.
 
 ## Uninstalling
 
@@ -172,3 +184,30 @@ Never `--publish always` from a local machine.
 - Not run for real: a winget install of Python or the Wolfram Engine, the activation window, the
   end-of-install message box (shown only by a non-silent install whose tools step failed), and a
   real tablet through the installed copy.
+
+## How it is checked now (2026-10-06, installer-tools fixes)
+
+Every dry run above returned before the line that runs winget, and that line was wrong: winget's
+output became the helper's result (nothing of it in the console, `System.Object[]` in the
+summary, every winget line in `wm-result.ini` and the end message). `npm test` checks the
+installer's tools step on every machine, and on Windows (CI's `verify` job) runs the helper
+itself, `apps/desktop/test/installerTools.test.ts`:
+
+- Everywhere: electron-builder finds `installer.nsh` by name in `packaging/` (no `nsis.include`
+  or `nsis.script`) and the page packs `installer-tools.ps1` from there; the helper is ASCII; the
+  winget ids, `--scope user`, the Python switches and the licence flags are the ones this page
+  prints; the detection has its time limit; tools.ts and the helper pick the same folder from one
+  fixture (`apps/desktop/test/fixtures/installer-tool-folders.json`).
+- On Windows, under Windows PowerShell 5.1 (the installer's): the helper parses; `-Detect` on a
+  bare machine and on the fixture's folders; every copy on the PATH (a Store placeholder first does
+  not hide a real `python.exe`); a probe that waits on its stdin does not hold the page up; dry
+  runs exit 0. Then real runs against a stand-in `winget.exe` (compiled by the test; the helper's
+  PATH holds only it and `%LOCALAPPDATA%` is a scratch folder, so no real winget is reachable):
+  its lines reach the console and never the result, the result is exactly `installed` / `already
+  installed` / `installed (restart needed)` / the failure in words for each exit code, and the
+  arguments it gets are the documented ones, the Python switches as one argument.
+- The fixes were written on a Mac, where only the first half runs: the Windows half first runs
+  in CI's `verify` job (or `npm test` on a Windows box).
+- Still only a real machine can say: whether a real per-user Python install now comes up
+  without a Windows prompt; whether Engine 15.0's version folder holds `wolframscript.exe`, and
+  where its activation writes `mathpass`; the message boxes.
