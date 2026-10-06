@@ -34,8 +34,10 @@ What it puts on the computer: the app folder, a **WriteMind** shortcut in the St
 the desktop (the same name as the ones `tools\setup-windows.ps1` makes for a development build,
 so it replaces those), an entry in Settings ▸ Apps (HKCU), and a copy of the installer in
 `%LOCALAPPDATA%\@writeminddesktop-updater` (the updater's base for small differential
-downloads). The notes stay in `Documents\WriteMindCross` and the app's own data (settings,
-sessions, `pen.log`, `update.log`) in `%APPDATA%\@writemind\desktop`.
+downloads). The notes stay in `Documents\WriteMind` and the app's own data (settings,
+sessions, `pen.log`, `update.log`) in `%APPDATA%\@writemind\desktop`. Notes kept by an older copy in
+`Documents\WriteMindCross` (the folder's name until 2026-10-06) are moved to `Documents\WriteMind` on the
+first launch; if both folders exist, WriteMind keeps using `WriteMindCross` and says so.
 
 That data folder is the same one a development build (`npm start`, `C:\CLAUDIO\try-build`)
 uses, so settings carry over, and **only one of them runs at a time**: starting the installed

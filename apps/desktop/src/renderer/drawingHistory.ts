@@ -92,6 +92,9 @@ export class DrawingHistory {
     this.burst = null
   }
 
+  /** Every drawing an Undo or Redo could bring back (Clean Up keeps the pictures they use: renderer/cleanUp.ts). */
+  snapshots(): Drawing[] { return [...this.past, ...this.future].map((entry) => entry.drawing) }
+
   /**
    * Objects the app just put on the layer (a pasted picture, a capture) that
    * should arrive picked up, with the handles on them — the canvas owns the

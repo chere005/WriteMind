@@ -148,5 +148,5 @@ if (-not $NoShortcut) {
 Write-Host ""
 Write-Host "Done. Start WriteMind from the Desktop or Start menu shortcut," -ForegroundColor Green
 Write-Host "or run:  npm run dev   (live reload)   /   npm test" -ForegroundColor Green
-Write-Host "Notes are plain .md files in Documents\WriteMindCross." -ForegroundColor Green
+Write-Host "Notes are plain .md files in Documents\WriteMind." -ForegroundColor Green
 Write-Host "For a Wacom tablet: Wacom Tablet Properties > Mapping > tick 'Use Windows Ink'." -ForegroundColor Green

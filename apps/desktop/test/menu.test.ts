@@ -30,10 +30,13 @@ describe("the application menu is the Mac's", () => {
   })
 
   // Mac e8b3266: Save (⌘S), and ONE Export… (⌘E) whose panel asks PDF or Project (no submenu).
-  it("File: New Note, Close Tab, Open Notes Folder, Save, Export…, Quit", () => {
+  it("File: New Note, Close Tab, Open Notes Folder, Save, Export…, Clean Up Unused Files…, Quit", () => {
     expect(labels(sub(menu(), "File"))).toEqual([
-      "New Note", "-", "Close Tab", "-", "Open Notes Folder", "-", "Save", "Export…", "-", "Quit",
+      "New Note", "-", "Close Tab", "-", "Open Notes Folder", "-", "Save", "Export…", "Clean Up Unused Files…", "-", "Quit",
     ])
+    // The port's own (main/housekeeping.ts): the page's command, greyed with no folder to look in.
+    expect(sub(menu(), "File").find((one) => one.label === "Clean Up Unused Files…")!.id).toBe("cleanUp")
+    expect(sub(menu({}, "win32", []), "File").find((one) => one.label === "Clean Up Unused Files…")!.enabled).toBe(false)
     const file = (state: Partial<MenuState>, folders = project.folders) => sub(menu(state, "win32", folders), "File")
     expect(file({}).find((one) => one.label === "Save")!.enabled).toBe(false)
     expect(file({ hasNote: true }).find((one) => one.label === "Save")!.enabled).toBe(true)
@@ -141,9 +144,19 @@ describe("the application menu is the Mac's", () => {
     expect(sub(menu(), "File").find((one) => one.label === "Close Tab")!.enabled).toBe(false)
   })
 
-  it("Insert: Image…, Text Box, Maths… (port-only key), a separator, Code Block (named for its language), Drawing Cell", () => {
-    expect(labels(sub(menu(), "Insert"))).toEqual(["Image…", "Text Box", "Maths…", "-", "Code Block", "Drawing Cell"])
-    expect(labels(sub(menu({ codeLanguage: "Python" }), "Insert"))).toEqual(["Image…", "Text Box", "Maths…", "-", "Python Block", "Drawing Cell"])
+  it("Insert: Image…, Text Box, Maths… (port-only key), a separator, Code Block (named for its language), Maths Cell, Drawing Cell", () => {
+    expect(labels(sub(menu(), "Insert"))).toEqual(["Image…", "Text Box", "Maths…", "-", "Code Block", "Maths Cell", "Drawing Cell"])
+    expect(labels(sub(menu({ codeLanguage: "Python" }), "Insert"))).toEqual(["Image…", "Text Box", "Maths…", "-", "Python Block", "Maths Cell", "Drawing Cell"])
+    // The number keys beside them (Sean, 2026-10-06): Ctrl+8 Code Block, Ctrl+9 Maths Cell, Ctrl+0 Drawing Cell.
+    expect(sub(menu(), "Insert").slice(4).map((one) => one.accelerator)).toEqual(["CmdOrCtrl+8", "CmdOrCtrl+9", "CmdOrCtrl+0"])
+  })
+
+  it("Ctrl+0 is the Drawing Cell's alone: no zoom role (View ▸ Actual Size) anywhere in the bar", () => {
+    const every = (items: MenuItemConstructorOptions[]): MenuItemConstructorOptions[] =>
+      items.flatMap((one) => [one, ...every((one.submenu ?? []) as MenuItemConstructorOptions[])])
+    const all = every(menu())
+    expect(all.filter((one) => one.role && /zoom/i.test(String(one.role)))).toEqual([])
+    expect(all.filter((one) => one.accelerator === "CmdOrCtrl+0").map((one) => one.label)).toEqual(["Drawing Cell"])
   })
 
   it("Input Devices: the cameras with a tick on the live one, the Tablet source, Turn Camera Off, Refresh", () => {

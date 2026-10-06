@@ -1,7 +1,7 @@
 import { EditorSelection, EditorState, Transaction, type TransactionSpec } from "@codemirror/state"
 import type { EditorView } from "@codemirror/view"
 import { history, undo } from "@codemirror/commands"
-import { markdownCell, wrap } from "../src/keys"
+import { markdownCell, textCell, wrap } from "../src/keys"
 import { describe, expect, it } from "vitest"
 import { MARKDOWN_MARKER } from "@writemind/core"
 import { cellWritten, notebookField } from "../src/notebook"
@@ -154,6 +154,21 @@ describe("converting a text cell to a markdown cell", () => {
     expect(selected(view)).toBe("x")
     undo(view)
     expect(view.state.doc.toString()).toBe(text)
+  })
+
+  it("Ctrl+7 keeps inline maths' source, Ctrl+Shift+7 makes it maths again; ONE undo takes back each step", () => {
+    // Sean, 2026-10-06: "yes" (the whole `wl:` source stays as the text cell's words).
+    const md = `${M}\nArea \`wl:Pi r^2\` and **b**`
+    const view = fakeView(make(md, md.length))
+    textCell(view)
+    const text = "Area \\`wl:Pi r^2` and b"
+    expect(view.state.doc.toString()).toBe(text)
+    markdownCell(view)
+    expect(view.state.doc.toString()).toBe(`${M}\nArea \`wl:Pi r^2\` and b`)
+    undo(view)
+    expect(view.state.doc.toString()).toBe(text)
+    undo(view)
+    expect(view.state.doc.toString()).toBe(md)
   })
 
   it("Ctrl+B on a word of a text cell bolds exactly that word, the rest read as markdown; ONE undo", () => {

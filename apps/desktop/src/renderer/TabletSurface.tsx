@@ -8,7 +8,8 @@
  * it, resized by its corner handles, cleared by Esc or a click outside it; a double click takes the whole
  * sheet. (A pen side button HELD while the pen touches does its hold action here too: Select boxes, Erase rubs
  * out whole strokes; pressed in the air it does nothing here, and its double tap — Undo / Redo by default — takes
- * back the sheet's own strokes, penActions.ts. The header's Erase makes any pointer rub out and its Select makes the pen
+ * back the sheet's own strokes, penActions.ts. The pen's Erase Tool toggle (no header button since 2026-10-05) makes
+ * any pointer rub out and the header's Select makes the pen
  * pull the box: the SHEET's own pair, penSettings `sheetTools`, never the notebook toolbar's ⌫ / ⬚.)
  *
  * Built to feel like a pad. Pointer events arrive far faster than frames, so every coalesced sample is kept (the
@@ -97,7 +98,7 @@ export const TabletSurface = forwardRef<SurfaceHandle, Props>(function TabletSur
   const lastClick = useRef<{ time: number; x: number; y: number } | null>(null)
   const frame = useRef<number | null>(null)
   const everything = useRef(true)
-  // The sheet's OWN Erase / Select (the header's buttons), never the notebook toolbar's (penSettings.ts).
+  // The sheet's OWN Erase / Select (the pen's Erase Tool toggle, the header's Select), never the notebook toolbar's (penSettings.ts).
   const tools = useSheetTools()
   const paper = usePaper()
   const latest = useRef({ colour, width, onBox, onEdited, page, box, paper, cellBox })

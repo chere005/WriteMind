@@ -6,7 +6,7 @@ import { applied, range, type Range } from "../src/text/range"
 
 /**
  * The picture block (docs\PLAN-docking-ink-cells.md (a); the Mac's planned `MarkdownBlock.picture(alt:path:)` in
- * C:\GIT\WriteMind\docs\PLAN-docking.md): a line that is nothing but one image is a cell of its own, recognised before
+ * C:\GIT\WriteMindSwift\docs\PLAN-docking.md): a line that is nothing but one image is a cell of its own, recognised before
  * the paragraph branch, flushing like a heading. Plus the cell kinds that make one, and the page's rules for it (never
  * open, never in a run of touching cells).
  */

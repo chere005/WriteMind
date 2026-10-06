@@ -764,7 +764,7 @@ const evalPlugin = ViewPlugin.fromClass(EvalPlugin)
  */
 const evalKeys = Prec.highest(keymap.of([
   { key: "Shift-Enter", run: runCell },
-  // Ctrl+Shift+8 (docs/PLAN-text-cells.md: it was Ctrl+9, the Mac's ⌘9; Ctrl+9 is the drawing cell now).
+  // Ctrl+Shift+8 (docs/PLAN-text-cells.md: it was Ctrl+9, the Mac's ⌘9; Ctrl+9 is the maths cell now, keys.ts).
   { key: "Shift-Mod-8", run: evaluationCell, preventDefault: true },
 ]))
 

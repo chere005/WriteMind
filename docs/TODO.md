@@ -19,7 +19,7 @@ section; the open tab follows the file), `/link` and following a link,
 C, C++, Python, TypeScript, Rust, Java, Bash, Zsh and Wolfram (a
 transcribed scanner, no CodeMirror language packages), Alt-D, the
 rendered-page toggle, and evaluation cells (```` ```eval python ```` and friends: Shift+Enter runs one in the main
-process and writes the answer under it, Ctrl+Shift+8 makes one (Ctrl+9 until 2026-10-05), `In[n]` / `Out[n]` in the margin). The editor-level e2e scripts are in the repo now:
+process and writes the answer under it, Ctrl+Shift+8 makes one (Ctrl+9 until 2026-10-05; Ctrl+9 is the maths cell since 2026-10-06), `In[n]` / `Out[n]` in the margin). The editor-level e2e scripts are in the repo now:
 `e2e/suites/editor` and `e2e/suites/cells` (`npm run e2e -- --suite editor`;
 `docs/TESTING.md`). A new install opens on `WriteMind Quick Reference.md` (once per notes folder,
 `main/welcome.ts`; PARITY "The Quick Reference").
@@ -30,41 +30,75 @@ Sean, 2026-10-05: "keep note of those remaining potential todos". **v1.0.0** is 
 GitHub release workflow, the per-user installer with the Python / Wolfram page, auto-update), cut with the
 batch in flight on that day. After it, roughly in this order:
 
-- **FIRST: no maths typeset in a text cell, anywhere.** Sean, 2026-10-05: "math shouldn't be typeset in
-  non-markdown mode.. put that as the next todo item after finishing this ship pass". A text (non-markdown) cell
-  shows `wl:` and its backticks as typed: in the source pane, on the rendered page, in the PDF / HTML export and in
-  copies. The v1.0.0 pass stopped the source pane's inline typesetting in text cells (`packages/editor/src/math.ts`);
-  audit every other path (preview render, export `inline.ts` / `blocks.ts`, the palette's insert into a text cell)
-  and pin each with a test. Maths cells (` ```wl ` fences) and markdown cells keep typesetting.
-- **THEN: no Erase button on the Wacom sheet's bar.** Sean, 2026-10-05: "then after that just remove the erase
-  button from the wacom menu bar". The toggle `data-tablet="erase"` (`CameraPane.tsx` ~788, `setSheetEraser`):
-  the pen's first button (hold) erases strokes and the box row has Erase selection. Take the button out, keep the
-  sheet's eraser state for the pen button, update the hint line (~875) and the tests / e2e that click it.
-- **Drawing polish.** Handles and an outline on hover before a click (the Mac shows them); shapes, arrows and
-  text boxes inside drawing cells; undocking a docked picture or drawing cell.
-- **Housekeeping.** Deleting a note leaves its `.drawings/<note>-<hash>.json` behind (Sean deleted four notes and
+- ~~**A maths cell type** (Sean, 2026-10-06: "ctrl + 7 should be PURELY plaintext.. so clearly we need a math cell
+  type.. that should be ctrl + 9 and make ctrl + 10 drawing cells").~~ Done 2026-10-06 (core `cells/mathsCells.ts`,
+  editor `mathsCell`; KEYS.md "Maths cells", PARITY "Maths cell"): Ctrl+9 = Maths Cell (Insert menu, the + menu beside
+  Code Block), Ctrl+0 = Drawing Cell again; Ctrl+7 stays pure plain text. Left: (1) Sean's hands: the feel of Ctrl+9 on
+  a cell of words (the caret stays in the source, so it shows as source until the caret leaves); (2) Ctrl+Shift+7 on
+  a maths cell does nothing (Ctrl+7 then Ctrl+Shift+7 gets there); (3) a maths cell's Ctrl+7 drops blank lines of its
+  source (a text cell holds none); (4) the Mac has no maths cell kind (its ⌘9 is the evaluation cell): FEATURES.md
+  there says nothing of it. (5) Ctrl+9 on words holding a Link Here anchor leaves them and makes a new maths cell after
+  (the anchor would be lost in maths source); a line that would read as a fence keeps its backslash in the source.
+- ~~**Drawing polish.** Handles and an outline on hover before a click (the Mac shows them); shapes, arrows and
+  text boxes inside drawing cells; undocking a docked picture or drawing cell.~~ Done 2026-10-06 (drawing-polish
+  lane; PARITY "Drawing polish"): hover shows a faint outline and faint handles (a picture: the outline only);
+  the tools work INSIDE a drawing cell (top bar, or the cell's right-click Text Box / Shape / Arrow), and shapes,
+  arrows and text boxes dock into cells too; right-click ▸ Undock on a drawing cell or a docked picture, one Undo.
+  Left: (1) Sean's hands: the feel of the hover (the 250 ms it lingers so a handle can be reached; the open hand over
+  the note) and the cell tools with the Intuos pen; (2) a text box typed past a cell's bottom grows the cell, but a
+  shape or an arrow dragged past it stops at the edge (no growing there); (3) crop and read-into-words (Aa) are still
+  the page's only; (4) Undock has no handle of its own (the menu only, which the pen's right-click action opens too);
+  (5) a read-only ink line (a second copy of a cell's line) cannot be undocked; (6) a docked picture with words in its
+  brackets (`![caption](…)`) is not undocked (the menu greys Undock, "has a caption"): a floating picture has nowhere
+  to keep the caption. Gate fixes (round 2): an arrow's hand-moved segments now move with it into and out of a cell
+  (they jumped on undock); a docked picture's menu keeps a wider selection for Cut / Copy and has Paste / Select All
+  again, and opens while the drawing layer covers the note (pen down).
+- ~~**Housekeeping.** Deleting a note leaves its `.drawings/<note>-<hash>.json` behind (Sean deleted four notes and
   their sidecars stayed); orphaned files in `.drawings/media` are never swept (the sweep must read the notes'
-  markdown, `drawing/inkCell.ts` `mediaInUse`).
+  markdown, `drawing/inkCell.ts` `mediaInUse`).~~ Done 2026-10-06 (housekeeping lane; PARITY "Housekeeping",
+  `main/housekeeping.ts`): Delete (a note, or a section) takes the drawing to the Recycle Bin / Trash after the note;
+  File ▸ Clean Up Unused Files… (and the sidebar's Folder menu, and a project folder's row menu) lists what nothing
+  uses and bins it after a yes. Left: (1) Sean's hands: run it on his own notes folder (his four old sidecars are
+  offered only if no note of the same NAME is left in the project: a drawing whose note was renamed or moved in
+  Explorer is never offered, by design); (2) a folder that is also in ANOTHER project is swept with this project's
+  notes only (a note of the other project that names a picture by name from this folder's media would lose it to the
+  bin; rare: a move between folders copies the pictures); (3) THE NOTES ROOT'S `.drawings` IS SHARED (gate, round 2):
+  before 0.3 every note of every project kept its drawing and pictures there. A drawing there is offered only when its
+  name is provably this project's (its hash is a `<stem>` note's path in a folder of this project); a picture there
+  saved before 2026-10-06 02:00 UTC (`SHARED_STORE_UNTIL`) is never offered. So the oldest strays of the root may
+  stay for good, and a drawing of a note in a section that was deleted outside the app is not offered either. Also
+  fixed at the gate: Delete keeps a Mac `<stem>.json` when a folder under the owner cannot be read; Clean Up sees
+  notes that are symbolic links; the object clipboard's pictures are held; a problem after some files went now says
+  which went.
 - **Tables, part two.** A table button and key, grid editing on the rendered page.
 - **Scanner tabs for real.** The camera's tab strip is a stub: keep several scanned pages as tabs.
 - **Reading pictures.** Aa reading a flow chart off a picture already in the note (Swift `flowChart(from:under:)`);
   Japanese OCR on a machine that has the engine.
 - **Runnable cells.** Language icons instead of WL / PY; C, C++ and Rust once a compiler is installed.
-- **The Mac.** Port the text-cell / markdown-cell rule (docs/PLAN-text-cells.md) so the Mac shows text cells line
-  for line. And the separate-cells rule (PARITY "Separate cells", 2026-10-05): the Mac's `insertMath` / `codeBlock`
-  still write a block glued to the line above or below, and its source pane draws touching blocks with no gap.
+- **The Swift Mac app: a REFERENCE only, not ported to** (Sean, 2026-10-06: "we are probably going to abandon the
+  mac app and only work on this one and keep it as a reference"). This Electron app, with its own Mac build, is the
+  one WriteMind. Nothing new goes into the Swift app (its text-cell and separate-cells rules stay missing there: it
+  shows text cells joined and blocks glued); `C:\GIT\WriteMindSwift` stays the read-only spec for behaviour still to port.
+- **Windows code signing: skipped for now** (Sean, 2026-10-06). When it comes back: Azure Artifact Signing
+  (formerly Trusted Signing, individuals in the US / Canada, Basic $9.99 a month) via electron-builder's
+  `win.azureSignOptions` in release.yml's windows job; publisher name "Shahean Cheren". Mac signing: Sean's own
+  session on his Mac with his Apple Developer account, after the release of this batch.
 - **The buttons under the sheet's box, what is left** (box-buttons lane, 2026-10-05; PARITY "Buttons under the box"):
   Erase CUTS strokes at the box's edge (the Writing capture's rule), it does not remove whole strokes the box
-  touches: say if whole strokes are wanted (then Writing should follow, to stay one rule). A drawing cell from the
-  sheet starts its ink at the cell's left pad (not where it sat on the sheet). Not tried with Sean's real pen.
-  A pen stroke that STARTS on the button row is lost (penFeed sends the whole contact to the button it began on; the
-  row's pointerdown stops there): penFeed should hand a contact that moves past CLICK_SLOP_PX over to the sheet
-  (Wacom lane). A whole-sheet box (double-click) now puts the row in the pane's margin under the sheet (gate,
-  2026-10-05); only a pane with no margin at all puts it inside the box.
-- **Fence arrows, what is left** (fence-arrows lane + gate, 2026-10-05): a click on an opening fence that is already
-  open for its language (Left from the first content line) is sent to the content line (`fencePointer`), so the
-  language cannot be clicked into or double-click-selected on the rendered page: return the transaction unchanged
-  when the caret was already on that fence line. PageUp / PageDown now land off a fence (an EMPTY fenced cell is still
+  touches: say if whole strokes are wanted (then Writing should follow, to stay one rule). Not tried with Sean's real
+  pen. ~~A drawing cell from the sheet starts its ink at the cell's left pad~~ (2026-10-06: the box IS the cell, the ink
+  where it sat in it; a whole-sheet box makes a sheet-shaped cell: say if a tight cell round the ink is wanted there).
+  ~~A pen stroke that STARTS on the button row is lost~~ (2026-10-06: a contact begun on the row that moves 6 px is the
+  sheet's from its first point, pen feed, window pen and mouse; a tap still clicks). Left: the row stays on top of the
+  sheet while the pen writes under it, so the first few px of such a stroke are hidden by the row until the box goes.
+  Gate (round 2): only a TIP contact on the row is held back; a side button pressed in the air over the row reaches it
+  at once again (the double-tap's timing), and a tip that then touches the row and moves is handed to the sheet from
+  the touch. A whole-sheet box (double-click) now puts the row in the pane's margin under the sheet (gate, 2026-10-05); only a
+  pane with no margin at all puts it inside the box.
+- **Fence arrows, what is left** (fence-arrows lane + gate, 2026-10-05): ~~a click on an opening fence that is already
+  open for its language is sent to the content line~~ done 2026-10-06 (`fencePointer` leaves a click on the fence line
+  the caret is already on: the language is clicked into and double-click-selected; `cells/06-text-cell-leftovers`).
+  PageUp / PageDown now land off a fence (an EMPTY fenced cell is still
   landed on its fence: a page move writes nothing); Escape / Backspace / Delete at a bar skip an empty fenced cell for
   the next cell out. Whether Left/Right should skip fences too is Sean's call (it would remove the only way to edit the
   language on the rendered page).
@@ -77,13 +111,25 @@ batch in flight on that day. After it, roughly in this order:
   (Backspace) makes its markup literal (the upper cell's kind wins). SETTLED (Sean, 2026-10-05: "when converting a
   cell to markdown, it just processes markdown"): Ctrl+Shift+7 and every automatic switch take the escapes out (the
   words are read as markdown), and a multi-line text cell's lines join as markdown joins them.
-  Left: Split Cell / Merge Cells (Ctrl+D / Ctrl+M) do not re-escape a text cell's halves or carry a marker to the
-  second half (Return on the rendered page, display maths and Ctrl+8 into a paragraph do, `keepingHalves`); Ctrl+8
-  round words of a text cell keeps their escapes' backslashes inside the code; Find / Replace into a text cell writes
-  the replacement raw (a `**` there turns the cell markdown by the older-notes rule); text typed with an IME is
-  escaped only at the next ordinary edit; a markdown cell emptied of its words keeps its hidden marker (an empty cell)
-  until something is typed in it or it is deleted; there is no inline-code command to switch with; typing Link Here's
-  exact anchor HTML (`<a id="…"></a>`, `<mark id="…">`) into a text cell makes a hidden anchor, not literal text.
+  Left: Ctrl+8 round words of a text cell keeps their escapes' backslashes inside the code; text typed with an IME is
+  escaped only at the next ordinary edit; there is no inline-code command to switch with; typing Link Here's exact
+  anchor HTML (`<a id="…"></a>`, `<mark id="…">`) into a text cell makes a hidden anchor, not literal text. Find
+  looks in the SOURCE: a text cell's escaped `\*\*` is not found by `**` (search the visible words, mapping matches
+  back through `escapeOffsets`). Merging two text cells whose lines hold the two halves of an inline mark (`**a` over
+  `b**`) can read as markdown by the older-notes rule (the escape rule is per line). A note closed or switched away
+  from with the caret in an emptied markdown cell keeps that cell (hidden) until the caret goes in and out again.
+  **Sean to confirm:** Return in an emptied markdown cell counts as leaving it (the cell goes, the bar stands where it
+  was). Gate (round 2): an emptied cell left while a Redo waits (words or drawing) stays until the next edit, so the
+  Redo is kept; Ctrl+M in an emptied cell does nothing (it joined the note's last two cells); Split Cell on an older
+  note's markdown cell (no marker) gives both halves a marker. The leaving-with-Redo rule has no e2e of its own.
+  Done 2026-10-06 (PARITY "Leftovers (2026-10-06)"; `cells/06-text-cell-leftovers`, 25 checks): ~~Split Cell / Merge
+  Cells (Ctrl+D / Ctrl+M) do not re-escape a text cell's halves or carry a marker to the second half~~ (`splitCell`
+  goes through `keepingHalves`; a merge is Backspace's rule, the upper cell's kind wins: a markdown cell under a text
+  cell loses its marker and is written literal, a text cell under a markdown cell keeps its escapes, two markdown
+  cells keep one marker); ~~Find / Replace into a text cell writes the replacement raw~~ (`input.replace` is literal
+  typing, `textCells.ts`); ~~a markdown cell emptied of its words keeps its hidden marker~~ (its words line is no
+  seam, `armIn`, so the caret stays and typing goes back in; when the caret leaves, `dropEmptyCell` takes the marker
+  and its blank lines, joined in the history to the edit that emptied it: ONE Undo brings both back).
   Fixed at the gate (2026-10-05): a paste at a bar is written as it is (cells copied whole keep their kind and
   marker; only typing is literal); typing `# ` / `- ` / `> ` / a fence at the start of a markdown cell's words drops
   its marker, Return there moves it down with the words; Ctrl+7 keeps Link Here's anchors and an inline picture's
@@ -93,6 +139,18 @@ batch in flight on that day. After it, roughly in this order:
   Fixed at the v1.0.0 gate: /link lands its selection on the link with escapes or markers after it too (`writeRich`
   says where it went); a selection that only touches a text cell at an end no longer switches it; the T menu's Remove
   on a text cell switches nothing; a marker line inside a closed fence is code, shown without a backslash.
+  Fixed at the after-v1.0.0 gate: Link Here's title from a text cell keeps its backticks (`wl:` maths as typed, no
+  stray backslash; `linking.ts` `inTextCell`). **DONE (2026-10-06; DECIDED by Sean, 2026-10-06: "yes", keep the
+  source):** Ctrl+7 (`makeTextCell`) on a markdown cell with inline maths keeps its whole `` `wl:…` `` source as the
+  text cell's words (it used to keep only the bare expression, `` `wl:Pi r^2` `` became `Pi r^2`): `visibleWords`
+  keeps a maths segment's whole code span as it keeps an inline picture's markdown (escapePlain escapes it), and
+  Ctrl+Shift+7 afterwards typesets it again. Ctrl+7 and Ctrl+Shift+7 are each their own undo step (`applyEdit`'s
+  `apart`). Pinned by `packages/core/test/textCells.test.ts`, `packages/editor/test/textCells.test.ts` and
+  `C:\CLAUDIO\agents\e2e\text\text-cell-maths.mjs` (real keys); PLAN-text-cells / KEYS say so.
+- **The sheet's tool isolation e2e** (after-v1.0.0 gate): `C:\CLAUDIO\agents\e2e\sheet-tools\sheet-tools.mjs` clicked the
+  sheet header's Erase button, which is gone, and now dies at its first step. Port its checks (a)-(e) (a click on the
+  words keeps the sheet's Erase and places the caret, the toolbar stays dark, each surface erases only its own ink)
+  into `e2e/suites/tablet/`, turning the sheet's eraser on with Ctrl+Alt+2 after a pen hover on the sheet.
 - **Other platforms and trust.** Linux builds; code-signing the Windows installer so SmartScreen stops warning.
 - **The Mac release (packaging lane, 2026-10-05): built, NOT yet run on a Mac.** v1.0.0 ships two AD-HOC signed dmgs
   (`WriteMind-<v>-mac-arm64.dmg`, `-mac-x64.dmg`, macOS 13+, no hardened runtime, universal Vision helper) on the
@@ -103,8 +161,10 @@ batch in flight on that day. After it, roughly in this order:
   updates** (a zip and `latest-mac.yml`, electron-updater on darwin; today a Mac copy only opens the release page);
   (3) **a Finder-launched app's PATH has no Homebrew** (`/usr/bin:/bin:/usr/sbin:/sbin`): runnable cells do not find
   `/opt/homebrew/bin` / `/usr/local/bin` tools except `wolframscript` (`main/eval/tools.ts` `extraPlaces`); add
-  those folders on darwin or read the login shell's PATH; (4) the first CI run on macos-15 is the first time the
-  unit suite runs on macOS (allowed to fail there until green) and the first real dmg build; Sean's own look at a
+  those folders on darwin or read the login shell's PATH; (4) ~~the unit suite on macOS~~ done 2026-10-05: the
+  first macos-15 run (CI 37408602855, whose dmgs passed `verify-mac.sh`) had 7 of 2303 red, all tests that took
+  Windows paths or names for granted; they now use this system's own (and `eval/runner.ts` joins its scratch paths by
+  `deps.platform`, as `tools.ts` does), and the mac job's unit step blocks; (5) Sean's own look at a
   first open on his Mac (Open Anyway, the camera prompt, Help ▸ Check for Updates…).
 - **"WriteMind", not "Electron", in the Mac Dock (2026-10-05): built, NOT yet seen on a Mac.** Dev bundle renamed
   and given the Mac app's icon (`scripts/mac-dev-identity.mjs`), name / About panel / dev dock tile at run time
@@ -114,7 +174,7 @@ batch in flight on that day. After it, roughly in this order:
 ## Not ported yet, in the order they are worth doing
 
 - **Tables, from scratch: part one DONE, the rest to build** (tables lane, 2026-10-05; port-first: the Mac took
-  tables out whole on 2026-09-20 to rebuild them, `C:\GIT\WriteMind` TODO "Tables, from scratch"; PARITY "Tables").
+  tables out whole on 2026-09-20 to rebuild them, `C:\GIT\WriteMindSwift` TODO "Tables, from scratch"; PARITY "Tables").
   DONE: a GitHub pipe table is ONE cell (`markdown/table.ts`, the parser and `positionedUpdate` agree on random
   edits), a real table on the rendered page and in the PDF / HTML export, a framed monospaced grid in the markdown
   (pipes and rule dimmed, never re-padded), Tab / Shift+Tab cell to cell, Tab past the last cell and Return add a
@@ -123,7 +183,7 @@ batch in flight on that day. After it, roughly in this order:
   table's markdown, which is shorter than the drawn grid, so the cells below move up); (2) a table button on the
   toolbar and a key (the Mac had Ctrl+Cmd+T) with a rows x columns picker, and a "Table" kind on the + menu;
   (3) add / remove / move a row or a column (a context menu on a cell; the old Mac `MarkdownTable` had the
-  arithmetic: `git -C C:\GIT\WriteMind show 6109a18`); (4) tidy the columns (re-pad the markdown so the pipes line
+  arithmetic: `git -C C:\GIT\WriteMindSwift show 6109a18`); (4) tidy the columns (re-pad the markdown so the pipes line
   up) as an explicit command, never on its own; (5) a grid with no pipes at the ends drawn open (the Mac's old
   "grid or no grid" choice), if Sean still wants it; (6) paste a table from a spreadsheet / web page as a pipe table;
   (7) the camera / tablet reading a ruled table off a page into one (the Mac's old `DrawnTable`); (8) a table wider
@@ -516,13 +576,13 @@ batch in flight on that day. After it, roughly in this order:
 
 - Camera round 3 (camera lane, 2026-10-05; PARITY "Camera and capture, third round"): Input Devices ▸ Aspect Ratio, double-click for the window-filling picture (never the display), captures at 0.9 of the pane, the traced pen thinned to a third and cleaned again, Esc / click-away for the Pen popover: done. Left: the shapes in the sidebar's video popover (Sidebar.tsx, editor lane); a real camera (only Chromium's fake device was used); the Aa dot gap on small boxes of the sheet (above).
 
-- Export + keys (2026-10-05; PARITY "Export and keys"): Mac e8b3266 is in (one Export… panel, every key in one list, the Mac's new keys). Left: move `C:\CLAUDIO\agents\e2e\export\*.mjs` into `e2e/suites/` (Export is covered only by those scripts so far); the older `C:\CLAUDIO\agents\e2e\p1\t-export*.mjs` click the menu id `exportPDF`, which is now `export`; Use Selection for Find has no key (Ctrl+E is Export); keys the Mac added AFTER e8b3266 belong to the lanes that port those features and go into `shared/commands.ts` + `shared/keyList.ts` + `docs/KEYS.md` together (`keyList.test.ts` fails until all three agree; ⌘9 → Ctrl+9 Evaluation Cell was in all three, re-checked 10:56; since docs/PLAN-text-cells.md it is Ctrl+Shift+8, Ctrl+9 the Drawing Cell and Ctrl+0 free). Sean's hands: the real Windows save dialog's "Save as type" list (PDF / Project) has only been answered ahead of time by the e2e, never seen.
+- Export + keys (2026-10-05; PARITY "Export and keys"): Mac e8b3266 is in (one Export… panel, every key in one list, the Mac's new keys). Left: move `C:\CLAUDIO\agents\e2e\export\*.mjs` into `e2e/suites/` (Export is covered only by those scripts so far); the older `C:\CLAUDIO\agents\e2e\p1\t-export*.mjs` click the menu id `exportPDF`, which is now `export`; Use Selection for Find has no key (Ctrl+E is Export); keys the Mac added AFTER e8b3266 belong to the lanes that port those features and go into `shared/commands.ts` + `shared/keyList.ts` + `docs/KEYS.md` together (`keyList.test.ts` fails until all three agree; ⌘9 → Ctrl+9 Evaluation Cell was in all three, re-checked 10:56; since docs/PLAN-text-cells.md it is Ctrl+Shift+8, Ctrl+9 the Drawing Cell and Ctrl+0 free; since 2026-10-06 Ctrl+9 the Maths Cell and Ctrl+0 the Drawing Cell). Sean's hands: the real Windows save dialog's "Save as type" list (PDF / Project) has only been answered ahead of time by the e2e, never seen.
 
 - Docking and ink cells, CORE (2026-10-05; PARITY "Docking and ink cells: the model"; plan `docs/PLAN-docking-ink-cells.md`): the picture line, the `picture` block, the `cell` drawing item, the ink cell model, the SVG snapshot writer/reader, the media rule and the PDF arms are in `packages/core` with tests. Left for later rounds: a picture inside an ink cell does not show in the cell's snapshot when the snapshot is shown AS AN IMAGE (an svg loaded as an image loads no other file; strokes do show); adopting a cell pasted from another note (`readInkSnapshot` is written, nothing calls it); forking ink ids on Duplicate Cell / duplicateNote; undocking; the Mac reading `../` media paths and `cell` items (it drops an unknown item kind).
 
 - Docking and ink cells, EDITOR (2026-10-05; PARITY "Picture and ink cells on the page"): the picture / ink widgets in both panes, the caret above and below, the resize strip, the registry and the dock helpers are in `packages/editor`; e2e `C:\CLAUDIO\agents\e2e\dock\picture-cells.mjs` (46 checks; to move into `e2e/suites/`). Left: the alt words of a picture cell cannot be edited in place (the whole line is one widget on both sides; hold + retype, or Undo); a picture's ROTATION or crop is not kept when docked (size rule only); the read-only snapshot of an ink cell is not resizable; Sean's hands: how a real pen feels on the 8 px resize strip (with the pen down Canvas hands a press on `.wm-cell-resize` to the strip: dock lane, e2e dock/s3.mjs), and the caret beside a photo with Up / Down on the markdown side (CodeMirror's own arrows; the rendered page walks bar → bar).
 
-- Docking and ink cells, DOCK (2026-10-05; PARITY "Docking, and drawing in ink cells"): drawing / erasing / picking / moving in ink cells, the dock handle (click and drag, into a cell), Drawing Cell (Insert, Ctrl+9 (was Ctrl+0), + menu), one Undo for every dock, the snapshots, the PDF arms and moved notes' media are in. e2e `C:\CLAUDIO\agents\e2e\dock\s1.mjs` … `s4.mjs` (to move into `e2e/suites/`). Left: undocking; shapes / arrows / text boxes, crop and read-into-words inside cells; a cell that grows as you write past its bottom; orphan cell items stay in the sidecar after their line is deleted (Undo needs them; nothing prunes them). Sean's hands: the Intuos pen drawing, erasing (lower button held) and selecting (upper button held) inside a cell, double taps there, resizing a cell with the pen, the feel of the dock drag.
+- Docking and ink cells, DOCK (2026-10-05; PARITY "Docking, and drawing in ink cells"): drawing / erasing / picking / moving in ink cells, the dock handle (click and drag, into a cell), Drawing Cell (Insert, Ctrl+0 (Ctrl+9 on 2026-10-05), + menu), one Undo for every dock, the snapshots, the PDF arms and moved notes' media are in. e2e `C:\CLAUDIO\agents\e2e\dock\s1.mjs` … `s4.mjs` (to move into `e2e/suites/`). Left: undocking; shapes / arrows / text boxes, crop and read-into-words inside cells; a cell that grows as you write past its bottom; orphan cell items stay in the sidecar after their line is deleted (Undo needs them; nothing prunes them). Sean's hands: the Intuos pen drawing, erasing (lower button held) and selecting (upper button held) inside a cell, double taps there, resizing a cell with the pen, the feel of the dock drag.
 - A drawing cell opened as a tablet sheet (cell-to-sheet lane, 2026-10-05; PARITY "A drawing cell opened as a tablet sheet"): right-click ▸ Open in Tablet Sheet / Delete Drawing Cell, the bound tab, writing into the cell as one note undo step, restarts. e2e `C:\CLAUDIO\agents\e2e\cell-to-sheet\cell-sheet.mjs first|restart` (to move into `e2e/suites/`). Left: ~~writing on a tab whose note is not in front~~ (no longer a way of working: sheet-note-sync, 2026-10-05, opens a bound tab only with its note in front; `pending` is left for a sheets file from before); the "cell gone" path is proven with a fake app only; after a restart, writing done while the note was away replaces the cell's strokes with re-made copies (their ids, groups and transforms baked; nothing is lost); a very flat cell is a thin band of the tablet (the frame keeps the cell's shape, never stretched); the sheet's strokes are converted at the cell's shown width, so a stroke written after the window was resized is a little thinner or thicker than the sheet showed. Gate r6 (fixed): close asks while writing waits; Undo while away is the sheet's own; the margin takes no stroke; a cell scrolled away keeps its width (last shown, else the column). Still open (gate r6): the binding is dropped for good when the cell is missing for 1.2 s, so Undo past the cell's creation then a late Redo leaves the tab a plain sheet and a second Open in Tablet Sheet makes "<note> Drawing 2" (keep the ref dormant while the note is in front and rebind if the same id comes back); a stroke that leaves the cell and comes back in is two strokes, two note undo steps. Sean's hands: writing in the frame with the real Intuos, how the band feels on a flat cell.
 
 - Gate (2026-10-05, docking / ink cells / pen buttons round; PARITY "Gate fixes for docking..."): fixed at the gate, see PARITY. Left, LOW: (1) the bottom 8 px of every live ink cell is an invisible resize zone with the pen down (a stroke started there resizes the cell): put the grip below the drawing area, or show it on pen hover and take only a press that began there; (2) inside a cell only a MOVE is kept inside it: a scale, a turn, or a stroke run past the cell's left, right or top edge leaves ink clipped out of sight that the strip cannot bring back (it changes the height only): clamp scale / turn like `keptInside`, and a committed stroke's points; (3) after a dock, a refused note save (the file changed on disk) still writes the sidecar, so the docked ink is on disk only as an orphan cell (plus the Recovered text): hold the sidecar while the note is stale, or show orphan cell items on open; (4) a routed arrow whose BOTH ends let go when their objects are docked becomes a straight line at the next `reconnect` (an unrouted line keeps no bends); (5) `pdfPicture.test` "reads it again only when changed" was seen flaky by the dock lane (passed in the gate's full run); (6) the gate smoke `C:\CLAUDIO\agents\e2e\gate\smoke.mjs` and the lanes' `C:\CLAUDIO\agents\e2e\dock\*.mjs` are to move into `e2e/suites/`; `e2e/suites/tablet/01-sheet-as-camera.mjs` crashes at line 55 (no `.camera-bar [data-tablet=box]`, older than this round); the old `C:\CLAUDIO\agents\e2e\wacom\buttons-*.mjs` expect the old button model.

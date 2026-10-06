@@ -95,7 +95,10 @@ export function landingOffFence(state: EditorState, pos: number):
 
 /**
  * A click that puts the caret on a fence line (the strip of an open block's fence, or a drawn fenced cell with nothing
- * in it) puts it on the content line beside it instead. A drag, a Shift+click — any selection — is left as it was made.
+ * in it) puts it on the content line beside it instead. A drag, a Shift+click — any selection — is left as it was made,
+ * and so is a click on the fence line the caret is ALREADY on: that fence is open, its language shown to be typed
+ * (`furniture.ts`, Left from the first content line), so a click there goes into the language and a double-click
+ * selects a word of it.
  */
 export const fencePointer = EditorState.transactionFilter.of((tr) => {
   if (!tr.selection || tr.docChanged || !tr.isUserEvent("select.pointer")) return tr
@@ -103,6 +106,8 @@ export const fencePointer = EditorState.transactionFilter.of((tr) => {
   if (state.field(renderedField, false) !== true) return tr
   const { ranges, main } = tr.selection
   if (ranges.length !== 1 || !main.empty) return tr
+  const was = state.selection
+  if (was.ranges.length === 1 && state.doc.lineAt(was.main.head).number === state.doc.lineAt(main.head).number) return tr
   const landing = landingOffFence(state, main.head)
   if (!landing) return tr
   if ("at" in landing) return [tr, { selection: EditorSelection.cursor(landing.at), sequential: true }]

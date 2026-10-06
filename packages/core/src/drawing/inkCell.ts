@@ -14,8 +14,8 @@
 
 import { bounds, transformed, type Size } from "./geometry"
 import {
-  isHidden, itemId, itemTransform, newID, removing, withTransform,
-  type CanvasItem, type Drawing, type InkCell, type ItemTransform,
+  isHidden, itemId, itemTransform, newID, noTransform, removing, withTransform,
+  type CanvasItem, type Drawing, type InkCell, type ItemTransform, type SegmentOverride,
 } from "./model"
 import type { Point, Rect } from "./shapes"
 import { inkFileName, mediaFiles } from "../markdown/images"
@@ -97,15 +97,18 @@ export function minAspect(cell: InkCell, width: number): number {
 }
 
 /**
- * What a page selection can be docked as: exactly one picture → a picture cell; strokes and pictures in any other
- * mix → one ink cell; anything with a shape, an arrow or a text box in it (or nothing at all) → null, and the dock
+ * What a page selection can be docked as: exactly one picture → a picture cell; anything else that is on the page
+ * (strokes, pictures, shapes, arrows, text boxes, in any mix) → one ink cell; nothing at all → null, and the dock
  * handle is not shown. A picture with no file cannot be a picture cell on its own.
+ *
+ * (Until 2026-10-06 a selection with a shape, an arrow or a text box in it was not dockable: a drawing cell took pen
+ * ink and pictures only. Cells take every kind of object now, by the tools and by docking alike.)
  */
 export function dockable(drawing: Drawing, ids: Set<string>): "picture" | "ink" | null {
   if (ids.size === 0) return null
   const picked = drawing.items.filter((item) => ids.has(itemId(item)) && !isHidden(item))
   if (picked.length === 0) return null
-  if (picked.some((item) => item.kind !== "stroke" && item.kind !== "image")) return null
+  if (picked.some((item) => item.kind === "cell")) return null
   if (picked.length === 1 && picked[0]!.kind === "image") return picked[0]!.image.file ? "picture" : null
   return "ink"
 }
@@ -114,12 +117,21 @@ export function dockable(drawing: Drawing, ids: Set<string>): "picture" | "ink" 
  * The picked items taken off the page: the drawing without them, and the items themselves in the drawing's order.
  * Cells and hidden items are never taken. An arrow attached to a taken item was NOT picked, so it stays: the end on
  * the taken item lets go of it and stays where the routing last put it (the stored `start`/`end`/`bends` are the
- * routed points, baked in by `reconnect`).
+ * routed points, baked in by `reconnect`). The same the other way: a taken arrow whose node stays behind lets go of
+ * it (a cell never holds a line to something outside it).
  */
 export function takenOut(drawing: Drawing, ids: Set<string>): { drawing: Drawing; items: CanvasItem[] } {
-  const items = drawing.items.filter((item) => ids.has(itemId(item)) && !isHidden(item))
-  if (items.length === 0) return { drawing, items }
-  const gone = new Set(items.map(itemId))
+  const found = drawing.items.filter((item) => ids.has(itemId(item)) && !isHidden(item))
+  if (found.length === 0) return { drawing, items: found }
+  const gone = new Set(found.map(itemId))
+  const items = found.map((item): CanvasItem => {
+    if (item.kind !== "connector") return item
+    const c = item.connector
+    const start = c.startNode !== null && !gone.has(c.startNode)
+    const end = c.endNode !== null && !gone.has(c.endNode)
+    if (!start && !end) return item
+    return { kind: "connector", connector: { ...c, startNode: start ? null : c.startNode, endNode: end ? null : c.endNode } }
+  })
   const rest = drawing.items.map((item): CanvasItem => {
     if (item.kind !== "connector") return item
     const c = item.connector
@@ -129,6 +141,16 @@ export function takenOut(drawing: Drawing, ids: Set<string>): { drawing: Drawing
     return { kind: "connector", connector: { ...c, startNode: start ? null : c.startNode, endNode: end ? null : c.endNode } }
   })
   return { drawing: removing({ items: rest }, gone), items }
+}
+
+/**
+ * An arrow's hand-moved segments in another frame. A segment override's `value` is a coordinate as a fraction of its
+ * own frame (an x for a vertical segment, a y otherwise), so it moves with the points: `x` and `y` map one frame's
+ * fraction to the other's. (Until 2026-10-06 they were copied as they were, and a routed arrow whose segment had been
+ * dragged in a cell jumped far away on the page after an undock.)
+ */
+function movedOverrides(overrides: SegmentOverride[], x: (v: number) => number, y: (v: number) => number): SegmentOverride[] {
+  return overrides.map((o) => ({ ...o, value: o.vertical ? x(o.value) : y(o.value) }))
 }
 
 /**
@@ -164,7 +186,8 @@ export function toCell(items: CanvasItem[], pane: Size, origin: Point, width: nu
       case "connector": {
         const c = item.connector
         out.push({ kind: "connector", connector: { ...c, start: pt(c.start), end: pt(c.end), bends: c.bends.map(pt),
-          transform: tf(c.transform), ...(c.overrides ? { overrides: c.overrides.map((o) => ({ ...o })) } : {}) } })
+          transform: tf(c.transform), ...(c.overrides ? { overrides: movedOverrides(c.overrides, (v) => (v * pane.width - origin.x) / width,
+            (v) => (v * pane.height - origin.y) / width) } : {}) } })
         break
       }
       case "cell":
@@ -206,7 +229,8 @@ export function toPage(items: CanvasItem[], pane: Size, origin: Point, width: nu
       case "connector": {
         const c = item.connector
         out.push({ kind: "connector", connector: { ...c, start: pt(c.start), end: pt(c.end), bends: c.bends.map(pt),
-          transform: tf(c.transform), ...(c.overrides ? { overrides: c.overrides.map((o) => ({ ...o })) } : {}) } })
+          transform: tf(c.transform), ...(c.overrides ? { overrides: movedOverrides(c.overrides, (v) => (v * width + origin.x) / pane.width,
+            (v) => (v * width + origin.y) / pane.height) } : {}) } })
         break
       }
       case "cell":
@@ -219,7 +243,15 @@ export function toPage(items: CanvasItem[], pane: Size, origin: Point, width: nu
 /** The items scaled by `k` about `pivot` (page px), the way the scale handle does it; the same items when k is 1. */
 function scaledAbout(items: CanvasItem[], k: number, pivot: Point, pane: Size): CanvasItem[] {
   if (k === 1) return items
-  return items.map((item) => withTransform(item, transformed(item, itemTransform(item), { scale: k, pivot, size: pane })))
+  return items.map((item) => {
+    const out = withTransform(item, transformed(item, itemTransform(item), { scale: k, pivot, size: pane }))
+    if (out.kind !== "connector" || !out.connector.overrides || !(pane.width > 0 && pane.height > 0)) return out
+    // A dragged segment's place scales about the pivot with everything else.
+    const overrides = movedOverrides(out.connector.overrides,
+      (v) => (pivot.x + k * (v * pane.width - pivot.x)) / pane.width,
+      (v) => (pivot.y + k * (v * pane.height - pivot.y)) / pane.height)
+    return { kind: "connector", connector: { ...out.connector, overrides } }
+  })
 }
 
 /** How much to scale ink this wide to fit a cell this wide inside its pads (1 when it fits). */
@@ -264,6 +296,52 @@ export function mergedInto(cell: InkCell, items: CanvasItem[], pane: Size, width
   const origin = { x: box.x - left, y: box.y - top }
   const aspect = Math.max(cell.aspect, (top + h + INK_PAD) / width)
   return { ...cell, aspect, items: [...flat(cell.items), ...toCell(scaled, pane, origin, width)] }
+}
+
+// MARK: - Undocking (2026-10-06, docs/TODO.md "Drawing polish")
+//
+// The reverse of the dock handle: a drawing cell or a docked picture taken back out of the note onto the page, where it
+// was shown. The line leaves the note and the objects float again in ONE Undo step (renderer/dock.ts `undockLine`);
+// nothing is lost either way: the picture's file and the cell's snapshot stay in the media folder, and Undo puts the
+// cell back whole (its item comes back with the drawing).
+
+/**
+ * The drawing with the ink cell `id` undocked: its items on the page (`toPage` from the cell's top-left `origin`, page
+ * px, at the width it was shown), every point where it was on the screen, the cell's item gone from the drawing. The
+ * items keep their ids (the cell that held them is gone). `ids` are the items now floating, for the pick. Null when the
+ * drawing has no such cell.
+ */
+export function undockedInk(drawing: Drawing, id: string, pane: Size, origin: Point, width: number):
+  { drawing: Drawing; ids: string[] } | null {
+  const cell = inkCellOf(drawing, id)
+  if (!cell || !(width > 0)) return null
+  const items = toPage(cell.items, pane, origin, width)
+  let taken = false
+  const rest = drawing.items.filter((item) => {
+    if (taken || item.kind !== "cell" || item.cell.id !== id) return true
+    taken = true
+    return false
+  })
+  return { drawing: { items: [...rest, ...items] }, ids: items.map(itemId) }
+}
+
+/**
+ * The drawing with a docked picture undocked: a floating picture of the media file `file`, upright and unscaled, its
+ * box `rect` (page px) exactly where the cell showed it. Null for no file or no box.
+ */
+export function undockedPicture(drawing: Drawing, file: string, pane: Size, rect: Rect, id: string = newID()):
+  { drawing: Drawing; ids: string[] } | null {
+  if (!file || !(pane.width > 0 && pane.height > 0) || !(rect.width > 0 && rect.height > 0)) return null
+  const image: CanvasItem = {
+    kind: "image",
+    image: {
+      id, file,
+      center: { x: (rect.x + rect.width / 2) / pane.width, y: (rect.y + rect.height / 2) / pane.height },
+      width: rect.width / pane.width, aspect: rect.height / rect.width,
+      transform: noTransform(), hidden: false, group: null,
+    },
+  }
+  return { drawing: { items: [...drawing.items, image] }, ids: [id] }
 }
 
 /**

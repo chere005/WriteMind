@@ -234,7 +234,7 @@ describe("what is shown", () => {
     expect(shortReason("getaddrinfo ENOTFOUND api.github.com")).toBe("no internet connection")
     expect(shortReason("net::ERR_CONNECTION_REFUSED")).toBe("the update server did not answer")
     expect(shortReason("HttpError: 403 Forbidden \"rate limit exceeded\"")).toBe("GitHub is limiting requests; try again later")
-    expect(shortReason("Unable to find latest version on GitHub (https://github.com/chere005/WriteMindCross/releases/latest), please ensure a production release exists: HttpError: 404"))
+    expect(shortReason("Unable to find latest version on GitHub (https://github.com/chere005/WriteMind/releases/latest), please ensure a production release exists: HttpError: 404"))
       .toBe("no release was found")
     expect(shortReason("Cannot find latest.yml in the latest release artifacts")).toBe("no release was found")
     expect(shortReason("sha512 checksum mismatch, expected abc")).toBe("the download was damaged; try again")
@@ -313,7 +313,7 @@ describe("what is shown", () => {
 // GitHub's releases/latest answer, as much of it as matters (the real one has more, all ignored).
 const release = (over: Record<string, unknown> = {}) => ({
   tag_name: "v1.0.1", name: "WriteMind 1.0.1", draft: false, prerelease: false,
-  html_url: "https://github.com/chere005/WriteMindCross/releases/tag/v1.0.1",
+  html_url: "https://github.com/chere005/WriteMind/releases/tag/v1.0.1",
   assets: [
     { name: "WriteMind-Setup-1.0.1.exe", state: "uploaded" },
     { name: "WriteMind-Setup-1.0.1.exe.blockmap", state: "uploaded" },
@@ -325,14 +325,14 @@ const release = (over: Record<string, unknown> = {}) => ({
 })
 
 describe("a Mac's look at GitHub's latest release", () => {
-  const page = "https://github.com/chere005/WriteMindCross/releases/tag/v1.0.1"
+  const page = "https://github.com/chere005/WriteMind/releases/tag/v1.0.1"
 
   it("offers a newer published release that carries this Mac's dmg, with its page", () => {
     expect(latestFromGitHub(release(), "1.0.0", "arm64")).toEqual({ version: "1.0.1", page })
     expect(latestFromGitHub(release(), "1.0.0", "x64")).toEqual({ version: "1.0.1", page })
     // The text as it came, too.
     expect(latestFromGitHub(JSON.stringify(release({ tag_name: "v2.0.0" })), "1.0.0", "arm64"))
-      .toEqual({ version: "2.0.0", page: "https://github.com/chere005/WriteMindCross/releases/tag/v2.0.0" })
+      .toEqual({ version: "2.0.0", page: "https://github.com/chere005/WriteMind/releases/tag/v2.0.0" })
     expect(latestFromGitHub(release({ tag_name: "v1.10.0" }), "1.9.9", "arm64")?.version).toBe("1.10.0")
     // A pre-release build is older than its final release.
     expect(latestFromGitHub(release({ tag_name: "v1.1.0" }), "1.1.0-beta.1", "arm64")?.version).toBe("1.1.0")
@@ -384,10 +384,10 @@ describe("a Mac's look at GitHub's latest release", () => {
   it("the page is built from the version, never taken from the answer, and always under the repo's releases/tag/", () => {
     const sneaky = release({ html_url: "https://evil.example/WriteMind.dmg", url: "https://evil.example/", upload_url: "https://evil.example/" })
     expect(latestFromGitHub(sneaky, "1.0.0", "arm64")?.page).toBe(page)
-    expect(RELEASE_TAG_PAGE).toBe("https://github.com/chere005/WriteMindCross/releases/tag/")
-    expect(RELEASES_LATEST_API).toBe("https://api.github.com/repos/chere005/WriteMindCross/releases/latest")
+    expect(RELEASE_TAG_PAGE).toBe("https://github.com/chere005/WriteMind/releases/tag/")
+    expect(RELEASES_LATEST_API).toBe("https://api.github.com/repos/chere005/WriteMind/releases/latest")
     expect(releasePage("1.0.1")).toBe(page)
-    expect(releasePage("12.30.0")).toBe("https://github.com/chere005/WriteMindCross/releases/tag/v12.30.0")
+    expect(releasePage("12.30.0")).toBe("https://github.com/chere005/WriteMind/releases/tag/v12.30.0")
     for (const bad of ["", "v1.0.1", "1.0", "1.0.1-beta", "1.0.1/../x", "1.0.1#x", "https://evil.example/", "01.0.0"]) {
       expect(releasePage(bad), bad).toBeNull()
     }
@@ -460,13 +460,13 @@ describe("the updater in download mode (a packaged Mac)", () => {
     await updater.command("checkForUpdates")
     expect(fx.fetch).toHaveBeenCalledTimes(1)
     const [url, init] = fx.fetch.mock.calls[0] as [string, { headers: Record<string, string>; signal?: AbortSignal }]
-    expect(url).toBe("https://api.github.com/repos/chere005/WriteMindCross/releases/latest")
+    expect(url).toBe("https://api.github.com/repos/chere005/WriteMind/releases/latest")
     expect(init.headers["User-Agent"]).toMatch(/^WriteMind\/1\.0\.0 /)
     expect(init.signal).toBeInstanceOf(AbortSignal)
     expect(dialog()).toEqual({ kind: "available", version: "1.0.1", current: "1.0.0", how: "download", asked: true })
     await answer("now")
     expect(fx.openExternal).toHaveBeenCalledTimes(1)
-    expect(fx.openExternal).toHaveBeenCalledWith("https://github.com/chere005/WriteMindCross/releases/tag/v1.0.1")
+    expect(fx.openExternal).toHaveBeenCalledWith("https://github.com/chere005/WriteMind/releases/tag/v1.0.1")
     expect(dialog()).toBeNull()
     // Neither Download, nor the install command, nor another Download gets near a download or a restart.
     await updater.command("installUpdate")

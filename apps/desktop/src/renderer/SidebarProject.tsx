@@ -37,7 +37,8 @@ export interface RowActions extends ProjectActions {
 }
 
 export interface ProjectActions {
-  /** A command the main process owns: addFolder, removeFolder:<path>, excludeFolder:<path>, includeFolder:<path>. */
+  /** A command the main process owns: addFolder, removeFolder:<path>, excludeFolder:<path>, includeFolder:<path>; and
+   *  cleanUp, the page's (CleanUpDialog.tsx), which App answers itself. */
   run(id: string): void
   reveal(path: string): void
   newNote(folder: string): void
@@ -68,6 +69,8 @@ export function sectionMenu(section: Section, real: boolean, project: ProjectInf
       disabled: folders <= 1,
       onClick: () => actions.run(`removeFolder:${section.path}`),
     })
+    // The whole project is looked at (a picture in one folder can be used by a note in another): main/housekeeping.ts.
+    items.push("-", { label: "Clean Up Unused Files…", onClick: () => actions.run("cleanUp") })
   } else {
     // A folder can be taken OUT of the project and left where it is — the Trash is for one that should go.
     items.push(
@@ -157,7 +160,7 @@ export function SidebarFooter({ platform, root, project, actions }: FooterProps)
   }
   items.push("-", {
     label: `Reveal in ${fileManagerName(platform)}`, onClick: () => actions.reveal(primary), disabled: !primary,
-  })
+  }, "-", { label: "Clean Up Unused Files…", onClick: () => actions.run("cleanUp"), disabled: !primary })
 
   return (
     <div className="sidebar-footer" data-sidebar="footer">

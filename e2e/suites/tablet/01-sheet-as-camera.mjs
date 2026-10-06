@@ -1,5 +1,5 @@
 // The tablet as a source for the video pane: write, box, chart, page, undo, erase. 
-import { hover, setSelect, press, noGrab, penHover, js, ok, finish, sleep, freshNote, saved, key, CTRL, mouse, pe, penStroke, seg, rectPts, tabletBox, pickTablet, barBtn, takeBtn, shot, waitFor } from "../../lib/harness.mjs"
+import { hover, setSelect, press, noGrab, penHover, js, ok, finish, sleep, freshNote, saved, key, CTRL, ALT, mouse, pe, penStroke, seg, rectPts, tabletBox, pickTablet, barBtn, takeBtn, shot, waitFor } from "../../lib/harness.mjs"
 
 await noGrab()
 const file = await freshNote({ video: true })
@@ -109,16 +109,22 @@ const pic = d.items.filter(i => i.kind === "image")
 ok("Page brings one picture", pic.length === 1 && d.items.length === n0 + 1, JSON.stringify(d.items.map(i => i.kind)))
 ok("and the picture file exists", pic.length === 1 && await js(`new Promise(r => { const i = new Image(); i.onload = () => r(i.naturalWidth > 0); i.onerror = () => r(false); i.src = 'wm://media/' + encodeURIComponent(${JSON.stringify(pic[0]?.file)}) })`))
 
-// 6. ERASE: the Erase button, then the pen's side button set to erase.
+// 6. ERASE: no Erase button on the bar (Sean, 2026-10-05: "remove the erase button from the wacom menu bar"); the
+// pen's Erase Tool toggle (Ctrl+Alt+2 with the pen last over the sheet) still erases there, then the side button.
 await barBtn("clear")
+const hint = () => js(`document.querySelector('.camera .note').textContent`)
+ok("the sheet's bar has no Erase button", await js(`!document.querySelector('[data-tablet=erase]') && ![...document.querySelectorAll('.camera-bar button')].some(b => b.textContent.trim() === 'Erase')`))
+ok("...and the hint says which pen button rubs out", /hold its first button to rub out/.test(await hint()), await hint())
 await penStroke(seg(X + 40, Y + 200, X + 200, Y + 200, 14))
 const drawn = await px()
-await barBtn("erase")
+await js(`document.querySelector('.cm-content').focus()`)
+await key("2", { modifiers: CTRL | ALT })
+ok("the pen's Erase Tool (Ctrl+Alt+2) turns the sheet's eraser on, and the hint says how to put it down", /Erasing: touch a stroke \(Erase Tool, Ctrl\+Alt\+2/.test(await hint()), await hint())
 await pe("pointerdown", X + 120, Y + 203, { pressure: 0.4 }); await pe("pointermove", X + 125, Y + 203); await pe("pointerup", X + 125, Y + 203, { buttons: 0 })
 await sleep(120)
-ok("the Erase button rubs out the stroke under the pen", (await px()) === 0 && drawn > 100)
-await barBtn("erase")
-ok("the Erase tool lets go when pressed again", !(await js(`document.querySelector('[data-tablet=erase]').classList.contains('on')`)))
+ok("...and it rubs out the stroke under the pen", (await px()) === 0 && drawn > 100)
+await key("2", { modifiers: CTRL | ALT })
+ok("Ctrl+Alt+2 again puts it down", !/Erasing/.test(await hint()), await hint())
 await penStroke(seg(X + 40, Y + 220, X + 200, Y + 220, 14))
 const keep = await px()
 // The upper side button (since 2026-10-05; the lower one selects): pressed in the air it does nothing; held while the

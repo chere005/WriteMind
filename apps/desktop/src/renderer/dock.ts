@@ -16,8 +16,9 @@
 
 import {
   bounds, INK_PAD, shifted, dockable, inkCellFrom, inkCellMarkdown, inkCellOf, mergedInto, newInkCell, pictureMarkdown, takenOut, withInkCell,
-  type CanvasItem, type Column, type Drawing, type Point, type Size,
+  type CanvasItem, type Column, type Drawing, type Point, type Rect, type Size,
 } from "@writemind/core"
+import { cellOfBox } from "./boxRow"
 import type { DrawingHistory } from "./drawingHistory"
 import type { EditClock } from "./editTimeline"
 
@@ -27,6 +28,8 @@ export interface Words {
   cursorOffset(): number
   /** Write `line` as a cell of its own at the seam `offset` (one history event); false when it could not. */
   write(line: string, offset: number): boolean
+  /** Take the cell line `from`..`to` out of the note (one history event, editor `removeCellLine`); false when it could not. */
+  remove?(from: number, to: number): boolean
 }
 
 export interface DockDeps {
@@ -137,25 +140,50 @@ export function insertInkCell(deps: DockDeps, offset: number, width: number): st
 
 /**
  * Ink that is NOT on the page yet (the tablet sheet's boxed writing, landed in pane fractions as Bring in Writing lands
- * it) docked as a NEW ink cell at the seam `offset`: `inkCellFrom`'s rule (the strokes keep their shape and size, scaled
- * down only when wider than the column; the cell as tall as the ink and its pads), the ink starting at the cell's left
- * pad (where it sat on the sheet means nothing in the note: the text's own edge), its line and its sidecar item in ONE
- * Undo step. Nothing on the page is taken. Returns the new cell's id, or null (no ink, or the words would not take it).
+ * it) docked as a NEW ink cell at the seam `offset`, its line and its sidecar item in ONE Undo step. With `frame` (the
+ * sheet's dashed box landed beside the ink, pane FRACTIONS: tabletCapture.ts `Capture.frame`) THE BOX IS THE CELL, the ink
+ * where it sat in it (boxRow.ts `cellOfBox`). Without one, `inkCellFrom`'s rule (the strokes keep their shape and size,
+ * scaled down only when wider than the column; the cell as tall as the ink and its pads), the ink starting at the cell's
+ * left pad. Nothing on the page is taken. Returns the new cell's id, or null (no ink, or the words would not take it).
  */
-export function dockNewInk(deps: DockDeps, items: CanvasItem[], pane: Size, column: Column, offset: number): string | null {
+export function dockNewInk(deps: DockDeps, items: CanvasItem[], pane: Size, column: Column, offset: number,
+  frame?: Rect | null): string | null {
   if (items.length === 0 || !(column.width > 0) || !(pane.width > 0)) return null
+  const boxed = frame
+    ? cellOfBox(items, pane, { x: frame.x * pane.width, y: frame.y * pane.height, width: frame.width * pane.width, height: frame.height * pane.height }, column.width)
+    : null
   const lefts = items.map((item) => bounds(item, pane).x).filter(Number.isFinite)
   const dx = lefts.length > 0 ? column.left + INK_PAD - Math.min(...lefts) : 0
   const moved = Math.abs(dx) < 1e-9 ? items : items.map((item): CanvasItem => (item.kind === "stroke"
     ? { kind: "stroke", stroke: { ...item.stroke, points: item.stroke.points.map((p) => ({ x: p.x + dx / pane.width, y: p.y })) } }
     : shifted([item], dx, 0, pane)[0]!))
   const whole = deps.drawing()
-  const cell = inkCellFrom(moved, pane, column)
+  const cell = boxed ?? inkCellFrom(moved, pane, column)
   const next = withInkCell(whole, cell)
   const done = oneStep(deps.history.clock,
     () => writeAhead(deps, next, inkCellMarkdown(cell.id, deps.depth), offset),
     () => { deps.history.record(whole); deps.apply(next); return true })
   return done ? cell.id : null
+}
+
+/**
+ * UNDOCKING (2026-10-06): the reverse of a dock. The cell's line `line` leaves the note and the drawing becomes `next`
+ * (core `undockedInk` / `undockedPicture`: the objects floating where the cell was shown) in ONE Undo step, words
+ * first (the Mac's order); the floating objects arrive picked (`picked`). Nothing changes when the words would not take
+ * it. Returns whether it was undocked.
+ */
+export function undockLine(deps: DockDeps, line: { from: number; to: number }, next: Drawing, picked: readonly string[]): boolean {
+  const remove = deps.words.remove
+  if (!remove) return false
+  const whole = deps.drawing()
+  return oneStep(deps.history.clock,
+    () => remove(line.from, line.to),
+    () => {
+      deps.history.record(whole)
+      if (picked.length > 0) deps.history.select([...picked])
+      deps.apply(next)
+      return true
+    })
 }
 
 /** Folder names of a path, without the file's own name; case and slashes do not matter (Windows). */

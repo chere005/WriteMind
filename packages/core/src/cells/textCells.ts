@@ -7,7 +7,8 @@
  *   markdown from now on — the backslashes the escape rule wrote go (Sean, 2026-10-05: "when converting a cell to
  *   markdown, it just processes markdown"), so a literal `**x**` is bold now (`asMarkdownCell`).
  * - Ctrl+7 (`makeTextCell`) on a markdown cell: the marker goes, the formatting is taken off, and the words it showed
- *   and their line breaks stay (written by the escape rule).
+ *   and their line breaks stay (written by the escape rule). Inline maths keeps its whole `` `wl:…` `` source as words
+ *   (Sean, 2026-10-06), so Ctrl+Shift+7 afterwards typesets it again.
  */
 
 import { edit, end, range, substring, type Edit, type Range } from "../text/range"
@@ -161,7 +162,8 @@ export function makeMarkdownCell(markdown: string, selection: Range): Edit | nul
 }
 
 /**
- * Ctrl+7 on a markdown cell: a text cell of the words it showed, line for line (the marker and the formatting gone).
+ * Ctrl+7 on a markdown cell: a text cell of the words it showed, line for line (the marker and the formatting gone;
+ * Link Here's anchors, an inline picture's markdown and inline maths' `` `wl:…` `` source kept as literal words).
  * Null when the caret is not in a markdown cell.
  */
 export function makeTextCell(markdown: string, selection: Range): Edit | null {
@@ -218,6 +220,13 @@ export function keepingHalves(markdown: string, change: Edit): Edit {
   if (marker === 0 && isTextCell(cell.block)) {
     before = escapePlain(unescapePlain(head))
     after = escapePlain(unescapePlain(tail))
+  } else if (marker === 0 && tail.trim().length > 0) {
+    // An older note's markdown cell (markdown by the older-notes rule, no marker): each half is read on its own, and a
+    // half without WriteMind's own markup would turn into a text cell. Both halves get a marker, as the older cell
+    // gets one when it is edited (Ctrl+Shift+7's rule).
+    const gap = /^\n*/.exec(tail)![0]
+    after = gap + MARKDOWN_MARKER + "\n" + tail.slice(gap.length)
+    if (head.trim().length > 0) before = MARKDOWN_MARKER + "\n" + head
   } else if (marker > 0 && tail.trim().length > 0) {
     const gap = /^\n*/.exec(tail)![0]
     after = gap + MARKDOWN_MARKER + "\n" + tail.slice(gap.length)

@@ -44,7 +44,13 @@ their own kinds; this is about the body-text paragraph only.
 ## Switching
 
 - **Ctrl+7 on a markdown cell** makes it a text cell: the marker goes, the formatting is removed, the visible text
-  and its line breaks stay (one undo step).
+  and its line breaks stay (one undo step). Kept as written (literal words of the text cell, escaped by the escape
+  rule like typed text): Link Here's anchors, an inline picture's markdown, and inline maths' WHOLE source, backticks
+  and `wl:` included (Sean, 2026-10-06: "yes") — so the text cell shows `` `wl:Pi r^2` `` as typed (a text cell never
+  typesets maths) and Ctrl+Shift+7 afterwards typesets it again (its escapes go). Display maths is its own cell and is
+  not touched. (Core `visibleWords`.)
+- **Each switch is its own undo step** (Ctrl+7 and Ctrl+Shift+7 never join the edit before or after them, however
+  quickly they come): Ctrl+7 then Ctrl+Shift+7, and two Ctrl+Z give back the text cell, then the markdown cell.
 - **Ctrl+Shift+7 on a text cell** makes it a markdown cell, and from then on its words are read as markdown (Sean,
   2026-10-05: "when converting a cell to markdown, it just processes markdown"): the marker goes on top and the
   escapes' backslashes go, so a literal `**x**` is bold now, a line starting `# ` is a heading (block markup at the
@@ -69,11 +75,21 @@ their own kinds; this is about the body-text paragraph only.
 | Ctrl+Shift+7 | Markdown (new) |
 | Ctrl+8 | Code block (unchanged) |
 | Ctrl+Shift+8 | Runnable code (was Ctrl+9) |
-| Ctrl+9 | Drawing cell (was Ctrl+0) |
-| Ctrl+0 | free |
+| Ctrl+9 | Maths cell (new, 2026-10-06; Drawing cell on 2026-10-05) |
+| Ctrl+0 | Drawing cell (back from Ctrl+9, 2026-10-06) |
 
 Digits are matched by the physical key (`KeyboardEvent.code` `Digit7`): Shift+7 types `&` on a US layout. The F1 list
-and the quick reference group them as one block. These differ from the Mac (⌘9 is its evaluation cell) on purpose.
+and the quick reference group them as one block, 1 … 9 then 0. These differ from the Mac (⌘9 is its evaluation cell) on
+purpose.
+
+**The maths cell** (Sean, 2026-10-06: "ctrl + 7 should be PURELY plaintext.. so clearly we need a math cell type.. that
+should be ctrl + 9 and make ctrl + 10 drawing cells"): the ```` ```wl ```` display-maths fence, typeset when the caret is
+not in it, as a cell kind of its own (core `cells/mathsCells.ts`). Ctrl+9 at a bar / on an empty line / in an emptied
+cell writes an empty one; in a text or markdown cell it makes THAT cell one, its words the raw source (a text cell's
+escapes come out; a selection is fenced as Ctrl+8 fences it); in a code block the fence becomes `wl`; in an evaluation
+cell a new one goes after the pair; in a maths cell nothing. Ctrl+7 on a maths cell gives a text cell of the source
+(escaped, never typeset); Ctrl+8 a ```` ```wolfram ```` code block of it. Each is one undo step. A text cell still never
+typesets anything.
 
 ## Everywhere it has to hold
 

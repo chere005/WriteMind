@@ -54,6 +54,9 @@ const api = {
   createNote: (folder: string) => ipcRenderer.invoke("note:create", folder),
   renameNote: (file: string, title: string) => ipcRenderer.invoke("note:rename", file, title),
   trashNote: (file: string) => ipcRenderer.invoke("note:trash", file),
+  /** File ▸ Clean Up Unused Files… (main/housekeeping.ts). */
+  findUnused: (held: unknown) => ipcRenderer.invoke("housekeeping:scan", held),
+  trashUnused: (paths: string[], held: unknown) => ipcRenderer.invoke("housekeeping:trash", paths, held),
   /** Text that could not be written, put where it can be come back to; resolves to the file. */
   rescue: (file: string, text: string, kind: "note" | "drawing" = "note"): Promise<string> =>
     ipcRenderer.invoke("note:rescue", file, text, kind),
@@ -113,6 +116,8 @@ const api = {
   pen,
   /** The quick reference written at this launch (a new install), once; null otherwise (main/welcome.ts). */
   welcomed: (): Promise<string | null> => ipcRenderer.invoke("welcome:take"),
+  /** "Your notes stay in Documents\WriteMindCross…" once, when both notes folders are there; else null (main/notesFolderMove.ts). */
+  notesFolderNotice: (): Promise<string | null> => ipcRenderer.invoke("notesFolder:notice"),
   /** The tablet's sheets (tabs) and their ink, kept in userData/sheets.json (main/sheets.ts). */
   sheets: {
     load: (): Promise<string | null> => ipcRenderer.invoke("sheets:load"),

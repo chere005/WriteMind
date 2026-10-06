@@ -335,6 +335,18 @@ button { font: inherit; color: inherit; }
   opacity: 0.85;
 }
 .wm-segment:hover { opacity: 1; }
+/* What a click would take, shown before the click (Canvas.tsx `hover`, the Mac's hovered object): a faint dashed
+   outline, and its handles dimmed until the pointer is on one. Over it the pointer is an open hand. */
+.wm-hover-box {
+  position: absolute;
+  box-sizing: border-box;
+  pointer-events: none;
+  border: 1px dashed color-mix(in srgb, var(--wm-accent) 60%, transparent);
+  border-radius: 2px;
+}
+.wm-handles-faint .wm-handle { opacity: 0.45; }
+.wm-handles-faint .wm-handle:hover { opacity: 1; }
+.wm-hover-grab .cm-editor, .wm-hover-grab .cm-editor * { cursor: grab !important; }
 
 /* A node's label, typed over the node. */
 .wm-label-edit {

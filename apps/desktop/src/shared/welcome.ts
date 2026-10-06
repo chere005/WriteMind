@@ -18,6 +18,7 @@ export const WELCOME_FILE = "WriteMind Quick Reference.md"
 /** What the app has, in a line or two each: Sean's approved note, kept to what is built. */
 export const WELCOME_FEATURES: string[] = [
   "**Cells:** text, markdown, headings, lists, code, runnable code, maths, tables and drawings; the bar between cells adds one.",
+  "**Maths cells:** Ctrl+9 makes one, or turns a cell's words into one; Wolfram Language, typeset when the caret leaves.",
   "**Rendered page:** Ctrl+T shows the note as a finished page you can still type in.",
   "**Drawing:** pen ink, shapes, arrows and pictures over the note; the ⤵ handle docks them into it as cells.",
   "**Runnable cells:** Python, Wolfram, C, C++ and Rust, with In[n] / Out[n]; Shift+Enter runs one.",
@@ -43,7 +44,7 @@ export interface WelcomeGroup { title: string; keys: WelcomeKey[] }
 /**
  * The most important keys, grouped as Sean's approved note is (2026-10-05: "group the ctrl/cmd + 1-0 keystrokes"): the
  * number keys that make cells first, in keyboard order (the heading ladder down to 7 Text, Shift+7 Markdown, 8 Code
- * block, Shift+8 Runnable code, 9 Drawing cell: docs/PLAN-text-cells.md), then Notes, View, Editing and Help. The F1
+ * block, Shift+8 Runnable code, 9 Maths cell, 0 Drawing cell: docs/PLAN-text-cells.md), then Notes, View, Editing and Help. The F1
  * list groups them the same way (keyGroups.ts).
  */
 export const WELCOME_GROUPS: WelcomeGroup[] = [
@@ -51,11 +52,13 @@ export const WELCOME_GROUPS: WelcomeGroup[] = [
     title: "Cell types — Ctrl / ⌘ (+ Shift) + a number",
     keys: [
       ...HEADING_LADDER.map((level, index) => ({ what: `${index + 1} ${headingName(level)}`, ids: [headingId(level)] })),
-      // docs/PLAN-text-cells.md: 7 plain Text, Shift+7 its markdown twin; 8 Code block, Shift+8 Runnable code; 9 Drawing.
+      // docs/PLAN-text-cells.md: 7 plain Text, Shift+7 its markdown twin; 8 Code block, Shift+8 Runnable code; 9 Maths;
+      // 0 Drawing.
       { what: "Shift+7 Markdown", ids: ["markdownCell"] },
       { what: "8 Code block", ids: ["codeBlock"] },
       { what: "Shift+8 Runnable code", ids: ["evaluationCell"] },
-      { what: "9 Drawing cell", ids: ["insertInkCell"] },
+      { what: "9 Maths cell", ids: ["mathsCell"] },
+      { what: "0 Drawing cell", ids: ["insertInkCell"] },
     ],
   },
   {

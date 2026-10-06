@@ -44,7 +44,7 @@ ONE LIST, the Mac's README table and `Shortcut` enum (Mac e8b3266, 2026-09-21: S
 table is `shared/keyList.ts` row for row, and **`apps/desktop/test/keyList.test.ts` fails** when a key moves,
 is added or is taken away until this table says so too; the same test holds the list to the menu bar, fails
 on any chord two commands want, and fails when the editor's keymaps bind a menu chord outside
-`shared/commands.ts`. Help ▸ Keyboard Shortcuts (F1) shows the same rows in the app, with the number keys (Ctrl / ⌘ (+ Shift) + 1 … 9: the cell kinds, each digit's Shift chord after it) taken out of their menus and shown first as one group, "Cell Types — Ctrl (+Shift) + a Number" (`shared/keyGroups.ts`, Sean 2026-10-05). Digits are matched by the PHYSICAL key (`KeyboardEvent.code` `Digit7`): Shift+7 types `&` on a US layout. Ctrl+0 is free. The Mac column is the
+`shared/commands.ts`. Help ▸ Keyboard Shortcuts (F1) shows the same rows in the app, with the number keys (Ctrl / ⌘ (+ Shift) + 1 … 9, then 0: the cell kinds, each digit's Shift chord after it) taken out of their menus and shown first as one group, "Cell Types — Ctrl (+Shift) + a Number" (`shared/keyGroups.ts`, Sean 2026-10-05). Digits are matched by the PHYSICAL key (`KeyboardEvent.code` `Digit7`): Shift+7 types `&` on a US layout. Ctrl+9 is the Maths Cell and Ctrl+0 the Drawing Cell (Sean, 2026-10-06: "ctrl + 7 should be PURELY plaintext.. so clearly we need a math cell type.. that should be ctrl + 9 and make ctrl + 10 drawing cells"); no zoom item uses Ctrl+0 (the menu has no zoom roles). The Mac column is the
 Mac app's own chord; "—" is a port-only key.
 
 | Menu | Command | Windows / Linux | Mac |
@@ -102,7 +102,8 @@ Mac app's own chord; "—" is a port-only key.
 | Insert | Image… | Ctrl+Shift+I | ⇧⌘I |
 | Insert | Maths… | Ctrl+Shift+M | — |
 | Insert | Code Block | Ctrl+8 | ⌘8 |
-| Insert | Drawing Cell | Ctrl+9 | — |
+| Insert | Maths Cell | Ctrl+9 | — |
+| Insert | Drawing Cell | Ctrl+0 | — |
 | Pen | Pen Down / Up | Ctrl+Alt+1 | — |
 | Pen | Erase Tool | Ctrl+Alt+2 | — |
 | Pen | Select Tool | Ctrl+Alt+3 | — |
@@ -169,10 +170,10 @@ cell is the hidden line `<!-- markdown -->` over a paragraph. Both panes and the
 
 | Key | Does |
 |---|---|
-| Ctrl+7 (Format ▸ Text) | a markdown cell becomes a text cell: the marker and the formatting go, the words and their line breaks stay (one Undo). On a heading: body text, as before. At a bar: a new text cell there |
+| Ctrl+7 (Format ▸ Text) | a markdown cell becomes a text cell: the marker and the formatting go, the words and their line breaks stay (one Undo, its own step). Inline maths keeps its whole source as words (`` `wl:Pi r^2` ``, shown as typed, not typeset), so Ctrl+Shift+7 afterwards typesets it again. On a heading: body text, as before. At a bar: a new text cell there |
 | Ctrl+Shift+7 (Format ▸ Markdown) | a text cell becomes a markdown cell and its words are read as markdown from then on: the marker goes on top and the escapes' backslashes go (a literal `**x**` is bold now, a line starting `# ` a heading, single line breaks join); the selection stays on the same characters, one Undo gives the text cell back. Ctrl+B / I / U, the B I U S buttons, the T menu, /link and inline maths (a `wl:` code span) in a text cell do the same first; a selection that only touches a text cell at an end leaves it alone. On a heading: a markdown paragraph of its words. At a bar: a new markdown cell there |
 | Ctrl+B / I / U, Ctrl+Shift+X, the toolbar's B I U S, the T menu, `/link`, inline maths in a TEXT cell | make it a markdown cell first, then format: ONE Undo takes both back |
-| typing `**`, `#`, `- `, `>`, `1.`… in a text cell | stays literal: the file gets a backslash before what would mean something else, and only that; WriteMind hides it and the caret takes it with its character |
+| typing `**`, `#`, `- `, `>`, `1.`, `` `wl:x^2` ``… in a text cell | stays literal: the file gets a backslash before what would mean something else, and only that; WriteMind hides it and the caret takes it with its character (maths typed there is its source, never typeset: the palette's inline insert makes the cell markdown first) |
 | Shift+Enter in a text cell on the rendered page | a line break in the cell (Return still starts the next cell); on the markdown side Return is a line break as ever |
 | Copy / Cut in a text cell | the words, without the hidden backslashes (held cells copy whole, as markdown) |
 | Backspace at the start of a markdown cell's words, Delete at the end of the line above it | as if the marker were not there: the cell moves up, or its words join the line above (the marker goes with the line break) |
@@ -250,10 +251,28 @@ core `tableTab` / `tableReturn`. No table button or menu key yet (docs/TODO.md).
 
 | Key | What it does |
 |---|---|
-| Ctrl+9 (Insert ▸ Drawing Cell; the + menu's Drawing Cell at a bar; Ctrl+0 until 2026-10-05) | an empty ink cell (200 px tall) at the armed bar, else after the caret's cell; one Ctrl+Z takes its line and its sidecar item out. The pen draws, erases and selects in it as on the page. AND THE POINTER BECOMES A PEN FOR THAT CELL (2026-10-05): with the pen up, a press in the new cell draws there (its box is ringed, the cursor a crosshair); a press anywhere else ends it and is just a click (the caret; never a stroke, not even from a pen that always draws); Escape ends it; Ctrl+P (the pen for the whole page) ends it too |
+| Ctrl+0 (Insert ▸ Drawing Cell; the + menu's Drawing Cell at a bar; Ctrl+9 on 2026-10-05, Ctrl+0 again since 2026-10-06) | an empty ink cell (200 px tall) at the armed bar, else after the caret's cell; one Ctrl+Z takes its line and its sidecar item out. The pen draws, erases and selects in it as on the page. AND THE POINTER BECOMES A PEN FOR THAT CELL (2026-10-05): with the pen up, a press in the new cell draws there (its box is ringed, the cursor a crosshair); a press anywhere else ends it and is just a click (the caret; never a stroke, not even from a pen that always draws); Escape ends it; Ctrl+P (the pen for the whole page) ends it too |
 | the dock handle (⤵, right of a picked set of floating strokes and / or pictures on the page) | a click docks them at the cursor (the armed bar, else after the caret's cell): one picture → a picture cell, anything else → one ink cell. A drag shows the drop bar under the pointer and docks where it is let go; over an ink cell (it lights up) they go INTO it. Escape or letting go outside the note docks nothing. One Ctrl+Z (or the pen's lower-button double tap) puts them back on the page and takes the line out |
 | arrows, Backspace / Delete, Ctrl+C / Ctrl+X / Ctrl+V, Ctrl+G with strokes picked IN an ink cell | nudge, delete, copy, cut, paste (back into the same cell), group, as on the page |
-| a right-click on a drawing cell (either pane, pen up or down; the pen's Right-click action too) | its menu: **Open in Tablet Sheet** (the video pane shows the Tablet, on a sheet tab "<note> Drawing" BOUND to the cell: writing there writes into the cell, one Ctrl+Z in the note per stroke or erase) and **Delete Drawing Cell** (its line goes, as Delete on the held cell; Ctrl+Z brings it back). A read-only ink line keeps the notebook's Cut / Copy / Paste menu |
+| a right-click on a drawing cell (either pane, pen up or down; the pen's Right-click action too) | its menu: **Open in Tablet Sheet** (the video pane shows the Tablet, on a sheet tab "<note> Drawing" BOUND to the cell: writing there writes into the cell, one Ctrl+Z in the note per stroke or erase) and **Delete Drawing Cell** (its line goes, as Delete on the held cell; Ctrl+Z brings it back). Since 2026-10-06 also **Text Box**, **Shape ▸** and **Arrow ▸** (arm the tool: the next click or drag in the cell puts one IN it) and **Undock** (the cell comes out of the note, its objects floating where it was, picked; one Ctrl+Z puts it back). A read-only ink line keeps the notebook's Cut / Copy / Paste menu |
+| a right-click on a docked picture (a picture cell of the note's own media) | **Undock** (a floating picture again, where and as big as the note showed it; one Ctrl+Z docks it back), **Cut**, **Copy**, **Delete Picture Cell**. A picture from anywhere else keeps the notebook's menu |
+| the pointer over an object, pen up (2026-10-06) | a faint outline and faint handles show what a click would take (a picture: the outline only); nothing is picked until the click, and a press on a faint handle picks it and does what the handle does |
+
+## Maths cells (Insert ▸ Maths Cell, Ctrl+9; port-only)
+
+Sean, 2026-10-06: "ctrl + 7 should be PURELY plaintext.. so clearly we need a math cell type.. that should be ctrl + 9".
+A maths cell is a ```` ```wl ```` fence of Wolfram Language, typeset whenever the caret is not in it (the display maths
+the palette writes). A text cell never typesets anything. Rules: `packages/core/src/cells/mathsCells.ts`.
+
+| Key | What it does |
+|---|---|
+| Ctrl+9 at a bar, on an empty line, or in an emptied cell (the + menu's Maths Cell at a bar too) | a new empty maths cell there, a cell of its own (blank lines round it), the caret inside ready for Wolfram Language; it is typeset when the caret leaves |
+| Ctrl+9 in a text or markdown cell with words | THAT cell becomes a maths cell, its words the source (a text cell's escape backslashes come out: maths source is raw; a markdown cell's marker line goes). With some of its words selected: those words are fenced, as Ctrl+8 fences them. One Ctrl+Z gives the cell back. Words holding a Link Here anchor are left as they are (a new maths cell goes after their cell: links from other notes keep landing); a line that would read as a fence (```) keeps its backslash |
+| Ctrl+9 in a code block | its fence becomes ```` ```wl ````, the code kept |
+| Ctrl+9 in an evaluation cell or its `out` answer | a new empty maths cell AFTER the pair (the runnable cell is left as it is) |
+| Ctrl+9 in a maths cell; heading / list / quote | nothing; a new maths cell after it (Ctrl+8's rule) |
+| Ctrl+7 in a maths cell | a text cell of its source: plain words (by the escape rule), never typeset |
+| Ctrl+8 in a maths cell | a Wolfram Language code block of the same source (```` ```wolfram ````: `wl` IS the maths fence, so it would still be maths) |
 
 ## The maths palette (Insert ▸ Maths…, the ƒ(x) button)
 
@@ -284,16 +303,19 @@ source under the menu; Ctrl/Cmd-click is the drawing layer's, as on words.
   sheet's own to take back: Ctrl+Z, the header's Undo and the pen's double tap
   are the note's Undo, and the sheet follows the cell.
 - **Pen side buttons** (Pen chip ▸ *Buttons*, see below): on the sheet the
-  lower one held while the pen touches rubs out strokes, the upper one held
-  drags the dashed box; a double tap in the air is Undo / Redo of the
+  first (upper, Middle Click) one held while the pen touches rubs out strokes,
+  the second (lower, Right Click) one held drags the dashed box; a double tap
+  in the air is Undo (first) / Redo (second) of the
   *sheet's* strokes (with nothing there, the note's). The eraser end always
   erases.
 - **⌫ Erase** (toolbar pen group): touch a stroke on the note's page to rub
   it out; picking the ✎ pen, Ctrl+P or a shape tool turns it off.
-- **Erase / Select on the sheet** (the sheet's header): the SHEET's own pair
-  (one for every sheet tab, not remembered). Nothing done in the notebook turns
-  them off, and they never light the toolbar's ⌫ / ⬚. Select makes the pen
-  pull the dashed box, as the mouse does.
+- **Erase / Select on the sheet**: the SHEET's own pair (one for every sheet
+  tab, not remembered). Select is a toggle in the sheet's header; Erase has no
+  header button (Sean, 2026-10-05): hold the pen's first button to rub out,
+  use the box row's Erase, or the Erase Tool toggle below. Nothing done in the
+  notebook turns them off, and they never light the toolbar's ⌫ / ⬚. Select
+  makes the pen pull the dashed box, as the mouse does.
 - **Erase Tool / Select Tool** by the pen (a double tap set to "Erase tool
   on/off" / "Select tool on/off", or the ExpressKey Ctrl+Alt+2 / Ctrl+Alt+3, or
   the Pen menu) toggle the tools of the surface the pen is over, or was last
@@ -336,8 +358,8 @@ Each side button has two jobs (Sean, 2026-10-05):
 
 | Button | Hold (held while the pen touches) | Double-tap (twice in the air) |
 |---|---|---|
-| Lower side button | Erase strokes (whole strokes it touches) | Undo |
-| Upper side button | Select: the marquee; a drag inside the selection moves it | Redo |
+| First button (upper, Middle Click) | Erase strokes (whole strokes it touches) | Undo |
+| Second button (lower, Right Click) | Select: the marquee; a drag inside the selection moves it | Redo |
 | Eraser end | Erase strokes | — |
 | Tip + Alt | Nothing | — |
 

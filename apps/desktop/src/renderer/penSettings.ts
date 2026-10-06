@@ -19,8 +19,9 @@
  * `eraser` is the Erase TOOL and `selectTool` the Select tool OF THE NOTEBOOK
  * (the drawing layer over the words: the toolbar's ⌫ / ⬚): neither is
  * remembered, so the app never comes up erasing, and they exclude each other.
- * The TABLET SHEET has its own pair (`sheetTools`: the sheet header's Erase /
- * Select, one pair for the whole set of sheets, not per tab, not remembered
+ * The TABLET SHEET has its own pair (`sheetTools`: the eraser set by the pen's
+ * Erase Tool toggle (the header has no Erase button since 2026-10-05), the
+ * header's Select; one pair for the whole set of sheets, not per tab, not remembered
  * either): nothing done in the notebook (a click, the pen button, Ctrl+P, a
  * placement tool: `putToolsDown`) changes the sheet's, and the sheet's never
  * light the notebook toolbar. The pen's toggle actions pick the pair of the

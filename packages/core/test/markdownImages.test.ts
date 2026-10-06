@@ -4,7 +4,7 @@ import {
 } from "../src/markdown/images"
 
 /**
- * The Mac's planned `WriteMind/Editor/MarkdownImages.swift` (C:\GIT\WriteMind\docs\PLAN-docking.md, "The model"; not
+ * The Mac's planned `WriteMind/Editor/MarkdownImages.swift` (C:\GIT\WriteMindSwift\docs\PLAN-docking.md, "The model"; not
  * built on the Mac yet), transcribed: `markdown(file:alt:)`, `picture(in: line)` (only a line that is nothing but the
  * image), `mediaFile(at: path)` (only the note's own media), `mediaFiles(in: markdown)` (what a sweep must keep).
  * Plus the port's own: `../` prefixes for notes in section folders and the ink cell's `ink-<uuid>.svg` name

@@ -6,7 +6,8 @@
  * nothing is stored beside the file, because the file is the note.
  */
 
-import { isMarkdownMarker, unescapeLine } from "../markdown/plainText"
+import { isMarkdownMarker, plainLine, unescapeLine } from "../markdown/plainText"
+import { positioned } from "../markdown/parser"
 
 export interface Note {
   /** The file's path. It is the id: two notes cannot share one. */
@@ -41,19 +42,43 @@ export function stripInlineMarkup(line: string): string {
   return out
 }
 
+/**
+ * Which of `lines` (by index) are a TEXT cell's (docs/PLAN-text-cells.md): their words are shown as typed, so the
+ * snippet takes nothing off them as markup — a `` `wl:x^2` `` in one is its backticks and all, never maths (Sean,
+ * 2026-10-05: "math shouldn't be typeset in non-markdown mode").
+ */
+function textCellLines(lines: readonly string[]): Set<number> {
+  const out = new Set<number>()
+  const starts: number[] = []
+  let at = 0
+  for (const line of lines) { starts.push(at); at += line.length + 1 }
+  let i = 0
+  for (const cell of positioned(lines.join("\n"))) {
+    if (cell.block.kind !== "paragraph" || cell.block.markdown) continue
+    const stop = cell.range.location + cell.range.length
+    while (i < lines.length && starts[i]! < cell.range.location) i++
+    for (; i < lines.length && starts[i]! < stop; i++) out.add(i)
+  }
+  return out
+}
+
 export function makeNote(path: string, modified: number, contents: string): Note {
   let title: string | null = null
   const snippetLines: string[] = []
+  const lines = contents.split("\n").slice(0, 40)
+  const plain = textCellLines(lines)
 
-  for (const raw of contents.split("\n").slice(0, 40)) {
-    const line = raw.trim()
+  for (let index = 0; index < lines.length; index++) {
+    const line = lines[index]!.trim()
     // A markdown cell's marker is not words (docs/PLAN-text-cells.md); a text cell's escapes are not drawn.
     if (line.length === 0 || isMarkdownMarker(line)) continue
     if (title === null && line.startsWith("#")) {
       title = line.replace(/^#+/, "").trim()
       continue
     }
-    if (snippetLines.length < 2) snippetLines.push(stripInlineMarkup(unescapeLine(line)))
+    if (snippetLines.length >= 2) continue
+    // A text cell's line as typed (its escapes and Link Here's anchors hidden); anything else with its markup off.
+    snippetLines.push(plain.has(index) ? plainLine(line) : stripInlineMarkup(unescapeLine(line)))
   }
 
   return {

@@ -2,8 +2,11 @@ import { ChangeSet, EditorState } from "@codemirror/state"
 import type { DecorationSet } from "@codemirror/view"
 import { describe, expect, it } from "vitest"
 import { windowHoldsPage } from "../src/decorations"
-import { inlineDecorations, linesOfRanges } from "../src/math"
+import { escapePlain } from "@writemind/core"
+import { inlineDecorations, linesOfRanges, typesetBlocks } from "../src/math"
 import { notebookField } from "../src/notebook"
+import { armedField } from "../src/seams"
+import { plainSelection, textCells } from "../src/textCells"
 
 /**
  * Two crashes of a CodeMirror plugin that left a note's maths (or its headings and bullets) as raw text until the
@@ -75,6 +78,43 @@ describe("a text cell's words are not maths", () => {
     expect(all("<!-- markdown -->\na `wl:c-d` b")).toBe(1)
     expect(all("a `wl:c-d` b")).toBe(1)
     expect(all("plain words\n\n# Sum `wl:a+b`\n\n- item `wl:a-b`\n\nmore \\`wl:x\\` words")).toBe(2)
+  })
+
+  // Sean, 2026-10-05: "math shouldn't be typeset in non-markdown mode" (docs/TODO.md; the paper, the copy and the
+  // snippet are pinned in packages/core/test/textCellMaths.test.ts, the rendered page by e2e maths/11).
+  const editing = (doc: string, at = doc.length) =>
+    EditorState.create({ doc, selection: { anchor: at }, extensions: [notebookField, armedField, textCells] })
+
+  it("every line of a text cell is words, and a markdown cell touching it still typesets", () => {
+    expect(all("first \\`wl:a+b` line\nsecond \\`wl:c-d` line\nthird")).toBe(0)
+    expect(all("words \\`wl:a` here\n<!-- markdown -->\nmaths `wl:b` here")).toBe(1)
+  })
+
+  it("maths TYPED or PASTED into a text cell is escaped as it goes in, and stays words", () => {
+    let state = editing("Area ")
+    for (const ch of "`wl:Pi r^2`") {
+      const at = state.selection.main.head
+      state = state.update({ changes: { from: at, insert: ch }, selection: { anchor: at + 1 }, userEvent: "input.type" }).state
+    }
+    expect(state.doc.toString()).toBe("Area \\`wl:Pi r^2`")
+    expect(count(inlineDecorations({ state, visibleRanges: [{ from: 0, to: state.doc.length }] }))).toBe(0)
+    const pasted = editing("Area ").update({ changes: { from: 5, insert: "`wl:x^2` and `wl:y`" }, userEvent: "input.paste" }).state
+    expect(pasted.doc.toString()).toMatch(/^Area \\`wl:x\^2/)
+    expect(plainSelection(pasted.update({ selection: { anchor: 0, head: pasted.doc.length } }).state)).toBe("Area `wl:x^2` and `wl:y`")
+    expect(count(inlineDecorations({ state: pasted, visibleRanges: [{ from: 0, to: pasted.doc.length }] }))).toBe(0)
+  })
+
+  it("a ```wl fence typed into a text cell is words: no maths block", () => {
+    const words = escapePlain("```wl\nx^2\n```")
+    expect(typesetBlocks(stateOf(words, words.length))).toEqual([])
+    const maths = "```wl\nx^2\n```\n\nafter"
+    expect(typesetBlocks(stateOf(maths, maths.length))).toHaveLength(1)
+  })
+
+  it("copy out of a text cell gives the maths as typed, backticks and all", () => {
+    const doc = "Area \\`wl:Pi r^2` here"
+    const state = EditorState.create({ doc, selection: { anchor: 0, head: doc.length }, extensions: [notebookField] })
+    expect(plainSelection(state)).toBe("Area `wl:Pi r^2` here")
   })
 })
 

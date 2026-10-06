@@ -68,9 +68,13 @@ describe("ShortcutTests", () => {
     expect(commandForKey(press("k", { ctrl: true }), "win32")?.id).toBe("toggleSidebar")
     expect(commandForKey(press(";", { ctrl: true }), "win32")?.id).toBe("collapseSubsections")
     expect(commandForKey(press("F1"), "win32")?.id).toBe("keyList")
-    // A digit is its physical key: Ctrl+Shift+7 types "&" and is still the 7 key; Ctrl+9 makes a drawing cell, Ctrl+0 nothing.
-    expect(commandForKey({ ...press("9", { ctrl: true }), code: "Digit9" }, "win32")?.id).toBe("insertInkCell")
-    expect(commandForKey({ ...press("0", { ctrl: true }), code: "Digit0" }, "win32")).toBeNull()
+    // A digit is its physical key: Ctrl+Shift+7 types "&" and is still the 7 key. Ctrl+0 makes a drawing cell (the
+    // page's); Ctrl+9 is the maths cell, which the editor's keymap hears, so the page leaves it alone (Sean, 2026-10-06).
+    expect(commandForKey({ ...press("0", { ctrl: true }), code: "Digit0" }, "win32")?.id).toBe("insertInkCell")
+    expect(commandForKey({ ...press("9", { ctrl: true }), code: "Digit9" }, "win32")).toBeNull()
+    expect(shown("mathsCell", "win32")).toBe("Ctrl+9")
+    expect(shown("mathsCell", "darwin")).toBe("Cmd+9")
+    expect(shown("insertInkCell", "darwin")).toBe("Cmd+0")
     // Ctrl+Y stays Redo, which is useUndo's and not the page's.
     expect(commandForKey(press("y", { ctrl: true }), "win32")).toBeNull()
   })

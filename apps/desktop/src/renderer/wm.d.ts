@@ -32,6 +32,9 @@ declare global {
       createNote(folder: string): Promise<string>
       renameNote(file: string, title: string): Promise<string>
       trashNote(file: string): Promise<void>
+      /** File ▸ Clean Up Unused Files… (main/housekeeping.ts): what is unused, and the bin for what was said yes to. */
+      findUnused(held: import("../shared/housekeeping").Held): Promise<import("../shared/housekeeping").UnusedScan>
+      trashUnused(paths: string[], held: import("../shared/housekeeping").Held): Promise<import("../shared/housekeeping").TrashResult>
       rescue(file: string, text: string, kind?: "note" | "drawing"): Promise<string>
       createSection(parent: string): Promise<string>
       /** False: the folder is a project folder (or not in the project), nothing was put in the bin. */
@@ -84,6 +87,8 @@ declare global {
       pen: import("../shared/pen").PenApi
       /** The quick reference written at this launch (a new install), once, else null (main/welcome.ts); absent in an old preload. */
       welcomed?(): Promise<string | null>
+      /** The "your notes stay in WriteMindCross" notice, once, else null (main/notesFolderMove.ts); absent in an old preload. */
+      notesFolderNotice?(): Promise<string | null>
       /** The tablet's sheets (tabs), as text (renderer/sheetSet.ts), kept in userData/sheets.json; absent in an old preload. */
       sheets?: { load(): Promise<string | null>; save(text: string): void }
       /** Evaluation cells (shared/eval.ts): run one cell on Shift+Enter, take a run back, where the tools are. */

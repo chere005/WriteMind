@@ -10,7 +10,7 @@ import { notebook, notebookField } from "../src/notebook"
 /**
  * The arrows walk cell, bar, cell on the markdown side (Sean, 2026-10-05: "pressing down arrow at the bottom of a cell
  * should move the cursor beneath the cell horizontally"). The rules as answers about a state; the view's half (the
- * line on screen, the column kept) is held by C:\GIT\WriteMindCross\e2e\suites\cells\04-arrows-to-bar.mjs.
+ * line on screen, the column kept) is held by C:\GIT\WriteMind\e2e\suites\cells\04-arrows-to-bar.mjs.
  */
 
 const make = (doc: string, anchor = 0, head = anchor): EditorState =>

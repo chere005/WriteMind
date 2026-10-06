@@ -1,7 +1,7 @@
 /**
- * The Keyboard Shortcuts list (F1) shows the number keys together, first: Ctrl / ⌘ (+ Shift) + 1 … 9 make the cells
- * (Title … Text, Markdown, Code Block, Evaluation Cell, Drawing Cell), and they are scattered over the Format and Insert
- * menus otherwise. Sean, 2026-10-05: "group the ctrl/cmd + 1-0 keystrokes", in his quick reference and in this list; and
+ * The Keyboard Shortcuts list (F1) shows the number keys together, first: Ctrl / ⌘ (+ Shift) + 1 … 9, 0 make the cells
+ * (Title … Text, Markdown, Code Block, Evaluation Cell, Maths Cell, Drawing Cell), and they are scattered over the
+ * Format and Insert menus otherwise. Sean, 2026-10-05: "group the ctrl/cmd + 1-0 keystrokes", in his quick reference and in this list; and
  * the same day the Shift row joined it (docs/PLAN-text-cells.md: Ctrl+Shift+7 Markdown, Ctrl+Shift+8 Runnable code).
  * Pure: the rows still come from the one key table (keyList.ts); only their order and grouping change here.
  */

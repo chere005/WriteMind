@@ -1,0 +1,30 @@
+/* File ▸ Clean Up Unused Files… (CleanUpDialog.tsx): the shared .modal, wider, with a list that scrolls. */
+.modal.cleanup { width: min(480px, calc(100vw - 32px)); }
+.modal.cleanup .cleanup-list {
+  max-height: 220px;
+  overflow-y: auto;
+  margin: 0 0 12px;
+  padding: 4px 0;
+  list-style: none;
+  border: 1px solid var(--wm-rule);
+  border-radius: 6px;
+}
+.modal.cleanup .cleanup-list li {
+  display: flex;
+  gap: 10px;
+  align-items: baseline;
+  padding: 2px 10px;
+  font-size: 12px;
+}
+.modal.cleanup .cleanup-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: ui-monospace, "Cascadia Mono", Consolas, monospace;
+  font-size: 11.5px;
+}
+.modal.cleanup .cleanup-kind,
+.modal.cleanup .cleanup-size { color: var(--wm-soft); white-space: nowrap; }
+.modal.cleanup .cleanup-size { min-width: 52px; text-align: right; }

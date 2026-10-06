@@ -10,6 +10,9 @@ import { exportFile, writeProjectFile, type ExportFileDeps } from "../src/main/e
 import { PROJECT_EXTENSION, parseProject } from "../src/main/project"
 
 const scratch = () => mkdtempSync(path.join(os.tmpdir(), "wm-export-"))
+// The answer a save panel gives, as this system writes paths (the report names it by path.basename, and a Mac's
+// takes all of "C:\out\Lecture 3.pdf" for one name; a Windows path is only ever met on Windows).
+const PDF_ANSWER = process.platform === "win32" ? "C:\\out\\Lecture 3.pdf" : "/out/Lecture 3.pdf"
 const note = {
   noteFile: "C:\\notes\\Lecture 3.md", title: "Lecture 3", markdown: "# Lecture 3\n\nwords", drawing: null,
   pane: { width: 700, height: 900 },
@@ -65,9 +68,9 @@ describe("File ▸ Export…: one panel, the format chosen in it", () => {
   })
 
   it("an answer ending .pdf is the note's PDF", async () => {
-    const { d, pdfs } = deps("C:\\out\\Lecture 3.pdf")
-    expect(await exportFile(note, d)).toEqual({ format: "pdf", file: "C:\\out\\Lecture 3.pdf" })
-    expect(pdfs).toEqual(["C:\\out\\Lecture 3.pdf"])
+    const { d, pdfs } = deps(PDF_ANSWER)
+    expect(await exportFile(note, d)).toEqual({ format: "pdf", file: PDF_ANSWER })
+    expect(pdfs).toEqual([PDF_ANSWER])
   })
 
   it("an answer ending in the project's extension is the project, and no PDF is made", async () => {
@@ -98,7 +101,7 @@ describe("File ▸ Export…: one panel, the format chosen in it", () => {
   })
 
   it("a write that fails says so, and nothing is reported as made", async () => {
-    const { d, reports } = deps("C:\\out\\Lecture 3.pdf", { writePdf: async () => { throw new Error("disk full") } })
+    const { d, reports } = deps(PDF_ANSWER, { writePdf: async () => { throw new Error("disk full") } })
     expect(await exportFile(note, d)).toBeNull()
     expect(reports).toEqual(["Could not write “Lecture 3.pdf”"])
   })

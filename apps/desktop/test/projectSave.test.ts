@@ -82,13 +82,17 @@ describe("starting with a remembered project whose file does not answer", () => 
     const home = scratch()
     const folder = scratch()
     const state = path.join(scratch(), "project.json")
-    writeFileSync(state, JSON.stringify({ file: "\\\\198.51.100.23\\notes\\Work.writemind-project", folders: [folder], excluded: [] }))
+    // A file on a share that does not answer: a UNC path on Windows, the share's mount on a Mac (the reader never
+    // answers either way; a Mac's path.basename would rightly take all of a UNC path for one name).
+    const remembered = process.platform === "win32"
+      ? "\\\\198.51.100.23\\notes\\Work.writemind-project" : "/Volumes/notes/Work.writemind-project"
+    writeFileSync(state, JSON.stringify({ file: remembered, folders: [folder], excluded: [] }))
     const store = new ProjectStore(home)
     const started = Date.now()
     await store.restore(state, 150, () => new Promise<string>(() => undefined))
     expect(Date.now() - started).toBeLessThan(2000)
     expect(store.folders).toEqual([path.resolve(folder)])
-    expect(store.file).toBe("\\\\198.51.100.23\\notes\\Work.writemind-project")
+    expect(store.file).toBe(remembered)
     expect(store.name).toBe("Work")
   })
 

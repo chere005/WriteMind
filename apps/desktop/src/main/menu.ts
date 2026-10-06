@@ -66,6 +66,8 @@ export function buildMenu(options: MenuOptions): MenuItemConstructorOptions[] {
     // One item; PDF or Project is chosen in the save panel (exportFile.ts). Nothing to make
     // without a note or a folder (the Mac: `store.selectedNote == nil && store.folders.isEmpty`).
     item("export", "Export…", { enabled: state.hasNote || project.folders.length > 0 }),
+    // The port's own (docs\TODO.md "Housekeeping"): drawings and pictures nothing uses, to the bin after a yes.
+    item("cleanUp", "Clean Up Unused Files…", { enabled: project.folders.length > 0 }),
     ...(platform === "darwin" ? [] : [SEPARATOR, { role: "quit" as const, label: "Quit" }]),
   ]
 
@@ -172,6 +174,7 @@ export function buildMenu(options: MenuOptions): MenuItemConstructorOptions[] {
     SEPARATOR,
     item("codeBlock", state.codeLanguage ? `${state.codeLanguage} Block` : "Code Block",
       { enabled: state.hasNote }),
+    item("mathsCell", "Maths Cell", { enabled: state.hasNote }),
     item("insertInkCell", "Drawing Cell", { enabled: state.hasNote }),
   ]
 

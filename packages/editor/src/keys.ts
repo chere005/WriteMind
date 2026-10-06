@@ -17,6 +17,7 @@ import {
   caretLine, codeBlock, indent, listContinuation, mergeCells, moveSection, outdent,
   outdentForBackspace, setHeading, splitCell, substring, toggleList, toggleQuote, toggleWrap,
   kindForHeading, makeMarkdownCell, makeTextCell, positioned, viaMarkdownCells, wholeChange,
+  MATH_FENCE, mathsAsCode, mathsAsText, mathsCellPlan,
   type CellKind, type Edit, type Heading, type ListStyle, type Range,
 } from "@writemind/core"
 import { heldCells } from "./brackets"
@@ -25,7 +26,8 @@ import { makesCellAfter } from "./dock"
 import { extraKeys } from "./extras"
 import { setHolding } from "./preview/hold"
 import { applyEdit, notebookField } from "./notebook"
-import { armedField, openArmed, setArmedType } from "./seams"
+import { armedField, openArmed, openCellAt, setArmedType } from "./seams"
+import { caretInEmptyCell } from "./textCells"
 import { backspaceMayOutdent } from "./windowed"
 
 const selection = (view: EditorView): Range => {
@@ -88,15 +90,23 @@ export const nameKind = (kind: CellKind, command: Command): Command => (view) =>
 
 /**
  * Ctrl+7, TEXT (docs/PLAN-text-cells.md): a markdown cell becomes a text cell (its marker and its formatting go, its
- * words and their line breaks stay); a heading becomes body text, as the ladder's last rung always did.
+ * words and their line breaks stay); a maths cell becomes a text cell of its source, plain words that never typeset;
+ * a heading becomes body text, as the ladder's last rung always did.
  */
-export const textCell: Command = nameKind({ kind: "text" },
-  run((text, where) => makeTextCell(text, where) ?? setHeading(text, where, 0)))
+export const textCell: Command = nameKind({ kind: "text" }, (view) => {
+  const text = view.state.doc.toString()
+  const where = selection(view)
+  const change = makeTextCell(text, where) ?? mathsAsText(text, where) ?? setHeading(text, where, 0)
+  if (!change) return false
+  // Each switch is its own undo step, however quickly the next comes (Ctrl+7 then Ctrl+Shift+7: Ctrl+Z undoes each).
+  applyEdit(view, change, true)
+  return true
+})
 
 /** Ctrl+Shift+7, MARKDOWN: the paragraph (or the heading's words) becomes a markdown cell — the marker on top. */
 export const markdownCell: Command = nameKind({ kind: "markdown" }, (view) => {
   const change = makeMarkdownCell(view.state.doc.toString(), selection(view))
-  if (change) applyEdit(view, change)
+  if (change) applyEdit(view, change, true)
   return true
 })
 
@@ -119,11 +129,56 @@ export const listStyleSource = Facet.define<() => ListStyle, () => ListStyle>({
 const chosenList: Command = (view) => list(view.state.facet(listStyleSource)())(view)
 
 export const quote: Command = nameKind({ kind: "quote" }, run(unmarked((text, where) => toggleQuote(text, where))))
-export const fence: Command = nameKind({ kind: "code" }, makesCellAfter({ kind: "code" }, run((text, where) => codeBlock(text, where))))
+/** Ctrl+8, CODE BLOCK. In a maths cell: that cell becomes Wolfram Language code, the same source (`mathsAsCode`). */
+export const fence: Command = nameKind({ kind: "code" }, (view) => {
+  const change = mathsAsCode(view.state.doc.toString(), selection(view))
+  if (change) { applyEdit(view, change, true); return true }
+  return makesCellAfter({ kind: "code" }, run((text, where) => codeBlock(text, where)))(view)
+})
+
+/** An empty maths cell's opening fence line, with its newline: where the caret goes in one. */
+const MATHS_OPEN = "```" + MATH_FENCE + "\n"
+
+/**
+ * Ctrl+9, MATHS CELL (Sean, 2026-10-06: "ctrl + 7 should be PURELY plaintext.. so clearly we need a math cell type..
+ * that should be ctrl + 9"): a ```wl fence, typeset when the caret is not in it. At a bar, on an empty line or in an
+ * emptied cell: a new empty one there, the caret inside. In a text or markdown cell: that cell becomes one, its words
+ * the source (a selection: the selected words wrapped, as Ctrl+8 wraps them). In a code block: its fence becomes ```wl.
+ * In an evaluation cell: a new one after the pair. In a maths cell: nothing. Its own undo step (core `mathsCellPlan`).
+ */
+export const mathsCell: Command = nameKind({ kind: "maths" }, (view) => {
+  const state = view.state
+  const where = selection(view)
+  const emptied = caretInEmptyCell(state)
+  if (emptied !== null) {
+    // An emptied markdown cell: the maths cell takes its place, marker and all.
+    const line = state.doc.lineAt(where.location)
+    applyEdit(view, {
+      range: { location: emptied, length: line.to - emptied },
+      replacement: MATHS_OPEN + "\n```",
+      selection: { location: emptied + MATHS_OPEN.length, length: 0 },
+    }, true)
+    return true
+  }
+  const plan = mathsCellPlan(state.doc.toString(), where)
+  switch (plan.kind) {
+    case "none": view.focus(); return true
+    case "edit": applyEdit(view, plan.edit, true); return true
+    case "after": openCellAt(view, plan.seam, { kind: "maths" }); view.focus(); return true
+    case "new": return makesCellAfter({ kind: "maths" }, run((text, at) => codeBlock(text, at, MATH_FENCE)))(view)
+  }
+})
 export const indentLines: Command = run((text, where) => indent(text, where))
 export const outdentLines: Command = run((text, where) => outdent(text, where))
 export const splitTheCell: Command = run((text, where) => splitCell(text, where))
-export const mergeTheCell: Command = run((text, where) => mergeCells(text, where))
+/**
+ * Merge Cells. Nothing in an emptied markdown cell: it has no words to join, and the caret there is in no cell, so the
+ * core's rule (no cell → the note's last two) would join two cells far away (no bar is up there to stop it).
+ */
+export const mergeTheCell: Command = (view) => {
+  if (caretInEmptyCell(view.state) !== null) { view.focus(); return true }
+  return run((text, where) => mergeCells(text, where))(view)
+}
 export const moveUp: Command = run((text, where) => moveSection(text, where, true))
 export const moveDown: Command = run((text, where) => moveSection(text, where, false))
 
@@ -182,11 +237,13 @@ const baseKeys: Extension = keymap.of([
   { key: "Mod-4", run: heading(3) },
   { key: "Mod-5", run: heading(4) },
   { key: "Mod-6", run: heading(5) },
-  // The cell kinds by number (docs/PLAN-text-cells.md): 7 Text, Shift+7 Markdown, 8 Code block. CodeMirror reads a
-  // Shift+digit by its key code, so Ctrl+Shift+7 is heard although Shift+7 types "&" (Shift+8 Runnable code: eval/index.ts).
+  // The cell kinds by number (docs/PLAN-text-cells.md): 7 Text, Shift+7 Markdown, 8 Code block, 9 Maths cell. CodeMirror
+  // reads a Shift+digit by its key code, so Ctrl+Shift+7 is heard although Shift+7 types "&" (Shift+8 Runnable code:
+  // eval/index.ts; 0 Drawing cell is the app's, it writes the drawing too).
   { key: "Mod-7", run: heading(0) },
   { key: "Shift-Mod-7", run: markdownCell, preventDefault: true },
   { key: "Mod-8", run: fence },
+  { key: "Mod-9", run: mathsCell, preventDefault: true },
   { key: "Mod-]", run: indentLines, preventDefault: true },
   { key: "Mod-[", run: outdentLines, preventDefault: true },
   { key: "Tab", run: indentLines, shift: outdentLines, preventDefault: true },

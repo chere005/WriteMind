@@ -67,8 +67,11 @@ describe("text that could not be saved is kept where it can be come back to", ()
     const data = mkdtempSync(path.join(os.tmpdir(), "wm-rescue-"))
     const when = new Date(2026, 9, 3, 14, 15, 2)
     expect(stamp(when)).toBe("20261003-141502")
-    const first = await rescueUnsaved(data, "C:\\notes\\one.md", "first words", "note", when)
-    const second = await rescueUnsaved(data, "C:\\notes\\one.md", "second words", "note", when)
+    // A note's path as this system writes it: a Windows path is only ever met on Windows (and a Mac's
+    // path.basename would rightly take all of "C:\notes\one.md" for one name).
+    const noteFile = process.platform === "win32" ? "C:\\notes\\one.md" : "/notes/one.md"
+    const first = await rescueUnsaved(data, noteFile, "first words", "note", when)
+    const second = await rescueUnsaved(data, noteFile, "second words", "note", when)
     expect(path.basename(first)).toBe("one (20261003-141502).md")
     expect(second).not.toBe(first)
     expect(readFileSync(first, "utf8")).toBe("first words")

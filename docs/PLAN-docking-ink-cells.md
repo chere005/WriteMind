@@ -7,7 +7,7 @@ only go above and below a docked image"*. 2026-10-05 he chose **editable ink cel
 in with the pen; its strokes stay editable; text flows above and below; resizable; the markdown gets a marker
 line, strokes live in the drawing sidecar. Floating ink and pictures can be docked INTO an ink cell or AS one.*
 
-This builds on the Mac's plan (`C:\GIT\WriteMind\docs\PLAN-docking.md`, not built on the Mac either) and keeps
+This builds on the Mac's plan (`C:\GIT\WriteMindSwift\docs\PLAN-docking.md`, not built on the Mac either) and keeps
 every rule of it. Floating objects stay floating (`PLAN-cells-and-floating.md`): an ink cell is something you ask
 for, never something floating ink turns into by itself. Undocking is not in this plan.
 

@@ -1,7 +1,7 @@
 /**
  * Updates, the pure half (main/updater.ts is the Electron half; test/updater.test.ts holds this one).
  *
- * WHERE THEY COME FROM: WriteMindCross's own GitHub Releases (a public repo; electron-builder.yml's `publish`
+ * WHERE THEY COME FROM: WriteMind's own GitHub Releases (a public repo; electron-builder.yml's `publish`
  * block, .github/workflows/release.yml makes them). WHICH COPIES LOOK: an INSTALLED Windows build only — the
  * per-user NSIS install, which has its uninstaller beside the exe and the update feed (`resources/app-update.yml`)
  * in its resources. Never a development run, an end-to-end run, the portable exe, an unpacked folder, or a copy run
@@ -161,9 +161,9 @@ export function updateEligibility(facts: CopyFacts): Eligibility {
 // MARK: - A Mac's look: GitHub's latest release
 
 /** GitHub's latest published release of this repo (drafts and pre-releases are never "latest"). */
-export const RELEASES_LATEST_API = "https://api.github.com/repos/chere005/WriteMindCross/releases/latest"
+export const RELEASES_LATEST_API = "https://api.github.com/repos/chere005/WriteMind/releases/latest"
 /** Every page Download opens is under this, with the version's tag after it. */
-export const RELEASE_TAG_PAGE = "https://github.com/chere005/WriteMindCross/releases/tag/"
+export const RELEASE_TAG_PAGE = "https://github.com/chere005/WriteMind/releases/tag/"
 /** A look at GitHub that takes longer than this is given up (and says so). */
 export const RELEASE_CHECK_TIMEOUT_MS = 10_000
 
@@ -193,7 +193,7 @@ export function macDmgSuffix(arch: string): string | null {
 
 /**
  * The release's page, BUILT from its version (never a URL from GitHub's answer): always under
- * https://github.com/chere005/WriteMindCross/releases/tag/. Null for anything that is not a plain x.y.z.
+ * https://github.com/chere005/WriteMind/releases/tag/. Null for anything that is not a plain x.y.z.
  */
 export function releasePage(version: string): string | null {
   const parts = RELEASE_VERSION.exec(version)

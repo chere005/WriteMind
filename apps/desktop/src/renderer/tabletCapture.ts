@@ -9,7 +9,7 @@
 import {
   placement, resolveShape, shapeSize, type CanvasItem, type Rect, type Size,
 } from "@writemind/core"
-import { eraseRegion } from "./boxRow"
+import { eraseRegion, landedFrame } from "./boxRow"
 import { bandUnder, chartSummary, sheetChartLabelled } from "./capturePipeline"
 import { wordsForChart } from "./ocrClient"
 import {
@@ -31,6 +31,11 @@ export interface Capture {
   aspect: number
   /** A flow chart read off the same page: the nodes and arrows, already placed under the picture. */
   chart?: CanvasItem[]
+  /**
+   * CELL only: the dashed box itself landed on the note at the same size as the strokes (fractions of the pane): the drawing
+   * cell is this box, the ink where it sat in it (boxRow.ts `cellOfBox`, dock.ts `dockNewInk`).
+   */
+  frame?: Rect
 }
 
 /** The sheet's size in reference units: what widths and the page arithmetic are measured in. */
@@ -82,7 +87,8 @@ export type SheetTake =
  * The paper is in the Page picture and nowhere else.
  *
  * CELL is Writing for a new drawing cell (the box's "Bring in as Drawing Cell", BoxActions.tsx): the same strokes at
- * the same size, but no flow-chart reader (a cell holds ink), no nudge (nothing lands on the page to step aside from),
+ * the same size, with the box landed beside them (`frame`: the cell is the box), but no flow-chart reader (a cell holds
+ * ink), no nudge (nothing lands on the page to step aside from),
  * and the sheet is NOT cleared here: `clear()` takes them off once the cell is in the note, so a cell the note would
  * not take leaves the sheet as it was.
  */
@@ -144,9 +150,11 @@ export async function takeFromSheet(mode: "ink" | "page" | "cell", options: {
     : undefined
   if (cell) {
     const taken = sheet.strokes
+    // The box landed as the strokes are (the same page scale, no nudge): the cell's frame.
+    const frame = landedFrame(onPage, pageSize, pane)
     return {
       read: null, cleared: false,
-      capture: { strokes: strokes!, center: where.center, width: where.width, aspect },
+      capture: { strokes: strokes!, center: where.center, width: where.width, aspect, frame },
       // What the pen wrote meanwhile (nothing: no reader is waited for) is kept all the same.
       clear: () => { sheet.replace([...parts.outside, ...sheet.strokes.filter((one) => !taken.includes(one))]) },
     }

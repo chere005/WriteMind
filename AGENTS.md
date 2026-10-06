@@ -8,9 +8,13 @@ and is imported here; this file holds only what is true of THIS repo.
 
 Started 2026-09-21 on Sean's word ("copy this into another repo and do it
 there so we can keep working on the macos version here"). It is a clone of
-~/GIT/WriteMind with a TypeScript app grown beside the Swift one.
+the Swift repo with a TypeScript app grown beside the Swift one. The names
+since 2026-10-06 (Sean: "rename WriteMind to WriteMindSwift and
+WriteMindCross to WriteMind"): this repo is ~/GIT/WriteMind, GitHub
+chere005/WriteMind (it was WriteMindCross until then; GitHub redirects the
+old URLs), and the Swift app is ~/GIT/WriteMindSwift, chere005/WriteMindSwift.
 
-- **The macOS app lives at ~/GIT/WriteMind, not here.** `WriteMind/`,
+- **The macOS app lives at ~/GIT/WriteMindSwift, not here.** `WriteMind/`,
   `WriteMindTests/` and `tools/` in this repo are a REFERENCE COPY — what
   the port is ported from. Do not edit them here and never deploy from
   here; `git pull macos main` (the `macos` remote is that working copy)
@@ -31,10 +35,14 @@ there so we can keep working on the macos version here"). It is a clone of
   do a thing SHOWS NOTHING — no dead button, no dialog explaining the
   build. The single exception is the camera's box, because its absence
   changes what the user does.
-- **The port's notes folder is `~/Documents/WriteMindCross`**
-  (`WRITEMIND_NOTES` overrides). Not Sean's real notes folder: two apps
-  writing one folder is the bug that cost two cells on 2026-09-20, and
-  `mayWrite` is a guard, not a licence.
+- **The port's notes folder is `~/Documents/WriteMind`** (`WRITEMIND_NOTES`
+  overrides). It was `~/Documents/WriteMindCross` until the 2026-10-06
+  rename: the first launch moves that folder to `WriteMind` when no
+  `WriteMind` folder exists yet, and when both exist keeps using
+  `WriteMindCross` and says so (the usual case on the Mac, where
+  `~/Documents/WriteMind` is the Swift app's). Two apps writing one folder
+  is the bug that cost two cells on 2026-09-20, and `mayWrite` is a guard,
+  not a licence.
 - **`npm test` is the suite.** It must pass before anything is committed,
   the same way `tools/test.sh` gates the Swift side. It covers
   `packages/*/test` AND `apps/*/test` — the shell's own rules (which

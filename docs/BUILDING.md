@@ -170,7 +170,7 @@ Releases (the repo is public), both systems on ONE release per version. An
 installed Windows copy updates itself from them — `electron-updater`
 reading the feed electron-builder writes into the install (`publish:` in
 `apps/desktop/electron-builder.yml`: provider github,
-chere005/WriteMindCross). A Mac copy only tells you and opens the release's
+chere005/WriteMind). A Mac copy only tells you and opens the release's
 page (an ad-hoc signed app cannot be updated in place by Squirrel.Mac): see
 "On a Mac" below. Linux builds do not look.
 
@@ -218,7 +218,8 @@ by hand from a local machine.
 `ci.yml`'s **mac-package** job (pushes to main and a manual run, macos-15)
 builds the same two dmgs with `package:mac:adhoc`, runs `verify-mac.sh`
 and keeps the dmgs as an artifact for 14 days; it never publishes. Its unit
-test step is allowed to fail until the suite has run green on macOS. So a
+test step blocks, as on Windows (the tests that took Windows paths for
+granted use the system's own since 2026-10-05). So a
 release's mac job has been rehearsed by the last push to main.
 
 ### What an installed copy does (Windows)
@@ -269,7 +270,7 @@ pre-release) that carries this Mac's dmg (`-mac-arm64.dmg` or
 `-mac-x64.dmg`, by the running app's architecture) brings up the same
 **Updates available** dialog with **Download** in place of Update now and
 one line: "Drag the new WriteMind into Applications to replace this one."
-Download opens `https://github.com/chere005/WriteMindCross/releases/tag/v<version>`
+Download opens `https://github.com/chere005/WriteMind/releases/tag/v<version>`
 in the browser (the address is built from the version, never taken from
 GitHub's answer). The user drags the new copy over the old one and opens it
 once with Open Anyway (docs/INSTALL-MAC.md).
@@ -285,7 +286,7 @@ only, with no administrator: `%LOCALAPPDATA%\Programs\WriteMind`, a Start
 menu and a desktop shortcut (named "WriteMind", so they replace the ones
 `tools\setup-windows.ps1` made for a development build), and an entry in
 Settings ▸ Apps. Its own data stays in `%APPDATA%\@writemind\desktop` and
-the notes in `Documents\WriteMindCross`; uninstalling touches neither.
+the notes in `Documents\WriteMind`; uninstalling touches neither.
 The updater's own downloads are not browser downloads, so SmartScreen
 should not ask again for an update.
 

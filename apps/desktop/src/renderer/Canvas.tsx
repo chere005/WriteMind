@@ -23,19 +23,21 @@ import {
   segmentMidpoints, shifted, strokeCurve, TEXT_BOX, textBoxAspect, textBoxHeight, readableInk,
   indexAt, isHidden, itemId, itemTransform, newID, noTransform, placedItem, polylines, rectFrom,
   removing, route, scaleFactor, stillPicked, strokesSwept, toggle, toggled, transformed, whole, withTransform,
-  cellFrame, dockable, inkCellOf, toPage, withInkCell,
+  cellFrame, dockable, inkCellOf, toPage, withInkCell, INK_PAD, undockedInk, undockedPicture, inkFileName,
   type CanvasItem, type Column, type ConnectorItem, type Drawing, type InkCell, type ItemTransform, type Order,
   type Placement, type Measure, type Point, type Rect, type ShapeKind, type Size, type StylePatch,
 } from "@writemind/core"
-import { inkCellPlaces, repaintInkCells, type DropTarget } from "@writemind/editor"
+import type { EditorView } from "@codemirror/view"
+import { inkCellPlaces, pictureCellLine, repaintInkCells, type DropTarget } from "@writemind/editor"
 import type { DrawingHistory } from "./drawingHistory"
-import { dockedAsCell, dockInto, type DockDeps, type Words } from "./dock"
+import { dockedAsCell, dockInto, undockLine, type DockDeps, type Words } from "./dock"
 import { StyleBar } from "./StyleBar"
 import { penSettings, usePenSettings } from "./penSettings"
 import { holdBegins, inContact, insideBox, penLifted, resolvePress, slotOf } from "./penButtons"
 import { registerPenHandlers } from "./penActions"
 import { endInkScope, inkScope, scopedPress, subscribeInkScope } from "./inkScope"
 import { layerKey } from "./layerKeys"
+import { hoverHandles, hoverWanted, sameHover, type Hover } from "./drawingHover"
 
 export type CanvasMode = "cursor" | "pen"
 
@@ -151,8 +153,8 @@ type Gesture =
 /** A picture being cropped: the kept part, as fractions of the picture. */
 interface Crop { id: string; rect: Rect }
 
-/** A node's label being typed. */
-interface Labelling { id: string; text: string }
+/** A node's label (or a text box's words) being typed; `on` is its surface: the page (null) or an ink cell's id. */
+interface Labelling { id: string; text: string; on: string | null }
 
 const HANDLE = 11
 
@@ -240,6 +242,10 @@ function picture(file: string, onLoad: () => void): HTMLImageElement | null {
 interface ObjectClip { token: string; items: CanvasItem[]; pastes: number; from: string | null }
 let objectClipboard: ObjectClip | null = null
 
+/** The objects on the window's own clipboard, as a drawing (null for none): their pictures are held by name, so Clean
+ * Up never offers one a paste would still put back (cleanUp.ts `heldBy`). */
+export const clipboardDrawing = (): Drawing | null => (objectClipboard ? { items: objectClipboard.items } : null)
+
 function copyObjects(items: CanvasItem[], ids: Set<string>, from: string | null): void {
   const copied = copiedItems(items, ids)
   if (copied.length === 0) return
@@ -255,6 +261,21 @@ function copyObjects(items: CanvasItem[], ids: Set<string>, from: string | null)
   document.removeEventListener("copy", put, true)
   if (!wrote) void navigator.clipboard?.writeText(text).catch(() => {})
 }
+
+// MARK: - Undocking, asked for by a cell's menu (CellMenu.tsx)
+
+/** A docked cell to take back out of the note: its widget (either pane), and the ink cell's id or the picture's file. */
+export interface UndockTarget { view: EditorView; element: HTMLElement; ink: string | null; file: string | null }
+/** The drawing layer of the note in front, while there is one. */
+let undocker: ((target: UndockTarget) => boolean) | null = null
+/**
+ * Take a docked picture or a drawing cell back out of the note onto the drawing layer, over the note where it was
+ * shown, its objects picked; ONE Undo puts the cell back. False when there is no drawing layer or the cell is gone.
+ */
+export const undockCell = (target: UndockTarget): boolean => undocker?.(target) ?? false
+
+/** The text box being typed into inside an ink cell: `paintInkCell` leaves its words to the field over it. */
+let typingInCell: string | null = null
 
 export function Canvas({
   drawing, onChange, mode, colorHex, penWidth, placing, onPlaced, scroller, onSelectionChanged,
@@ -285,13 +306,23 @@ export function Canvas({
   const pickLayer = useMemo(() => layerIn(drawing, pick.on) ?? NOTHING, [drawing, pick.on])
   const selection = useMemo(() => stillPicked(pickLayer, pickedIds), [pickLayer, pickedIds])
   useEffect(() => { if (selection !== pickedIds) setSelection(selection, pick.on) }, [selection, pickedIds, pick.on, setSelection])
+  /** What a click would take (see `Hover`): set by the pointer moving, never by anything that edits. */
+  const [hover, setHoverState] = useState<Hover | null>(null)
+  const hoverRef = useRef<Hover | null>(null)
+  const setHover = useCallback((next: Hover | null) => {
+    if (sameHover(hoverRef.current, next)) return
+    hoverRef.current = next
+    setHoverState(next)
+  }, [])
   // The cells move with the words (text typed above one, a window made wider): a pick in a cell is put back on it.
   const [placesMoved, setPlacesMoved] = useState(0)
   const pickOn = useRef<string | null>(null)
   pickOn.current = pick.on
   useEffect(() => inkCellPlaces.subscribe(() => {
     if (pickOn.current !== null) setPlacesMoved((n) => n + 1)
-  }), [])
+    // An object hovered in a cell that moved is no longer under the pointer.
+    if (hoverRef.current !== null && hoverRef.current.on !== null) setHover(null)
+  }), [setHover])
   const [gesture, setGesture] = useState<Gesture | null>(null)
   /** The pointer that began the gesture: moves and lifts from any other (a palm, a stray mouse) are not its. */
   const owner = useRef<number | null>(null)
@@ -308,6 +339,8 @@ export function Canvas({
     item.kind === "image" && !item.image.hidden && item.image.id === cropState.id) ? cropState : null
   useEffect(() => { if (cropState && !crop) setCrop(null) }, [cropState, crop])
   const [labelling, setLabelling] = useState<Labelling | null>(null)
+  const labellingRef = useRef(labelling)
+  labellingRef.current = labelling
   /** The text box being typed into: the painter leaves its words to the field over it. */
   const editingBox = useRef<string | null>(null)
   const lastPress = useRef<{ at: number; id: string } | null>(null)
@@ -433,7 +466,7 @@ export function Canvas({
     const was = modeSeen.current
     modeSeen.current = { mode, armed: toolArmed_ }
     if (was.mode === mode && (was.armed || !toolArmed_)) return
-    setSelection(new Set()); setCrop(null); setStyling(false); setLabelling(null)
+    setSelection(new Set()); setCrop(null); setStyling(false); setLabelling(null); setHover(null)
   }, [mode, toolArmed_])
 
   useEffect(() => { onSelectionChanged?.(selection.size) }, [selection, onSelectionChanged])
@@ -618,6 +651,14 @@ export function Canvas({
       context.setTransform(1, 0, 0, 1, 0, 0)
       context.clearRect(0, 0, top.width, top.height)
       context.setTransform(ratio, 0, 0, ratio, s.origin.x * ratio, (s.origin.y - scrolled) * ratio)
+      // A tool used in a drawing cell is drawn in the cell, clipped to it.
+      const clipped = s.clip !== null && (g.kind === "connecting" || g.kind === "placing")
+      if (clipped) {
+        context.save()
+        context.beginPath()
+        context.rect(0, 0, s.clip!.width, s.clip!.height)
+        context.clip()
+      }
       if (g.kind === "docking") {
         // The ghost of what is being docked follows the pointer (and the page, should the wheel scroll it).
         const b = now.box
@@ -652,13 +693,14 @@ export function Canvas({
         context.stroke()
         context.setLineDash([])
       } else if (g.kind === "placing" && now.placing) {
-        const ghost = placedItem(now.placing, g.from, g.to, now.size, now.colorHex, now.penWidth)
+        const ghost = placedItem(now.placing, g.from, g.to, frameSize, now.colorHex, now.penWidth)
         if (ghost) {
           context.globalAlpha = 0.5
-          paint(context, ghost, now.size)
+          paint(context, ghost, frameSize)
           context.globalAlpha = 1
         }
       }
+      if (clipped) context.restore()
       overlayDrawn.current = 0
       overlayReset.current = false
       overlayShapes.current = true
@@ -743,7 +785,10 @@ export function Canvas({
       schedule()
     }
     onScroll()
+    // A scroll moves the objects under a still pointer: what it was over is asked again at the next move.
+    const scrolled = () => setHover(null)
     scroller.addEventListener("scroll", onScroll, { passive: true })
+    scroller.addEventListener("scroll", scrolled, { passive: true })
     // The words shrinking (the band may not pass their end) or narrowing (a scroll bar came) put the band out: it
     // is worked out again. (Not on every change of height: the editor refines its heights while it scrolls.)
     const content = scroller.querySelector<HTMLElement>(".cm-content")
@@ -756,8 +801,8 @@ export function Canvas({
       if (was.top + was.height > end || was.width !== width) { baseDirty.current = true; schedule() }
     }) : null
     if (content) words!.observe(content)
-    return () => { scroller.removeEventListener("scroll", onScroll); words?.disconnect() }
-  }, [scroller, schedule])
+    return () => { scroller.removeEventListener("scroll", onScroll); scroller.removeEventListener("scroll", scrolled); words?.disconnect() }
+  }, [scroller, schedule, setHover])
 
   // The wheel (and a touchpad's two-finger scroll) over the layer: while the pen is down the
   // layer takes every pointer event, and the page is not inside it, so a wheel turned over it
@@ -852,8 +897,9 @@ export function Canvas({
     owner.current = pointerId
     overlayReset.current = true
     gestureWhole.current = latest.current.drawing
+    setHover(null)
     setGesture(next)
-  }, [])
+  }, [setHover])
 
   // MARK: - The gestures
 
@@ -899,16 +945,20 @@ export function Canvas({
     latest.current.onChange(next)
   }, [])
 
-  /** Put a node's label in (an empty one is no label); the edit is one undo. */
-  const relabel = useCallback((id: string, text: string) => {
-    const held = latest.current.drawing
+  /** Put a node's label in (an empty one is no label), on the page or in its ink cell (`on`); the edit is one undo. */
+  const relabel = useCallback((id: string, text: string, on: string | null) => {
+    const s = on === null ? pageSurface() : cellSurfaceOf(on)
+    const held = layerIn(latest.current.drawing, on)
+    if (!s || !held) return
     const next = {
       items: held.items.map((item) =>
         item.kind === "shape" && item.shape.id === id
           ? { kind: "shape" as const, shape: { ...item.shape, label: text } }
           : item),
     }
-    if (JSON.stringify(next) !== JSON.stringify(held)) change(next, pageSurface())
+    if (JSON.stringify(next) !== JSON.stringify(held)) change(next, s)
+    // (`pageSurface` and `cellSurfaceOf` read only refs.)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [change])
 
   // The pen, and the hand holding it. A tablet laptop sends both: the pen draws,
@@ -1066,25 +1116,38 @@ export function Canvas({
     // The arrow tool, or ⌥ held down on a node: a line is drawn from here to
     // wherever it is let go, and each end that lands on a node is attached
     // to it. ⌥ has to start ON a node, so it never steals a stroke or a pick.
-    // Lines, shapes and text boxes go on the PAGE only (this round), wherever they are pressed.
+    // THE TOOLS WORK WHERE THEY ARE PRESSED (2026-10-06): lines, shapes and text boxes go on the page, or INTO the live
+    // drawing cell under the press (its own items, its own frame, kept inside it), as its strokes do. A floating node
+    // lying over a cell is still the page's: an arrow started on it is drawn on the page.
     const page = pageSurface()
     const onPage = docOn(page, event)
+    const under = surfaceRef.current
     const toolArmed = armed?.kind === "line" && armed.tool === true
     // (Not when Alt is the pen's own "Tip + Alt" button: that has its own meaning.)
-    const fromNode = toolArmed || (!armed && event.altKey && !byButton)
-      ? attachableAt(latest.current.drawing, onPage, page.size) : null
+    let toolSurface = under
+    let fromNode: string | null = null
+    if (toolArmed || (!armed && event.altKey && !byButton)) {
+      fromNode = attachableAt(latest.current.drawing, onPage, page.size)
+      if (fromNode !== null) toolSurface = page
+      else if (under.cell !== null) {
+        const layer = layerOf(under)
+        fromNode = layer ? attachableAt(layer, docOn(under, event), under.size) : null
+      }
+    }
     if (toolArmed || (!armed && fromNode !== null)) {
       event.preventDefault(); event.stopPropagation()
       capture(event)
-      surfaceRef.current = page
-      start({ kind: "connecting", from: onPage, to: onPage, node: fromNode }, event.pointerId)
+      surfaceRef.current = toolSurface
+      const from = docOn(toolSurface, event)
+      start({ kind: "connecting", from, to: from, node: fromNode }, event.pointerId)
       return
     }
-    // Something is armed: this gesture is where it goes.
+    // Something is armed: this gesture is where it goes (the page, or the cell it is pressed in).
     if (armed) {
       event.preventDefault(); event.stopPropagation()
-      surfaceRef.current = page
-      start({ kind: "placing", from: onPage, to: onPage }, event.pointerId)
+      surfaceRef.current = under
+      const from = docOn(under, event)
+      start({ kind: "placing", from, to: from }, event.pointerId)
       return
     }
 
@@ -1168,7 +1231,7 @@ export function Canvas({
       lastPress.current = null
       setSelection(new Set([id]), surface.cell)
       openBox.current = false
-      setLabelling({ id, text: pressed.shape.label })
+      setLabelling({ id, text: pressed.shape.label, on: surface.cell })
       return
     }
     const picked = event.shiftKey
@@ -1215,6 +1278,154 @@ export function Canvas({
       element.removeEventListener("pointermove", late, true)
     }
   }, [begin])
+
+  // MARK: - Hover: what a click would take
+
+  /**
+   * `indexAt` for a pointer that moves every frame: an object whose box (kept per object and size, as the painter
+   * keeps it) is nowhere near the point is not hit-tested at all, so a note of a thousand strokes costs a few box
+   * checks per move, not a thousand outlines.
+   */
+  const topmostAt = (layer: Drawing, point: Point, frame: Size): number | null => {
+    for (let index = layer.items.length - 1; index >= 0; index--) {
+      const item = layer.items[index]!
+      if (isHidden(item)) continue
+      let known = boundsCache.current.get(item)
+      if (!known || known.width !== frame.width || known.height !== frame.height) {
+        known = { width: frame.width, height: frame.height, rect: bounds(item, frame) }
+        boundsCache.current.set(item, known)
+      }
+      const t = itemTransform(item).scale
+      const line = item.kind === "stroke" ? item.stroke.width : item.kind === "shape" ? item.shape.lineWidth
+        : item.kind === "connector" ? item.connector.lineWidth : 0
+      const pad = 8 + line * t
+      const r = known.rect
+      if (point.x < r.x - pad || point.x > r.x + r.width + pad || point.y < r.y - pad || point.y > r.y + r.height + pad) continue
+      if (hitTest(item, point, frame)) return index
+    }
+    return null
+  }
+
+  /**
+   * The object a press here would pick, asked as the pointer moves: the page's topmost object under it, else one in
+   * the live ink cell under it. "keep" while the pointer is on a handle (what it stands round stays), "none" over
+   * nothing (put away after a moment, so a handle beside the object can still be reached), null when a press here
+   * would not pick at all (`hoverWanted`).
+   */
+  const hoverAt = (event: PointerEvent): Hover | "keep" | "none" | null => {
+    const now = latest.current
+    const settings = penSettings()
+    const busy = live.current !== null || now.selection.size > 0 || now.placing !== null || now.crop !== null
+      || labellingRef.current !== null
+    if (!hoverWanted({
+      mode: now.mode, pen: event.pointerType === "pen", penDraws: settings.penDraws, selectTool: settings.selectTool,
+      eraser: settings.eraser, command: event.ctrlKey || event.metaKey, buttons: event.buttons, busy,
+    })) return null
+    const target = event.target
+    if (target instanceof Element) {
+      if (target.closest(".wm-handle, .wm-style-bar")) return "keep"
+      // The brackets, the menus, a field being typed in: not the layer's.
+      if (target.closest(".wm-gutter, .wm-label-edit, .wm-textbox-edit, .kind-menu, .context-menu, .float-menu")) return null
+    }
+    const within = scrollerRef.current
+    const place = within ? inkCellPlaces.at(event.clientX, event.clientY, within) : null
+    // A cell the pointer is a pen for (inkScope.ts) draws at a press: nothing there is what a click would take.
+    if (place && place.live && inkScope() === place.id) return null
+    const page = pageSurface()
+    const top = topmostAt(now.drawing, docOn(page, event), page.size)
+    if (top !== null) return { on: null, id: itemId(now.drawing.items[top]!) }
+    if (!place || !place.live) return "none"
+    const cell = cellSurfaceOf(place.id)
+    const layer = cell ? layerOf(cell) : null
+    if (!cell || !layer) return "none"
+    const hit = topmostAt(layer, docOn(cell, event), cell.size)
+    return hit === null ? "none" : { on: place.id, id: itemId(layer.items[hit]!) }
+  }
+  const hoverAtRef = useRef(hoverAt)
+  hoverAtRef.current = hoverAt
+
+  useEffect(() => {
+    // On the parent, as the presses are: with the pen up the layer takes no pointer events at all.
+    const element = host.current?.parentElement
+    if (!element) return
+    let frame_: number | null = null
+    let last: PointerEvent | null = null
+    let leaving: number | null = null
+    const stay = () => { if (leaving !== null) { window.clearTimeout(leaving); leaving = null } }
+    const look = () => {
+      frame_ = null
+      const event = last
+      last = null
+      if (!event) return
+      const found = hoverAtRef.current(event)
+      if (found === "keep") { stay(); return }
+      if (found === null) { stay(); setHover(null); return }
+      if (found !== "none") {
+        stay()
+        // The handles are DOM, placed with the scroll as it is now.
+        if (scrollShown.current !== scrollRef.current) { scrollShown.current = scrollRef.current; setScroll(scrollRef.current) }
+        setHover(found)
+        return
+      }
+      // Leaving the object for a handle beside it must not take the handle away first (the Mac waits 250 ms).
+      if (hoverRef.current !== null && leaving === null) leaving = window.setTimeout(() => { leaving = null; setHover(null) }, 250)
+    }
+    const move = (event: PointerEvent) => {
+      last = event
+      if (frame_ === null) frame_ = requestAnimationFrame(look)
+    }
+    const out = () => { stay(); last = null; setHover(null) }
+    element.addEventListener("pointermove", move, { capture: true, passive: true })
+    element.addEventListener("pointerleave", out)
+    return () => {
+      element.removeEventListener("pointermove", move, true)
+      element.removeEventListener("pointerleave", out)
+      if (frame_ !== null) cancelAnimationFrame(frame_)
+      stay()
+    }
+  }, [setHover])
+
+  // MARK: - Undocking (a cell's menu: CellMenu.tsx)
+
+  useEffect(() => {
+    const undock = (target: UndockTarget): boolean => {
+      const host_ = latest.current.dock
+      const element = host.current
+      if (!host_ || !element || !target.element.isConnected) return false
+      const line = pictureCellLine(target.view, target.element)
+      if (!line) return false
+      // The line must still be the cell asked about (the widget could be a stale one).
+      const text = target.view.state.doc.sliceString(line.from, line.to)
+      const name = target.ink !== null ? inkFileName(target.ink) : target.file
+      if (!name || !text.includes(name)) return false
+      const pane = latest.current.size
+      const whole_ = latest.current.drawing
+      let made: { drawing: Drawing; ids: string[] } | null = null
+      if (target.ink !== null) {
+        // The cell's items float where they were shown: from its top-left, at its shown width.
+        const cell = cellSurfaceOf(target.ink)
+        if (!cell) return false
+        made = undockedInk(whole_, target.ink, pane, cell.origin, cell.size.width)
+      } else if (target.file) {
+        // The picture floats at the size and the place it had in the note.
+        const shown = (target.element.querySelector("img") ?? target.element).getBoundingClientRect()
+        const at_ = element.getBoundingClientRect()
+        made = undockedPicture(whole_, target.file, pane,
+          { x: shown.left - at_.left, y: shown.top - at_.top + scrollRef.current, width: shown.width, height: shown.height })
+      }
+      if (!made) return false
+      if (target.ink !== null && inkScope() === target.ink) endInkScope()
+      const deps: DockDeps = {
+        history, drawing: () => latest.current.drawing, apply: (next) => latest.current.onChange(next),
+        words: host_.words, depth: host_.depth,
+      }
+      return undockLine(deps, line, made.drawing, made.ids)
+    }
+    undocker = undock
+    return () => { if (undocker === undock) undocker = null }
+    // (`cellSurfaceOf` reads only refs.)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [history])
 
   useEffect(() => {
     if (!gesture) return
@@ -1279,9 +1490,13 @@ export function Canvas({
           break
         }
         case "marquee":
+          live.current = { ...g, to: point }
+          schedule()
+          break
         case "placing":
         case "connecting":
-          live.current = { ...g, to: point }
+          // In a drawing cell what is placed stays inside the cell.
+          live.current = { ...g, to: s.clip ? inCell(point, s.clip) : point }
           schedule()
           break
         case "moving": {
@@ -1324,7 +1539,7 @@ export function Canvas({
           // move in) and the line is routed again around it.
           const value = g.vertical ? point.x / Math.max(size.width, 1)
             : point.y / Math.max(size.height, 1)
-          later(() => publish({
+          later(() => publishOn(s, {
             items: g.base.items.map((item) => {
               if (item.kind !== "connector" || item.connector.id !== g.id) return item
               const overrides = (item.connector.overrides ?? [])
@@ -1375,21 +1590,24 @@ export function Canvas({
       } else if (g.kind === "docking") {
         finishDock(g, event)
       } else if (g.kind === "connecting") {
-        const hit = attachableAt(held, point, now.size)
+        // On the page, or in the cell the arrow was started in (its nodes, its frame; the release kept inside it).
+        const frame = s.cell === null ? now.size : s.size
+        const to = s.clip ? inCell(point, s.clip) : point
+        const hit = attachableAt(held, to, frame)
         const endNode = hit === g.node ? null : hit
         // A click is not an arrow; a drag is, and so is a click that started on
         // one node and ended on another.
-        if (distance(g.from, point) >= 8 || endNode !== null) {
+        if (distance(g.from, to) >= 8 || endNode !== null) {
           const connector: ConnectorItem = {
             id: newID(),
-            start: normalise(g.from, now.size), end: normalise(point, now.size),
+            start: normalise(g.from, frame), end: normalise(to, frame),
             startNode: g.node, endNode,
             startHead: "none", endHead: "arrow", line: "solid", colorHex: now.colorHex,
             lineWidth: Math.min(Math.max(now.penWidth, 1.5), 6),
             transform: noTransform(), bends: [],
           }
           change({ items: [...held.items, { kind: "connector", connector }] }, s)
-          setSelection(new Set([connector.id]), null)
+          setSelection(new Set([connector.id]), s.cell)
           // The bar that comes up once an arrow is drawn: its heads and its line.
           setStyling(true)
         }
@@ -1398,19 +1616,25 @@ export function Canvas({
         // CanvasPlacementTests: "a line from the palette is attached to nothing"). The ARROW TOOL is the one
         // that attaches, and it is the `connecting` gesture above; this one used to attach and re-route
         // a palette line too, and one dragged inside a single node ran from that node to itself.
-        let item = placedItem(now.placing, g.from, point, now.size, now.colorHex, now.penWidth)
+        // In a drawing cell it goes INTO the cell, in the cell's frame, and wholly inside it.
+        const frame = s.cell === null ? now.size : s.size
+        const to = s.clip ? inCell(point, s.clip) : point
+        let item = placedItem(now.placing, g.from, to, frame, now.colorHex, now.penWidth)
         if (item?.kind === "shape" && item.shape.kind === "text") {
           // A text box is born ready for typing, and as tall as an empty line.
-          const width = Math.max(TEXT_BOX.minimumWidth, item.shape.width * now.size.width)
-          item = { kind: "shape", shape: { ...item.shape, width: width / now.size.width,
+          const width = Math.max(TEXT_BOX.minimumWidth, item.shape.width * frame.width)
+          item = { kind: "shape", shape: { ...item.shape, width: width / frame.width,
             aspect: textBoxAspect("", width, measureTextBox) } }
+        }
+        if (item && s.clip) item = keptInCell(item, frame, s.clip)
+        if (item?.kind === "shape" && item.shape.kind === "text") {
           change({ items: [...held.items, item] }, s)
-          setSelection(new Set([itemId(item)]), null)
+          setSelection(new Set([itemId(item)]), s.cell)
           openBox.current = true
-          setLabelling({ id: item.shape.id, text: "" })
+          setLabelling({ id: item.shape.id, text: "", on: s.cell })
         } else if (item) {
           change({ items: [...held.items, item] }, s)
-          setSelection(new Set([itemId(item)]), null)
+          setSelection(new Set([itemId(item)]), s.cell)
           if (item.kind === "connector") setStyling(true)
         }
         now.onPlaced()
@@ -1680,6 +1904,40 @@ export function Canvas({
 
   // MARK: - The handles
 
+  // WHAT THE OUTLINE AND THE HANDLES STAND ROUND (the Mac's `chromeIDs` / `handleIDs`): the pick, or, while nothing is
+  // picked, what a click would take (`hover`), drawn FAINTLY: a dashed outline at half strength and the handles
+  // dimmed until the pointer is on one. A press on a faint handle picks what it stands round first, then does what the
+  // handle does. A hovered PICTURE gets the outline only: its buttons wait for a click (Sean, 2026-09-18, on the Mac:
+  // "edit buttons on an image selection should only appear after the image is clicked").
+  const hoverLayer = hover ? layerIn(drawing, hover.on) : null
+  const hoverItem = hover && hoverLayer
+    ? hoverLayer.items.find((item) => itemId(item) === hover.id && !isHidden(item)) : undefined
+  const hovering = hover !== null && hoverLayer !== null && hoverItem !== undefined && selection.size === 0
+    && gesture === null && placing === null && crop === null && labelling === null
+  const hoverIds = hovering ? whole(new Set([hover!.id]), hoverLayer!.items) : selection
+  const hoverFrame = hovering ? (hover!.on === null ? { origin: { x: 0, y: 0 }, size } : cellSurfaceOf(hover!.on)) : null
+  const hoverBox = (() => {
+    if (!hoverFrame || !hoverLayer) return null
+    const b = boundsOf(hoverLayer, hoverIds, hoverFrame.size)
+    return b ? { x: b.x + hoverFrame.origin.x, y: b.y + hoverFrame.origin.y, width: b.width, height: b.height } : null
+  })()
+  const faint = hovering && hoverBox !== null
+  const chromeOn = faint ? hover!.on : pick.on
+  const chromeIds = faint ? hoverIds : selection
+  const chromeLayer = faint ? hoverLayer! : pickLayer
+  const chromeBox = faint ? hoverBox : box
+  /** Where the chrome's surface is and what its items are measured in (a cell's frame), now. */
+  const chromeFrame = chromeOn === null ? { origin: { x: 0, y: 0 }, size } : cellSurfaceOf(chromeOn)
+  /** The chrome's surface as it is now: what a handle's gesture works on (null when its cell is off the screen). */
+  const chromeSurface = (): Surface | null => (chromeOn === null ? pageSurface() : cellSurfaceOf(chromeOn))
+  // Over an object the pointer is an open hand, as on the Mac (the words' own cursor is put aside meanwhile).
+  useEffect(() => {
+    const element = host.current?.parentElement
+    if (!element || !faint) return
+    element.classList.add("wm-hover-grab")
+    return () => element.classList.remove("wm-hover-grab")
+  }, [faint])
+
   // The handles stand at the corners of the selection, but a thin selection (a
   // flat stroke, a short line) would stack three 22-point buttons on top of one
   // another; they are spread to a box at least this big, and the pivot stays put.
@@ -1687,23 +1945,29 @@ export function Canvas({
   // to four (group, crop, style, resize), each 22 wide: a tick one line of text
   // across needs a box well wider than it is tall to keep them apart.
   const MIN_SPAN_X = 96, MIN_SPAN_Y = 34
-  const hb = box ? {
-    x: box.x - Math.max(0, (MIN_SPAN_X - box.width) / 2),
-    y: box.y - Math.max(0, (MIN_SPAN_Y - box.height) / 2),
-    width: Math.max(box.width, MIN_SPAN_X),
-    height: Math.max(box.height, MIN_SPAN_Y),
+  const hb = chromeBox ? {
+    x: chromeBox.x - Math.max(0, (MIN_SPAN_X - chromeBox.width) / 2),
+    y: chromeBox.y - Math.max(0, (MIN_SPAN_Y - chromeBox.height) / 2),
+    width: Math.max(chromeBox.width, MIN_SPAN_X),
+    height: Math.max(chromeBox.height, MIN_SPAN_Y),
   } : null
-  // The pick is on the page, or in one ink cell (its own items, `pickLayer`): placing tools, crop, read and the
-  // routed-line circles are the page's only this round; docking is FROM the page.
-  const onPage = pick.on === null
-  const grouping = toggle(selection, pickLayer.items)
-  /** A gesture from a handle works on the pick's surface (null when its cell is off the screen). */
+  // The pick is on the page, or in one ink cell (its own items): crop and read are the page's only; docking is FROM
+  // the page. Every other handle (turn, resize, delete, move, group, style, a routed line's circles) works in a cell.
+  const onPage = chromeOn === null
+  const grouping = toggle(chromeIds, chromeLayer.items)
+  /** A press on a faint handle: what it stands round becomes the pick (the Mac's handleDrag: `selection = [hovered]`). */
+  const adopt = () => {
+    if (!faint) return
+    setSelection(new Set(chromeIds), chromeOn)
+    setHover(null)
+  }
+  /** A gesture from a handle works on the chrome's surface (null when its cell is off the screen). */
   const fromHandle = (): Surface | null => {
-    const s = pickedSurface()
+    const s = chromeSurface()
     if (s) surfaceRef.current = s
     return s
   }
-  const docks = onPage && dock !== undefined && dockable(drawing, selection) !== null
+  const docks = onPage && dock !== undefined && dockable(drawing, chromeIds) !== null
   // The style bar sits under the selection, or over it when there is no room.
   const barSpot = hb ? (() => {
     const wide = 340, tall = 176
@@ -1718,45 +1982,49 @@ export function Canvas({
   const spot = (x: number, y: number, scrolled: number) => at(
     Math.min(Math.max(x, 2), Math.max(size.width - 24, 2)),
     Math.min(Math.max(y - scrolled, 2), Math.max(size.height - 24, 2)) + scrolled, scrolled)
-  const handles = box && hb && !gesture && selection.size > 0 ? (
+  const hoveredPicture = faint && hoverItem !== undefined && !hoverHandles(hoverItem)
+  const handles = chromeBox && hb && !gesture && chromeIds.size > 0 && !hoveredPicture ? (
     <>
       <button className="wm-handle" style={spot(hb.x - HANDLE, hb.y - HANDLE, scroll)}
               title="Turn"
               onPointerDown={(event) => {
                 event.preventDefault(); event.stopPropagation()
+                adopt()
                 const s = fromHandle()
                 if (!s) return
-                const pivot = { x: box.x + box.width / 2 - s.origin.x, y: box.y + box.height / 2 - s.origin.y }
+                const pivot = { x: chromeBox.x + chromeBox.width / 2 - s.origin.x, y: chromeBox.y + chromeBox.height / 2 - s.origin.y }
                 start({
                   kind: "rotating",
                   from: angleAbout(doc(event.nativeEvent), pivot),
                   pivot,
-                  snapshot: snapshotOf(pickLayer, selection),
-                  base: pickLayer,
+                  snapshot: snapshotOf(chromeLayer, chromeIds),
+                  base: chromeLayer,
                 }, event.pointerId)
               }}>⟳</button>
       <button className="wm-handle" style={spot(hb.x + hb.width, hb.y + hb.height, scroll)}
               title="Resize"
               onPointerDown={(event) => {
                 event.preventDefault(); event.stopPropagation()
+                adopt()
                 const s = fromHandle()
                 if (!s) return
-                const pivot = { x: box.x + box.width / 2 - s.origin.x, y: box.y + box.height / 2 - s.origin.y }
+                const pivot = { x: chromeBox.x + chromeBox.width / 2 - s.origin.x, y: chromeBox.y + chromeBox.height / 2 - s.origin.y }
                 start({
                   kind: "scaling",
                   from: doc(event.nativeEvent),
                   pivot,
-                  snapshot: snapshotOf(pickLayer, selection),
-                  base: pickLayer,
+                  snapshot: snapshotOf(chromeLayer, chromeIds),
+                  base: chromeLayer,
                 }, event.pointerId)
               }}>⤡</button>
       <button className="wm-handle" style={spot(hb.x + hb.width, hb.y - HANDLE, scroll)}
               title="Delete"
               onPointerDown={(event) => {
                 event.preventDefault(); event.stopPropagation()
-                const s = pickedSurface()
-                if (s) change(removing(pickLayer, selection), s)
+                const s = chromeSurface()
+                if (s) change(removing(chromeLayer, chromeIds), s)
                 setSelection(new Set())
+                setHover(null)
               }}>✕</button>
       {/* Dock what is picked into the note: a click puts it at the cursor (the armed bar, else after the caret's
           cell); a drag shows the bar under the pointer and puts it where it is let go, or INTO an ink cell. */}
@@ -1767,15 +2035,16 @@ export function Canvas({
                 title="Dock into the note (click: at the cursor; drag: where you let go)"
                 onPointerDown={(event) => {
                   event.preventDefault(); event.stopPropagation()
+                  adopt()
                   surfaceRef.current = pageSurface()
                   const at_ = { x: event.clientX, y: event.clientY }
                   start({
-                    kind: "docking", ids: new Set(selection), from: at_, to: at_, scroll: scrollRef.current,
+                    kind: "docking", ids: new Set(chromeIds), from: at_, to: at_, scroll: scrollRef.current,
                     dragging: false, target: null,
                   }, event.pointerId)
                 }}>⤵</button>
       )}
-      {onPage && onReadPicture && selection.size === 1 && (() => {
+      {onPage && !faint && onReadPicture && selection.size === 1 && (() => {
         const only = drawing.items.find((item) => itemId(item) === [...selection][0])
         if (!only || only.kind !== "image") return null
         return (
@@ -1787,7 +2056,7 @@ export function Canvas({
                   }}>Aa</button>
         )
       })()}
-      {onPage && selection.size === 1 && (() => {
+      {onPage && !faint && selection.size === 1 && (() => {
         const only = drawing.items.find((item) => itemId(item) === [...selection][0])
         if (!only || only.kind !== "image") return null
         return (
@@ -1800,24 +2069,25 @@ export function Canvas({
         )
       })()}
       {/* The circle on each segment of a routed line: drag it and the segment
-          goes with the pointer, the line routed again around it. */}
-      {onPage && drawing.items.flatMap((item) => {
-        if (item.kind !== "connector" || !selection.has(item.connector.id)
+          goes with the pointer, the line routed again around it (on the page, or in its cell). */}
+      {chromeFrame && chromeLayer.items.flatMap((item) => {
+        if (item.kind !== "connector" || !chromeIds.has(item.connector.id)
           || !isRouted(item.connector)) return []
-        return segmentMidpoints(pixelRoute(item.connector, size)).map((segment) => (
+        return segmentMidpoints(pixelRoute(item.connector, chromeFrame.size)).map((segment) => (
           <button key={`${item.connector.id}:${segment.index}`}
                   className="wm-handle wm-segment"
                   data-segment={segment.index}
                   data-vertical={segment.vertical ? "1" : "0"}
                   title="Drag to move this part of the line"
-                  style={{ ...at(segment.point.x - 6, segment.point.y - 6, scroll),
+                  style={{ ...at(chromeFrame.origin.x + segment.point.x - 6, chromeFrame.origin.y + segment.point.y - 6, scroll),
                     cursor: segment.vertical ? "ew-resize" : "ns-resize" }}
                   onPointerDown={(event) => {
                     event.preventDefault(); event.stopPropagation()
-                    surfaceRef.current = pageSurface()
+                    adopt()
+                    if (!fromHandle()) return
                     start({
                       kind: "segment", id: item.connector.id, index: segment.index,
-                      vertical: segment.vertical, base: drawing,
+                      vertical: segment.vertical, base: chromeLayer,
                     }, event.pointerId)
                   }} />
         ))
@@ -1830,12 +2100,13 @@ export function Canvas({
                 title={grouping === "ungroup" ? "Ungroup these (⌃G does too)" : "Group these (⌃G does too)"}
                 onPointerDown={(event) => {
                   event.preventDefault(); event.stopPropagation()
-                  const s = pickedSurface()
-                  const next = s ? toggled(selection, pickLayer.items) : null
+                  const s = chromeSurface()
+                  const next = s ? toggled(chromeIds, chromeLayer.items) : null
+                  setHover(null)
                   if (next && s) {
                     change({ items: next }, s)
                     // The handles go round the whole of what is held at once.
-                    setSelection(whole(selection, next), s.cell)
+                    setSelection(whole(chromeIds, next), s.cell)
                   }
                 }}>{grouping === "ungroup" ? "Ungroup" : "Group"}</button>
       )}
@@ -1846,18 +2117,20 @@ export function Canvas({
               title="Drag to move"
               onPointerDown={(event) => {
                 event.preventDefault(); event.stopPropagation()
+                adopt()
                 if (!fromHandle()) return
-                start({ kind: "moving", from: doc(event.nativeEvent), snapshot: snapshotOf(pickLayer, selection), base: pickLayer }, event.pointerId)
+                start({ kind: "moving", from: doc(event.nativeEvent), snapshot: snapshotOf(chromeLayer, chromeIds), base: chromeLayer }, event.pointerId)
               }}>✥</button>
       {/* Colour, width, fill, an arrow's heads and line, the order, a copy. */}
-      <button className={`wm-handle${styling ? " wm-handle-on" : ""}`} data-handle="style"
+      <button className={`wm-handle${styling && !faint ? " wm-handle-on" : ""}`} data-handle="style"
               style={spot(hb.x + hb.width / 2 - HANDLE / 2 + 18, hb.y + hb.height, scroll)}
               title="Colour, width, heads and line"
               onPointerDown={(event) => {
                 event.preventDefault(); event.stopPropagation()
+                if (faint) { adopt(); setStyling(true); return }
                 setStyling((was) => !was)
               }}>◐</button>
-      {styling && barSpot && (
+      {styling && !faint && barSpot && (
         <StyleBar items={pickLayer.items.filter((item) => selection.has(itemId(item)))}
                   left={barSpot.left} top={barSpot.top}
                   onPatch={applyStyle} onOrder={orderSelection} onDuplicate={duplicate}
@@ -1865,11 +2138,20 @@ export function Canvas({
       )}
     </>
   ) : null
+  /** The outline round what a click would take: faint and dashed (the pick's own box is on the ink canvas). */
+  const hoverOutline = faint && hoverBox ? (
+    <div className="wm-hover-box" data-hover={hover!.id}
+         style={{ ...at(hoverBox.x - 3, hoverBox.y - 3, scroll), width: Math.round(hoverBox.width + 6), height: Math.round(hoverBox.height + 6) }} />
+  ) : null
 
   // MARK: - A node's label
 
-  const labelled = labelling
-    ? drawing.items.find((item) => itemId(item) === labelling.id) : undefined
+  // A label (or a text box's words) is typed on its own surface: the page, or the ink cell it is in.
+  const labelLayer = labelling ? layerIn(drawing, labelling.on) : null
+  const labelled = labelling && labelLayer
+    ? labelLayer.items.find((item) => itemId(item) === labelling.id) : undefined
+  /** Where the label's surface is now (a cell's frame and top-left); null when its cell is off the screen. */
+  const labelFrame = labelling ? (labelling.on === null ? { origin: { x: 0, y: 0 }, size } : cellSurfaceOf(labelling.on)) : null
   /**
    * Escape set this to keep the blur that follows from committing what was typed -- but the input is
    * unmounted, and an unmounted input sends no blur: the flag stayed set and swallowed the NEXT label's
@@ -1881,38 +2163,67 @@ export function Canvas({
   useEffect(() => { if (!labelling_) labelCancelled.current = false }, [labelling_])
   // A label whose object has gone (undone away, deleted) is no label being typed.
   useEffect(() => { if (labelling && !labelled) setLabelling(null) }, [labelling, labelled])
+  const typingBox = labelling && labelled?.kind === "shape" && labelled.shape.kind === "text" ? labelling : null
+  const typingKey = typingBox ? `${typingBox.on ?? ""}:${typingBox.id}` : ""
   useEffect(() => {
-    editingBox.current = labelling && labelled?.kind === "shape" && labelled.shape.kind === "text"
-      ? labelling.id : null
+    editingBox.current = typingBox && typingBox.on === null ? typingBox.id : null
     baseDirty.current = true
     schedule()
-  }, [labelling, labelled, schedule])
+    // A text box in an ink cell: its cell's painter leaves the words to the field, and is painted again now and when
+    // the field goes.
+    const cell = typingBox?.on ?? null
+    typingInCell = cell !== null ? typingBox!.id : null
+    const repaint = () => {
+      const within = scrollerRef.current
+      const place = cell !== null && within ? inkCellPlaces.byId(cell, within) : null
+      if (place) repaintInkCells(place.view, [cell!])
+    }
+    repaint()
+    return () => {
+      if (cell === null) return
+      typingInCell = null
+      repaint()
+    }
+    // (`typingKey` is what `typingBox` is: the box and its surface.)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [typingKey, schedule])
 
   /**
    * A text box is as tall as its text — measured on every keystroke, so the
    * card grows under the caret instead of catching up afterwards. The words
    * are typed into the field and written to the drawing as they go; the
-   * session is one undo.
+   * session is one undo. In a drawing cell the cell grows with it when the box
+   * runs past its bottom (as ink docked into it does).
    */
-  const typeIntoBox = (id: string, text: string) => {
-    const held = latest.current.drawing
-    const now = latest.current.size
-    if (!openBox.current) { history.record(held); openBox.current = true }
-    publish({
-      items: held.items.map((item) => {
-        if (item.kind !== "shape" || item.shape.id !== id) return item
-        const width = item.shape.width * now.width
-        const aspect = textBoxAspect(text, width, measureTextBox)
-        return { kind: "shape" as const, shape: { ...item.shape, label: text, aspect } }
-      }),
+  const typeIntoBox = (id: string, text: string, on: string | null) => {
+    const whole_ = latest.current.drawing
+    const s = on === null ? pageSurface() : cellSurfaceOf(on)
+    const held = layerIn(whole_, on)
+    if (!s || !held) return
+    const frame = on === null ? latest.current.size : s.size
+    if (!openBox.current) { history.record(whole_); openBox.current = true }
+    const items = held.items.map((item) => {
+      if (item.kind !== "shape" || item.shape.id !== id) return item
+      const width = item.shape.width * frame.width
+      const aspect = textBoxAspect(text, width, measureTextBox)
+      return { kind: "shape" as const, shape: { ...item.shape, label: text, aspect } }
     })
-    setLabelling({ id, text })
+    if (on === null) publish({ items })
+    else {
+      const cell = inkCellOf(whole_, on)
+      if (!cell) return
+      const typed = items.find((item) => itemId(item) === id)
+      const bottom = typed ? bounds(typed, frame).y + bounds(typed, frame).height : 0
+      const aspect = Math.max(cell.aspect, (bottom + INK_PAD) / Math.max(frame.width, 1))
+      latest.current.onChange(withInkCell(whole_, { ...cell, aspect, items: reconnect({ items }, frame).items }))
+    }
+    setLabelling({ id, text, on })
   }
 
-  const boxEditor = labelling && labelled?.kind === "shape" && labelled.shape.kind === "text" ? (() => {
+  const boxEditor = labelling && labelFrame && labelled?.kind === "shape" && labelled.shape.kind === "text" ? (() => {
     const shape = labelled.shape
-    const base = baseBounds(labelled, size)
-    const centre = placedCenter(labelled, size)
+    const base = baseBounds(labelled, labelFrame.size)
+    const centre = placedCenter(labelled, labelFrame.size)
     const width = Math.max(TEXT_BOX.minimumWidth, base.width)
     const height = Math.max(base.height, textBoxHeight(labelling.text, width, measureTextBox))
     const fill = shape.fillHex
@@ -1920,15 +2231,16 @@ export function Canvas({
     const t = shape.transform
     return (
       <textarea className="wm-textbox-edit" autoFocus value={labelling.text} spellCheck={false}
-                data-node={labelling.id}
+                data-node={labelling.id} data-cell={labelling.on ?? undefined}
                 style={{
-                  left: centre.x - width / 2, top: centre.y - scroll - height / 2, width, height,
+                  left: labelFrame.origin.x + centre.x - width / 2, top: labelFrame.origin.y + centre.y - scroll - height / 2,
+                  width, height,
                   color: ink, caretColor: ink,
                   background: fill ?? "var(--wm-page)",
                   transform: `rotate(${t.rotation}rad) scale(${t.scale})`,
                 }}
                 onFocus={(event) => { const end = event.currentTarget.value.length; event.currentTarget.setSelectionRange(end, end) }}
-                onChange={(event) => typeIntoBox(labelling.id, event.target.value)}
+                onChange={(event) => typeIntoBox(labelling.id, event.target.value, labelling.on)}
                 onKeyDown={(event) => {
                   event.stopPropagation()
                   if (event.key === "Escape") { event.preventDefault(); openBox.current = false; setLabelling(null) }
@@ -1937,20 +2249,21 @@ export function Canvas({
     )
   })() : null
 
-  const labelEditor = labelling && labelled?.kind === "shape" && labelled.shape.kind !== "text" ? (() => {
-    const centre = placedCenter(labelled, size)
-    const width = Math.max(96, Math.min(240, bounds(labelled, size).width))
+  const labelEditor = labelling && labelFrame && labelled?.kind === "shape" && labelled.shape.kind !== "text" ? (() => {
+    const centre = placedCenter(labelled, labelFrame.size)
+    const width = Math.max(96, Math.min(240, bounds(labelled, labelFrame.size).width))
     const commit = () => {
       if (labelCancelled.current) { labelCancelled.current = false; return }
-      relabel(labelling.id, labelling.text.trim())
+      relabel(labelling.id, labelling.text.trim(), labelling.on)
       setLabelling(null)
     }
     return (
       <input className="wm-label-edit" autoFocus value={labelling.text} spellCheck={false}
-             data-node={labelling.id}
-             style={{ left: Math.round(centre.x - width / 2), top: Math.round(centre.y - scroll - 12), width }}
+             data-node={labelling.id} data-cell={labelling.on ?? undefined}
+             style={{ left: Math.round(labelFrame.origin.x + centre.x - width / 2),
+               top: Math.round(labelFrame.origin.y + centre.y - scroll - 12), width }}
              onFocus={(event) => event.currentTarget.select()}
-             onChange={(event) => setLabelling({ id: labelling.id, text: event.target.value })}
+             onChange={(event) => setLabelling({ id: labelling.id, text: event.target.value, on: labelling.on })}
              onKeyDown={(event) => {
                event.stopPropagation()
                if (event.key === "Enter") { event.preventDefault(); commit() }
@@ -2039,14 +2352,15 @@ export function Canvas({
 
   return (
     <div className="wm-canvas" ref={host}
-         style={{ pointerEvents: grabs ? "auto" : "none", cursor: eraserOn ? "cell" : selectOn ? "crosshair" : cursorFor(scope !== null ? "pen" : mode, placing, command) }}>
+         style={{ pointerEvents: grabs ? "auto" : "none", cursor: eraserOn ? "cell" : faint ? "grab" : selectOn ? "crosshair" : cursorFor(scope !== null ? "pen" : mode, placing, command) }}>
       {/* The committed ink, in the scroller so it scrolls with the words (`band`); over the page when there is none. */}
       {scroller
         ? createPortal(<canvas ref={canvas} className="wm-ink" style={INK_IN_SCROLLER} />, scroller)
         : <canvas ref={canvas} className="wm-ink" style={{ width: size.width, height: size.height }} />}
       <canvas ref={overlay}
               style={{ width: size.width, height: size.height, pointerEvents: "none" }} />
-      <div className="wm-handles">
+      <div className={`wm-handles${faint ? " wm-handles-faint" : ""}`}>
+        {hoverOutline}
         {handles}
         {labelEditor}
         {boxEditor}
@@ -2123,6 +2437,16 @@ function keptInside(translate: { dx: number; dy: number }, box: Rect | null, cel
     dx: keep(translate.dx, -box.x, cell.width - (box.x + box.width)),
     dy: keep(translate.dy, -box.y, cell.height - (box.y + box.height)),
   }
+}
+
+/** A point (cell px) kept inside a cell's box: a tool dragged out of a drawing cell stops at its edge. */
+const inCell = (point: Point, cell: Rect): Point =>
+  ({ x: Math.min(Math.max(point.x, 0), cell.width), y: Math.min(Math.max(point.y, 0), cell.height) })
+
+/** An object put into a drawing cell, moved (never shrunk) so it lies wholly inside the cell (`keptInside`'s rule). */
+function keptInCell(item: CanvasItem, frame: Size, cell: Rect): CanvasItem {
+  const t = keptInside({ dx: 0, dy: 0 }, bounds(item, frame), cell)
+  return Math.abs(t.dx) < 1e-9 && Math.abs(t.dy) < 1e-9 ? item : shifted([item], t.dx, t.dy, frame)[0] ?? item
 }
 
 const snapshotOf = (drawing: Drawing, ids: Set<string>): Map<string, ItemTransform> => {
@@ -2338,7 +2662,7 @@ export function paintInkCell(target: HTMLCanvasElement, cell: InkCell, size: Siz
   const frame = cellFrame(size.width)
   for (const item of cell.items) {
     if (isHidden(item)) continue
-    paint(context, item, frame, onLoad)
+    paint(context, item, frame, onLoad, typingInCell)
   }
   context.restore()
 }

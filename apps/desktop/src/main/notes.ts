@@ -472,12 +472,16 @@ export function drawingPath(root: string, note: string): string {
 }
 
 /** Where the drawing was kept before it travelled with its folder: the notes root, hashed by the absolute path. */
-const olderDrawingPath = (root: string, note: string): string =>
+export const olderDrawingPath = (root: string, note: string): string =>
   path.join(root, ".drawings", `${stemOf(note)}-${sha(note, 12)}.json`)
 
 /** The Mac's: `<stem>.json`, in the project folder. Read, converted, never written. */
-const macDrawingPath = (root: string, note: string): string =>
+export const macDrawingPath = (root: string, note: string): string =>
   path.join(ownerOf(note, root), ".drawings", `${stemOf(note)}.json`)
+
+/** Every file a note's drawing can be read from (the three above): the files that go to the bin with it (housekeeping.ts). */
+export const sidecarsOf = (root: string, note: string): string[] =>
+  [...new Set([drawingPath(root, note), olderDrawingPath(root, note), macDrawingPath(root, note)])]
 
 /** The note whose drawing is in front: where a picture goes when the page does not say. */
 let front: string | null = null

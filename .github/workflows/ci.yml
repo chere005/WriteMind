@@ -1,6 +1,7 @@
 # The TypeScript port on Windows: typecheck, unit tests, build; then the end-to-end suites (allowed to fail for
 # now: they drive the real app, and they publish their report and screenshots either way).
-# On pushes to main (and a manual run), the Mac package too: macos-15 builds the two ad-hoc dmgs exactly as a release
+# On pushes to main (and a manual run), the Mac package too: macos-15 typechecks, runs the unit tests (they must pass
+# there as well), and builds the two ad-hoc dmgs exactly as a release
 # would (apps/desktop's package:mac:adhoc), checks them with tools/verify-mac.sh and keeps them as an artifact for 14
 # days. It never publishes anything; releases are .github/workflows/release.yml's.
 # The Swift side of the repo is the macOS app's reference copy and is built and tested on a Mac, not here.
@@ -87,8 +88,8 @@ jobs:
       - run: npm ci
       - name: Typecheck
         run: npm run typecheck
-      - name: Unit tests (informative on macOS until they have run green there)
-        continue-on-error: true
+      # They block here too: the seven that took Windows paths for granted now use this system's own (2026-10-05).
+      - name: Unit tests
         run: npm test
       - name: Build (the Vision helper universal, tools/build-vision.sh)
         run: npm run build

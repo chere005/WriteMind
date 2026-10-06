@@ -14,13 +14,14 @@ import { describe, expect, it } from "vitest"
 import { EditorState, Transaction } from "@codemirror/state"
 import { history, isolateHistory } from "@codemirror/commands"
 import {
-  inkCellMarkdown, inkCellOf, inkCells, isHidden, noTransform, pictureMarkdown, writeDrawing,
+  inkCellMarkdown, inkCellOf, inkCells, isHidden, noTransform, pictureMarkdown, undockedInk, undockedPicture, writeDrawing,
   type CanvasItem, type Drawing,
 } from "@writemind/core"
+import { removeCellLine } from "@writemind/editor"
 import { pictureFiles } from "../src/main/macDrawing"
 import { DrawingHistory } from "../src/renderer/drawingHistory"
 import { changedBox, changedCells, EditClock, stepAcross, textTimeline, type TextHost } from "../src/renderer/editTimeline"
-import { depthOf, dockAsCell, dockInto, insertInkCell, oneStep, type DockDeps } from "../src/renderer/dock"
+import { depthOf, dockAsCell, dockInto, insertInkCell, oneStep, undockLine, type DockDeps } from "../src/renderer/dock"
 
 const stroke = (id: string, x = 0.1, y = 0.1): CanvasItem => ({
   kind: "stroke",
@@ -139,15 +140,16 @@ describe("dock as a cell: one Undo step", () => {
     expect(ids(note.drawing)).toEqual(["p", "s"])
   })
 
-  it("a picture and ink become one ink cell; a selection with a shape is not docked at all", () => {
+  it("a picture and ink become one ink cell; a shape goes into one too (since 2026-10-06)", () => {
     const note = new Note("", [picture("p"), stroke("s"), shape("r")])
-    expect(dockAsCell(note.deps(), new Set(["p", "r"]), PANE, COLUMN, 0)).toBe(false)
-    expect(note.words).toBe("")
-    expect(note.history.canUndo).toBe(false)
     expect(dockAsCell(note.deps(), new Set(["p", "s"]), PANE, COLUMN, 0)).toBe(true)
     const cell = inkCells(note.drawing)[0]!
     expect(cell.items.map((item) => item.kind).sort()).toEqual(["image", "stroke"])
     expect(ids(note.drawing)).toEqual(["r", "cell:2"])
+    // BEHAVIOUR CHANGE: a selection with a shape was not docked at all (a drawing cell took ink and pictures only).
+    const other = new Note("", [picture("p"), shape("r")])
+    expect(dockAsCell(other.deps(), new Set(["p", "r"]), PANE, COLUMN, 0)).toBe(true)
+    expect(inkCells(other.drawing)[0]!.items.map((item) => item.kind).sort()).toEqual(["image", "shape"])
   })
 
   it("words that cannot be written change nothing, and the unused share does not glue the next edit", () => {
@@ -212,6 +214,73 @@ describe("docking into an ink cell", () => {
     expect(note.words).toBe(words)
     expect(ids(note.drawing)).toEqual(["a", "b", "cell:0"])
     expect(dockInto(note.deps(), new Set(["b"]), PANE, "no-such-cell", 700, { x: 0, y: 0 })).toBe(false)
+  })
+})
+
+describe("undocking: one Undo step back into the note (2026-10-06)", () => {
+  /** The note's words with `remove` as the editor's own `removeCellLine` writes it (one isolated event). */
+  const undockDeps = (note: Note): DockDeps => {
+    const deps = note.deps()
+    return {
+      ...deps,
+      words: {
+        ...deps.words,
+        remove: (from, to) => removeCellLine({ state: note.state, dispatch: (spec) => note.dispatch(note.state.update(spec)) }, from, to),
+      },
+    }
+  }
+  const lineOf = (note: Note, text: string) => {
+    const from = note.words.indexOf(text)
+    return { from, to: from + text.length }
+  }
+
+  it("a drawing cell: its line out, its objects floating where it was shown, ONE Undo puts the cell back; Redo again", () => {
+    const note = new Note("Words.", [stroke("a"), shape("r")])
+    expect(dockAsCell(note.deps(), new Set(["a", "r"]), PANE, COLUMN, note.words.length)).toBe(true)
+    const cell = inkCells(note.drawing)[0]!
+    const docked = { words: note.words, drawing: note.drawing }
+    const line = lineOf(note, inkCellMarkdown(cell.id))
+    const made = undockedInk(note.drawing, cell.id, PANE, { x: COLUMN.left, y: 120 }, COLUMN.width)!
+    expect(undockLine(undockDeps(note), line, made.drawing, made.ids)).toBe(true)
+    expect(note.words.trimEnd()).toBe("Words.") // (the fake writer above puts one line break either side)
+    expect(ids(note.drawing)).toEqual(["a", "r"])
+    expect(inkCells(note.drawing)).toEqual([])
+    // They arrive picked.
+    expect(note.history.takeSelection(() => true)).toEqual(["a", "r"])
+
+    expect(note.step("undo")).toBe("both")
+    expect(note.words).toBe(docked.words)
+    expect(note.drawing).toBe(docked.drawing)
+    expect(note.step("redo")).toBe("both")
+    expect(note.words.trimEnd()).toBe("Words.") // (the fake writer above puts one line break either side)
+    expect(ids(note.drawing)).toEqual(["a", "r"])
+  })
+
+  it("a docked picture: a floating picture of the same file, one Undo makes it a picture cell again", () => {
+    const note = new Note("Words.", [picture("p")])
+    expect(dockAsCell(note.deps(), new Set(["p"]), PANE, COLUMN, note.words.length)).toBe(true)
+    const docked = { words: note.words, drawing: note.drawing }
+    const line = lineOf(note, pictureMarkdown("0123456789abcdef.png"))
+    const made = undockedPicture(note.drawing, "0123456789abcdef.png", PANE, { x: 40, y: 60, width: 300, height: 150 }, "back")!
+    expect(undockLine(undockDeps(note), line, made.drawing, made.ids)).toBe(true)
+    expect(note.words.trimEnd()).toBe("Words.") // (the fake writer above puts one line break either side)
+    const floating = note.drawing.items[0]!
+    expect(floating.kind === "image" && floating.image.file).toBe("0123456789abcdef.png")
+    expect(note.step("undo")).toBe("both")
+    expect(note.words).toBe(docked.words)
+    expect(note.drawing).toBe(docked.drawing)
+  })
+
+  it("words that cannot be taken out change nothing at all", () => {
+    const note = new Note("Words.", [])
+    const id = insertInkCell(note.deps(), note.words.length, 700)!
+    const before = { words: note.words, drawing: note.drawing }
+    const made = undockedInk(note.drawing, id, PANE, { x: 0, y: 0 }, 700)!
+    const deps = undockDeps(note)
+    expect(undockLine({ ...deps, words: { ...deps.words, remove: () => false } }, { from: 0, to: 0 }, made.drawing, made.ids)).toBe(false)
+    expect(undockLine({ ...deps, words: { cursorOffset: () => 0, write: () => true } }, { from: 0, to: 0 }, made.drawing, made.ids)).toBe(false)
+    expect(note.words).toBe(before.words)
+    expect(note.drawing).toBe(before.drawing)
   })
 })
 

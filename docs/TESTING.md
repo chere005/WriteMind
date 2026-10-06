@@ -10,7 +10,8 @@ Three layers, cheapest first:
 
 CI (`.github/workflows/ci.yml`, windows-latest, Node 24) runs typecheck, unit tests and the build as a gate, and the
 end-to-end suites as a second job that may fail (`continue-on-error`) and always uploads its report and screenshots as
-the `e2e-report` artifact.
+the `e2e-report` artifact. On pushes to main its mac-package job runs the same unit tests on macos-15, and they must
+pass there too: a test about Windows paths builds them with `path.win32` or picks this system's own, never assumes it.
 
 ## Running the end-to-end suites
 
@@ -59,7 +60,7 @@ against it, each as its own node process:
 | `smoke` | the app starts offscreen, makes a note, takes typing |
 | `cells` | brackets on their cells, hold / extend / add / remove, move / duplicate / delete, clipboard, typing over a run, dragging a held bracket; the seams between cells (hover, click, Enter, Escape, arrows, the + menu and its kinds) |
 | `editor` | typing and the formatting keys, list continuation, undo; the code highlighter, the T popover, the rendered page; folding; `/link`; sidebar drag and drop; session restart (restarts the app); the right-click menu; pointer selection, to-do boxes |
-| `drawing` | connectors and routing, labels, undo; pictures (paste, drop, crop, Edit ▸ Undo); pen ink, pick / move / resize / turn / group; text boxes and marks; a 1.5x display |
+| `drawing` | connectors and routing, labels, undo; pictures (paste, drop, crop, Edit ▸ Undo); pen ink, pick / move / resize / turn / group; text boxes and marks; a 1.5x display; hover feedback, shapes / arrows / text boxes in drawing cells, Undock (08-10) |
 | `pen` | stroke with pressure, eraser end, barrel button; the bar and the pen chip; every pen button action and the ExpressKeys; the pen cursor; palm rejection and finger scroll |
 | `maths` | the palette, insertion inline / as a block, typesetting (MathML), source back on click |
 | `camera` | a fake camera: the flow-chart reader, squaring a tilted page through four corners |

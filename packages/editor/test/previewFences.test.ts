@@ -162,4 +162,15 @@ describe("a click on a fence line of the rendered page", () => {
     expect(click(state, at("1+1") + 1).selection.main.head).toBe(at("1+1") + 1)
     expect(click(state, at("Last words") + 2).selection.main.head).toBe(at("Last words") + 2)
   })
+
+  it("leaves a click on the fence the caret is already on: its language is open to be clicked into", () => {
+    // Left from the first content line stands the caret on the opening fence, which opens to show its language.
+    const open = page(NOTE).update({ selection: EditorSelection.cursor(at("```python") + 9) }).state
+    expect(click(open, at("```python") + 4).selection.main.head).toBe(at("```python") + 4)
+    // ...and a double-click's word there stays selected (any selection did already).
+    const word = click(open, at("```python") + 3, at("```python") + 9).selection.main
+    expect([word.anchor, word.head]).toEqual([at("```python") + 3, at("```python") + 9])
+    // From another line the click still lands on the content beside the fence.
+    expect(click(page(NOTE), at("```python") + 4).selection.main.head).toBe(at("print(1)"))
+  })
 })

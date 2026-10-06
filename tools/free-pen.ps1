@@ -39,7 +39,7 @@ $repo = Split-Path -Parent $PSScriptRoot
 $userData = Join-Path $env:APPDATA '@writemind\desktop'
 $journal = Join-Path $userData 'pen-leases.json'
 if (Test-Path $journal) {
-  $running = @(Get-Process -ErrorAction SilentlyContinue | Where-Object { $_.ProcessName -eq 'WriteMind' -or ($_.Path -and $_.Path -like '*WriteMindCross*electron.exe') })
+  $running = @(Get-Process -ErrorAction SilentlyContinue | Where-Object { $_.ProcessName -eq 'WriteMind' -or ($_.Path -and $_.Path -like '*WriteMind*electron.exe') })
   if ($running.Count -gt 0) {
     Write-Host 'WriteMind is running: its journal is live and is not touched.'
   } else {

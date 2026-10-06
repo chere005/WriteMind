@@ -12,7 +12,7 @@
 import { isolateHistory } from "@codemirror/commands"
 import { EditorSelection, type EditorState, type StateEffect, type TransactionSpec } from "@codemirror/state"
 import type { Command, EditorView } from "@codemirror/view"
-import { firstCellFromBy, type CellKind } from "@writemind/core"
+import { deleteCell, firstCellFromBy, type CellKind } from "@writemind/core"
 import { inkCellPlaces } from "./inkCellRegistry"
 import { notebook } from "./notebook"
 import { armedField, armSeam, dropBarField, openCellAt, seamAfterCellAt, seamAtY, showDropBar } from "./seams"
@@ -42,7 +42,7 @@ export function cursorSeam(state: EditorState): number {
 
 /**
  * A command that MAKES a cell, run with nothing selected in a cell that has words: the new cell goes at `cursorSeam`,
- * AFTER that cell, empty, the caret in it — Ctrl+Shift+8's rule and Ctrl+9's (Sean, 2026-10-05: "pressing an input in the
+ * AFTER that cell, empty, the caret in it — Ctrl+Shift+8's rule and Ctrl+0's (Sean, 2026-10-05: "pressing an input in the
  * menu bar like code block etc should create a new cell with the cursor ready to start typing"). On an empty line, or
  * round a selection, `otherwise` (the block written there, or round what is selected).
  */
@@ -110,6 +110,30 @@ export function insertCellLine(target: { state: EditorState; dispatch(spec: Tran
     userEvent: "input.dock",
   })
   return { from, to }
+}
+
+/**
+ * UNDOCKING, the editor's half (2026-10-06): the picture or ink cell's line `from`..`to` taken out of the note the way
+ * Delete takes a held cell (core `deleteCell`: the blank line after it goes with it, the cells either side stay apart),
+ * the caret where it was. One dispatch, its own undo step (`isolateHistory`), user event `undock`: neither typing nor a
+ * delete, which the picture lines' guard would turn into holding the cell. False when the range is not a whole line.
+ */
+export function removeCellLine(target: { state: EditorState; dispatch(spec: TransactionSpec): void },
+  from: number, to: number): boolean {
+  const doc = target.state.doc
+  if (!(from >= 0 && to <= doc.length && from <= to)) return false
+  const first = doc.lineAt(from)
+  const last = doc.lineAt(to)
+  if (first.from !== from || last.to !== to) return false
+  const edit = deleteCell({ location: from, length: to - from }, doc.toString())
+  const at = edit.range.location
+  target.dispatch({
+    changes: { from: at, to: at + edit.range.length, insert: edit.replacement },
+    selection: EditorSelection.cursor(Math.min(edit.selection.location, doc.length - edit.range.length + edit.replacement.length)),
+    annotations: isolateHistory.of("full"),
+    userEvent: "undock",
+  })
+  return true
 }
 
 /** The line's own padding inside the content box: the text column starts this far in on each side. */

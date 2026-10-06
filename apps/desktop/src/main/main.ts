@@ -3,11 +3,11 @@
  * notebook itself — that is all in `@writemind/core` and `@writemind/editor`,
  * which know nothing about Electron.
  *
- * WHICH FOLDER. The Mac app keeps its notes in `~/Documents/WriteMind`.
- * This one keeps its own in `~/Documents/WriteMindCross` until it is told
- * otherwise (`WRITEMIND_NOTES`), because two apps writing one folder is the
- * exact shape of the bug that cost two cells on 2026-09-20 — and because a
- * port is not something to point at somebody's real notes on its first run.
+ * WHICH FOLDER. `<Documents>/WriteMind` (`WRITEMIND_NOTES` overrides). It was
+ * `<Documents>/WriteMindCross` until 2026-10-06, when this app took the name
+ * WriteMind: the first launch after that moves the old folder to the new name
+ * (main/notesFolderMove.ts, which also says why a Documents/WriteMind that is
+ * already there — the Swift Mac app's notes — keeps the old folder in use).
  */
 
 import {
@@ -24,6 +24,8 @@ import {
 } from "./notes"
 import { pictureFiles } from "./macDrawing"
 import { rescueUnsaved } from "./rescue"
+import { findUnused, trashNoteAndDrawing, trashSectionAndDrawings, trashUnused } from "./housekeeping"
+import type { Held } from "../shared/housekeeping"
 import { ADD_JAPANESE_OCR, readerFor, windowsOcr } from "./helpers"
 import { ocrFor } from "./ocr"
 import { buildMenu } from "./menu"
@@ -42,6 +44,7 @@ import { registerSheets } from "./sheets"
 import { startUpdater, type Updater } from "./updater"
 import { UPDATE_COMMAND_IDS } from "../shared/update"
 import { takeWelcomed, welcomeOnce, welcomeWanted } from "./welcome"
+import { NOTES_FOLDER, settleNotesFolder, type Settled } from "./notesFolderMove"
 import type { Runner as EvalRunner } from "./eval/runner"
 import { MIN_WINDOW } from "../shared/layout"
 import { applyMacIdentity } from "./macIdentity"
@@ -73,9 +76,17 @@ const DEV = process.env.WRITEMIND_DEV === "1"
  * `~/Documents`: on Linux that reads the XDG user directory, so a machine
  * whose documents folder is called something else — or is somewhere else
  * entirely — is respected rather than corrected.
+ *
+ * Settled ONCE at launch, before anything reads the notes (`settleNotesFolder`: it may move the old
+ * `WriteMindCross` folder to `WriteMind`, or keep using it).
  */
+let settledFolder: Settled | null = null
 const notesRoot = (): string =>
-  process.env.WRITEMIND_NOTES ?? path.join(app.getPath("documents"), "WriteMindCross")
+  process.env.WRITEMIND_NOTES ?? settledFolder?.root ?? path.join(app.getPath("documents"), NOTES_FOLDER)
+
+// TESTS ONLY: a scratch Documents folder, so an instance that looks for its notes folder (and may move an old one)
+// can never see the person's own Documents.
+if (process.env.WRITEMIND_DOCUMENTS) app.setPath("documents", process.env.WRITEMIND_DOCUMENTS)
 
 let window: BrowserWindow | null = null
 
@@ -333,6 +344,16 @@ if (!gotLock) {
 
 app.whenReady().then(async () => {
   if (!gotLock) return
+  // THE NOTES FOLDER before anything reads it (notesFolderMove.ts): the old WriteMindCross folder is moved to
+  // WriteMind on the first launch after the rename, and every remembered path with it.
+  settledFolder = await settleNotesFolder({
+    documents: app.getPath("documents"), userData: app.getPath("userData"), env: process.env,
+  }).catch((error) => {
+    console.error("WriteMind: the notes folder could not be settled", error)
+    return null
+  })
+  // "Your notes stay in Documents\WriteMindCross…", once (both folders are there).
+  ipcMain.handle("notesFolder:notice", () => settledFolder?.takeNotice() ?? null)
   // THE PROJECT first: the window's watcher and the sidebar's tree both read it.
   project = new ProjectStore(notesRoot())
   // The remembered project file is given three seconds: one on a share that is not reachable would hold the
@@ -396,7 +417,20 @@ app.whenReady().then(async () => {
   ipcMain.handle("note:write", (_event, file: string, text: string) => writeNote(file, text))
   ipcMain.handle("note:create", (_event, folder: string) => createNote(folder))
   ipcMain.handle("note:rename", (_event, file: string, title: string) => renameNote(notesRoot(), file, title))
-  ipcMain.handle("note:trash", async (_event, file: string) => { await shell.trashItem(file) })
+  // The note to the bin, and its drawing after it (housekeeping.ts): never a permanent delete.
+  ipcMain.handle("note:trash", async (_event, file: string) => {
+    await trashNoteAndDrawing(notesRoot(), file, (one) => shell.trashItem(one))
+  })
+  // File ▸ Clean Up Unused Files… (housekeeping.ts): what is unused in the project's folders; then the bin for the
+  // files the person said yes to, each looked at again first. `held` is what the window has that the disk has not.
+  const heldOf = (held: Held | null | undefined): Held => ({
+    openNotes: Array.isArray(held?.openNotes) ? held!.openNotes.map(String) : [],
+    held: Array.isArray(held?.held) ? held!.held.map(String) : [],
+  })
+  ipcMain.handle("housekeeping:scan", (_event, held: Held) => findUnused(notesRoot(), project.folders, heldOf(held)))
+  ipcMain.handle("housekeeping:trash", (_event, paths: string[], held: Held) =>
+    trashUnused(notesRoot(), project.folders, Array.isArray(paths) ? paths.map(String) : [], heldOf(held),
+      (one) => shell.trashItem(one)))
   // Text that could not be written, kept where it can be come back to (rescue.ts).
   ipcMain.handle("note:rescue", (_event, file: string, text: string, kind?: "note" | "drawing") =>
     rescueUnsaved(app.getPath("userData"), file, text, kind === "drawing" ? "drawing" : "note"))
@@ -409,7 +443,8 @@ app.whenReady().then(async () => {
     const here = path.resolve(folder).toLowerCase()
     const inside = project.folders.some((one) => here.startsWith(path.resolve(one).toLowerCase() + path.sep))
     if (isProjectFolder(folder, notesRoot()) || !inside) return false
-    await shell.trashItem(folder)
+    // The folder to the bin, and the drawings of its notes (kept in the project folder's `.drawings`) after it.
+    await trashSectionAndDrawings(notesRoot(), folder, (one) => shell.trashItem(one))
     return true
   })
   ipcMain.handle("order:set", (_event, folder: string, names: string[]) =>

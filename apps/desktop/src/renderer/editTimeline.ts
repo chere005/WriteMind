@@ -32,6 +32,7 @@
 import { EditorState, StateField, Transaction, type Extension } from "@codemirror/state"
 import { isolateHistory, redo, undo, undoDepth, redoDepth } from "@codemirror/commands"
 import { bounds, changedInkCells, inkCells, isHidden, itemId, type Drawing } from "@writemind/core"
+import { redoWaiting } from "@writemind/editor"
 import type { DrawingHistory } from "./drawingHistory"
 
 /** The numbering of edits for ONE note. */
@@ -63,6 +64,12 @@ export class EditClock {
 
   /** A number for an Undo, to say when it happened relative to the edits. */
   tick(): number { return ++this.n }
+
+  /**
+   * Whether something was undone (or a shared stamp taken) since the newest new edit: a Redo MAY be waiting, on either
+   * side. Erring towards yes is harmless (an emptied markdown cell just waits for the next edit to go, textCells.ts).
+   */
+  get undoneSinceEdit(): boolean { return this.n > this.edited }
 
   /**
    * The next `edits` edits, on either side, are ONE edit: a picture read into
@@ -125,6 +132,8 @@ export function textTimeline(clock: EditClock): Extension {
   })
   const extension: Extension = [
     field,
+    // An emptied markdown cell is not taken away while the drawing's Redo waits (its going would be a new edit).
+    redoWaiting.of(() => clock.undoneSinceEdit),
     // An edit that comes after an edit of the other side starts a group of
     // its own: typing must not join a group that the drawing has since moved past.
     EditorState.transactionExtender.of((tr) => {

@@ -130,9 +130,13 @@ export const COMMANDS: CommandDef[] = [
   // Port-only key: the Mac opens the maths popover from the bar only.
   c("insertMath", "Maths…", "page", "CmdOrCtrl+Shift+M"),
   c("codeBlock", "Code Block", "editor", "CmdOrCtrl+8"),
+  // A maths cell, the ```wl fence typeset when the caret leaves it (Sean, 2026-10-06: "ctrl + 7 should be PURELY
+  // plaintext.. so clearly we need a math cell type.. that should be ctrl + 9"). Port-only: the Mac's ⌘9 is its
+  // evaluation cell (Ctrl+Shift+8 here).
+  c("mathsCell", "Maths Cell", "editor", "CmdOrCtrl+9"),
   // An empty ink cell (docs\PLAN-docking-ink-cells.md): at the armed bar, else after the caret's cell. Port-only;
-  // Ctrl+9 (Sean, 2026-10-05: "make ctrl + 9 drawing cell"; it was Ctrl+0, which is free now).
-  c("insertInkCell", "Drawing Cell", "page", "CmdOrCtrl+9"),
+  // Ctrl+0 (Sean, 2026-10-06: "make ctrl + 10 drawing cells"; it was Ctrl+9 for a day, and Ctrl+0 before that).
+  c("insertInkCell", "Drawing Cell", "page", "CmdOrCtrl+0"),
   // Pen (port-only): the tablet's ExpressKeys type these. Ctrl+Alt+digit and
   // a few Ctrl+Alt+letters, none of which anything else uses.
   c("penToggle", "Pen Down", "page", "CmdOrCtrl+Alt+1"),

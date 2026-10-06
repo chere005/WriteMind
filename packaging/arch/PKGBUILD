@@ -10,7 +10,7 @@ pkgver=0.1.0
 pkgrel=1
 pkgdesc="A notebook, a camera and a drawing layer over both"
 arch=('x86_64' 'aarch64')
-url="https://github.com/chere005/WriteMindCross"
+url="https://github.com/chere005/WriteMind"
 license=('MIT')
 depends=('electron' 'gtk3' 'nss' 'alsa-lib' 'glib2' 'xdg-utils')
 makedepends=('npm' 'nodejs' 'git')
@@ -18,22 +18,22 @@ optdepends=(
   'tesseract: reading the words out of a captured page'
   'tesseract-data-eng: the English data tesseract reads with'
 )
-source=("git+https://github.com/chere005/WriteMindCross.git")
+source=("git+https://github.com/chere005/WriteMind.git")
 sha256sums=('SKIP')
 
 build() {
-  cd "$srcdir/WriteMindCross"
+  cd "$srcdir/WriteMind"
   npm install --no-audit --no-fund
   npm -w @writemind/desktop run build
 }
 
 check() {
-  cd "$srcdir/WriteMindCross"
+  cd "$srcdir/WriteMind"
   npm test
 }
 
 package() {
-  cd "$srcdir/WriteMindCross"
+  cd "$srcdir/WriteMind"
   install -dm755 "$pkgdir/usr/lib/$pkgname"
   cp -r apps/desktop/out "$pkgdir/usr/lib/$pkgname/"
   install -Dm644 apps/desktop/package.json "$pkgdir/usr/lib/$pkgname/package.json"

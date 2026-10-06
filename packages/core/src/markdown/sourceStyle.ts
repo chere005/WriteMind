@@ -15,7 +15,7 @@ import { todoItem } from "./parser"
 import { maskEscapes } from "./plainText"
 import { codeTokens, languageFrom, type CodeTokenKind } from "./code"
 import { colouring } from "../eval/evaluator"
-import { MATH_INLINE_PREFIX, isMathFence } from "../math/typesetter"
+import { MATH_INLINE_PREFIX, isMathFence, mathExpressionInCode } from "../math/typesetter"
 
 export type SourceKind =
   | "marker" | "heading" | "codeToken" | "bold" | "italic" | "strikethrough" | "code" | "math"
@@ -177,7 +177,9 @@ export function sourceStyleRuns(source: string): SourceRun[] {
     const text = found[1]!
     push(range(r.location, 1), "marker")
     push(range(r.location + r.length - 1, 1), "marker")
-    if (text.startsWith(MATH_INLINE_PREFIX)) {
+    // (`wl:` with no expression is just code, as `mathExpressionInCode` reads it: an empty maths run made
+    // `inlineSegments` loop for ever — the rendered page froze as `` `wl:` `` was typed, and so did Ctrl+7 on it.)
+    if (mathExpressionInCode(text) !== null) {
       const prefix = MATH_INLINE_PREFIX.length
       push(range(inner.location, prefix), "marker")
       push(range(inner.location + prefix, inner.length - prefix), "math")

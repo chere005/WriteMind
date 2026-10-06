@@ -58,7 +58,7 @@
 !include x64.nsh
 !include FileFunc.nsh
 
-!define WM_DOCS "https://github.com/chere005/WriteMindCross/blob/main/docs/INSTALL-WINDOWS.md#optional-tools-python-and-wolfram"
+!define WM_DOCS "https://github.com/chere005/WriteMind/blob/main/docs/INSTALL-WINDOWS.md#optional-tools-python-and-wolfram"
 !define WM_WOLFRAM_TERMS "https://www.wolfram.com/legal/terms/wolfram-engine.html"
 
 Var wmPowerShell

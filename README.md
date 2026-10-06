@@ -8,7 +8,7 @@ type in.
 ## Install on Windows
 
 Download **`WriteMind-Setup-<version>.exe`** from the
-[latest release](https://github.com/chere005/WriteMindCross/releases/latest) and run it. It installs for
+[latest release](https://github.com/chere005/WriteMind/releases/latest) and run it. It installs for
 your Windows user only (no admin prompt) and offers, on one page, to install **Python** and the **Wolfram
 Engine** for runnable cells, and to open the Wolfram activation (you sign in with your own Wolfram ID).
 The installer is not code-signed yet, so Windows SmartScreen asks first: **More info ▸ Run anyway**.
@@ -17,7 +17,7 @@ Installed copies check for updates on startup (Help ▸ Check for Updates…). D
 
 ## Install on macOS
 
-From the same [latest release](https://github.com/chere005/WriteMindCross/releases/latest), download
+From the same [latest release](https://github.com/chere005/WriteMind/releases/latest), download
 **`WriteMind-<version>-mac-arm64.dmg`** for Apple silicon (About This Mac says **Chip**: Apple M…) or
 **`WriteMind-<version>-mac-x64.dmg`** for an Intel Mac; macOS 13 Ventura or newer. Open it and drag
 WriteMind onto Applications (it replaces an older WriteMind there). It is signed ad hoc and not
@@ -29,8 +29,10 @@ Details: [docs/INSTALL-MAC.md](docs/INSTALL-MAC.md).
 ## The code
 
 **This repo is the cross-platform WriteMind: macOS, Windows and Linux,
-one codebase.** The macOS-only Swift app it was ported from is in `WriteMind/`
-as a reference, and its living copy is `~/GIT/WriteMind`.
+one codebase.** It is `chere005/WriteMind` on GitHub (it was WriteMindCross until
+2026-10-06). The macOS-only Swift app it was ported from is in `WriteMind/`
+as a reference, and its living copy is `~/GIT/WriteMindSwift`
+(`chere005/WriteMindSwift`).
 
 - `docs/PORT.md` — what was ported, what was rebuilt, and why CodeMirror
 - `docs/BUILDING.md` — the build, the three packages, and Arch in

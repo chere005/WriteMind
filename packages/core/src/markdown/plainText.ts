@@ -359,7 +359,8 @@ export function cellWordsStart(block: { kind: string; head?: number }, cell: Ran
 
 /**
  * The visible words of a markdown cell's source, line for line (its marker left out): what Ctrl+7 keeps when it makes
- * the cell a text cell. `segments` is the inline reader (`inlineSegments`), handed in so this file stays below it.
+ * the cell a text cell — with Link Here's anchors, an inline picture's markdown and inline maths' `` `wl:…` `` source
+ * kept as they are written. `segments` is the inline reader (`inlineSegments`), handed in so this file stays below it.
  */
 export function visibleWords(source: string,
   segments: (line: string) => { from: number; to: number; text: string; image?: unknown; math?: string }[]): string {
@@ -370,9 +371,18 @@ export function visibleWords(source: string,
     const body = line.slice(lead.length)
     const read = segments(body)
     // The words — and what is not formatting and must not be lost: Link Here's anchors (links from other notes land
-    // on them; the text cell hides them) and an inline picture (its markdown, as literal words: a text cell draws no
-    // picture, and the reference to it stays in the note).
-    const pieces: Array<[number, string]> = read.map((one) => [one.from, one.image ? body.slice(one.from, one.to) : one.text])
+    // on them; the text cell hides them), an inline picture (its markdown, as literal words: a text cell draws no
+    // picture, and the reference to it stays in the note) and inline maths (its whole `` `wl:…` `` source, as typed:
+    // a text cell typesets nothing, and Ctrl+Shift+7 makes it maths again; Sean, 2026-10-06). A maths segment is the
+    // expression alone; its code span is the backtick before the `wl:` and the one right after it (an expression
+    // holds no backtick).
+    const whole = (one: { from: number; to: number; text: string; image?: unknown; math?: string }): string => {
+      if (one.image) return body.slice(one.from, one.to)
+      if (one.math === undefined) return one.text
+      const open = body.lastIndexOf("`", one.from - 1)
+      return open >= 0 && body[one.to] === "`" ? body.slice(open, one.to + 1) : one.text
+    }
+    const pieces: Array<[number, string]> = read.map((one) => [one.from, whole(one)])
     for (const [from, to] of anchorSpans(body)) {
       if (!read.some((one) => from < one.to && to > one.from)) pieces.push([from, body.slice(from, to)])
     }

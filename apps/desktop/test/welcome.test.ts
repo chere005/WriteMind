@@ -55,7 +55,8 @@ describe("the quick reference's keys come from the command table", () => {
     expect(both("Pen down / up")).toEqual(["Ctrl+P", "⌘P"])
     expect(both("1 Title")).toEqual(["Ctrl+1", "⌘1"])
     expect(both("3 Author")).toEqual(["Ctrl+3", "⌘3"])
-    // docs/PLAN-text-cells.md (Sean, 2026-10-05): 7 Text, Shift+7 Markdown, 8 Code block, Shift+8 Runnable code, 9 Drawing.
+    // docs/PLAN-text-cells.md (Sean, 2026-10-05 / 06): 7 Text, Shift+7 Markdown, 8 Code block, Shift+8 Runnable code,
+    // 9 Maths, 0 Drawing.
     expect(both("7 Text")).toEqual(["Ctrl+7", "⌘7"])
     expect(both("Shift+7 Markdown")).toEqual(["Ctrl+Shift+7", "⇧⌘7"])
     expect(both("8 Code block")).toEqual(["Ctrl+8", "⌘8"])
@@ -66,7 +67,8 @@ describe("the quick reference's keys come from the command table", () => {
     expect(both("Move cell up / down")).toEqual(["Ctrl+Shift+↑ / ↓", "⌃⇧↑ / ↓"])
     expect(both("Move section up / down")).toEqual(["Ctrl+↑ / ↓", "⌃⌘↑ / ↓"])
     expect(both("Run the cell")).toEqual(["Shift+Enter", "⇧↩"])
-    expect(both("9 Drawing cell")[0]).toBe("Ctrl+9")
+    expect(both("9 Maths cell")).toEqual(["Ctrl+9", "⌘9"])
+    expect(both("0 Drawing cell")).toEqual(["Ctrl+0", "⌘0"])
     expect(both("Fold / unfold all sections")).toEqual(["Ctrl+Alt+Shift+← / →", "⌥⇧⌘← / →"])
     expect(both("Every key")).toEqual(["F1", "⇧⌘/"])
   })
@@ -94,14 +96,14 @@ describe("the quick reference's keys come from the command table", () => {
   it("the number keys come first, as one group, each digit's Shift chord after it (Sean: group the ctrl/cmd + 1-0 keystrokes)", () => {
     const first = WELCOME_GROUPS[0]!
     expect(first.keys.map((one) => welcomeKeys(one, false))).toEqual(
-      ["Ctrl+1", "Ctrl+2", "Ctrl+3", "Ctrl+4", "Ctrl+5", "Ctrl+6", "Ctrl+7", "Ctrl+Shift+7", "Ctrl+8", "Ctrl+Shift+8", "Ctrl+9"])
+      ["Ctrl+1", "Ctrl+2", "Ctrl+3", "Ctrl+4", "Ctrl+5", "Ctrl+6", "Ctrl+7", "Ctrl+Shift+7", "Ctrl+8", "Ctrl+Shift+8", "Ctrl+9", "Ctrl+0"])
     expect(WELCOME_GROUPS.slice(1).map((group) => group.title)).toEqual(["Notes", "View", "Editing", "Help"])
   })
 
   it("the feature list names what is built, the pen buttons as Sean set them", () => {
     const text = welcomeNote()
     expect(text.startsWith("# WriteMind Quick Reference\n")).toBe(true)
-    for (const name of ["Cells", "Drawing", "Runnable cells", "Video pane", "Wacom pen buttons"]) {
+    for (const name of ["Cells", "Maths cells", "Drawing", "Runnable cells", "Video pane", "Wacom pen buttons"]) {
       expect(WELCOME_FEATURES.some((one) => one.startsWith(`**${name}`)), name).toBe(true)
     }
     expect(text).toContain("First button (Middle Click): hold to erase strokes, double-tap to undo.")
@@ -118,7 +120,7 @@ describe("a new install, once (main/welcome.ts)", () => {
   afterEach(() => { for (const dir of made.splice(0)) rmSync(dir, { recursive: true, force: true }) })
 
   it("an empty notes folder gets the note and the marker; a second launch does not write it again", async () => {
-    const root = path.join(temp(), "WriteMindCross") // not made yet, as on a first launch
+    const root = path.join(temp(), "WriteMind") // not made yet, as on a first launch
     const note = await welcomeOnce(root, [root])
     expect(note).toBe(path.join(root, WELCOME_FILE))
     expect(await fs.readFile(note!, "utf8")).toBe(welcomeNote())

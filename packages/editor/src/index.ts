@@ -11,9 +11,9 @@ export { notebookState, notebookField, notebook, cellRanges, selectedRanges, app
 export { notebookDecorations, safeSpanStyle } from "./decorations"
 export { seamExtensions, armedField, armedTypeField, armSeam, setArmedType, pageSeams } from "./seams"
 export { cellBrackets, heldCells, GUTTER_WIDTH } from "./brackets"
-export { notebookKeys, wrap, heading, list, listStyleSource, quote, fence, indentLines, outdentLines, textCell, markdownCell } from "./keys"
+export { notebookKeys, wrap, heading, list, listStyleSource, quote, fence, mathsCell, indentLines, outdentLines, textCell, markdownCell, mergeTheCell } from "./keys"
 // Text cells and markdown cells (docs/PLAN-text-cells.md): the hidden marker, literal typing, plain copy.
-export { textCells, markerField, hiddenMarkers, plainSelection } from "./textCells"
+export { textCells, markerField, hiddenMarkers, plainSelection, redoWaiting } from "./textCells"
 export { codeTypingKeys } from "./codeTyping"
 export { notebookTheme } from "./theme"
 export { textConventions } from "./conventions"
@@ -39,10 +39,10 @@ export { makesCellAfter } from "./dock"
 // Picture and ink cells, the rect registry and docking (docs\PLAN-docking-ink-cells.md (c), (d)).
 export {
   pictureCells, pictureCellsField, inkCellPainter, setInkAspects, inkAspectsField, repaintInkCells, holdPictureCell,
-  pictureCellsOf, picturesWhole, type InkCellPainter,
+  pictureCellsOf, picturesWhole, pictureCellLine, type InkCellPainter,
 } from "./pictureCells"
 export { inkCellPlaces, inkCellsMoved, type InkCellPlace } from "./inkCellRegistry"
-export { cursorSeam, dropTargetAt, insertCellLine, columnBox, showDropTarget, type DropTarget } from "./dock"
+export { cursorSeam, dropTargetAt, insertCellLine, removeCellLine, columnBox, showDropTarget, type DropTarget } from "./dock"
 export { PICTURE_LINE, pictureCellDom, lastColumnWidth } from "./pictureDom"
 // Tables (the first part of "Tables, from scratch"): the grid in the markdown, Tab between cells, Return adds a row.
 export { tables, tableKeys, tableAt, tableTabCommand, tableReturnCommand } from "./tables"

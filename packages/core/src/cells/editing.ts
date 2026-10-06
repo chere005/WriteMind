@@ -14,7 +14,9 @@ import {
 } from "../text/range"
 import { positioned, todoItem, type PositionedBlock } from "../markdown/parser"
 import { lineRangeCovering } from "../markdown/formatting"
+import { cellWordsStart, escapePlain } from "../markdown/plainText"
 import { sectionContaining, sections } from "./outline"
+import { isMarkdownCell, isTextCell, keepingHalves, markerLength } from "./textCells"
 
 /** Whether the cell that starts exactly here is a run of blank lines. */
 function opensABlankCell(markdown: string, offset: number): boolean {
@@ -131,6 +133,12 @@ const isBlankChar = (character: string | undefined): boolean =>
  * Nothing happens at either end of a cell, and nothing happens inside a
  * fenced block: a blank line in the middle of one does not make two blocks,
  * it makes one block with a hole in it.
+ *
+ * Each half stays the kind it was (port-first, docs/PLAN-text-cells.md; the
+ * rule Return and display maths keep, `keepingHalves`): a text cell's halves
+ * are written by the escape rule again, a markdown cell's second half gets a
+ * marker of its own. A markdown cell's words begin under its marker, so the
+ * start of its words is an end of the cell too.
  */
 export function splitCell(text: string, selection: Range): Edit | null {
   const caret = Math.min(Math.max(selection.location, 0), text.length)
@@ -141,17 +149,18 @@ export function splitCell(text: string, selection: Range): Edit | null {
   // "one | two" must not leave a space hanging off either cell, and a cut
   // at a LINE boundary must not leave the newline that is already there
   // under the two the break writes.
+  const words = cellWordsStart(cell.block, cell.range)
   let start = caret
   let stop = caret
-  while (start > cell.range.location && isBlankChar(text[start - 1])) start--
+  while (start > words && isBlankChar(text[start - 1])) start--
   const cellEnd = end(cell.range)
   while (stop < cellEnd && isBlankChar(text[stop])) stop++
 
-  const head = text.slice(cell.range.location, start)
+  const head = start > words ? text.slice(words, start) : ""
   const tail = text.slice(stop, cellEnd)
   if (head.trim().length === 0 || tail.trim().length === 0) return null
 
-  return edit(range(start, stop - start), "\n\n", range(start + 1, 0))
+  return keepingHalves(text, edit(range(start, stop - start), "\n\n", range(start + 1, 0)))
 }
 
 /**
@@ -159,6 +168,13 @@ export function splitCell(text: string, selection: Range): Edit | null {
  * cell, that one and the one before it. The caret lands on the seam.
  *
  * A heading will not take another cell's words: it is one line by definition.
+ *
+ * Text cells and markdown cells (port-first): the UPPER cell's kind wins, as
+ * Backspace joining them has it. A markdown cell joined under a text cell
+ * loses its marker and its markup is written as literal words (the escape
+ * rule), so it reads as it was typed; a text cell joined under a markdown cell
+ * keeps its escapes (its words still read as they did); two markdown cells
+ * keep one marker, the upper one's.
  */
 export function mergeCells(text: string, selection: Range): Edit | null {
   const caret = Math.min(Math.max(selection.location, 0), text.length)
@@ -175,9 +191,16 @@ export function mergeCells(text: string, selection: Range): Edit | null {
   if (first.block.kind === "heading" || first.block.kind === "code" || second.block.kind === "code") return null
 
   const seam = end(first.range)
-  const gap = range(seam, Math.max(0, second.range.location - seam))
-  if (gap.length <= 0) return null
-  return edit(gap, "\n", range(seam + 1, 0))
+  if (second.range.location - seam <= 0) return null
+  // The lower cell's marker (if any) goes with the gap; under a text cell its words are written as literal words.
+  const head = markerLength(second.block)
+  const words = Math.min(second.range.location + head, text.length)
+  if (isTextCell(first.block) && isMarkdownCell(second.block)) {
+    const stop = Math.max(end(second.range), words)
+    const literal = escapePlain(text.slice(words, Math.max(words, end(second.range))))
+    return edit(range(seam, stop - seam), "\n" + literal, range(seam + 1, 0))
+  }
+  return edit(range(seam, Math.max(0, words - seam)), "\n", range(seam + 1, 0))
 }
 
 /**

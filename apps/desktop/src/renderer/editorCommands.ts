@@ -11,12 +11,12 @@
 import type { EditorView } from "@codemirror/view"
 import {
   BOLD, ITALIC, STRIKE, UNDERLINE_CLOSE, UNDERLINE_OPEN, HEADING_LADDER, blockContaining,
-  deleteCell, duplicateCell, editsOver, expand, fenceOf, mergeCells, moveCell, moveSection,
+  deleteCell, duplicateCell, editsOver, expand, fenceOf, moveCell, moveSection,
   splitCell, subsections, subsectionsFolding,
   type CodeLanguage, type Edit, type Heading, type ListStyle, type Range,
 } from "@writemind/core"
 import {
-  applyEdit, evaluationCell, fence, foldAll, foldedKeys, heading, heldCells, indentLines, list, markdownCell, outdentLines, quote,
+  applyEdit, evaluationCell, fence, mathsCell, foldAll, foldedKeys, heading, heldCells, indentLines, list, markdownCell, mergeTheCell, outdentLines, quote,
   sectionAtCaret, selectAllOccurrences, selectNext, tagFence, toggleFold, unfoldAll, wrap,
 } from "@writemind/editor"
 import { EditorSelection } from "@codemirror/state"
@@ -104,8 +104,9 @@ export function runEditorCommand(view: EditorView, id: string, options: EditorOp
       if (options.codeLanguage === "plain") fence(view)
       else tagFence(fenceOf(options.codeLanguage))(view)
       return true
+    case "mathsCell": mathsCell(view); return true
     case "splitCell": edit(view, (text, where) => splitCell(text, where)); return true
-    case "mergeCells": edit(view, (text, where) => mergeCells(text, where)); return true
+    case "mergeCells": mergeTheCell(view); return true
     case "duplicateCell": onCells(view, (span, text) => duplicateCell(span, text)); return true
     case "evaluationCell": evaluationCell(view); return true
     case "deleteCell": onCells(view, (span, text) => deleteCell(span, text)); return true

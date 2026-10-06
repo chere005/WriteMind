@@ -1,5 +1,5 @@
 /**
- * Pictures written into the note itself: the Mac's planned `MarkdownImages.swift` (C:\GIT\WriteMind\docs\
+ * Pictures written into the note itself: the Mac's planned `MarkdownImages.swift` (C:\GIT\WriteMindSwift\docs\
  * PLAN-docking.md, "The model"), plus the port's ink cells (docs\PLAN-docking-ink-cells.md (a)).
  *
  * A DOCKED picture is the line `![](.drawings/media/<file>)` on a line of its own, and the parser makes that line a

@@ -156,6 +156,13 @@ function cellAt(view: EditorView, dom: HTMLElement): { from: number; to: number 
   return { from: line.from, to: line.to }
 }
 
+/**
+ * The line a picture or ink widget draws (its root element, either pane), or null when it is no longer in the note:
+ * what a cell's menu takes out when it undocks the cell.
+ */
+export const pictureCellLine = (view: EditorView, dom: HTMLElement): { from: number; to: number } | null =>
+  dom.isConnected ? cellAt(view, dom) : null
+
 /** Hold the cell a widget draws: select its line, lit by its bracket (a click on it, Backspace beside it). */
 export function holdPictureCell(view: EditorView, dom: HTMLElement): void {
   const at = cellAt(view, dom)

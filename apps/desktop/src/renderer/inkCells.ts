@@ -15,7 +15,7 @@ import {
   changedInkCells, inkCellOf, inkCells, inkCellSvg, minAspect, type Drawing, type InkCell,
 } from "@writemind/core"
 import {
-  columnBox, cursorSeam, dropTargetAt, inkAspectsField, inkCellPlaces, insertCellLine, repaintInkCells,
+  columnBox, cursorSeam, dropTargetAt, inkAspectsField, inkCellPlaces, insertCellLine, removeCellLine, repaintInkCells,
   setInkAspects, showDropTarget, type DropTarget, type InkCellPainter,
 } from "@writemind/editor"
 import { paintInkCell, type DockHost } from "./Canvas"
@@ -162,6 +162,8 @@ export function dockHostFor(view: EditorView, depth: number, ahead: (next: Drawi
         view.focus()
         return true
       },
+      // Undocking: the cell's line out of the note, as one history event (the drawing follows in the same Undo step).
+      remove: (from, to) => !view.state.readOnly && removeCellLine(view, from, to),
     },
     target: (x, y) => {
       const found = dropTargetAt(view, x, y)

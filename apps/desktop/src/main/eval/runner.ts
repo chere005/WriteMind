@@ -99,6 +99,9 @@ export function createRunner(deps: RunnerDeps): Runner {
   const limit = deps.byteLimit ?? OUTPUT_BYTE_LIMIT
   const pipeGraceMs = deps.pipeGraceMs ?? PIPE_GRACE_MS
   const exe = deps.platform === "win32" ? ".exe" : ".out"
+  // The scratch paths follow `deps.platform` like the binary's extension does (and like tools.ts's `joiner`), not the
+  // host's `path`: in the app they are the same thing; a test of the Windows runner on a Mac needs them to be.
+  const p = deps.platform === "win32" ? path.win32 : path.posix
 
   /**
    * Start it, drain BOTH pipes while it runs (a pipe that fills blocks the writer: waiting before reading is a hang
@@ -182,7 +185,7 @@ export function createRunner(deps: RunnerDeps): Runner {
       let args: string[]
       const name = sourceFile(evaluator)
       if (name) {
-        const file = path.join(dir, name)
+        const file = p.join(dir, name)
         await deps.scratch.write(file, source)
         args = [...interpreterArguments(tool), file]
       } else {
@@ -205,8 +208,8 @@ export function createRunner(deps: RunnerDeps): Runner {
   async function compileAndRun(job: Job, evaluator: Evaluator, tool: string, source: string): Promise<EvalResult> {
     const dir = await deps.scratch.make()
     try {
-      const file = path.join(dir, sourceFile(evaluator) ?? "cell.txt")
-      const binary = path.join(dir, "cell" + exe)
+      const file = p.join(dir, sourceFile(evaluator) ?? "cell.txt")
+      const binary = p.join(dir, "cell" + exe)
       await deps.scratch.write(file, source)
       const env = deps.environment(evaluator)
       const build = await spawnOne(job, tool, compileArguments(evaluator, file, binary, flavorOf(tool)), dir, env)

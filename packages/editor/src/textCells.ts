@@ -6,8 +6,11 @@
  *   cell under it, so Backspace at the start of that cell's words (and Delete at the end of the line above it) works
  *   as if it were not there.
  * - What is TYPED into a text cell is literal: each line the typing touched is written again by the escape rule in
- *   the same transaction (one Undo), the caret kept on the same character. A paste into a text cell is literal too.
+ *   the same transaction (one Undo), the caret kept on the same character. A paste into a text cell is literal too,
+ *   and so is what Find / Replace writes into one.
  * - An older note's markdown cell (markdown by the older-notes rule, no marker) gets its marker when it is edited.
+ * - A markdown cell emptied of its words keeps its marker while the caret is in it (to be typed into again) and goes,
+ *   marker and blank lines, when the caret leaves it: no invisible empty cell is left behind.
  * - Copy (and Cut) out of a text cell give the words, without the escapes' backslashes.
  *
  * The escapes themselves are hidden by the notebook's decorations (`decorations.ts`), each one character with what it
@@ -15,10 +18,11 @@
  */
 
 import {
-  ChangeSet, EditorSelection, EditorState, MapMode, Prec, StateField, Transaction,
+  ChangeSet, EditorSelection, EditorState, Facet, MapMode, Prec, StateField, Transaction,
   type Extension, type TransactionSpec,
 } from "@codemirror/state"
-import { Decoration, EditorView, keymap, type Command, type DecorationSet } from "@codemirror/view"
+import { redoDepth } from "@codemirror/commands"
+import { Decoration, EditorView, ViewPlugin, keymap, type Command, type DecorationSet, type ViewUpdate } from "@codemirror/view"
 import {
   MARKDOWN_MARKER, end, escapeLineMapped, escapeOffsets, firstCellFromBy, hiddenInText, isMarkdownMarker, isTextCell,
   positioned, type PositionedBlock,
@@ -116,10 +120,14 @@ function continuesList(text: string, above: PositionedBlock | undefined): boolea
   return kind === "bullets" || kind === "todos"
 }
 
-/** The keys and the clipboard: typing, a paste, a drop, a delete — and Return (CodeMirror's newline and its indent). */
+/**
+ * The keys and the clipboard: typing, a paste, a drop, a delete, Find / Replace's replacement (`find.ts`) — and Return
+ * (CodeMirror's newline and its indent).
+ */
 function literalEvent(tr: Transaction): boolean {
   if (tr.isUserEvent("input.type.compose")) return false
-  if (tr.isUserEvent("input.type") || tr.isUserEvent("input.paste") || tr.isUserEvent("input.drop") || tr.isUserEvent("delete")) return true
+  if (tr.isUserEvent("input.type") || tr.isUserEvent("input.paste") || tr.isUserEvent("input.drop") || tr.isUserEvent("delete")
+    || tr.isUserEvent("input.replace")) return true
   if (tr.annotation(Transaction.userEvent) !== "input") return false
   let newline = true
   tr.changes.iterChanges((_fa, _ta, _fb, _tb, inserted) => { if (!/^\n[ \t]*$/.test(inserted.toString())) newline = false })
@@ -264,7 +272,8 @@ function markerHasWords(text: string): boolean {
  * A markdown cell's marker goes where its words go. Typing a block's markup at the start of the words (`# `, `- `,
  * `> `, ```` ``` ````) makes them a heading, a list, a quote or a fence: the marker has nothing left to mark and goes
  * (in the same transaction, so one Undo takes both back). Return at the start of the words moves them down a line: the
- * marker goes down with them. (A cell emptied of its words keeps its marker, to be typed into again.)
+ * marker goes down with them. (A cell emptied of its words keeps its marker while the caret is in it, to be typed into
+ * again; it goes when the caret leaves, `dropEmptyCell`.)
  */
 function keepMarkers(tr: Transaction): Transaction | readonly [Transaction, TransactionSpec] {
   if (!tr.docChanged || tr.annotation(cellWritten)) return tr
@@ -362,6 +371,132 @@ const deleteBeforeMarker: Command = (view) => {
   return true
 }
 
+// MARK: - An emptied markdown cell goes when the caret leaves it
+
+/**
+ * The start of the marker line of the EMPTY markdown cell (a marker with no words under it) that `pos` stands in — on
+ * that marker line, or on the blank line under it where its words go — else null.
+ */
+export function emptyCellAt(state: EditorState, pos: number): number | null {
+  const doc = state.doc
+  const line = doc.lineAt(Math.min(Math.max(pos, 0), doc.length))
+  let marker = line
+  if (!isMarkdownMarker(line.text)) {
+    if (line.number < 2 || line.text.trim().length > 0) return null
+    marker = doc.line(line.number - 1)
+    if (!isMarkdownMarker(marker.text)) return null
+  }
+  const cell = markedCellAt(notebook(state).cells, marker.from)
+  return cell && cell.block.kind === "paragraph" && cell.block.text.trim().length === 0 ? marker.from : null
+}
+
+/** The empty markdown cell the caret is in (one caret, no bar up; `emptyCellAt`), else null. */
+export function caretInEmptyCell(state: EditorState): number | null {
+  const { ranges, main } = state.selection
+  if (ranges.length !== 1 || !main.empty || barUp(state)) return null
+  return emptyCellAt(state, main.head)
+}
+
+/** When the last edit the history kept was made (`Transaction.time`): what an emptied cell's going is dated to. */
+const editTimeField = StateField.define<number>({
+  create: () => 0,
+  update: (value, tr) => tr.docChanged && tr.annotation(Transaction.addToHistory) !== false
+    ? tr.annotation(Transaction.time) ?? value : value,
+})
+
+/**
+ * What takes away the empty markdown cell whose marker starts at `marker`: the marker and the blank lines round it, ONE
+ * blank line left between the cells either side (as many as stood above or below it, if more; none at an end of the
+ * note), and a caret that stood in what goes put on that blank line (where the bar between them stands). It is dated to
+ * the last edit the history kept and has no user event, so CodeMirror's history joins it to that edit when the two
+ * touch and nothing came between — the edit that emptied the cell, or Return in it — and ONE Undo brings the words and
+ * the marker back together. Null when no empty cell starts there.
+ */
+export function dropEmptyCell(state: EditorState, marker: number): TransactionSpec | null {
+  if (emptyCellAt(state, marker) !== marker) return null
+  const doc = state.doc
+  const markerLine = doc.lineAt(marker)
+  let up = markerLine.number - 1
+  while (up >= 1 && doc.line(up).text.trim().length === 0) up--
+  let down = markerLine.number + 1
+  while (down <= doc.lines && doc.line(down).text.trim().length === 0) down++
+  const prev = up >= 1 ? doc.line(up) : null
+  const next = down <= doc.lines ? doc.line(down) : null
+  const from = prev ? prev.to : 0
+  const to = next ? next.from : doc.length
+  // (The cell's own words line is the first blank line under its marker.)
+  const blanks = Math.max(1, markerLine.number - 1 - up, down - markerLine.number - 2)
+  const insert = prev && next ? "\n".repeat(blanks + 1) : ""
+  const inside = prev && next ? from + 1 : from
+  const map = (pos: number): number => pos <= from ? pos : pos >= to ? pos - (to - from) + insert.length : inside
+  const length = doc.length - (to - from) + insert.length
+  // A bar up at the end of the note (armed by hand) stays at its end.
+  const armed = state.field(armedField, false) ?? null
+  return {
+    changes: { from, to, insert },
+    selection: EditorSelection.create(
+      state.selection.ranges.map((r) => EditorSelection.range(map(r.anchor), map(r.head))), state.selection.mainIndex),
+    effects: armed !== null && armed === doc.length ? armSeam.of(length) : [],
+    annotations: Transaction.time.of(state.field(editTimeField, false) ?? Date.now()),
+  }
+}
+
+/**
+ * A caret move that starts in an empty markdown cell is left out of the history: CodeMirror would note the selection
+ * on the last edit, and the cell's going could not be joined to the edit that emptied it.
+ */
+const quietInEmptyCell = EditorState.transactionExtender.of((tr) =>
+  !tr.docChanged && tr.selection && tr.annotation(Transaction.addToHistory) === undefined
+    && caretInEmptyCell(tr.startState) !== null ? { annotations: Transaction.addToHistory.of(false) } : null)
+
+/**
+ * Whether a Redo is waiting on a side of the note the editor does not see (the drawing's, editTimeline.ts): an emptied
+ * cell is not taken away then, as its going would be a new edit and kill that Redo.
+ */
+export const redoWaiting = Facet.define<() => boolean>()
+
+const anyRedoWaiting = (state: EditorState): boolean =>
+  redoDepth(state) > 0 || state.facet(redoWaiting).some((waiting) => waiting())
+
+/**
+ * The caret left an empty markdown cell (by any key, click or edit but Undo / Redo): the cell goes, right after —
+ * unless a Redo is waiting (the cell was emptied by an Undo, say): its going would be a new edit and throw the Redo
+ * away. Then the cell stays until the next edit made anywhere else, which ends every Redo anyway.
+ */
+const leaveEmptyCells = ViewPlugin.fromClass(class {
+  private gone = false
+  /** An empty cell left while a Redo waited: its marker, mapped through every change since. */
+  private pending: number | null = null
+  constructor(private readonly view: EditorView) {}
+  update(update: ViewUpdate): void {
+    if (!update.docChanged && !update.selectionSet) return
+    const undoing = update.transactions.some((tr) => tr.isUserEvent("undo") || tr.isUserEvent("redo"))
+    if (this.pending !== null) {
+      const kept = update.changes.mapPos(this.pending, 1, MapMode.TrackDel)
+      this.pending = kept !== null && emptyCellAt(update.state, kept) === kept ? kept : null
+      if (this.pending !== null && update.docChanged && !undoing && !anyRedoWaiting(update.state)
+        && caretInEmptyCell(update.state) !== this.pending) this.drop(this.pending)
+    }
+    if (undoing) return
+    const was = caretInEmptyCell(update.startState)
+    if (was === null) return
+    const at = update.changes.mapPos(was, 1, MapMode.TrackDel)
+    if (at === null || emptyCellAt(update.state, at) !== at || caretInEmptyCell(update.state) === at) return
+    if (anyRedoWaiting(update.state)) { this.pending = at; return }
+    this.drop(at)
+  }
+  private drop(at: number): void {
+    this.pending = null
+    // (A view may not be updated from inside its own update.)
+    queueMicrotask(() => {
+      if (this.gone || caretInEmptyCell(this.view.state) === at) return
+      const drop = dropEmptyCell(this.view.state, at)
+      if (drop) this.view.dispatch(drop)
+    })
+  }
+  destroy(): void { this.gone = true }
+})
+
 // MARK: - Copy gives the words
 
 /** The selection's text with a text cell's escapes left out, or null when it holds none (the editor's own copy). */
@@ -406,6 +541,9 @@ function copyPlain(event: ClipboardEvent, view: EditorView, cut: boolean): boole
 
 export const textCells: Extension = [
   markerField,
+  editTimeField,
+  quietInEmptyCell,
+  leaveEmptyCells,
   // (Filters run last-registered first: this one sees what the one under it made.)
   EditorState.transactionFilter.of(keepMarkers),
   EditorState.transactionFilter.of((tr) => {

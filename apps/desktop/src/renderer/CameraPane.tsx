@@ -42,7 +42,7 @@ import { idleProblem } from "./cameraDevices"
 import { useCameraStream, useHeldFrame } from "./useCameraStream"
 import { ocrAvailable, readCanvasLines, wordsForChart } from "./ocrClient"
 import { CAMERA_OFF, TABLET_SOURCE } from "../shared/commands"
-import { setSheetEraser, setSheetSelect, useSheetTools } from "./penSettings"
+import { setSheetSelect, usePenSettings, useSheetTools } from "./penSettings"
 import { TabletSurface, type SurfaceHandle } from "./TabletSurface"
 import { eraseFromSheet, takeFromSheet, type Capture } from "./tabletCapture"
 import { currentSheet, stepSheet, useSheetTabs } from "./tabletSheets"
@@ -58,6 +58,13 @@ import type { Platform } from "./wm"
 import "./camera.css"
 
 export type { Capture }
+
+/**
+ * The sheet's eraser is on (the pen's Erase Tool toggle: the header has no Erase button), and how to put it down. The
+ * toggle acts on the surface the pen is over or was last over, so it names the pen over the sheet; the header's Select
+ * (on, then off) is the mouse's sure way.
+ */
+const SHEET_ERASING = "Erasing: touch a stroke (Erase Tool, Ctrl+Alt+2, with the pen over the sheet turns it off; so does Select)."
 
 interface Props {
   platform: Platform | null
@@ -145,8 +152,12 @@ export function CameraPane({
     return () => window.removeEventListener("wm:camera-retry", again)
   }, [])
   const surface = useRef<SurfaceHandle | null>(null)
-  // The sheet's own Erase / Select (never the notebook toolbar's: penSettings.ts).
+  // The sheet's own Erase / Select (never the notebook toolbar's: penSettings.ts). Select is a header toggle; Erase has
+  // no button (Sean, 2026-10-05): the pen's button held rubs out, the box row has Erase, and the pen's Erase Tool
+  // toggle (Ctrl+Alt+2, the menu, a double tap set to it) still turns the sheet's eraser on, so the hint says so.
   const pen = useSheetTools()
+  const buttons = usePenSettings().buttons
+  const rubButton = buttons.upper.hold === "erase" ? "first" : buttons.lower.hold === "erase" ? "second" : null
   const penWord = usePenWord()
   const penWordNote = usePenWordNote()
   const [, edited] = useState(0)
@@ -785,10 +796,6 @@ export function CameraPane({
           <>
             <PaperMenu />
             <OrientationSelect compact />
-            <button className={`icon-button${pen.eraser ? " on" : ""}`} data-tablet="erase" aria-pressed={pen.eraser}
-                    title="Erase on the sheet: rub out whole strokes by touching them (the note's page keeps its own Erase)"
-                    onClick={() => setSheetEraser(!pen.eraser)}
-                    style={{ width: "auto", padding: "0 8px", fontSize: 11 }}>Erase</button>
             <button className={`icon-button${pen.selectTool ? " on" : ""}`} data-tablet="select" aria-pressed={pen.selectTool}
                     title="Select on the sheet: the pen pulls the dashed box too, as the mouse does"
                     onClick={() => setSheetSelect(!pen.selectTool)}
@@ -872,9 +879,11 @@ export function CameraPane({
             ? (binding.away
               ? `The drawing cell of “${binding.title}”: that note is not open, so what you write here goes into the cell when it is.`
               : `The drawing cell of “${binding.title}”: what you write here is written into the note (Undo is the note's).`)
-              + (pen.eraser ? " Erasing: touch a stroke." : "")
+              + (pen.eraser ? ` ${SHEET_ERASING}` : "")
             : (binding.notice ? `${binding.notice} ` : "")
-              + (pen.eraser ? "Erasing: touch a stroke." : pen.selectTool ? "Selecting: the pen or the mouse boxes a part, then Bring in." : "The pen writes. Drag the mouse to box a part, then Bring in."))
+              + (pen.eraser ? SHEET_ERASING
+                : pen.selectTool ? "Selecting: the pen or the mouse boxes a part, then Bring in."
+                : `The pen writes${rubButton ? ` (hold its ${rubButton} button to rub out)` : ""}. Drag the mouse to box a part, then Bring in.`))
           : straighten
             ? "Drag the four corners onto the page's corners, then take it."
             : platform && !platform.findsThePage

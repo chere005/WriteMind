@@ -15,7 +15,7 @@ import {
   resolveLinkTarget, shifted, textFingerprint, writeDrawing, inkCellOf, inkFileName, visibleItems, withInkCell,
   type CanvasItem, type CodeLanguage, type Drawing, type ListStyle, type Note, type Placement,
 } from "@writemind/core"
-import { Canvas, type CanvasMode } from "./Canvas"
+import { Canvas, clipboardDrawing, type CanvasMode } from "./Canvas"
 import { depthOf, dockNewInk, insertInkCell } from "./dock"
 import { scopePenTo } from "./inkScope"
 import { dockHostFor, inkPainter, shownWidth, snapshotNow, snapshotsAfterSave, snapshotsOnOpen, syncInkCells } from "./inkCells"
@@ -55,6 +55,9 @@ import type { Platform, Section } from "./wm"
 import { friendly, leaf } from "./errors"
 import { NO_FOLDER_TEXT, targetFolderOf } from "./sidebarTree"
 import { UpdateDialog } from "./UpdateDialog"
+import { CleanUpDialog } from "./CleanUpDialog"
+import { heldBy } from "./cleanUp"
+import { FolderNotice } from "./FolderNotice"
 
 /** How long after the last keystroke the note is written. */
 const SAVE_AFTER = 500
@@ -127,6 +130,8 @@ export function App() {
   const [finding, setFinding] = useState<FindRequest | null>(null)
   /** Help ▸ Keyboard Shortcuts is up (KeyList.tsx). */
   const [showKeys, setShowKeys] = useState(false)
+  // File ▸ Clean Up Unused Files… (CleanUpDialog.tsx, main/housekeeping.ts).
+  const [cleanUp, setCleanUp] = useState(false)
   const lastQuery = useRef("")
   // The rendered page: the same editor with the markdown's marks put away.
   const [rendered, setRendered] = useState(false)
@@ -886,7 +891,7 @@ export function App() {
   const { project, switching } = useProject({ session: sessionRef, reload, lastTree })
 
   // DOCKING (docs\PLAN-docking-ink-cells.md (d)): the editor's side of it, for the drawing layer's dock handle, and a
-  // new empty ink cell (Insert ▸ Drawing Cell, Ctrl+9, the + menu's Drawing Cell). A picture line's path climbs out
+  // new empty ink cell (Insert ▸ Drawing Cell, Ctrl+0, the + menu's Drawing Cell). A picture line's path climbs out
   // of the note's section folders to its project folder's `.drawings/media` (`depth`), so other viewers find it.
   const depth = useMemo(() => (current
     ? depthOf(current, (project?.folders ?? []).map((one) => one.path), platform?.root ?? null) : 0),
@@ -921,7 +926,8 @@ export function App() {
     const id = dockNewInk({
       history, drawing: () => drawingRef.current, apply: changeDrawing, words: dockHost.words, depth,
       ahead: dockHost.ahead,
-    }, capture.strokes, currentPane(editor, lastPane), { left: column.left - left, width: column.width }, cursorSeam(editor.state))
+    }, capture.strokes, currentPane(editor, lastPane), { left: column.left - left, width: column.width }, cursorSeam(editor.state),
+      capture.frame)
     const cell = id ? inkCellOf(drawingRef.current, id) : null
     if (cell) snapshotNow(file, cell, column.width)
     return id !== null
@@ -1250,6 +1256,7 @@ export function App() {
       // Ctrl+P: the same writer as Pen ▸ Pen Down and the pen button.
       case "togglePen": runPenCommand("penToggle"); return
       case "keyList": setShowKeys((was) => !was); return
+      case "cleanUp": setCleanUp(true); return
       case "undoDrawing": {
         const back = history.undo(drawingRef.current)
         if (back) changeDrawing(back)
@@ -1369,7 +1376,7 @@ export function App() {
           onRenameNote={(note, name) => renameNoteTo(note, name)}
           onRenameSection={(section, name) => renameSectionTo(section, name)}
           project={project} platform={kind}
-          onProjectCommand={(id) => { void window.wm.runMain(id) }}
+          onProjectCommand={(id) => { if (id === "cleanUp") setCleanUp(true); else void window.wm.runMain(id) }}
           onReveal={(path) => { void window.wm.reveal(path) }}
           header={(
             <SidebarBar
@@ -1466,6 +1473,7 @@ export function App() {
             </button>
           </div>
         )}
+        <FolderNotice />
         {problem && (
           <div className="save-problem" role="alert" data-footer="problem">
             <span className="text">{problem.text}</span>
@@ -1499,8 +1507,12 @@ export function App() {
         />
       )}
       {showKeys && <KeyList platform={kind} onClose={() => setShowKeys(false)} />}
+      {cleanUp && <CleanUpDialog platform={kind} onClose={() => setCleanUp(false)} held={() => heldBy({
+        state: view?.state ?? null, text: textRef.current, drawings: [drawingRef.current, pendingDrawing.current, clipboardDrawing()],
+        open: open.map((note) => note.path),
+      })} />}
       <UpdateDialog />{/* "Updates available" and Help ▸ Check for Updates…'s answers (main/updater.ts); otherwise nothing */}
-      <CellMenu />
+      <CellMenu onPlace={arm} />
     </div>
   )
 }

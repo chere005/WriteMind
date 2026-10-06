@@ -1,7 +1,8 @@
 /**
- * Updates from WriteMindCross's own GitHub Releases, the Electron half (shared/update.ts is the pure half and
+ * Updates from WriteMind's own GitHub Releases, the Electron half (shared/update.ts is the pure half and
  * says the rules). electron-updater does the work: it reads the feed electron-builder wrote into the installed
- * copy (`resources/app-update.yml`: provider github, chere005/WriteMindCross), downloads the new installer when
+ * copy (`resources/app-update.yml`: provider github, chere005/WriteMind; a 1.0.0 copy's says WriteMindCross, the
+ * repo's name until 2026-10-06, which GitHub redirects), downloads the new installer when
  * the person says Update now, checks its sha512 against latest.yml, and runs it silently over the per-user install.
  *
  * Asked, never pushed: one look a few seconds after launch when "Check on startup" is ticked (userData/update.json,

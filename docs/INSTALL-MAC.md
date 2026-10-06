@@ -1,7 +1,7 @@
 # WriteMind on a Mac: the dmg
 
 WriteMind for macOS comes as a disk image on the repo's
-[Releases page](https://github.com/chere005/WriteMindCross/releases/latest), beside the Windows
+[Releases page](https://github.com/chere005/WriteMind/releases/latest), beside the Windows
 installer. It needs **macOS 13 Ventura or newer**. It is signed *ad hoc* and not notarized (there is
 no Apple Developer ID behind it yet), so macOS asks you to confirm the first time you open it; this
 page says how.
@@ -26,8 +26,11 @@ not run on an Intel Mac.
    so replacing it keeps them.
 3. Eject the dmg (the ⏏ beside it in the Finder sidebar). You can delete the .dmg file afterwards.
 
-Your notes live in `~/Documents/WriteMindCross` (plain `.md` files); WriteMind's own settings,
-sessions and update choice are in `~/Library/Application Support/@writemind/desktop`.
+Your notes live in `~/Documents/WriteMind` (plain `.md` files); WriteMind's own settings,
+sessions and update choice are in `~/Library/Application Support/@writemind/desktop`. Notes kept by an
+older copy in `~/Documents/WriteMindCross` (the folder's name until 2026-10-06) are moved to
+`~/Documents/WriteMind` on the first launch; if both folders exist (the Swift WriteMind keeps its notes in
+`~/Documents/WriteMind`), WriteMind keeps using `WriteMindCross` and says so.
 
 ## The first open
 
@@ -61,7 +64,7 @@ xattr -dr com.apple.quarantine /Applications/WriteMind.app
 
 That does for WriteMind.app what Open Anyway does, and nothing else: Gatekeeper stays on for every
 other app. Do it only for a WriteMind.app you downloaded yourself from
-`github.com/chere005/WriteMindCross/releases`, and never turn Gatekeeper off as a whole (`spctl
+`github.com/chere005/WriteMind/releases`, and never turn Gatekeeper off as a whole (`spctl
 --master-disable` and the like): nothing here needs it.
 
 ## The camera and the Documents folder
@@ -106,7 +109,7 @@ shell's PATH. (docs/TODO.md has it as a thing to fix.)
 ## Uninstalling
 
 Quit WriteMind and drag `/Applications/WriteMind.app` to the Trash. That leaves your notes
-(`~/Documents/WriteMindCross`) and WriteMind's own data
+(`~/Documents/WriteMind`, or `~/Documents/WriteMindCross` if it kept that one) and WriteMind's own data
 (`~/Library/Application Support/@writemind/desktop`); delete that folder too for a clean removal
 (the notes are yours: delete them only if you mean to). `tccutil reset All com.seancheren.writemind`
 forgets WriteMind's camera and folder answers.

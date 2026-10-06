@@ -25,7 +25,7 @@ packages/editor    CodeMirror 6 extended until it is WriteMind's notebook:
                    the decorations, the seams, the brackets, the keys
 apps/desktop       Electron: one window, the file work, the React shell
 WriteMind/         THE MAC APP, as a reference. It is a snapshot — the
-WriteMindTests/    living copy is ~/GIT/WriteMind and this one is never
+WriteMindTests/    living copy is ~/GIT/WriteMindSwift; this one is never
 tools/             edited here (`git pull macos main` brings it forward)
 ```
 
@@ -97,11 +97,19 @@ that is one line in the camera pane.
 
 ## The notes folder
 
-The Mac app keeps its notes in `~/Documents/WriteMind`. This one keeps its
-own in `~/Documents/WriteMindCross` until `WRITEMIND_NOTES` says otherwise —
+The Mac app keeps its notes in `~/Documents/WriteMind`. This one kept its own
+in `~/Documents/WriteMindCross` (unless `WRITEMIND_NOTES` said otherwise) —
 two apps writing one folder is the exact shape of the bug that cost two cells
 on 2026-09-20, and a port does not point itself at somebody's real notes on
 its first run.
+
+Since the 2026-10-06 rename (this repo became WriteMind, the Swift one
+WriteMindSwift; Sean chose to rename the folder too) the default is
+`~/Documents/WriteMind` (Windows: `Documents\WriteMind`). The first launch
+moves `WriteMindCross` there when no `WriteMind` folder exists yet; when both
+exist it keeps using `WriteMindCross` and says so, which keeps the two apps
+apart on a Mac that has both. A fresh install on a Mac that has only the Swift
+app's `~/Documents/WriteMind` opens that folder, so there the two apps share it.
 
 `NoteWriting.mayWrite` came across with everything else: the app owns the
 file only while the bytes on disk are the bytes it last read or wrote. A

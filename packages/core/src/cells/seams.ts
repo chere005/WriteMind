@@ -285,6 +285,11 @@ export function armIn(caret: Range, doc: LineSource, cells: () => readonly Posit
     else high = middle
   }
   if (low > 0 && offset < end(blocks[low - 1]!.range)) return null
+  // And the blank line straight under the marker of an EMPTY markdown cell is that cell's words line: a caret there is
+  // in the cell, to type into it again (the editor takes the cell away when the caret leaves it, `textCells.ts`).
+  const above = low > 0 ? blocks[low - 1]!.block : null
+  if (above?.kind === "paragraph" && above.head && above.text.trim().length === 0
+    && doc.lineAt(blocks[low - 1]!.range.location).number === here.number - 1) return null
   return blocks[low]?.range.location ?? doc.length
 }
 

@@ -177,7 +177,7 @@ with no aspect letterbox), `displayRect` (0,0)-(1920,1200). So a pointer-aware w
 trace). Everything else is unchanged on the healthy device: `RegisterPointerInputTarget` error 5 (no UIAccess),
 `...Ex` error 50, `RegisterPointerDeviceNotifications` true. Clip is `(0,0)-(1920,1200)` before and after.
 The regression suite re-ran green: `guard-proof.mjs` 0 failures; `clip.test.ts` 38 passed (run it with
-`node C:/GIT/WriteMindCross/node_modules/vitest/vitest.mjs run --root C:/CLAUDIO/spikes/contain-spike`; `npx vitest
+`node C:/GIT/WriteMind/node_modules/vitest/vitest.mjs run --root C:/CLAUDIO/spikes/contain-spike`; `npx vitest
 --config` in that folder picks a second vitest copy from the spike's node_modules and reports "No test suite", which is not a test failure).
 
 ## Not verified (needs the real pen)

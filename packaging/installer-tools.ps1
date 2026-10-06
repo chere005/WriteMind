@@ -31,7 +31,7 @@ param(
 $ErrorActionPreference = "Continue"
 $PythonId = "Python.Python.3.14"
 $WolframId = "WolframResearch.WolframEngine"
-$Docs = "https://github.com/chere005/WriteMindCross/blob/main/docs/INSTALL-WINDOWS.md#optional-tools-python-and-wolfram"
+$Docs = "https://github.com/chere005/WriteMind/blob/main/docs/INSTALL-WINDOWS.md#optional-tools-python-and-wolfram"
 
 function Say([string]$text, [string]$color = "") {
   if ($color) { Write-Host $text -ForegroundColor $color } else { Write-Host $text }

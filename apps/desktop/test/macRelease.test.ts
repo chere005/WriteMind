@@ -62,7 +62,7 @@ describe("electron-builder.yml, the Mac", () => {
     expect(builder.win.target).toEqual([{ target: "nsis", arch: ["x64"] }, { target: "portable", arch: ["x64"] }])
     expect(builder.nsis.artifactName).toBe("${productName}-Setup-${version}.${ext}")
     expect(builder.nsis.license).toBe("../LICENSE")
-    expect(builder.publish).toEqual({ provider: "github", owner: "chere005", repo: "WriteMindCross", releaseType: "draft" })
+    expect(builder.publish).toEqual({ provider: "github", owner: "chere005", repo: "WriteMind", releaseType: "draft" })
   })
 })
 
@@ -166,8 +166,10 @@ describe("ci.yml", () => {
     expect(run).toContain("bash tools/verify-mac.sh")
     expect(run).not.toMatch(/gh release|--publish always/)
     expect(JSON.stringify(job)).not.toMatch(/secrets\.|APPLE_ID|CSC_LINK/)
+    // The unit tests block on macOS as on Windows (the seven Windows-path tests were fixed, 2026-10-05).
     const tests = (job.steps as Any[]).find((s) => s.run === "npm test")
-    expect(tests["continue-on-error"]).toBe(true)
+    expect(tests).toBeDefined()
+    expect(tests["continue-on-error"]).toBeUndefined()
     const upload = (job.steps as Any[]).find((s) => String(s.uses).startsWith("actions/upload-artifact"))
     expect(upload.with.path).toBe("dist-electron/*-mac-*.dmg")
     expect(upload.with["retention-days"]).toBe(14)

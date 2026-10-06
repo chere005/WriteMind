@@ -331,7 +331,10 @@ describe("renaming and moving keep the drawing and the place", () => {
     const inside = note(path.join(home, "Old"), "n.md")
     setProjectFolders([home])
     await writeDrawing(home, inside, drawing("#999999"))
-    expect(await renameSection(home, path.join(home, "Old"), "???")).toBeNull()
+    // "..." leaves nothing anywhere (a leading dot is never kept); "???" leaves nothing only on Windows, which
+    // stores none of those — on a Mac it is a fine folder name (fileNames.test.ts has both sides of safeName).
+    expect(await renameSection(home, path.join(home, "Old"), "...")).toBeNull()
+    if (process.platform === "win32") expect(await renameSection(home, path.join(home, "Old"), "???")).toBeNull()
     expect(await renameSection(home, home, "Other")).toBeNull()
     const renamed = await renameSection(home, path.join(home, "Old"), "What now?")
     expect(renamed && path.basename(renamed)).toBe(process.platform === "win32" ? "What now" : "What now?")

@@ -12,7 +12,25 @@
 
 import { clamped, lineRange, range, replacing, substring, type Range } from "../text/range"
 import { headingLevel, setHeading } from "../markdown/formatting"
+import { positioned } from "../markdown/parser"
+import { plainLine } from "../markdown/plainText"
 import { stripInlineMarkup } from "./note"
+
+/**
+ * True when the line starting at `lineStart` is a TEXT cell's (docs/PLAN-text-cells.md): its words are shown as typed,
+ * so a link title takes nothing off them as markup, only the escapes' backslashes and the anchors (a `` `wl:x^2` `` in
+ * one stays backticks and all, as the sidebar's snippet shows it).
+ */
+function inTextCell(text: string, lineStart: number): boolean {
+  const cell = positioned(text).find((p) => p.range.location <= lineStart && lineStart < p.range.location + p.range.length)
+  return cell !== undefined && cell.block.kind === "paragraph" && cell.block.markdown !== true
+}
+
+/** A text cell's first few words, as typed. */
+function titleForTextLine(line: string): string {
+  const words = plainLine(line).split(" ").filter((w) => w.length > 0).slice(0, 8).join(" ")
+  return words.length === 0 ? "section" : words
+}
 
 export const LINK_TRIGGER = "/link"
 
@@ -85,10 +103,11 @@ export function anchorIn(text: string, selection: Range, newID: () => string = n
   if (trimmed) {
     const id = newID()
     const selected = substring(text, trimmed)
+    const plain = inTextCell(text, lineRange(text, trimmed.location).location)
     return {
       id,
       rewrittenText: replacing(text, trimmed, `<mark id="${id}">${selected}</mark>`),
-      title: stripInlineMarkup(selected).trim(),
+      title: (plain ? plainLine(selected) : stripInlineMarkup(selected)).trim(),
     }
   }
 
@@ -104,7 +123,7 @@ export function anchorIn(text: string, selection: Range, newID: () => string = n
 
   const id = newID()
   const replaced = replacing(text, range(lineAt.location, line.length), `<a id="${id}"></a>` + line)
-  return { id, rewrittenText: replaced, title: titleForBlock(line) }
+  return { id, rewrittenText: replaced, title: inTextCell(text, lineAt.location) ? titleForTextLine(line) : titleForBlock(line) }
 }
 
 /** `[Title](Some%20Note.md#wm-1234)` — the anchor is dropped for a whole-note link. */

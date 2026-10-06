@@ -10,6 +10,7 @@
 
 import { Annotation, StateField, type ChangeSet, type EditorState, type Extension } from "@codemirror/state"
 import { EditorView } from "@codemirror/view"
+import { isolateHistory } from "@codemirror/commands"
 import {
   positioned, positionedUpdate, sectionsFromCells, type Hull, type PositionedBlock, type Range, type Section,
 } from "@writemind/core"
@@ -77,18 +78,22 @@ export function selectedRanges(state: EditorState): Range[] {
 export const atBar = (view: EditorView): boolean =>
   view.dom.classList.contains("wm-armed") && view.dom.classList.contains("wm-rendered")
 
-/** The one place a core `Edit` is applied, so undo sees it as one change. */
+/**
+ * The one place a core `Edit` is applied, so undo sees it as one change. `apart`: its own undo step, never joined to
+ * the edit before or after it however quickly they come (Ctrl+7 then Ctrl+Shift+7: one Ctrl+Z undoes each).
+ */
 export function applyEdit(view: EditorView, change: {
   range: Range
   replacement: string
   selection: Range
-}): void {
+}, apart = false): void {
   if (atBar(view)) { view.focus(); return }
   const { range, replacement, selection } = change
   view.dispatch({
     changes: { from: range.location, to: range.location + range.length, insert: replacement },
     selection: { anchor: selection.location, head: selection.location + selection.length },
     scrollIntoView: true,
+    ...(apart ? { annotations: isolateHistory.of("full") } : {}),
   })
   view.focus()
 }

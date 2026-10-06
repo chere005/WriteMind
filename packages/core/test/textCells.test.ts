@@ -295,6 +295,51 @@ describe("anchors, pictures, pastes and long lines", () => {
     expect(blocks(picture)).toEqual([{ kind: "paragraph", text: "an image ![diagram](media/x.png) inline" }])
   })
 
+  // Sean, 2026-10-06 ("yes"): Ctrl+7 keeps inline maths' whole `wl:` source as the text cell's words.
+  describe("Ctrl+7 keeps inline maths' whole source", () => {
+    const toText = (md: string): string => apply(md, makeTextCell(md, { location: md.length, length: 0 })!)
+    const toMarkdown = (md: string): string => apply(md, makeMarkdownCell(md, { location: 0, length: 0 })!)
+    const BT = "`"
+
+    it("one maths span: backticks and wl: kept, escaped as typed words, shown as typed", () => {
+      const text = toText(`${MARKDOWN_MARKER}\nArea ${BT}wl:Pi r^2${BT} here`)
+      expect(text).toBe(`Area ${BS}${BT}wl:Pi r^2${BT} here`)
+      expect(blocks(text)).toEqual([{ kind: "paragraph", text: `Area ${BT}wl:Pi r^2${BT} here` }])
+      expect(looksMarkdown(text)).toBe(false)
+    })
+
+    it("several maths spans, and maths beside bold (the bold goes, the maths stays)", () => {
+      const several = toText(`${MARKDOWN_MARKER}\n${BT}wl:a${BT} and ${BT}wl:b^2${BT}\nthen ${BT}wl:Sqrt[c]${BT}`)
+      expect(unescapePlain(several)).toBe(`${BT}wl:a${BT} and ${BT}wl:b^2${BT}\nthen ${BT}wl:Sqrt[c]${BT}`)
+      expect(blocks(several)).toEqual([{ kind: "paragraph", text: `${BT}wl:a${BT} and ${BT}wl:b^2${BT}\nthen ${BT}wl:Sqrt[c]${BT}` }])
+      const bold = toText(`${MARKDOWN_MARKER}\n**big**${BT}wl:x^2${BT} *it* [see](a.md) ${BT}wl:y${BT}**b**`)
+      expect(unescapePlain(bold)).toBe(`big${BT}wl:x^2${BT} it see ${BT}wl:y${BT}b`)
+      expect(blocks(bold)[0]).toMatchObject({ kind: "paragraph", text: `big${BT}wl:x^2${BT} it see ${BT}wl:y${BT}b` })
+      expect(blocks(bold)[0]).not.toHaveProperty("markdown", true)
+    })
+
+    it("Ctrl+7 then Ctrl+Shift+7 gives back the same maths segments", () => {
+      for (const words of [`Area ${BT}wl:Pi r^2${BT} here`, `${BT}wl:a${BT} and ${BT}wl:b^2${BT}`, `${BT}wl:x_1 + x_2${BT} end`]) {
+        const md = `${MARKDOWN_MARKER}\n${words}`
+        const back = toMarkdown(toText(md))
+        expect(back).toBe(md)
+        const maths = (line: string) => inlineSegments(line).filter((one) => one.math !== undefined).map((one) => one.math)
+        expect(maths(back.split("\n")[1]!)).toEqual(maths(words))
+        expect(maths(words).length).toBeGreaterThan(0)
+      }
+    })
+
+    it("maths holding backslashes and markup characters comes back exact; an empty `wl:` is code, and does not hang", () => {
+      for (const words of [`a ${BT}wl:a${BS}b${BT} z`, `${BT}wl:a${BS}*b${BT} z`, `${BT}wl:"${BS}${BS}n"${BT}`, `${BT}wl:a*b*c${BT} and ${BT}wl:x~~y~~${BT}`,
+        `${BT}wl:[l](u)${BT}${BT}wl:<|a->1|>${BT}`, `x\n  ${BT}wl:y${BT} b\nthird ${BT}wl:z${BT} and ${BT}wl:a+b${BT} end`]) {
+        const md = `${MARKDOWN_MARKER}\n${words}`
+        expect(toMarkdown(toText(md))).toBe(md)
+      }
+      expect(inlineSegments(`${BT}wl:${BT} x`).some((one) => one.math !== undefined)).toBe(false)
+      expect(toText(`${MARKDOWN_MARKER}\n${BT}wl:${BT} x`)).toBe("wl: x")
+    })
+  })
+
   it("a long pasted line is escaped quickly, and stays literal", () => {
     for (const line of ["*a* ".repeat(4000), "x_y `c` [l](u) ".repeat(1000), "*a* ".repeat(15000)]) {
       const started = Date.now()

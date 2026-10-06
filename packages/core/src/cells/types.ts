@@ -21,6 +21,7 @@ import {
 import { insertBlock } from "./editing"
 import { MARKDOWN_MARKER, escapePlain } from "../markdown/plainText"
 import { evaluatorFence, evaluatorTitle, type Evaluator } from "../eval/evaluator"
+import { MATH_FENCE } from "../math/typesetter"
 
 export type CellKind =
   /** A paragraph — the default, and what an ordinary click on the bar arms. */
@@ -32,6 +33,11 @@ export type CellKind =
   | { kind: "quote" }
   | { kind: "code" }
   /**
+   * A MATHS cell (Sean, 2026-10-06: "clearly we need a math cell type.. that should be ctrl + 9"): the ```wl fence
+   * display maths always was, typeset when the caret is not in it, as a kind of its own (`cells/mathsCells.ts`).
+   */
+  | { kind: "maths" }
+  /**
    * A cell the note RUNS (Mac 29149b9; Sean, 2026-09-22: "if the input cursor is horizontal, hitting cmd+9 puts a
    * new evaluation cell at that position"). A fenced block like any other here — the `eval ` prefix on its info
    * string is the whole difference — so it needs no second block builder, only its own fence. Deliberately NOT in
@@ -40,7 +46,7 @@ export type CellKind =
   | { kind: "evaluation"; evaluator: Evaluator }
   /**
    * An INK cell (docsPLAN-docking-ink-cells.md): a cell you draw in with the pen. The + menu offers it (its last
-   * group) and Ctrl+9 makes one, but its line names a cell in the drawing sidecar, so the APP makes it
+   * group) and Ctrl+0 makes one, but its line names a cell in the drawing sidecar, so the APP makes it
    * (`insertInkCell`): `opening` has nothing to write for it, and the bar's typing never makes one.
    */
   | { kind: "ink" }
@@ -64,6 +70,7 @@ export function kindName(kind: CellKind): string {
     case "list": return `${listTitle(kind.style)} List`
     case "quote": return "Quote"
     case "code": return "Code Block"
+    case "maths": return "Maths Cell"
     case "evaluation": return `${evaluatorTitle(kind.evaluator)} Evaluation Cell`
     case "ink": return "Drawing Cell"
     case "picture": return "Picture"
@@ -88,7 +95,8 @@ export const KIND_GROUPS: CellKind[][] = [
   [{ kind: "text" }, { kind: "markdown" }],
   HEADING_LADDER.filter((level) => level !== 0).map((level): CellKind => ({ kind: "heading", level })),
   [...LIST_STYLES.map((style): CellKind => ({ kind: "list", style })), { kind: "quote" }],
-  [{ kind: "code" }],
+  // The code block and, beside it, the maths cell (Ctrl+8, Ctrl+9).
+  [{ kind: "code" }, { kind: "maths" }],
   // Last, on its own: the cell you draw in (the app makes it; see `{ kind: "ink" }`).
   [{ kind: "ink" }],
 ]
@@ -122,6 +130,9 @@ export function opening(kind: CellKind, markdown: string, caret: number): Edit |
       return toggleQuote(markdown, selection)
     case "code":
       return codeBlock(markdown, selection)
+    case "maths":
+      // An empty ```wl fence, the caret on the line inside it: it is typeset once it has maths and the caret leaves.
+      return codeBlock(markdown, selection, MATH_FENCE)
     case "evaluation":
       // The same fenced block the Insert menu writes, with the info string that makes it one the note runs.
       return codeBlock(markdown, selection, evaluatorFence(kind.evaluator))

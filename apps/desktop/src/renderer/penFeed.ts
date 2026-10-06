@@ -14,6 +14,11 @@
  * the strip or a button still ends on the sheet. Synthetic pointer events never produce `click`, so a pointerup on the same button as its
  * pointerdown after < 6 px of movement clicks it.
  *
+ * A contact that begins on an element that lies OVER the sheet and hands strokes to it (`[data-pen-handover]`: the dashed box's row of
+ * buttons, BoxActions.tsx) is HELD BACK until it says what it is: moved CLICK_SLOP_PX or more from where it began, it is the sheet's
+ * (its pointerdown at the first point and every held move go to the sheet, then the rest of it: a stroke, an erase, a box, as the
+ * pen's buttons say); lifted before that, it is the button's (the held events go to it, then the pointerup, and a tip tap clicks it).
+ *
  * The dispatcher is plain TypeScript over a few injected functions (the DOM is behind `DispatchEnv`), so the whole mapping is a vitest.
  */
 
@@ -44,6 +49,11 @@ export interface DispatchEnv {
   clickable(target: Element): HTMLElement | null
   /** ctrl / alt / shift / meta as the page's keys have them now. */
   modifiers(): { ctrlKey: boolean; altKey: boolean; shiftKey: boolean; metaKey: boolean }
+  /**
+   * `target` lies over the sheet and hands it a contact that moves (inside `[data-pen-handover]`, the box's row of buttons): the
+   * sheet's element, which then takes such a contact from its first point; else null. Absent: nothing is handed over.
+   */
+  handover?(target: Element): Element | null
 }
 
 export interface SynthInit {
@@ -75,8 +85,19 @@ const isEnterLeave = (type: SynthEvent["type"]): boolean => type === "pointerent
 export function createDispatcher(env: DispatchEnv, hooks: { onTip?(): void; onThrow?(error: unknown): void } = {}): Dispatcher {
   const synth = createSynth()
   let hover: Element | null = null
-  /** `tip`: the contact began with the tip (a side button pressed in the air never clicks: its taps are the pen's own). */
-  let down: { target: Element; x: number; y: number; tip: boolean } | null = null
+  /**
+   * `tip`: the contact began with the tip (a side button pressed in the air never clicks: its taps are the pen's own).
+   * `held`: a contact begun on the sheet's handover row (`env.handover`), its events not dispatched yet; null once it is decided
+   * (a tap: the button's; moved CLICK_SLOP_PX: the sheet's, `sheet`). Only the TIP's contact is held: a side button pressed
+   * in the air over the row goes to the row at once, as it always did (the pen's double-tap timing reads each press as it
+   * is dispatched, penActions.ts). If the tip then touches the row with that button still down, the contact is held from
+   * the touch (`x`, `y` move there), and handed to the sheet as the sheet would have had it: `lead`, a press in the air
+   * at the touch point, then the moves.
+   */
+  let down: {
+    target: Element; x: number; y: number; tip: boolean; held: SynthInit[] | null; sheet: Element | null
+    lead: SynthInit | null; buttons: number
+  } | null = null
   let last = { x: 0, y: 0 }
 
   const emit = (ev: SynthEvent, x: number, y: number): void => {
@@ -87,11 +108,14 @@ export function createDispatcher(env: DispatchEnv, hooks: { onTip?(): void; onTh
         target = env.elementAt(x, y) ?? fallback
         hover = target
         break
-      case "pointerdown":
+      case "pointerdown": {
         target = env.elementAt(x, y) ?? fallback
-        down = { target, x, y, tip: ev.button === 0 }
+        const sheet = env.handover?.(target) ?? null
+        const tip = ev.button === 0
+        down = { target, x, y, tip, held: sheet && tip ? [] : null, sheet, lead: null, buttons: ev.buttons }
         hover = target
         break
+      }
       case "pointermove": case "pointerup":
         target = down && down.target.isConnected ? down.target : (env.elementAt(x, y) ?? fallback)
         break
@@ -100,11 +124,46 @@ export function createDispatcher(env: DispatchEnv, hooks: { onTip?(): void; onTh
         break
     }
     if (ev.type === "pointermove" && !down) hover = target
-    env.dispatch(target, {
+    const init: SynthInit = {
       type: ev.type, clientX: x, clientY: y, button: ev.button, buttons: ev.buttons, pressure: ev.pressure,
       ...(ev.tiltX !== undefined ? { tiltX: ev.tiltX } : {}), ...(ev.tiltY !== undefined ? { tiltY: ev.tiltY } : {}),
       relatedTarget: null, ...env.modifiers(),
-    })
+    }
+    // The tip touched the row while a side button pressed in the air over it is still down: held from here.
+    if (ev.type === "pointermove" && down && !down.tip && down.held === null && down.sheet && down.target !== down.sheet
+      && (ev.buttons & 1) === 1 && (down.buttons & 1) === 0) {
+      down.held = []
+      down.x = x
+      down.y = y
+      const side = ev.buttons & ~1
+      down.lead = { ...init, type: "pointerdown", pressure: 0, buttons: side,
+        button: side & 2 ? 2 : side & 4 ? 1 : side & 32 ? 5 : 2 }
+    }
+    if (down && ev.type === "pointermove") down.buttons = ev.buttons
+    const held = down?.held
+    if (down && held) {
+      // (A side-button contact whose tip lifts before it moved: a tap on the row, the row's after all.)
+      if (ev.type === "pointerup" || (down.lead !== null && (ev.buttons & 1) === 0)) {
+        down.lead = null
+        // Lifted before it moved: a tap, the button's after all (its pointerdown and moves first, then this pointerup).
+        down.held = null
+        for (const one of held) env.dispatch(down.target, one)
+      } else {
+        held.push(init)
+        if (ev.type !== "pointermove" || Math.hypot(x - down.x, y - down.y) < CLICK_SLOP_PX) return
+        // Moved: the sheet's, from its first point (the pointerdown where the pen touched, then every move since).
+        down.held = null
+        if (down.sheet?.isConnected) {
+          down.target = down.sheet
+          hover = down.sheet
+          if (down.lead) env.dispatch(down.target, down.lead)
+        }
+        down.lead = null
+        for (const one of held) env.dispatch(down.target, one)
+        return
+      }
+    }
+    env.dispatch(target, init)
     if (ev.type === "pointerup" && down) {
       const started = down
       down = null
@@ -192,6 +251,10 @@ function realEnv(gate: Gate, fault: { n: number }): DispatchEnv {
       return hit
     },
     modifiers: () => ({ ...keys }),
+    handover(target) {
+      if (!target.closest("[data-pen-handover]")) return null
+      return document.querySelector('[data-tablet="surface"]')
+    },
   }
 }
 

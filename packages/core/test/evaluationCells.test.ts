@@ -1,6 +1,6 @@
 /**
  * Evaluation cells: what runs, what is refused, and what the answer looks like in the note.
- * Transcribed from `WriteMindTests/EvaluationCellTests.swift` (C:\GIT\WriteMind, Mac commits 0bf52b5, 765195a,
+ * Transcribed from `WriteMindTests/EvaluationCellTests.swift` (C:\GIT\WriteMindSwift, Mac commits 0bf52b5, 765195a,
  * 4fad93e, 799b13b, df166db, 859aa6c) and the evaluation half of `WriteMindTests/CellTypeTests.swift` (29149b9).
  * Where a test had to change for Windows it says so.
  */
