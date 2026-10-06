@@ -497,6 +497,19 @@ describe("only a press starts a child (EvaluationSpawnTests)", () => {
     }
   })
 
+  it("Language Setup asks the runner from one file: Test runs the FIXED program, and only Choose…/Use identify", () => {
+    expect(holding("apps/desktop/src", /\brunner\.run\(/).sort())
+      .toEqual(["apps/desktop/src/main/eval/ipc.ts", "apps/desktop/src/main/eval/languages.ts"])
+    const languages = readFileSync(path.join(ROOT, "apps/desktop/src/main/eval/languages.ts"), "utf8")
+    const runs = languages.match(/runner\.run\(\{[^}]*\}\)/g) ?? []
+    expect(runs.length).toBe(1)
+    for (const one of runs) expect(one).toMatch(/source: TEST_SOURCE\[evaluator\]/)
+    expect(holding("apps/desktop/src", /\.identify\(/)).toEqual(["apps/desktop/src/main/eval/languages.ts"])
+    for (const dir of ["packages/core/src", "packages/editor/src", "apps/desktop/src/renderer"]) {
+      expect(holding(dir, /\.identify\(/), dir).toEqual([])
+    }
+  })
+
   it("the run channel is the preload's and the eval IPC's alone, and the page reaches it from one file", () => {
     expect(holding("apps/desktop/src", /EVAL_CHANNELS\.run\b/).sort())
       .toEqual(["apps/desktop/src/main/eval/ipc.ts", "apps/desktop/src/preload/preload.ts"])
