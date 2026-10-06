@@ -63,6 +63,9 @@ export function newestFirst(names: string[]): string[] {
   })
 }
 
+/** Where Homebrew puts its tools, which a GUI app's PATH on the Mac does not reach. */
+export const MAC_TOOL_FOLDERS = ["/opt/homebrew/bin", "/usr/local/bin"]
+
 const joiner = (platform: string) => (platform === "win32" ? path.win32 : path.posix)
 
 /**
@@ -75,6 +78,9 @@ export function toolCandidates(evaluator: Evaluator, places: ToolPlaces): string
   const p = joiner(places.platform)
   const dirs = places.pathVariable.split(windows ? ";" : ":").map((dir) => dir.trim().replace(/^"|"$/g, ""))
     .filter((dir) => dir.length > 0)
+  // A Finder-launched Mac app inherits launchd's PATH (`/usr/bin:/bin:/usr/sbin:/sbin`), which has no Homebrew in it:
+  // look in Homebrew's folders (Apple silicon, then Intel) after whatever PATH it did get.
+  if (places.platform === "darwin") dirs.push(...MAC_TOOL_FOLDERS)
   const extensions = windows ? [".exe", ".com"] : [""]
   const found: string[] = []
   for (const name of toolNames(evaluator)) {
