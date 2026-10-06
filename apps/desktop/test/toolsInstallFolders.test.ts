@@ -61,3 +61,17 @@ describe("Python where its installer put it (tools.ts)", () => {
     expect(findTool("wolfram", places([exe], { [engines]: ["14.3", "15.0"] }))).toBe(exe)
   })
 })
+
+describe("Homebrew on a Finder-launched Mac app (tools.ts)", () => {
+  const mac = (installed: string[]): ToolPlaces => ({
+    platform: "darwin", pathVariable: "/usr/bin:/bin:/usr/sbin:/sbin", home: "/Users/a", programFiles: [],
+    isFile: (file) => installed.includes(file),
+  })
+  it("finds a tool in Homebrew's folders when the PATH has none", () => {
+    expect(findTool("python", mac(["/opt/homebrew/bin/python3"]))).toBe("/opt/homebrew/bin/python3")
+    expect(findTool("python", mac(["/usr/local/bin/python3"]))).toBe("/usr/local/bin/python3")
+  })
+  it("prefers the PATH's own copy", () => {
+    expect(findTool("python", mac(["/usr/bin/python3", "/opt/homebrew/bin/python3"]))).toBe("/usr/bin/python3")
+  })
+})
