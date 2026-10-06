@@ -124,6 +124,8 @@ jobs:
       VERSION: ${{ needs.prepare.outputs.version }}
       # No certificate yet: build unsigned rather than look for one.
       CSC_IDENTITY_AUTO_DISCOVERY: "false"
+      # The build fails rather than ship without the bundled reader (apps/desktop/scripts/fetch-ocr-models.mjs).
+      WM_REQUIRE_OCR_MODELS: "1"
     defaults:
       run:
         shell: pwsh
@@ -137,6 +139,16 @@ jobs:
           node-version: 24
           cache: npm
       - run: npm ci
+      # The bundled reader's models (docs/OCR-BUNDLED.md): pinned, sha256-checked, cached between runs; a release never
+      # ships without them (WM_REQUIRE_OCR_MODELS makes the build fail rather than leave them out).
+      - uses: actions/cache@v4
+        with:
+          path: apps/desktop/.cache/ocr-models
+          key: ocr-models-${{ hashFiles('apps/desktop/scripts/ocr-models.json') }}
+      - name: Bundled reader models
+        run: node apps/desktop/scripts/fetch-ocr-models.mjs
+        env:
+          WM_REQUIRE_OCR_MODELS: "1"
       - name: Typecheck
         run: npm run typecheck
       - name: Unit tests
@@ -191,6 +203,8 @@ jobs:
       # Ad hoc, from the command line below: never go looking for a certificate (and there are no APPLE_* variables, so
       # nothing is notarized).
       CSC_IDENTITY_AUTO_DISCOVERY: "false"
+      # The build fails rather than ship without the bundled reader (apps/desktop/scripts/fetch-ocr-models.mjs).
+      WM_REQUIRE_OCR_MODELS: "1"
     defaults:
       run:
         shell: bash
@@ -204,6 +218,16 @@ jobs:
           node-version: 24
           cache: npm
       - run: npm ci
+      # The bundled reader's models (docs/OCR-BUNDLED.md): pinned, sha256-checked, cached between runs; a release never
+      # ships without them (WM_REQUIRE_OCR_MODELS makes the build fail rather than leave them out).
+      - uses: actions/cache@v4
+        with:
+          path: apps/desktop/.cache/ocr-models
+          key: ocr-models-${{ hashFiles('apps/desktop/scripts/ocr-models.json') }}
+      - name: Bundled reader models
+        run: node apps/desktop/scripts/fetch-ocr-models.mjs
+        env:
+          WM_REQUIRE_OCR_MODELS: "1"
       - name: Build (the Vision helper universal, tools/build-vision.sh)
         run: npm run build
 

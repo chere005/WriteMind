@@ -114,7 +114,7 @@ export function parseOcrJson(json: string): { reading: OcrReading } | { error: s
   return {
     reading: {
       lines,
-      ...(object.engine === "vision" || object.engine === "windows" || object.engine === "tesseract"
+      ...(object.engine === "bundled" || object.engine === "vision" || object.engine === "windows" || object.engine === "tesseract"
         ? { engine: object.engine } : {}),
       ...(typeof object.angle === "number" && Number.isFinite(object.angle) ? { angle: object.angle } : {}),
       language: typeof object.language === "string" ? object.language : null,

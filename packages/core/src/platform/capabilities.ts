@@ -21,8 +21,11 @@
  * until the page-finding lands, because that changes what the user does.
  */
 
-/** Which reader is behind `handwritingOCR`. */
-export type OcrEngine = "vision" | "windows" | "tesseract"
+/**
+ * Which reader is behind `handwritingOCR`. "bundled" is the one shipped inside the app (PP-OCRv5 on onnxruntime's
+ * WebAssembly build, docs/OCR-BUNDLED.md), used on every platform when its files are there.
+ */
+export type OcrEngine = "bundled" | "vision" | "windows" | "tesseract"
 
 export interface Capabilities {
   /** Reading handwriting off a captured page into markdown. */

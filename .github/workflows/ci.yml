@@ -28,6 +28,14 @@ jobs:
           node-version: 24
           cache: npm
       - run: npm ci
+      # The bundled reader's models (docs/OCR-BUNDLED.md): pinned, sha256-checked, cached between runs. The build copies
+      # them into the app and the unit tests read real pictures with them.
+      - uses: actions/cache@v4
+        with:
+          path: apps/desktop/.cache/ocr-models
+          key: ocr-models-${{ hashFiles('apps/desktop/scripts/ocr-models.json') }}
+      - name: Bundled reader models
+        run: node apps/desktop/scripts/fetch-ocr-models.mjs
       - name: Typecheck
         run: npm run typecheck
       - name: Unit tests
@@ -52,6 +60,14 @@ jobs:
           node-version: 24
           cache: npm
       - run: npm ci
+      # The bundled reader's models (docs/OCR-BUNDLED.md): pinned, sha256-checked, cached between runs. The build copies
+      # them into the app and the unit tests read real pictures with them.
+      - uses: actions/cache@v4
+        with:
+          path: apps/desktop/.cache/ocr-models
+          key: ocr-models-${{ hashFiles('apps/desktop/scripts/ocr-models.json') }}
+      - name: Bundled reader models
+        run: node apps/desktop/scripts/fetch-ocr-models.mjs
       - name: Build
         run: npm run build
       - name: End-to-end suites
@@ -86,6 +102,14 @@ jobs:
           node-version: 24
           cache: npm
       - run: npm ci
+      # The bundled reader's models (docs/OCR-BUNDLED.md): pinned, sha256-checked, cached between runs. The build copies
+      # them into the app and the unit tests read real pictures with them.
+      - uses: actions/cache@v4
+        with:
+          path: apps/desktop/.cache/ocr-models
+          key: ocr-models-${{ hashFiles('apps/desktop/scripts/ocr-models.json') }}
+      - name: Bundled reader models
+        run: node apps/desktop/scripts/fetch-ocr-models.mjs
       - name: Typecheck
         run: npm run typecheck
       # They block here too: the seven that took Windows paths for granted now use this system's own (2026-10-05).

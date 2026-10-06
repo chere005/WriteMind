@@ -1,5 +1,8 @@
 # Reading words out of a picture on Windows
 
+(Since the `ocr-bundled` branch the app reads with its own bundled engine first, on every platform, when its files
+are there; Windows' engine below is the fallback. docs/OCR-BUNDLED.md.)
+
 The Mac reads a picture with Vision. Windows has an OCR engine of its own,
 `Windows.Media.Ocr`, which needs **nothing installed** for the languages in
 the user's profile. WriteMind uses it (Vision first on a Mac, then this, then

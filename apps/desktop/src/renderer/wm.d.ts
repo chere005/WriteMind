@@ -60,7 +60,7 @@ declare global {
       ocrRead(request: { id: string; file?: string; bytes?: Uint8Array; languages?: string[] }): Promise<import("@writemind/core").OcrReading>
       ocrCancel(id: string): Promise<void>
       ocrStatus(): Promise<{
-        ocr: boolean; engine: "vision" | "windows" | "tesseract" | null; japanese: boolean
+        ocr: boolean; engine: import("@writemind/core").OcrEngine | null; japanese: boolean
         probe: { ok: boolean; installed: string[]; profile: string | null; japanese: boolean; addJapanese: string; reason?: string }
         addJapanese: string; busy: number; reads: number
       }>

@@ -13,7 +13,10 @@
  *
  * None is a dependency: with none installed the app runs exactly as it does
  * now and simply does not offer to read a picture. Order of preference:
- * Vision, then Windows' engine, then tesseract.
+ * THE BUNDLED READER first on every platform when its files are beside the
+ * app (main/bundledOcr.ts, docs/OCR-BUNDLED.md: one engine, so every
+ * platform reads alike), then Vision, then Windows' engine, then tesseract -
+ * which are also the fallback when the bundled one fails.
  */
 
 import { execFile } from "node:child_process"
@@ -21,6 +24,7 @@ import { accessSync, constants, existsSync } from "node:fs"
 import path from "node:path"
 import { promisify } from "node:util"
 import type { OcrEngine } from "@writemind/core"
+import { bundledOcrFolder, bundledReader, readWithBundledOcr } from "./bundledOcr"
 
 const run = promisify(execFile)
 
@@ -216,11 +220,13 @@ export const forgetOcrProbe = (): void => { probed = null }
 
 /** Whether anything on this machine could read a picture's words, without asking (a file being there). */
 export const canRead = (here: string): boolean =>
-  visionHelper(here) !== null || windowsOcrScript(here) !== null || tesseract() !== null
+  bundledOcrFolder(here) !== null || visionHelper(here) !== null || windowsOcrScript(here) !== null || tesseract() !== null
 
 /** Which reader will be used, and what it can do: the answer `capabilitiesFor` is given. */
 export async function readerFor(here: string):
 Promise<{ ocr: boolean; engine: OcrEngine | null; japanese: boolean }> {
+  const bundled = bundledReader(here)
+  if (bundled) return bundled
   if (visionHelper(here)) return { ocr: true, engine: "vision", japanese: true }
   if (windowsOcrScript(here)) {
     const probe = await windowsOcr(here)
@@ -237,6 +243,15 @@ Promise<{ ocr: boolean; engine: OcrEngine | null; japanese: boolean }> {
  * line it finds counts as read.
  */
 export async function readWords(here: string, file: string, options: ReadOptions = {}): Promise<Words> {
+  if (bundledOcrFolder(here)) {
+    try {
+      return await readWithBundledOcr(here, file, options)
+    } catch (error) {
+      // Taken back is taken back; anything else falls through to the platform's own reader.
+      if ((error as { name?: string }).name === "AbortError") throw error
+      console.warn("WriteMind: the bundled reader failed; using the platform's own:", (error as Error).message)
+    }
+  }
   const vision = visionHelper(here)
   if (vision) {
     const { stdout } = await run(vision, ["text", file], {

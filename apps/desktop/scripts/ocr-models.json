@@ -1,0 +1,29 @@
+{
+  "about": "The bundled reader's model files (docs/OCR-BUNDLED.md). Fetched at BUILD time by scripts/fetch-ocr-models.mjs, checked against sha256, cached in apps/desktop/.cache/ocr-models (git-ignored) and copied to out/helpers/bundled-ocr/models. Nothing is downloaded at runtime. PaddleOCR PP-OCRv5 (Apache-2.0), as converted to ONNX by RapidOCR (Apache-2.0), pinned to RapidOCR's model release v3.9.2.",
+  "models": [
+    {
+      "role": "det",
+      "file": "ch_PP-OCRv5_det_mobile.onnx",
+      "what": "PP-OCRv5 mobile text-line detector (DB), every script",
+      "url": "https://www.modelscope.cn/models/RapidAI/RapidOCR/resolve/v3.9.2/onnx/PP-OCRv5/det/ch_PP-OCRv5_det_mobile.onnx",
+      "sha256": "4d97c44a20d30a81aad087d6a396b08f786c4635742afc391f6621f5c6ae78ae",
+      "bytes": 4819576
+    },
+    {
+      "role": "rec",
+      "file": "en_PP-OCRv5_rec_mobile.onnx",
+      "what": "PP-OCRv5 mobile English recogniser (CTC): Latin letters, digits, punctuation; the first reading of every line",
+      "url": "https://www.modelscope.cn/models/RapidAI/RapidOCR/resolve/v3.9.2/onnx/PP-OCRv5/rec/en_PP-OCRv5_rec_mobile.onnx",
+      "sha256": "c3461add59bb4323ecba96a492ab75e06dda42467c9e3d0c18db5d1d21924be8",
+      "bytes": 7872351
+    },
+    {
+      "role": "recJapanese",
+      "file": "ch_PP-OCRv5_rec_mobile.onnx",
+      "what": "PP-OCRv5 mobile multilingual recogniser (CTC): Japanese (kana, kanji), Chinese and English in one; a line's reading is taken from it when it found Japanese",
+      "url": "https://www.modelscope.cn/models/RapidAI/RapidOCR/resolve/v3.9.2/onnx/PP-OCRv5/rec/ch_PP-OCRv5_rec_mobile.onnx",
+      "sha256": "5825fc7ebf84ae7a412be049820b4d86d77620f204a041697b0494669b1742c5",
+      "bytes": 16631306
+    }
+  ]
+}

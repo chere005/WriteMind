@@ -24,6 +24,9 @@ out/
 # The compiled macOS helper: built by tools/build-vision.sh, never committed
 apps/desktop/out/
 
+# The bundled reader's model files, fetched and checked at build time (apps/desktop/scripts/fetch-ocr-models.mjs)
+apps/desktop/.cache/
+
 # electron-builder output
 dist-electron/
 

@@ -26,5 +26,8 @@
     "react-dom": "^19.3.0"
   },
   "description": "WriteMind: a notebook, a camera and a drawing layer over both",
-  "author": "Shahean Cheren"
+  "author": "Shahean Cheren",
+  "devDependencies": {
+    "onnxruntime-web": "1.30.0"
+  }
 }
