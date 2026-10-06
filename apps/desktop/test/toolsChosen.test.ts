@@ -106,7 +106,8 @@ describe("the other copies found by themselves (foundTools)", () => {
       files: ["/usr/bin/python3", "/opt/homebrew/bin/python3", "/opt/homebrew/Cellar/python@3.13/3.13.1/bin/python3", "/usr/local/bin/python3"],
       links: { "/opt/homebrew/bin/python3": "/opt/homebrew/Cellar/python@3.13/3.13.1/bin/python3" },
     })
-    expect(foundTools("python", places)).toEqual(["/usr/bin/python3", "/opt/homebrew/bin/python3", "/usr/local/bin/python3"])
+    // Homebrew's folders go ahead of the system's on a Mac (tools.ts: as a Terminal has them).
+    expect(foundTools("python", places)).toEqual(["/opt/homebrew/bin/python3", "/usr/local/bin/python3", "/usr/bin/python3"])
     // Homebrew's wolframscript is a link to the engine app's: one copy, under the name a run would use.
     const engine = mac({
       files: ["/opt/homebrew/bin/wolframscript", MAC_ENGINE_WOLFRAMSCRIPT],

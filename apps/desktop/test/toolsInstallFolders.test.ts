@@ -71,7 +71,11 @@ describe("Homebrew on a Finder-launched Mac app (tools.ts)", () => {
     expect(findTool("python", mac(["/opt/homebrew/bin/python3"]))).toBe("/opt/homebrew/bin/python3")
     expect(findTool("python", mac(["/usr/local/bin/python3"]))).toBe("/usr/local/bin/python3")
   })
-  it("prefers the PATH's own copy", () => {
-    expect(findTool("python", mac(["/usr/bin/python3", "/opt/homebrew/bin/python3"]))).toBe("/usr/bin/python3")
+  it("prefers Homebrew's copy to the system's, as a Terminal does", () => {
+    expect(findTool("python", mac(["/usr/bin/python3", "/opt/homebrew/bin/python3"]))).toBe("/opt/homebrew/bin/python3")
+  })
+  it("keeps a PATH that already names Homebrew in its own order", () => {
+    const places = { ...mac(["/usr/bin/python3", "/opt/homebrew/bin/python3"]), pathVariable: "/usr/bin:/opt/homebrew/bin" }
+    expect(findTool("python", places)).toBe("/usr/bin/python3")
   })
 })

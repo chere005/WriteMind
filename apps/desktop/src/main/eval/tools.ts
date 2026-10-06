@@ -151,8 +151,13 @@ export function toolCandidates(evaluator: Evaluator, places: ToolPlaces): string
   const dirs = places.pathVariable.split(windows ? ";" : ":").map((dir) => dir.trim().replace(/^"|"$/g, ""))
     .filter((dir) => dir.length > 0)
   // A Finder-launched Mac app inherits launchd's PATH (`/usr/bin:/bin:/usr/sbin:/sbin`), which has no Homebrew in it:
-  // look in Homebrew's folders (Apple silicon, then Intel) after whatever PATH it did get.
-  if (places.platform === "darwin") dirs.push(...MAC_TOOL_FOLDERS)
+  // Homebrew's folders (Apple silicon, then Intel) go in AHEAD of the system's, as a Terminal has them, so Homebrew's
+  // python3 wins over Apple's older /usr/bin/python3 (which, without the Command Line Tools, only asks to install them).
+  if (places.platform === "darwin") {
+    const missing = MAC_TOOL_FOLDERS.filter((dir) => !dirs.includes(dir))
+    const system = dirs.findIndex((dir) => /^\/(usr\/)?s?bin\/?$/.test(dir))
+    dirs.splice(system < 0 ? dirs.length : system, 0, ...missing)
+  }
   const extensions = windows ? [".exe", ".com"] : [""]
   const found: string[] = []
   for (const name of toolNames(evaluator)) {

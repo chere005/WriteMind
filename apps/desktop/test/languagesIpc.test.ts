@@ -75,7 +75,8 @@ function rig(options: { setup?: boolean; winget?: boolean; files?: string[]; pla
     call: async (channel, ...args) => handlers.get(channel)!({ sender: r.sender }, ...args),
   }
   const places = (): ToolPlaces => ({
-    platform: "darwin", pathVariable: "/usr/bin:/bin", home: "/Users/s", programFiles: [],
+    // Homebrew on the PATH (as from a Terminal), so these tests keep the PATH's own order (tools.ts puts it first otherwise).
+    platform: "darwin", pathVariable: "/usr/bin:/bin:/opt/homebrew/bin", home: "/Users/s", programFiles: [],
     isFile: (one) => r.files.includes(one), isDirectory: (one) => r.dirs.includes(one),
     ...options.places,
     chosen: store.get(),
