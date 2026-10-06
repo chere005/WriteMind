@@ -35,8 +35,8 @@ import {
 import { bandUnder, chartFromLabelled, chartSummary, type Corners } from "./capturePipeline"
 import { detectPage, takePicture, uprightPicture, uprightSize } from "./cameraTake"
 import {
-  normalRotation, rememberedRotation, rememberedShape, rememberedZoom, rememberRotation, rememberShape, rememberZoom,
-  useCameraAspect, type CaptureMode, type Rotation, type ZoomBox,
+  normalRotation, rememberBringTo, rememberedBringTo, rememberedRotation, rememberedShape, rememberedZoom, rememberRotation,
+  rememberShape, rememberZoom, useCameraAspect, type BringTo, type CaptureMode, type Rotation, type ZoomBox,
 } from "./cameraSettings"
 import { idleProblem } from "./cameraDevices"
 import { useCameraStream, useHeldFrame } from "./useCameraStream"
@@ -51,6 +51,7 @@ import { stepNote, useCellSheet } from "./cellSheets"
 import { registerPenHandlers } from "./penActions"
 import { OrientationSelect } from "./OrientationSelect"
 import { PaperMenu } from "./PaperMenu"
+import { BringInMenu } from "./BringInMenu"
 import { paper as currentPaper } from "./tabletPaper"
 import { usePenWord, usePenWordNote } from "./penWord"
 import { usePenFeed } from "./usePenFeed"
@@ -163,6 +164,8 @@ export function CameraPane({
   const [, edited] = useState(0)
   const [trouble, setTrouble] = useState<string | null>(null)
   const [read, setRead] = useState<string | null>(null)
+  /** Where the header's Writing puts the writing (BringInMenu.tsx): the note's page, or a new docked drawing cell. */
+  const [bringTo, setBringTo] = useState<BringTo>(rememberedBringTo)
   /** The box dragged on the picture, in the pane's own points as the person sees it. */
   const [box, setBox] = useState<Rect | null>(null)
   /** The tablet's sheets (one per tab, tabletSheets.ts) and the open one, which everything below acts on. */
@@ -812,10 +815,12 @@ export function CameraPane({
                     onClick={() => { surface.current?.clear(); setSheetBox(null) }}
                     style={{ width: "auto", padding: "0 8px", fontSize: 11 }}>Clear</button>
             <span className="bring-in" role="group" aria-label="Bring in">
-              <span className="label">Bring in</span>
+              <BringInMenu to={bringTo} onChange={(next) => { setBringTo(next); rememberBringTo(next) }} />
               <button className="icon-button" data-capture="ink" disabled={binding.bound}
-                      title={binding.bound ? "This sheet is a drawing cell of the note already" : "Bring the writing in as strokes: the boxed part, or the whole sheet. The sheet keeps it."}
-                      onClick={() => { void takeTablet("ink") }}
+                      title={binding.bound ? "This sheet is a drawing cell of the note already"
+                        : bringTo === "cell" ? "Bring the writing in as a new drawing cell at the input cursor: the boxed part, or the whole sheet. The sheet keeps it."
+                        : "Bring the writing in as strokes on the note's page: the boxed part, or the whole sheet. The sheet keeps it."}
+                      onClick={() => { if (bringTo === "cell") { surface.current?.leave(); void boxToCell() } else void takeTablet("ink") }}
                       style={{ width: "auto", padding: "0 8px", fontSize: 11 }}>Writing</button>
               <button className="icon-button" data-capture="page" disabled={binding.bound}
                       title={binding.bound ? "This sheet is a drawing cell of the note already" : "Bring the sheet in as a picture, paper and all: the boxed part, or the whole sheet (read its words with Aa)"}
