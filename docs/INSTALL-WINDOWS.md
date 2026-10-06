@@ -73,7 +73,31 @@ The installer's own page has three tick boxes:
   this way at the next cell run, without a restart of Windows or of WriteMind, even though the
   PATH of an already-running program does not change (it looks in the install folders above).
 
-### Adding them later, by hand
+### Adding them later: File ▸ Language Setup…
+
+**File ▸ Language Setup…** in WriteMind is the same page, any time after the install. Each language's
+row says which program its cells run with and where it came from:
+
+- **Install Python…** and **Install Wolfram Engine…** (shown when the language is not found and
+  winget is there) run the installer's own script (`installer-tools.ps1`, which ships beside the
+  app) in a window of its own, exactly as the installer's tick boxes do; Install Wolfram Engine…
+  opens the sign-in window afterwards. WriteMind looks again when that window closes and says what
+  happened in the row. Without winget the rows offer **Get Python…** / **Get Wolfram Engine…** (the
+  download pages) instead.
+- **Activate…** (the Wolfram row, when there is no licence file yet) opens the engine's own sign-in
+  window for the `wolframscript.exe` your cells use. You type your Wolfram ID there; WriteMind never
+  sees it.
+- **Choose…** points a language at another program — a virtual environment's
+  `Scripts\python.exe`, a conda environment's `python.exe`, a MinGW `gcc.exe` — and **Also on this
+  computer** lists the copies WriteMind found, each with **Use**. A chosen program is the only one
+  that language uses (its folder goes first on the cells' PATH); if it goes, the cell says so until
+  you choose another or press **Find Automatically**. `.cmd` and `.bat` shims are refused: nothing
+  is started through a shell. **Test** runs a small program with it.
+
+The choices are kept in `%APPDATA%\@writemind\desktop\languages.json` (the app's own data folder); the
+log of a setup window started from there is `tools-setup.log` beside it.
+
+By hand, the same thing:
 
 ```powershell
 winget install --id Python.Python.3.14 -e --scope user

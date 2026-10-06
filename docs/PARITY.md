@@ -910,7 +910,7 @@ faked, and the source scans), `packages/editor/test/evalCells.test.ts` (4). E2E:
 | Ctrl+9 (Format ▸ Evaluation Cell, the Mac's ⌘9): at a bar the cell is made THERE with the caret in it (29149b9); in a fenced cell it converts that cell, keeping the code; anywhere else a new cell after it, caret inside; not on the + menu | done | e2e 3, 5; core test (CellTypeTests); `menu.test.ts`, `keyList.test.ts` |
 | The In/Out pair is one bracket in the gutter at the pair's depth, 3 px proud at each end, its two cells one step in; not a cell to any gesture (`isCell`) | done (a small edit to the cells lane's `brackets.ts`) | `evalCells.test.ts`; e2e 1; shot `1z-gutter.png` |
 | Language icons instead of letters (a608cc3) | not built (letters, as on the Mac) | docs/TODO.md |
-| The Mac's per-tool path override (`evalTool.<name>` in its defaults) | not built | docs/TODO.md |
+| The Mac's per-tool path override (`evalTool.<name>` in its defaults) | **built as a port-first screen**, File ▸ Language Setup… on all three platforms (2026-10-06; see "Language Setup" below). **Differs from the Mac on purpose**: a chosen program is the ONLY one its language uses, and one that has gone is refused with a sentence naming its path and Language Setup — the Mac's `Evaluator.tool()` falls through to its candidates | "Language Setup" below |
 
 Not verified: a real keyboard (CDP key events only); C, C++ and Rust running for real (only the faked process layer),
 and a Wolfram cell giving an answer (the Engine is not activated); the quit path with a run in flight (`cancelAll` is
@@ -931,6 +931,36 @@ port 9421; the eval lane's `eval\run.mjs` re-run there, 27/27); shots `C:\CLAUDI
 | A note that holds an evaluation cell has a 48 px left margin (30 elsewhere) so `Out[100]` fits at full size; the text, the selection's clip and the hover wash all follow; a note with none keeps 30 px, so the words under existing ink in ordinary notes do not move | done; the text of a note moves 18 px right when its FIRST evaluation cell appears (ink placed earlier stays put) | `evalCells.test.ts` (the class only with an eval cell); e2e "a note with no evaluation cell … where they always did" |
 | The spinner sits on the second row, so `In[n]` never moves while a cell runs | done | shot `running.png`; eval e2e 8 |
 | Gate fixes (2026-10-05): (1) a note put away while a cell ran comes back with nothing "running" (the stashed state kept `running`, so the spinner turned for ever and Shift+Enter did nothing): the plugin clears a stale run when a view is built; (2) an older pair (```` ```python ```` over ```` ```out ````, no `eval` fence) keeps the 30 px margin and its `Out[n]` is sized to it (`markColumn`) instead of drawn over the words; (3) the marks measure nothing in a note with no evaluation cell or answer; (4) a child that exits while a grandchild holds its pipes settles the run after 750 ms and is never killed by its stale PID; (5) the "not activated" sentence names the wolframscript that was found, quoted (the Engine's installer leaves it off the PATH) | done; the margin that moves a note's words when its first eval cell appears is **Sean's decision** (`docs/TODO.md`, Evaluation cells (5)) | `evalCells.test.ts` (+1, the column), `evalRunner.test.ts` (+1 orphan, activation path), `evaluationCells.test.ts` (activation path); e2e `C:\CLAUDIO\agents\e2e\gate\smoke.mjs` ("coming back, no spinner…", "Shift+Enter runs that cell again", "its Out[1] ends before the words begin"); shots `C:\CLAUDIO\agents\shots\gate\` |
+
+### Language Setup: the per-tool override, as a screen (2026-10-06)
+
+Sean, 2026-10-06: "on all platforms there should also be a language setup options screen from the menu bar which makes
+it easy to set up or point to a WL / python environment for WriteMind to use", and a Wolfram Language / Python setup on
+Windows. The Mac's equivalent is `defaults write com.seancheren.WriteMind evalTool.<name> <path>`, read in
+`Evaluator.tool()` (`WriteMind/Eval/Evaluator.swift`), with no screen; this one is port-first. Code: `shared/languages.ts`
+(the settings file, the picker, the setup sentences), `main/eval/languages.ts` (the store and the IPC),
+`main/eval/tools.ts` (`toolEntry`, `resolveChoice`, `choiceProblem`, `foundTools`, `wolframLicence`),
+`main/eval/runner.ts` (`identify`, the chosen tool's folder on the PATH), `main/toolSetup.ts` (Windows),
+`packages/core/src/eval/probe.ts`, `renderer/LanguageSetupDialog.tsx` + `languageSetupView.ts`. Unit:
+`evalProbe.test.ts`, `toolsChosen.test.ts`, `languages.test.ts`, `languagesIpc.test.ts`, `toolSetup.test.ts`,
+`languageSetupView.test.ts`, and additions to `evaluationCells`, `capabilities`, `evalRunner`, `helpers`, `menu`,
+`notesFolderMove`, `evalCells`. E2E: `e2e/suites/languages/01-language-setup.mjs` (written; not yet run).
+
+| Feature | Status | Evidence |
+|---|---|---|
+| File ▸ Language Setup… on Windows, Mac and Linux, after Clean Up Unused Files…, no key, never greyed; also Runs As ▸ Language Setup… on a cell's mark, opening at that cell's language | built | `menu.test.ts`; e2e |
+| A program chosen there is the ONLY one its language uses (userData/`languages.json`, version 1); one that has gone, or is not a program, is refused before anything starts with "Python is set to “…” in Language Setup, which is not there any more…"; the mark's tooltip, the Runs As row ("not there") and the refusal are one builder (`missingToolRefusal`) | built; **differs from the Mac** (`evalTool.<name>` falls through) | `toolsChosen.test.ts` (BREAK-IT: no fallback), `evalRunner.test.ts`, `evaluationCells.test.ts` |
+| A choice applies at the next run with no restart (the places are read per run; the store re-reads the file when its time or size moves, so a hand edit or the notes-folder move applies too); open notes' marks follow the push at once | built | `languagesIpc.test.ts`, `notesFolderMove.test.ts`, `evalCells.test.ts` (`followTools`) |
+| Choose… (a file, a venv folder, the Wolfram Engine's `.app`; a link kept as the link on a Mac), checked by name and shape, then asked its version (`wolframscript -version`, `--version`, Python's version and path) before it is saved; Python 2, the Store placeholder (9009) and Apple's stand-in (needs the Command Line Tools) refused by name | built | `toolsChosen.test.ts`, `evalProbe.test.ts`, `languagesIpc.test.ts`, `languages.test.ts` (picker) |
+| Also on this computer: the other copies found by themselves, one click to Use (a link and its file once; the Store alias never offered) | built | `toolsChosen.test.ts` (`foundTools`), `languagesIpc.test.ts` |
+| Test runs a fixed program (`TEST_SOURCE`) through the runner, never a note's text; nothing is started when the screen opens | built | `evalProbe.test.ts`; `evalRunner.test.ts` source scans (`runner.run(` only in ipc.ts and languages.ts; the page's calls only from `onClick`) |
+| A chosen tool's folder goes first on the child's PATH (a venv's `bin`, MinGW's DLLs); a tool found by itself leaves the PATH as it was | built | `evalRunner.test.ts` (BREAK-IT) |
+| Wolfram not activated (no `mathpass` where activation leaves one): Activate… on Windows, the command to type elsewhere (bare on a Mac/Linux path: `& "…"` is a zsh parse error, fixed in `wolframCommand`) | built | `toolsChosen.test.ts` (`wolframLicence`), `languageSetupView.test.ts`, `evaluationCells.test.ts` |
+| Windows: Install Python…, Install Wolfram Engine… and Activate… run the installer's own `installer-tools.ps1` (`-FromApp`, copied beside the app by build.mjs) in a console of its own; offered only with the script and winget; Get Python… / Get Wolfram Engine… (the download page) everywhere else | built; the ps1 changes **not yet run under PowerShell 5.1** (no PowerShell on the Mac that built them) | `toolSetup.test.ts`, `helpers.test.ts`, `capabilities.test.ts`, `languages.test.ts` (`setupSentence`) |
+| The Mac's DMG Wolfram Engine (`/Applications/Wolfram Engine.app/…/Wolfram Player.app/Contents/MacOS/wolframscript`) found by itself | built (measured: Homebrew's link points at it) | `toolsChosen.test.ts` |
+
+Not verified: the screen on screen (not launched in the lane that built it); the e2e suite; a cold Wolfram Test on
+Windows against the 20 s limit; the Linux licence path; a conda environment's `Library\bin` on the PATH (not added).
 
 ## The rendered page edits what is written (preview lane, 2026-10-05)
 

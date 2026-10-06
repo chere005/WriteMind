@@ -161,13 +161,27 @@ batch in flight on that day. After it, roughly in this order:
   updates: DONE in 2.4.0** (a signed copy in a writable place takes MacUpdater: the zips and `latest-mac.yml` on the release,
   Update now downloads, Squirrel.Mac swaps the app and relaunches — run on this Mac 2026-10-06 from a local feed, 2.3.0 → 9.9.0;
   an ad-hoc or translocated copy still opens the release page; copies before 2.4.0 open the page once);
-  (3) **a Finder-launched app's PATH has no Homebrew** (`/usr/bin:/bin:/usr/sbin:/sbin`): runnable cells do not find
-  `/opt/homebrew/bin` / `/usr/local/bin` tools except `wolframscript` (`main/eval/tools.ts` `extraPlaces`); add
-  those folders on darwin or read the login shell's PATH; (4) ~~the unit suite on macOS~~ done 2026-10-05: the
+  (3) ~~**a Finder-launched app's PATH has no Homebrew**~~ done: `main/eval/tools.ts` looks in `/opt/homebrew/bin`
+  and `/usr/local/bin` after the PATH on darwin (`MAC_TOOL_FOLDERS`), and since 2026-10-06 inside
+  `/Applications/Wolfram Engine.app` too; anything else is pointed at with File ▸ Language Setup…;
+  (4) ~~the unit suite on macOS~~ done 2026-10-05: the
   first macos-15 run (CI 37408602855, whose dmgs passed `verify-mac.sh`) had 7 of 2303 red, all tests that took
   Windows paths or names for granted; they now use this system's own (and `eval/runner.ts` joins its scratch paths by
   `deps.platform`, as `tools.ts` does), and the mac job's unit step blocks; (5) Sean's own look at a
   first open on his Mac (Open Anyway, the camera prompt, Help ▸ Check for Updates…).
+- **The Mac App Store (Sean asked what it would take, 2026-10-06): NOT started; a decision first.** Today the Mac
+  build is Developer ID-shaped and AGENTS.md says "No sandbox, on purpose". A store build needs: (1) the **App
+  Sandbox**, which every child process inherits — a Homebrew Python's standard library under `/opt/homebrew/Cellar`
+  and wolframscript's `~/Library/WolframEngine/Licensing` are outside the container, so runnable cells would fail
+  even with their program chosen; (2) for each program chosen in Language Setup a **security-scoped bookmark**
+  (`securityScopedBookmarks: true` in the picker, a `version: 2` `languages.json` carrying the bookmarks,
+  `startAccessingSecurityScopedResource` around every run and identify) — and even then a Python's own folders are
+  not covered; (3) the notes folder as a user-chosen, bookmarked folder (the sandbox's container otherwise); (4) a
+  Mac App Store distribution certificate, provisioning profile, `mas` target in electron-builder.yml and the
+  sandbox entitlements, with no in-app updater (the store updates it); (5) **App Review guideline 2.5.2** (apps may not
+  download or run code that changes their features) is a real risk for running cells at all. Language Setup does not
+  block that path: the settings file is versioned, Install is Windows-only behind a capability, and Get … links are
+  allowed. A store build without runnable cells (or with them off) is the likely shape, if Sean wants one.
 - **"WriteMind", not "Electron", in the Mac Dock (2026-10-05): built, NOT yet seen on a Mac.** Dev bundle renamed
   and given the Mac app's icon (`scripts/mac-dev-identity.mjs`), name / About panel / dev dock tile at run time
   (`main/macIdentity.ts`), `mac.icon` for WriteMind.app (docs/BUILDING.md). To check on the Mac: `npm run dev`, then
@@ -202,8 +216,17 @@ batch in flight on that day. After it, roughly in this order:
   (2) **Language icons instead of letters** (Sean's a608cc3 ask "use icons for WL, CPP, Python"): not built — the mark
   still says `WL` / `PY` / `C` / `C++` / `RS` (now under `In[n]` too, Sean 2026-10-05); icons need drawn art,
   monochrome so they follow the theme, and must fit the 43 px mark column.
-  (3) **The Mac's per-tool override** (`evalTool.<name>` in its defaults: a moved tool or a different Python without a
-  build): not ported; tools come from the PATH, `~\.cargo\bin` and Program Files only. (4) After a run the bar is
+  (3) ~~**The Mac's per-tool override**~~ done 2026-10-06 as **File ▸ Language Setup…** (port-first; PARITY
+  "Language Setup"): a chosen program is the ONLY one its language uses (the Mac falls through; said in PARITY and in
+  `main/eval/tools.ts`). Left there: (a) run the `installer-tools.ps1` changes under Windows PowerShell 5.1
+  (`-FromApp -Python -DryRun -NoWait`, `-FromApp -Activate -WolframScript …`) — written on a Mac with no PowerShell;
+  (b) run `e2e/suites/languages`; (c) a cold Wolfram Test on Windows against the 20 s limit, and a Test while a
+  cell is running (the engine's kernel-count limit); (d) the Linux licence path (`~/.WolframEngine/Licensing/mathpass`,
+  Wolfram's documented place) on Arch; (e) a conda environment's `Library\bin` on the PATH (not added: only with a
+  test); (f) not built, on purpose: a key (⌘, / Ctrl+, would be a COMMANDS row, the File group of KEY_MENUS and
+  KEYS.md together), Type a Path… and Choose Kernel… (every picker takes a pasted path; `-configure` covers the
+  kernel), a Mac Terminal setup, Linux package commands, polling, and Mathematica.app's wolframscript (not measured).
+  (4) After a run the bar is
   scrolled to by CodeMirror's "nearest", not the Mac's short animation landing it low on the page (799b13b / "make the
   cursor behavior after evaluating a cell elegant").
   (5) **SEAN DECIDES: the wider margin moves a note's words, not its ink** (gate review, 2026-10-05). A note with an

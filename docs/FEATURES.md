@@ -169,6 +169,19 @@ is how the code is put together.
   Wolfram, Python or TypeScript, and the block is coloured — in the editor
   and in the preview — by a palette that has a light and a dark half, so it
   reads either way round.
+- **Cells that run.** An evaluation cell (```` ```eval wl ````, `eval python`,
+  `eval c`, `eval c++`, `eval rust`; Format ▸ Evaluation Cell) runs with
+  Shift+Enter, and its answer lands under it as an `out` cell — `In[n]` over
+  the code, `Out[n]` over the answer. **File ▸ Language Setup…** (every
+  platform, and Language Setup… at the end of a cell's Runs As menu) shows
+  which program each language runs with and where it was found, and lets you
+  choose another — a virtual environment's Python, a Wolfram Engine somewhere
+  WriteMind does not look — from the program itself or from the copies it
+  found; **Test** runs a small program with it. A program chosen there is the
+  only one that language uses: if it goes, the cell says so rather than
+  quietly running another. On Windows it installs Python or the Wolfram Engine
+  and opens the engine's sign-in window with the installer's own script;
+  elsewhere it opens the download pages and gives the command to activate.
 - **Strikethrough.** ⇧⌘X, written `~~like this~~`, struck through in the
   editor and in the preview.
 - **Crop a picture.** Select one and the crop button sits at its bottom
