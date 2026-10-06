@@ -24,6 +24,38 @@ process and writes the answer under it, Ctrl+Shift+8 makes one (Ctrl+9 until 202
 `docs/TESTING.md`). A new install opens on `WriteMind Quick Reference.md` (once per notes folder,
 `main/welcome.ts`; PARITY "The Quick Reference").
 
+## Bundled OCR: handed to the Mac session (branch `ocr-bundled`, 2026-10-06)
+
+Sean, 2026-10-06: "the mac agent will take over ocr work". The work is on branch `ocr-bundled`, never on main
+until Sean says. Merge origin/main into it now and then (main wins conflicts) and push the branch.
+`docs/OCR-BUNDLED.md` is the design: PaddleOCR PP-OCRv5 mobile on onnxruntime-web (WASM), models fetched at build
+time by `apps/desktop/scripts/fetch-ocr-models.mjs`, pinned with SHA-256 in `ocr-models.json`. The reader is used
+first on every platform, and Vision / Windows OCR / tesseract are the fallback.
+
+Done and tested on Windows:
+- 20 tests in `apps/desktop/test/bundledOcr.test.ts`: CTC decoding, line finding, box orientation, input sizing,
+  the Japanese-pass rule, PNG decoding, the reader order and the fallback, cancel through the OCR service, and
+  real reads of the three fixtures (printed English, handwriting, Japanese).
+- The full `npm test` (2452), the typecheck, and the camera and tablet e2e suites (124 checks) pass.
+- A scratch e2e in the real app reports engine "bundled".
+- The branch's Windows CI is green.
+
+To do on the Mac:
+1. **The Mac CI job has not run since the last main merge**, so the dmg build with the models is untried. Run it
+   (push the branch or dispatch ci.yml) and get it green.
+2. **`notesFolderMove` is a Mac-only path-separator bug, on main too.** It failed in the branch's macOS CI run.
+   Fix it on main's side first, then merge.
+3. **`tools/verify-mac.sh` does not check for the OCR files**: the onnxruntime-web `.wasm` and the model `.onnx`
+   files unpacked from the asar. Add the check.
+4. **Read on a real Mac and compare with Vision** on the same pictures: a notebook page under the camera at full
+   resolution, a Wacom sheet, cursive, Japanese handwriting. Vision may beat it on a Mac. Decide whether the
+   bundled reader stays first there or only fills in where Vision is missing.
+5. **Linux:** untested.
+6. **Maths:** no formula recogniser is shipped; linear maths ("x = 2y + 1") already comes through. The candidate
+   is Pix2Text MFR 1.5 (MIT, ~120 MB fp32, outputs LaTeX, which needs a LaTeX → Wolfram step). It is too big
+   unless int8 quantisation keeps its handwriting accuracy. Measure before shipping.
+7. **Size:** the reader adds about 44 MB on disk, about 28 MB compressed. Check the real installer and dmg sizes.
+
 ## Next, Sean's backlog (2026-10-05)
 
 Sean, 2026-10-05: "keep note of those remaining potential todos". **v1.0.0** is the first real release (the
