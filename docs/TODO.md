@@ -220,9 +220,12 @@ batch in flight on that day. After it, roughly in this order:
   "Language Setup"): a chosen program is the ONLY one its language uses (the Mac falls through; said in PARITY and in
   `main/eval/tools.ts`). Left there: (a) run the `installer-tools.ps1` changes under Windows PowerShell 5.1
   (`-FromApp -Python -DryRun -NoWait`, `-FromApp -Activate -WolframScript …`) — written on a Mac with no PowerShell —
-  and see that `main/toolSetup.ts`'s spawn (`detached: true, windowsHide: false`, from the windowless main process)
-  really gives the script a console window of its own (libuv's detached flag may start it with no console at all;
-  if so, start it non-detached, which a GUI parent gives a new console, and say what quitting the app then does);
+  and, once, press Install Python… on Windows and see the window: `main/toolSetup.ts` no longer spawns the script
+  `detached` (libuv's DETACHED_PROCESS gives a console program no console at all, so no window would have opened)
+  but has a hidden PowerShell (`windowsHide`, not detached — how the OCR helper runs) open it with `Start-Process`
+  and wait for that one process (`WaitForExit`); its quoting is unit-tested by reading the line back, the window
+  itself is not; nor is what quitting the app mid-install leaves (the window should stay; its result INI is then
+  never read or removed);
   (b) run `e2e/suites/languages`; (c) a cold Wolfram Test on Windows against the 20 s limit, and a Test while a
   cell is running (the engine's kernel-count limit); (d) the Linux licence path (`~/.WolframEngine/Licensing/mathpass`,
   Wolfram's documented place) on Arch; (e) a conda environment's `Library\bin` on the PATH (not added: only with a

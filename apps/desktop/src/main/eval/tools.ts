@@ -27,7 +27,7 @@ import {
   EVALUATORS, IDENTIFY_PYTHON, isToolName, toolNames, type CompilerFlavor, type Evaluator, type ToolEntry,
   type ToolReport,
 } from "@writemind/core"
-import { isAbsolutePath } from "../../shared/languages"
+import { isAbsolutePath, type FoundPython } from "../../shared/languages"
 
 export interface ToolPlaces {
   platform: string
@@ -43,6 +43,12 @@ export interface ToolPlaces {
   programData?: string
   /** What was chosen in File ▸ Language Setup… (main/eval/languages.ts): for those languages, the only candidate. */
   chosen?: Partial<Record<Evaluator, string>>
+  /**
+   * Language Setup's own file, when it is there and NOTHING has been read from it yet (held by another program, or
+   * not readable): what was chosen is not known, so every language refuses (`toolEntry`) rather than guess. Once
+   * the file has been read, a later failure keeps the choices last read instead (`createLanguageStore`).
+   */
+  unreadable?: string
   isFile(file: string): boolean
   /**
    * Whether a file is one this app may start as a chosen program: a file (a link followed) marked executable off
@@ -58,8 +64,11 @@ export interface ToolPlaces {
   folders?(dir: string): string[]
 }
 
-/** This machine's places, with Language Setup's choices. Made afresh for every run, so a choice applies at once. */
-export function placesFromProcess(chosen: Partial<Record<Evaluator, string>> = {}): ToolPlaces {
+/**
+ * This machine's places, with Language Setup's choices (and, when its file could never be read, that file). Made
+ * afresh for every run, so a choice applies at once.
+ */
+export function placesFromProcess(chosen: Partial<Record<Evaluator, string>> = {}, unreadable: string | null = null): ToolPlaces {
   const env = process.env
   const windows = process.platform === "win32"
   const isFile = (file: string): boolean => {
@@ -75,6 +84,7 @@ export function placesFromProcess(chosen: Partial<Record<Evaluator, string>> = {
     appData: env.APPDATA ?? "",
     programData: env.ProgramData ?? "",
     chosen,
+    ...(unreadable !== null ? { unreadable } : {}),
     isFile,
     isProgram: windows
       ? (file) => isFile(file) && /\.(exe|com)$/i.test(file)
@@ -124,6 +134,13 @@ export const MAC_ENGINE_WOLFRAMSCRIPT = `${MAC_ENGINE_APP}/Contents/Resources/Wo
 const joiner = (platform: string) => (platform === "win32" ? path.win32 : path.posix)
 
 /**
+ * The Microsoft Store's app execution aliases (`%LOCALAPPDATA%\Microsoft\WindowsApps\python3.exe`, `python.exe`): on
+ * the user PATH of every stock Windows 10/11, and on a machine without the Store's Python only a shortcut that prints
+ * "Python was not found" and exits 9009.
+ */
+export const STORE_ALIAS = /[\\/]Microsoft[\\/]WindowsApps[\\/]/i
+
+/**
  * Every place the tool might be, in the order they are tried. On Windows the Microsoft Store's `python.exe`
  * placeholder (an app execution alias under `...\Microsoft\WindowsApps`) goes LAST: on a machine without the Store's
  * Python it only prints "Python was not found" and exits 9009, and `py.exe` is the real thing when both are there.
@@ -143,7 +160,7 @@ export function toolCandidates(evaluator: Evaluator, places: ToolPlaces): string
   }
   const extra = extraPlaces(evaluator, places)
   const all = [...found, ...extra]
-  const store = (file: string) => /[\\/]Microsoft[\\/]WindowsApps[\\/]/i.test(file)
+  const store = (file: string) => STORE_ALIAS.test(file)
   const unique = [...new Set(all)]
   return [...unique.filter((file) => !store(file)), ...unique.filter(store)]
 }
@@ -223,6 +240,14 @@ export function findTool(evaluator: Evaluator, places: ToolPlaces): string | nul
  * or not — else the first candidate found by itself, exactly as before there was a choice.
  */
 export function toolEntry(evaluator: Evaluator, places: ToolPlaces): ToolEntry {
+  // Language Setup's file is there and nothing could be read from it: whether this language has a choice is not
+  // known, and the copy found by itself might be exactly the one the person moved away from. Said, not guessed.
+  if (places.unreadable !== undefined) {
+    return {
+      path: null, looked: [`${places.unreadable} (Language Setup's choices)`],
+      chosen: { path: places.unreadable, problem: "unreadable" },
+    }
+  }
   const chosen = places.chosen?.[evaluator]
   if (chosen === undefined) return { path: findTool(evaluator, places), looked: lookedFor(evaluator, places) }
   const isProgram = places.isProgram ?? places.isFile
@@ -244,22 +269,80 @@ export function toolReport(places: ToolPlaces): ToolReport {
 }
 
 /**
+ * WHICH PROGRAM A FILE IS, for telling two copies apart (`foundTools`, and "Also on this computer" leaving out the
+ * one in use): two spellings of one file — Homebrew's link and the file it leads to — are one program. EXCEPT A
+ * PYTHON IN A VIRTUAL ENVIRONMENT: a venv's `bin/python3` is a link to the very interpreter it was made from
+ * (measured on this Mac, 2026-10-06: a venv made from `/opt/homebrew/bin/python3` resolves to the same
+ * `Cellar/python@3.14/…/python3.14`), yet it is a different environment — its own packages, its own `pip`. Python
+ * knows it is in one by a `pyvenv.cfg` beside the program or one folder up (`bin/` or `Scripts\`), and so does this:
+ * that folder is the program's identity, and the venv and its base Python are two programs.
+ */
+export function toolIdentity(evaluator: Evaluator, file: string, places: ToolPlaces): string {
+  const real = places.realPath ?? ((one: string) => one)
+  const p = joiner(places.platform)
+  let key = real(file)
+  if (evaluator === "python") {
+    const folder = p.dirname(file)
+    const environment = [folder, p.dirname(folder)].find((dir) => places.isFile(p.join(dir, "pyvenv.cfg")))
+    if (environment !== undefined) key = `venv:${real(environment)}`
+  }
+  return places.platform === "win32" ? key.toLowerCase() : key
+}
+
+/**
  * EVERY COPY FOUND BY ITSELF, in the order a run would try them, for Language Setup's "Also on this computer": the
- * easy way to point at another program is to be shown it. Two spellings of one file — Homebrew's link and the file
- * it leads to — are one copy, under the first spelling (the one a run would use).
+ * easy way to point at another program is to be shown it. Two spellings of one program (`toolIdentity`) are one
+ * copy, under the first spelling (the one a run would use).
  */
 export function foundTools(evaluator: Evaluator, places: ToolPlaces): string[] {
-  const real = places.realPath ?? ((file: string) => file)
   const seen = new Set<string>()
   const found: string[] = []
   for (const file of toolCandidates(evaluator, places)) {
     if (!places.isFile(file)) continue
-    const key = places.platform === "win32" ? real(file).toLowerCase() : real(file)
+    const key = toolIdentity(evaluator, file, places)
     if (seen.has(key)) continue
     seen.add(key)
     found.push(file)
   }
   return found
+}
+
+/** Apple's python3 on every Mac: the real one inside the Command Line Tools or Xcode, or a stand-in until they are there. */
+export const APPLE_PYTHON = "/usr/bin/python3"
+export const MAC_COMMAND_LINE_TOOLS_PYTHON = "/Library/Developer/CommandLineTools/usr/bin/python3"
+
+/**
+ * WHAT A PYTHON FOUND BY ITSELF REALLY IS, when the file system alone can say it is not one a cell can use — read,
+ * never run, because Apple's stand-in asks to install the Command Line Tools when it is merely started, and Language
+ * Setup starts nothing when it opens:
+ *
+ * - `storeAlias`: Windows' Microsoft Store shortcut (`STORE_ALIAS`), on the PATH of every stock Windows.
+ * - `pyLauncher`: a `py.exe` with no Python 3 for it to start — none of python.org's `Python3NN` folders (per user or
+ *   for all users) and no other python.exe found: what uninstalling Python leaves in `C:\Windows`.
+ * - `appleStandIn`: `/usr/bin/python3` on a Mac with neither the Command Line Tools' python3 nor any Xcode's.
+ * - `apple`: Apple's `/usr/bin/python3` WITH them: it runs, and it is an old Python; a newer one is worth offering.
+ *
+ * Null for anything else. The Windows installer's `FindPython` (packaging/installer-tools.ps1) counts neither the
+ * Store's shortcut nor a launcher with nothing behind it, so the screen and the installer agree.
+ */
+export function pythonStandIn(file: string, places: ToolPlaces): FoundPython | null {
+  const p = joiner(places.platform)
+  if (places.platform === "win32") {
+    if (STORE_ALIAS.test(file)) return "storeAlias"
+    if (!/^py(\.exe)?$/i.test(p.basename(file))) return null
+    const local = places.localAppData ? p.join(places.localAppData, "Programs", "Python") : ""
+    const installed = [...(local ? [local] : []), ...places.programFiles]
+      .some((dir) => pythonFolders(places.folders?.(dir) ?? []).some((name) => places.isFile(p.join(dir, name, "python.exe"))))
+    const another = foundTools("python", places)
+      .some((one) => !STORE_ALIAS.test(one) && !/^py(\.exe)?$/i.test(p.basename(one)))
+    return installed || another ? null : "pyLauncher"
+  }
+  if (places.platform === "darwin" && file === APPLE_PYTHON) {
+    const xcodes = new Set(["Xcode.app", ...(places.folders?.("/Applications") ?? []).filter((name) => /^Xcode.*\.app$/i.test(name))])
+    const real = [MAC_COMMAND_LINE_TOOLS_PYTHON, ...[...xcodes].map((app) => `/Applications/${app}/Contents/Developer/usr/bin/python3`)]
+    return real.some((one) => places.isFile(one)) ? "apple" : "appleStandIn"
+  }
+  return null
 }
 
 /** "gcc, clang or cl": a language's program names, as a sentence lists them. */

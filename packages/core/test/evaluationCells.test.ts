@@ -192,6 +192,10 @@ describe("a program chosen in Language Setup (port-only)", () => {
     expect(notOne).toContain("Language Setup")
     expect(refusalMessage({ kind: "missingTool", evaluator: "c", looked: ["gcc, clang, cl on the PATH"] }))
       .toBe("C is not installed where WriteMind looks (gcc, clang, cl on the PATH).")
+    // Language Setup's file could not be read: which program was chosen is not known, and that is what is said.
+    expect(refusalMessage({ kind: "missingTool", evaluator: "python", looked: [], chosen: { path: "/u/languages.json", problem: "unreadable" } }))
+      .toBe("WriteMind could not read Language Setup's choices (“/u/languages.json”), so it does not know which program "
+        + "Python cells run with. It reads that file again at the next run.")
   })
 
   it("builds every missing-tool refusal in one place, with the choice only when the choice is the problem", () => {

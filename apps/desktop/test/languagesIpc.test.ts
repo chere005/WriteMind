@@ -52,10 +52,19 @@ interface Rig {
   finishSetup: ((result: Record<string, string> | null) => void) | null
 }
 
-function rig(options: { setup?: boolean; winget?: boolean; files?: string[] } = {}): Rig {
+/** A Windows machine's places, for the rig's `places` option. */
+const WINDOWS: Partial<ToolPlaces> = {
+  platform: "win32", pathVariable: "C:\\Windows;C:\\Users\\S\\AppData\\Local\\Microsoft\\WindowsApps", home: "C:\\Users\\S",
+  programFiles: ["C:\\Program Files"], localAppData: "C:\\Users\\S\\AppData\\Local",
+  appData: "C:\\Users\\S\\AppData\\Roaming", programData: "C:\\ProgramData",
+}
+const STORE_STUB = "C:\\Users\\S\\AppData\\Local\\Microsoft\\WindowsApps\\python3.exe"
+
+function rig(options: { setup?: boolean; winget?: boolean; files?: string[]; places?: Partial<ToolPlaces> } = {}): Rig {
   const dir = scratch()
   const file = path.join(dir, "languages.json")
-  const store = createLanguageStore(file, "darwin")
+  const platform = options.places?.platform ?? "darwin"
+  const store = createLanguageStore(file, platform)
   const handlers = new Map<string, (event: { sender: FakeSender }, ...args: unknown[]) => unknown>()
   const r: Rig = {
     store, file, pushes: [], asked: [], answer: { canceled: true, filePaths: [] }, identified: [],
@@ -66,8 +75,10 @@ function rig(options: { setup?: boolean; winget?: boolean; files?: string[] } = 
     call: async (channel, ...args) => handlers.get(channel)!({ sender: r.sender }, ...args),
   }
   const places = (): ToolPlaces => ({
-    platform: "darwin", pathVariable: "/usr/bin:/bin", home: "/Users/s", programFiles: [], chosen: store.get(),
+    platform: "darwin", pathVariable: "/usr/bin:/bin", home: "/Users/s", programFiles: [],
     isFile: (one) => r.files.includes(one), isDirectory: (one) => r.dirs.includes(one),
+    ...options.places,
+    chosen: store.get(),
   })
   const runner: Runner = {
     run: async (request) => { r.runs.push(request); return typeof r.runWith === "function" ? r.runWith() : r.runWith },
@@ -87,7 +98,7 @@ function rig(options: { setup?: boolean; winget?: boolean; files?: string[] } = 
     },
   }
   registerLanguages({ handle: (channel: string, fn: never) => { handlers.set(channel, fn) } } as unknown as IpcMain, {
-    store, runner, platform: "darwin", places,
+    store, runner, platform, places,
     ask: async (picker) => { r.asked.push(picker); return r.answer },
     open: (url) => { r.opened.push(url) },
     setup: options.setup === false ? null : setup,
@@ -146,6 +157,44 @@ describe("the screen's questions (registerLanguages)", () => {
     expect(r.pushes[0]!.tools.python.path).toBe("/Users/s/venv/bin/python3")
     // The others: what else is there, not the one in use.
     expect(answer.report.others.python).toEqual(["/usr/bin/python3", "/opt/homebrew/bin/python3"])
+  })
+
+  // BREAK-IT: watched failing against "Also on this computer" keyed by the fully resolved file: the venv's link and
+  // Homebrew's lead to one Cellar file, so Homebrew's Python dropped out of the list the moment the venv was chosen.
+  it("a venv in use still lists the Python it was made from, so there is one click back to it", async () => {
+    const cellar = "/opt/homebrew/Cellar/python@3.14/3.14.7/Frameworks/Python.framework/Versions/3.14/bin/python3.14"
+    const venv = "/Users/s/proj/.venv/bin/python3"
+    const links: Record<string, string> = { "/opt/homebrew/bin/python3": cellar, [venv]: cellar }
+    const r = rig({ files: ["/opt/homebrew/bin/python3", venv, "/Users/s/proj/.venv/pyvenv.cfg"],
+      places: { realPath: (one) => links[one] ?? one } })
+    r.dirs.push("/Users/s/proj/.venv")
+    r.answer = { canceled: false, filePaths: ["/Users/s/proj/.venv"] }
+    const answer = await r.call(LANGUAGE_CHANNELS.choose, "python")
+    expect(answer.report.tools.python.path).toBe(venv)
+    expect(answer.report.others.python).toEqual(["/opt/homebrew/bin/python3"])
+    // And Use takes it back.
+    expect(await r.call(LANGUAGE_CHANNELS.use, "python", "/opt/homebrew/bin/python3")).toMatchObject({ kind: "chosen" })
+    expect(onDisk(r)).toEqual({ version: 1, tools: { python: "/opt/homebrew/bin/python3" } })
+  })
+
+  it("marks a Python found by itself that is only a stand-in, and never a chosen one", async () => {
+    // A stock Windows with no Python: only the Store's shortcut, which the PATH search does find.
+    const bare = rig({ files: [STORE_STUB], places: WINDOWS })
+    const report: LanguageReport = await bare.call(LANGUAGE_CHANNELS.report)
+    expect(report.tools.python.path).toBe(STORE_STUB)
+    expect(report.foundPython).toBe("storeAlias")
+    // A Mac without the Command Line Tools: Apple's stand-in, read and not run.
+    const mac = rig({ files: ["/usr/bin/python3"] })
+    expect((await mac.call(LANGUAGE_CHANNELS.report)).foundPython).toBe("appleStandIn")
+    expect(mac.runs).toEqual([])
+    expect(mac.identified).toEqual([])
+    mac.files.push("/Library/Developer/CommandLineTools/usr/bin/python3")
+    expect((await mac.call(LANGUAGE_CHANNELS.report)).foundPython).toBe("apple")
+    // Chosen: asked its version when it was chosen, so nothing is said about it here.
+    await mac.store.set("python", "/usr/bin/python3")
+    expect((await mac.call(LANGUAGE_CHANNELS.report)).foundPython).toBeNull()
+    // Homebrew's: a Python.
+    expect((await rig({ files: ["/opt/homebrew/bin/python3"] }).call(LANGUAGE_CHANNELS.report)).foundPython).toBeNull()
   })
 
   it("a file that cannot be chosen, or a program that does not answer as one, saves nothing and tells nobody", async () => {
@@ -245,23 +294,63 @@ describe("the screen's questions (registerLanguages)", () => {
     expect(await noWinget.call(LANGUAGE_CHANNELS.setup, "wolfram")).toMatchObject({ kind: "refused" })
     // Activate needs only the script.
     expect(await noWinget.call(LANGUAGE_CHANNELS.setup, "activate")).toEqual({ kind: "started" })
-    const r = rig({ files: [] })
+    // (Windows' places: Install is Windows' alone. Python 3.14 installed per user, where python.org's installer puts it.)
+    const local = "C:\\Users\\S\\AppData\\Local\\Programs\\Python"
+    const r = rig({ files: [], places: { ...WINDOWS, folders: (dir) => (dir === local ? ["Python314"] : []) } })
     expect(await r.call(LANGUAGE_CHANNELS.setup, "python")).toEqual({ kind: "started" })
     expect(r.setups).toEqual([{ action: "python", wolframscript: null }])
     expect(r.pushes.at(-1)!.setup).toEqual({ running: "python", last: null })
     expect(await r.call(LANGUAGE_CHANNELS.setup, "activate")).toEqual({ kind: "refused", problem: "Another setup window is still open." })
-    r.files.push("/usr/bin/python3")
+    r.files.push(`${local}\\Python314\\python.exe`)
     r.finishSetup!({ python: "installed", wolfram: "not asked", activate: "not asked" })
     await new Promise((resolve) => setTimeout(resolve, 0))
     expect(r.pushes.at(-1)!.setup).toEqual({ running: null, last: { action: "python", said: "Python installed." } })
     // The next one may start, and Activate is handed the wolframscript the cells use.
-    r.files.push("/opt/homebrew/bin/wolframscript")
+    const ws = "C:\\Program Files\\Wolfram Research\\WolframScript\\wolframscript.exe"
+    r.files.push(ws)
     expect(await r.call(LANGUAGE_CHANNELS.setup, "activate")).toEqual({ kind: "started" })
-    expect(r.setups.at(-1)).toEqual({ action: "activate", wolframscript: "/opt/homebrew/bin/wolframscript" })
+    expect(r.setups.at(-1)).toEqual({ action: "activate", wolframscript: ws })
     expect(r.pushes.at(-1)!.setup.last).toBeNull()
     r.finishSetup!(null)
     await new Promise((resolve) => setTimeout(resolve, 0))
     expect(r.pushes.at(-1)!.setup.last?.said).toBe("The setup window closed before it finished. The details are in /Users/s/Library/Application Support/WriteMind/tools-setup.log.")
+  })
+
+  // BREAK-IT: watched failing against `foundAfter = tools.python.path !== null`, which the Store's shortcut made true
+  // on every stock Windows.
+  it("an install that leaves only the Store's shortcut is not \"Python installed.\"", async () => {
+    const r = rig({ files: [STORE_STUB], places: WINDOWS })
+    await r.call(LANGUAGE_CHANNELS.setup, "python")
+    r.finishSetup!({ python: "installed", wolfram: "not asked", activate: "not asked" })
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    expect(r.pushes.at(-1)!.setup.last?.said).toBe("Python is installed, but not where WriteMind looks. Use Choose… to point at it.")
+  })
+
+  // BREAK-IT: watched failing against a `last` kept until the next setup: the sign-in sentence stayed under a row
+  // that was already activated.
+  it("a setup's sentence about something not there yet is taken back once it is there; one that ended well stays", async () => {
+    const ws = "C:\\Program Files\\Wolfram Research\\WolframScript\\wolframscript.exe"
+    const r = rig({ files: [ws], places: WINDOWS })
+    await r.call(LANGUAGE_CHANNELS.setup, "activate")
+    r.finishSetup!({ python: "not asked", wolfram: "not asked", activate: "opened" })
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    const opened = "Sign in with your Wolfram ID in the window that opened. WriteMind looks again when you come back."
+    expect(r.pushes.at(-1)!.setup.last).toEqual({ action: "activate", said: opened })
+    // Not signed in yet: the sentence stays.
+    expect(((await r.call(LANGUAGE_CHANNELS.report)) as LanguageReport).setup.last?.said).toBe(opened)
+    // Signed in: the licence is there, and the next look says nothing about a window that is done.
+    r.files.push("C:\\Users\\S\\AppData\\Roaming\\WolframEngine\\Licensing\\mathpass")
+    const after: LanguageReport = await r.call(LANGUAGE_CHANNELS.report)
+    expect(after.licence).toBe(true)
+    expect(after.setup.last).toBeNull()
+    // "Python installed." was true when it was said: a look does not take it back.
+    const local = "C:\\Users\\S\\AppData\\Local\\Programs\\Python"
+    const p = rig({ files: [], places: { ...WINDOWS, folders: (dir) => (dir === local ? ["Python314"] : []) } })
+    await p.call(LANGUAGE_CHANNELS.setup, "python")
+    p.files.push(`${local}\\Python314\\python.exe`)
+    p.finishSetup!({ python: "installed", wolfram: "not asked", activate: "not asked" })
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    expect(((await p.call(LANGUAGE_CHANNELS.report)) as LanguageReport).setup.last?.said).toBe("Python installed.")
   })
 
   it("opens only the pages it names", async () => {
@@ -339,23 +428,6 @@ describe("the choices on disk (createLanguageStore)", () => {
       await store.set("rust", "/s/rustc")
       expect(readdirSync(dir).filter((name) => name.startsWith("languages.unreadable-")).length).toBe(1)
     }
-    // A file that cannot be read at all (held by another program): no choices, asked again at every look, and kept
-    // aside before a write replaces it.
-    const reads: string[] = []
-    const copies: string[] = []
-    const locked = createLanguageStore("/p/languages.json", "darwin", {
-      stat: () => ({ mtimeMs: 1, size: 10 }),
-      read: (one) => { reads.push(one); throw Object.assign(new Error("EBUSY"), { code: "EBUSY" }) },
-      write: async () => {},
-      copy: (_from, to) => { copies.push(to) },
-      makeFolder: () => {},
-    })
-    expect(locked.get()).toEqual({})
-    expect(locked.get()).toEqual({})
-    expect(reads.length).toBe(2)
-    await locked.set("rust", "/r/rustc")
-    expect(copies.length).toBe(1)
-    expect(copies[0]).toMatch(/\/p\/languages\.unreadable-\d+\.json$/)
     // A file it took whole is simply replaced.
     const dir = scratch()
     const file = path.join(dir, "languages.json")
@@ -364,5 +436,90 @@ describe("the choices on disk (createLanguageStore)", () => {
     await store.set("rust", "/r/rustc")
     expect(readdirSync(dir).filter((name) => name.startsWith("languages.unreadable-"))).toEqual([])
     expect(store.get()).toEqual({ python: "/a/bin/python3", rust: "/r/rustc" })
+  })
+
+  /** A file held by another program while `locked` says so: every read throws EBUSY, and every write is kept. */
+  function lockable(text: string) {
+    const disk = { text, mtimeMs: 1, locked: false }
+    const reads: string[] = []
+    const writes: string[] = []
+    const copies: string[] = []
+    const fsDeps = {
+      stat: () => ({ mtimeMs: disk.mtimeMs, size: disk.text.length }),
+      read: (one: string) => {
+        reads.push(one)
+        if (disk.locked) throw Object.assign(new Error("EBUSY: resource busy or locked"), { code: "EBUSY" })
+        return disk.text
+      },
+      write: async (_one: string, next: string) => { writes.push(next); disk.text = next; disk.mtimeMs++ },
+      copy: (_from: string, to: string) => { copies.push(to) },
+      makeFolder: () => {},
+    }
+    return { disk, reads, writes, copies, fsDeps }
+  }
+
+  // BREAK-IT: watched failing against a store that read a locked file as "no choices": every run fell back to the
+  // copy found by itself, and the set that followed wrote `{ rust }` over the person's Python and Wolfram.
+  it("a file held by another program keeps the choices last read, refuses a write, and is asked again at every look", async () => {
+    const lock = lockable(writeLanguageSettings({ python: "/v/bin/python3", wolfram: "/w/wolframscript" }))
+    const store = createLanguageStore(path.join("/p", "languages.json"), "darwin", lock.fsDeps)
+    expect(store.get()).toEqual({ python: "/v/bin/python3", wolfram: "/w/wolframscript" })
+    // Held, and changed in the meantime (so the store must read it again): the last choices stay the choices.
+    lock.disk.locked = true
+    lock.disk.mtimeMs = 50
+    expect(store.get()).toEqual({ python: "/v/bin/python3", wolfram: "/w/wolframscript" })
+    expect(store.get()).toEqual({ python: "/v/bin/python3", wolfram: "/w/wolframscript" })
+    expect(lock.reads.length).toBe(3)
+    expect(store.unreadable()).toBeNull()
+    // A choice made now is refused, and nothing is copied or written.
+    await expect(store.set("rust", "/r/rustc")).rejects.toThrow(/languages\.json could not be read just now \(EBUSY\)/)
+    expect(lock.writes).toEqual([])
+    expect(lock.copies).toEqual([])
+    // Let go: the next choice is written over what the file says, every other language kept.
+    lock.disk.locked = false
+    await store.set("rust", "/r/rustc")
+    expect(lock.writes.length).toBe(1)
+    expect(JSON.parse(lock.writes[0]!)).toEqual({ version: 1, tools: { wolfram: "/w/wolframscript", python: "/v/bin/python3", rust: "/r/rustc" } })
+    expect(lock.copies).toEqual([])
+  })
+
+  it("a file that could never be read is named, so every language refuses rather than guess, and nothing is written over it", async () => {
+    const lock = lockable(writeLanguageSettings({ python: "/v/bin/python3" }))
+    lock.disk.locked = true
+    const file = path.join("/p", "languages.json")
+    const store = createLanguageStore(file, "darwin", lock.fsDeps)
+    expect(store.get()).toEqual({})
+    expect(store.unreadable()).toBe(file)
+    await expect(store.set("rust", "/r/rustc")).rejects.toThrow(/could not be read just now/)
+    await expect(store.set("python", null)).rejects.toThrow(/could not be read just now/)
+    expect(lock.writes).toEqual([])
+    // Let go: read, named no more, and the choice in it is the choice.
+    lock.disk.locked = false
+    expect(store.get()).toEqual({ python: "/v/bin/python3" })
+    expect(store.unreadable()).toBeNull()
+    // Held again after a read: the choices last read, not "nothing known".
+    lock.disk.locked = true
+    lock.disk.mtimeMs = 99
+    expect(store.unreadable()).toBeNull()
+    expect(store.get()).toEqual({ python: "/v/bin/python3" })
+    // No file at all is not unreadable: it is no choices.
+    const none = createLanguageStore(file, "darwin", { ...lock.fsDeps, stat: () => null })
+    expect(none.unreadable()).toBeNull()
+  })
+
+  // The mode does not hold on Windows, nor for root.
+  it.skipIf(process.platform === "win32" || process.getuid?.() === 0)("the IPC says a refused write in the row, and saves nothing", async () => {
+    const r = rig()
+    await r.store.set("wolfram", "/w/wolframscript")
+    chmodSync(r.file, 0o000)
+    const later = new Date(Date.now() + 5000)
+    utimesSync(r.file, later, later)
+    try {
+      expect(await r.call(LANGUAGE_CHANNELS.use, "python", "/opt/homebrew/bin/python3")).toMatchObject({
+        kind: "refused", problem: expect.stringMatching(/^WriteMind could not save the choice: languages\.json could not be read just now \(EACCES\)/),
+      })
+      expect(r.store.get()).toEqual({ wolfram: "/w/wolframscript" })
+    } finally { chmodSync(r.file, 0o644) }
+    expect(onDisk(r)).toEqual({ version: 1, tools: { wolfram: "/w/wolframscript" } })
   })
 })

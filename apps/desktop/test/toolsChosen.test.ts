@@ -6,8 +6,9 @@
 import { describe, expect, it } from "vitest"
 import type { Evaluator } from "@writemind/core"
 import {
-  choiceProblem, findTool, flavorOf, foundTools, identifyArguments, interpreterArguments, lookedFor, MAC_ENGINE_WOLFRAMSCRIPT,
-  resolveChoice, toolEntry, toolReport, wolframLicence, type ToolPlaces,
+  APPLE_PYTHON, choiceProblem, findTool, flavorOf, foundTools, identifyArguments, interpreterArguments, lookedFor,
+  MAC_COMMAND_LINE_TOOLS_PYTHON, MAC_ENGINE_WOLFRAMSCRIPT, pythonStandIn, resolveChoice, toolEntry, toolIdentity, toolReport,
+  wolframLicence, type ToolPlaces,
 } from "../src/main/eval/tools"
 
 interface Fake {
@@ -17,19 +18,23 @@ interface Fake {
   dirs?: string[]
   links?: Record<string, string>
   chosen?: Partial<Record<Evaluator, string>>
+  /** The folders inside a folder (`ToolPlaces.folders`), for the install folders with a version in their name. */
+  inside?: Record<string, string[]>
+  pathVariable?: string
 }
 
 const mac = (fake: Fake = {}): ToolPlaces => ({
-  platform: "darwin", pathVariable: "/usr/bin:/bin:/usr/sbin:/sbin", home: "/Users/s", programFiles: [],
+  platform: "darwin", pathVariable: fake.pathVariable ?? "/usr/bin:/bin:/usr/sbin:/sbin", home: "/Users/s", programFiles: [],
   chosen: fake.chosen ?? {},
   isFile: (file) => (fake.files ?? []).includes(file) || (fake.notPrograms ?? []).includes(file),
   isProgram: (file) => (fake.files ?? []).includes(file),
   isDirectory: (file) => (fake.dirs ?? []).includes(file),
   realPath: (file) => fake.links?.[file] ?? file,
+  folders: (dir) => fake.inside?.[dir] ?? [],
 })
-const linux = (fake: Fake = {}): ToolPlaces => ({ ...mac(fake), platform: "linux", pathVariable: "/usr/local/bin:/usr/bin" })
+const linux = (fake: Fake = {}): ToolPlaces => ({ ...mac(fake), platform: "linux", pathVariable: fake.pathVariable ?? "/usr/local/bin:/usr/bin" })
 const windows = (fake: Fake = {}): ToolPlaces => ({
-  platform: "win32", pathVariable: "C:\\Windows;C:\\Users\\S\\AppData\\Local\\Microsoft\\WindowsApps", home: "C:\\Users\\S",
+  platform: "win32", pathVariable: fake.pathVariable ?? "C:\\Windows;C:\\Users\\S\\AppData\\Local\\Microsoft\\WindowsApps", home: "C:\\Users\\S",
   programFiles: ["C:\\Program Files"], localAppData: "C:\\Users\\S\\AppData\\Local",
   appData: "C:\\Users\\S\\AppData\\Roaming", programData: "C:\\ProgramData",
   chosen: fake.chosen ?? {},
@@ -37,6 +42,7 @@ const windows = (fake: Fake = {}): ToolPlaces => ({
   isProgram: (file) => (fake.files ?? []).includes(file) && /\.(exe|com)$/i.test(file),
   isDirectory: (file) => (fake.dirs ?? []).includes(file),
   realPath: (file) => fake.links?.[file] ?? file,
+  folders: (dir) => fake.inside?.[dir] ?? [],
 })
 
 describe("a chosen program is the only one its language uses", () => {
@@ -78,6 +84,16 @@ describe("a chosen program is the only one its language uses", () => {
     expect(findTool("python", places)).toBeNull()
   })
 
+  // BREAK-IT: watched failing against a toolEntry that read an unreadable file as "no choices" and ran the copy found.
+  it("refuses every language, naming the file, when Language Setup's file is there and nothing could be read from it", () => {
+    const places = { ...mac({ files: ["/usr/bin/python3", "/opt/homebrew/bin/wolframscript"] }), unreadable: "/u/languages.json" }
+    for (const evaluator of ["python", "wolfram", "c"] as const) {
+      expect(toolEntry(evaluator, places), evaluator).toEqual({
+        path: null, looked: ["/u/languages.json (Language Setup's choices)"], chosen: { path: "/u/languages.json", problem: "unreadable" },
+      })
+    }
+  })
+
   it("takes a chosen py.exe with -3 and a chosen cl.exe with its own flags, as the PATH's would be", () => {
     expect(interpreterArguments("D:\\Tools\\py.exe")).toEqual(["-3"])
     expect(flavorOf("D:\\VS\\VC\\Tools\\MSVC\\14.40\\bin\\Hostx64\\x64\\cl.exe")).toBe("msvc")
@@ -106,6 +122,30 @@ describe("the other copies found by themselves (foundTools)", () => {
     expect(foundTools("rust", mac())).toEqual([])
   })
 
+  // BREAK-IT: watched failing against the fully resolved file as the only identity: the venv and Homebrew's Python
+  // came out as one copy, and the venv's base disappeared from "Also on this computer".
+  it("keeps a venv apart from the Python it was made from, though its link leads to the same file (measured)", () => {
+    const cellar = "/opt/homebrew/Cellar/python@3.14/3.14.7/Frameworks/Python.framework/Versions/3.14/bin/python3.14"
+    const venv = "/Users/s/proj/.venv/bin/python3"
+    const links = { "/opt/homebrew/bin/python3": cellar, [venv]: cellar, "/Users/s/proj/.venv/bin/python": cellar }
+    const files = ["/opt/homebrew/bin/python3", venv, "/Users/s/proj/.venv/bin/python", "/Users/s/proj/.venv/pyvenv.cfg"]
+    const places = mac({ files, links, pathVariable: "/Users/s/proj/.venv/bin:/usr/bin:/bin" })
+    expect(toolIdentity("python", venv, places)).not.toBe(toolIdentity("python", "/opt/homebrew/bin/python3", places))
+    // One venv, two spellings: one copy. Homebrew's is still its own.
+    expect(foundTools("python", places)).toEqual([venv, "/opt/homebrew/bin/python3"])
+    // Linux, started from a shell with the venv activated: the system's Python is still found, so it can be Used.
+    const usr = { "/usr/bin/python3": "/usr/bin/python3.12", "/home/s/venv/bin/python3": "/usr/bin/python3.12" }
+    const shell = linux({ files: ["/home/s/venv/bin/python3", "/home/s/venv/pyvenv.cfg", "/usr/bin/python3"], links: usr,
+      pathVariable: "/home/s/venv/bin:/usr/bin" })
+    expect(foundTools("python", shell)).toEqual(["/home/s/venv/bin/python3", "/usr/bin/python3"])
+    // Windows keeps pyvenv.cfg beside Scripts, and case does not matter.
+    const win = windows({ files: ["C:\\v\\Scripts\\python.exe", "C:\\v\\pyvenv.cfg"], links: { "C:\\v\\Scripts\\python.exe": "C:\\P\\python.exe" } })
+    expect(toolIdentity("python", "C:\\v\\Scripts\\python.exe", win)).toBe("venv:c:\\v")
+    // Not a Python: a link and its file are one program, as before.
+    expect(toolIdentity("wolfram", "/opt/homebrew/bin/wolframscript", mac({ links: { "/opt/homebrew/bin/wolframscript": MAC_ENGINE_WOLFRAMSCRIPT } })))
+      .toBe(MAC_ENGINE_WOLFRAMSCRIPT)
+  })
+
   it("finds the Wolfram Engine the DMG installed, from a Finder-launched app's PATH, with no Homebrew", () => {
     const places = mac({ files: [MAC_ENGINE_WOLFRAMSCRIPT] })
     expect(findTool("wolfram", places)).toBe(MAC_ENGINE_WOLFRAMSCRIPT)
@@ -115,6 +155,40 @@ describe("the other copies found by themselves (foundTools)", () => {
       "/usr/local/bin/wolframscript", "/Applications/Wolfram Engine.app"])
     // Linux has no such app.
     expect(lookedFor("wolfram", linux())).toEqual(["wolframscript on the PATH", "/opt/homebrew/bin/wolframscript", "/usr/local/bin/wolframscript"])
+  })
+})
+
+describe("a Python found by itself that is only a stand-in (pythonStandIn), read and never run", () => {
+  const STORE = "C:\\Users\\S\\AppData\\Local\\Microsoft\\WindowsApps\\python3.exe"
+
+  it("Windows: the Store's shortcut always; a py launcher only with no Python 3 for it to start", () => {
+    expect(pythonStandIn(STORE, windows({ files: [STORE] }))).toBe("storeAlias")
+    expect(pythonStandIn("C:\\Windows\\py.exe", windows({ files: ["C:\\Windows\\py.exe", STORE] }))).toBe("pyLauncher")
+    // A python.org install behind it, per user or for everyone: a real one.
+    const local = "C:\\Users\\S\\AppData\\Local\\Programs\\Python"
+    expect(pythonStandIn("C:\\Windows\\py.exe", windows({ files: ["C:\\Windows\\py.exe", `${local}\\Python314\\python.exe`],
+      inside: { [local]: ["Launcher", "Python314"] } }))).toBeNull()
+    expect(pythonStandIn("C:\\Windows\\py.exe", windows({ files: ["C:\\Windows\\py.exe", "C:\\Program Files\\Python313\\python.exe"],
+      inside: { "C:\\Program Files": ["Python313"] } }))).toBeNull()
+    // An empty Python314 folder left behind is not a Python.
+    expect(pythonStandIn("C:\\Windows\\py.exe", windows({ files: ["C:\\Windows\\py.exe"], inside: { [local]: ["Python314"] } }))).toBe("pyLauncher")
+    // Another python.exe on the PATH: the launcher has something to start.
+    expect(pythonStandIn("C:\\Windows\\py.exe", windows({ files: ["C:\\Windows\\py.exe", "C:\\Python312\\python.exe"],
+      pathVariable: "C:\\Windows;C:\\Python312" }))).toBeNull()
+    expect(pythonStandIn("C:\\Python312\\python.exe", windows({ files: ["C:\\Python312\\python.exe"] }))).toBeNull()
+  })
+
+  it("a Mac: Apple's /usr/bin/python3 is a stand-in until the Command Line Tools' or an Xcode's python3 is there", () => {
+    expect(pythonStandIn(APPLE_PYTHON, mac({ files: [APPLE_PYTHON] }))).toBe("appleStandIn")
+    expect(MAC_COMMAND_LINE_TOOLS_PYTHON).toBe("/Library/Developer/CommandLineTools/usr/bin/python3")
+    expect(pythonStandIn(APPLE_PYTHON, mac({ files: [APPLE_PYTHON, MAC_COMMAND_LINE_TOOLS_PYTHON] }))).toBe("apple")
+    // Measured on this Mac, 2026-10-06: Xcode's own python3.
+    expect(pythonStandIn(APPLE_PYTHON, mac({ files: [APPLE_PYTHON, "/Applications/Xcode.app/Contents/Developer/usr/bin/python3"] }))).toBe("apple")
+    expect(pythonStandIn(APPLE_PYTHON, mac({ files: [APPLE_PYTHON, "/Applications/Xcode-beta.app/Contents/Developer/usr/bin/python3"],
+      inside: { "/Applications": ["Xcode-beta.app", "Safari.app"] } }))).toBe("apple")
+    expect(pythonStandIn("/opt/homebrew/bin/python3", mac({ files: ["/opt/homebrew/bin/python3"] }))).toBeNull()
+    // Linux's /usr/bin/python3 is a Python.
+    expect(pythonStandIn(APPLE_PYTHON, linux({ files: [APPLE_PYTHON] }))).toBeNull()
   })
 })
 

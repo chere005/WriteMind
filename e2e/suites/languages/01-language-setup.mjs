@@ -4,7 +4,8 @@
 // chosen through the picker; with an `eval python` note open, deleting it and bringing the window back to the front
 // turns the cell's mark amber with the refusal's words, Shift+Enter says the same, Runs As ▸ Language Setup… opens
 // the screen at Python, and Find Automatically puts the row back. On Windows with the installer's script and winget,
-// Install Python… runs it as a dry run (WRITEMIND_E2E) and the row says so. Escape closes the screen.
+// Install Python… runs it as a dry run (WRITEMIND_E2E) and the row says so — offered on a machine whose only python
+// is the Microsoft Store's shortcut too. Escape closes the screen, from wherever the last press left the keyboard.
 import fs from "node:fs"
 import os from "node:os"
 import path from "node:path"
@@ -90,7 +91,8 @@ if (posix) {
   ok("a choice has Find Automatically", await press(row("python", '[data-language-action="automatic"]')))
   await waitFor(`!/you chose/.test(document.querySelector('${row("python", "[data-language-source]")}')?.textContent ?? "you chose")`, 8000)
   const after = await text(row("python", "[data-language-source]"))
-  ok("the row is back to what WriteMind finds by itself", after === "Found automatically." || after.startsWith("Not found."), after)
+  // ("Found automatically, but this is Apple's stand-in…" on a Mac without the Command Line Tools.)
+  ok("the row is back to what WriteMind finds by itself", after.startsWith("Found automatically") || after.startsWith("Not found."), after)
   ok("with no Find Automatically any more", !(await js(`!!document.querySelector('${row("python", '[data-language-action="automatic"]')}')`)))
   ok("and the main process keeps no choice", (await J(`window.wm.languages.report()`)).tools.python.chosen === undefined)
   await shot("automatic")
@@ -114,10 +116,12 @@ if (process.platform === "win32") {
   }
 }
 
-// Escape closes it.
+// Escape closes it — with the keyboard wherever the last press left it (Find Automatically and Install… take their
+// own buttons away; the dialog gives the keyboard back to the row, so nothing is focused by hand here).
 if (!(await js(`!!document.querySelector('[data-modal="languages"]')`))) await menuClick("languageSetup")
 await waitFor(`!!document.querySelector('[data-modal="languages"]')`, 8000)
-await js(`document.querySelector('[data-modal="languages"] [data-modal="ok"]')?.focus()`)
+await sleep(300)
+ok("the keyboard is still in the dialog", await js(`!!document.activeElement?.closest('[data-modal="languages"]')`))
 await key("Escape")
 await sleep(300)
 ok("Escape closes Language Setup", !(await js(`!!document.querySelector('[data-modal="languages"]')`)))

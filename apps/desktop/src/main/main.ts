@@ -516,7 +516,7 @@ app.whenReady().then(async () => {
   // File ▸ Language Setup…'s questions: what is in use (the file system only), Choose…, Use, Find Automatically, Test.
   registerLanguages(ipcMain, {
     store: languages, runner, platform: process.platform,
-    places: () => placesFromProcess(languages.get()),
+    places: () => placesFromProcess(languages.get(), languages.unreadable()),
     // askOpen: an end-to-end script names its answer ahead of time (WRITEMIND_E2E).
     ask: (options) => (window ? askOpen(window, options as Electron.OpenDialogOptions) : Promise.resolve({ canceled: true, filePaths: [] })),
     open: (url) => shell.openExternal(url),

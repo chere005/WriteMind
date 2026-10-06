@@ -711,7 +711,9 @@ class EvalPlugin {
         // for it in Language Setup, that program is not there any more.
         const gone = document.createElement("span")
         gone.className = "wm-eval-gone"
-        gone.textContent = tools[evaluator].chosen ? "not there" : "not installed"
+        // (or Language Setup's own file could not be read, so which program it is set to is not known yet)
+        const chosen = tools[evaluator].chosen
+        gone.textContent = chosen?.problem === "unreadable" ? "not known" : chosen ? "not there" : "not installed"
         item.appendChild(gone)
         item.title = refusalMessage(missingToolRefusal(evaluator, tools[evaluator]))
       }

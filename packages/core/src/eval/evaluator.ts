@@ -167,8 +167,10 @@ export function isToolName(evaluator: Evaluator, basename: string): boolean {
 /**
  * Why a program chosen in File ▸ Language Setup… cannot be run. Port-only: the Mac's `evalTool.<name>` falls through
  * to the candidates instead; here a choice is the only one its language uses, so a choice that has gone is said.
+ * `unreadable` is the one that names no program: Language Setup's own file is there and nothing could be read from
+ * it, so which program was chosen is not known (the `path` beside it is that file's).
  */
-export type ChosenProblem = "gone" | "notAProgram"
+export type ChosenProblem = "gone" | "notAProgram" | "unreadable"
 
 /** Why a cell will not run. Every one is a sentence a person can act on; none spawns anything or writes a cell. */
 export type Refusal =
@@ -191,6 +193,12 @@ export function refusalMessage(refusal: Refusal): string {
     }
     case "missingTool": {
       const chosen = refusal.chosen
+      // NOT KNOWING WHAT WAS CHOSEN IS SAID TOO, for the same reason: the program found by itself may be the very
+      // one the person chose away from.
+      if (chosen?.problem === "unreadable") {
+        return `WriteMind could not read Language Setup's choices (“${chosen.path}”), so it does not know which `
+          + `program ${evaluatorTitle(refusal.evaluator)} cells run with. It reads that file again at the next run.`
+      }
       // A CHOSEN PROGRAM THAT HAS GONE IS SAID, not quietly swapped for another: the person chose it for a reason
       // (a venv, a newer engine), and a cell that ran on something else would answer as if nothing had changed.
       if (chosen) {

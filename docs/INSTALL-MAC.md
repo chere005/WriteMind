@@ -108,13 +108,17 @@ also looks in Homebrew's folders (`/opt/homebrew/bin`, `/usr/local/bin`) and, fo
 - **To use another Python** — a virtual environment, a Homebrew one — press **Choose…** in the
   Python row and pick the program or the environment's folder (⇧⌘G takes a pasted path, and the
   picker shows hidden folders such as `.venv`). Copies WriteMind found by itself are listed under
-  **Also on this computer**, each with **Use**. WriteMind asks the program its version before it
-  keeps the choice, and **Test** runs a small program with it.
+  **Also on this computer**, each with **Use** — with a virtual environment in use, that includes the
+  Python it was made from, so there is one click back to it. WriteMind asks the program its version
+  before it keeps the choice, and **Test** runs a small program with it.
 - **A program you chose is the only one that language uses.** If it goes (the venv deleted), the row
   and the cell say so, and nothing runs until you choose another or press **Find Automatically**.
-- **Not installed:** **Get Python…** and **Get Wolfram Engine…** open the download pages. Apple's
-  `/usr/bin/python3` asks to install the Command Line Tools the first time it runs; Language Setup
-  never runs it until you press something.
+- **Not installed:** **Get Python…** and **Get Wolfram Engine…** open the download pages.
+- **Only Apple's python3:** every Mac has `/usr/bin/python3`, so the Python row always finds
+  something. Without Apple's Command Line Tools it is only a stand-in (it asks to install them the
+  first time it runs): the row says so in amber — telling from the files alone, without running it —
+  with `xcode-select --install` to copy and **Get Python…**. With them it runs, and the row still
+  offers **Get Python…** for a newer, more complete Python (python.org's, or Homebrew's).
 - **The Wolfram Engine not activated yet:** the row shows the command to run once in Terminal
   (`… -activate`, with your own Wolfram ID), with a button to copy it.
 

@@ -83,7 +83,11 @@ row says which program its cells run with and where it came from:
   app) in a window of its own, exactly as the installer's tick boxes do; Install Wolfram Engine…
   opens the sign-in window afterwards. WriteMind looks again when that window closes and says what
   happened in the row. Without winget the rows offer **Get Python…** / **Get Wolfram Engine…** (the
-  download pages) instead.
+  download pages) instead. **A Windows with no Python counts as not found** even though it has a
+  `python3.exe`: the one in `%LOCALAPPDATA%\Microsoft\WindowsApps` is only the Microsoft Store's
+  shortcut, and a `py.exe` left behind after Python was uninstalled has nothing to start. The row
+  says which it found, in amber, and offers Install Python… all the same — as the installer's own
+  page does, which does not count either of them.
 - **Activate…** (the Wolfram row, when there is no licence file yet) opens the engine's own sign-in
   window for the `wolframscript.exe` your cells use. You type your Wolfram ID there; WriteMind never
   sees it.

@@ -181,7 +181,10 @@ is how the code is put together.
   only one that language uses: if it goes, the cell says so rather than
   quietly running another. On Windows it installs Python or the Wolfram Engine
   and opens the engine's sign-in window with the installer's own script;
-  elsewhere it opens the download pages and gives the command to activate.
+  elsewhere it opens the download pages and gives the command to activate. A
+  python that is only a stand-in — the Microsoft Store's shortcut on a stock
+  Windows, Apple's `/usr/bin/python3` without the Command Line Tools — is said
+  to be one, and the row offers to install or get a real Python.
 - **Strikethrough.** ⇧⌘X, written `~~like this~~`, struck through in the
   editor and in the preview.
 - **Crop a picture.** Select one and the crop button sits at its bottom

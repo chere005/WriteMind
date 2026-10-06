@@ -18,24 +18,34 @@ import { copyFileSync, mkdirSync, readFileSync, statSync } from "node:fs"
 import * as path from "node:path"
 import type { IpcMain, WebContents } from "electron"
 import {
-  EVALUATORS, identified, isEvaluator, TEST_SOURCE, tested, type Evaluator, type TestAnswer,
+  EVALUATORS, identified, isEvaluator, TEST_SOURCE, tested, type Evaluator, type TestAnswer, type ToolReport,
 } from "@writemind/core"
 import {
-  isLinkId, isSetupAction, LANGUAGE_CHANNELS, LINKS, pickerOptions, readLanguageSettings, setupSentence,
-  writeLanguageSettings, type ChooseAnswer, type LanguageReport, type PickerOptions, type SetupAction, type SetupAnswer,
+  isLinkId, isPlaceholder, isSetupAction, LANGUAGE_CHANNELS, LINKS, pickerOptions, readLanguageSettings, setupSentence,
+  writeLanguageSettings, type ChooseAnswer, type FoundPython, type LanguageReport, type PickerOptions, type SetupAction,
+  type SetupAnswer,
 } from "../../shared/languages"
 import { writeFileAtomic } from "../atomic"
 import type { Runner } from "./runner"
 import {
-  choiceProblem, foundTools, identifyArguments, resolveChoice, toolReport, wolframLicence, type ToolPlaces,
+  choiceProblem, foundTools, identifyArguments, pythonStandIn, resolveChoice, STORE_ALIAS, toolIdentity, toolReport,
+  wolframLicence, type ToolPlaces,
 } from "./tools"
 
 // MARK: - The choices
 
 export interface LanguageStore {
-  /** The choices as the file has them now: read again whenever the file changed (a hand edit, a folder move). */
+  /**
+   * The choices as the file has them now: read again whenever the file changed (a hand edit, a folder move). A file
+   * that cannot be read just now leaves the choices last read.
+   */
   get(): Partial<Record<Evaluator, string>>
-  /** Choose (a path) or forget (null) one language's program: written first, and only then taken as the choice. */
+  /** The file, when it is there and nothing has been read from it yet: the choices are not known at all. Else null. */
+  unreadable(): string | null
+  /**
+   * Choose (a path) or forget (null) one language's program: written first, and only then taken as the choice.
+   * Refused while the file is there and cannot be read: the other languages' choices would be written over.
+   */
   set(evaluator: Evaluator, file: string | null): Promise<void>
 }
 
@@ -71,12 +81,23 @@ const realFs: StoreFs = {
  * A file that is there but could not be taken whole (not JSON, another version, an entry the reader dropped) is
  * copied aside as `languages.unreadable-<time>.json` before the first write replaces it — the sheets.ts rule: a
  * person's file is never lost to a write of ours.
+ *
+ * A FILE THAT CANNOT BE READ AT ALL (held by another program for a moment — a backup, a virus scan, OneDrive — or
+ * not readable) IS NOT "NO CHOICES". The choices last read stay the choices, and it is asked again at the next
+ * look; when nothing has been read from it yet, `unreadable()` names it, and every language refuses to run rather
+ * than quietly use the program it finds by itself (tools.ts `toolEntry`) — the outcome the no-fallback rule is
+ * there to prevent. And no choice is written while it cannot be read: a write from what is not known would put
+ * one language's choice where all of them were.
  */
 export function createLanguageStore(file: string, platform: string, fsDeps: StoreFs = realFs): LanguageStore {
   let memory: Partial<Record<Evaluator, string>> = {}
   /** The file as it was when `memory` was read from it (null: no file); undefined until it has been looked at. */
   let seen: { mtimeMs: number; size: number } | null | undefined
   let keepAside = false
+  /** Why the last look could not read the file that is there (null: it could, or there is none). */
+  let unread: string | null = null
+  /** Whether `memory` is what the file said at some point (or that there was none): false until a look succeeds. */
+  let known = false
   let queue: Promise<unknown> = Promise.resolve()
 
   const sameFile = (a: { mtimeMs: number; size: number } | null, b: { mtimeMs: number; size: number } | null) =>
@@ -95,27 +116,46 @@ export function createLanguageStore(file: string, platform: string, fsDeps: Stor
   function get(): Partial<Record<Evaluator, string>> {
     const now = fsDeps.stat(file)
     if (seen !== undefined && sameFile(now, seen)) return memory
-    seen = now
-    if (now === null) { memory = {}; keepAside = false; return memory }
+    if (now === null) {
+      seen = now
+      memory = {}
+      keepAside = false
+      unread = null
+      known = true
+      return memory
+    }
     let text: string
     try {
       text = fsDeps.read(file)
-    } catch {
-      // Locked or unreadable: no choices for now (asked again at the next look, a lock being a moment's), and the
-      // file is kept aside before anything replaces it.
-      memory = {}
-      keepAside = true
+    } catch (error) {
+      // Locked or unreadable: THE CHOICES LAST READ STAY THE CHOICES (none known, if nothing was ever read), and the
+      // file is asked again at the next look — a lock is a moment's.
+      unread = (error as NodeJS.ErrnoException)?.code ?? (error instanceof Error ? error.message : String(error))
       seen = undefined
       return memory
     }
+    seen = now
+    unread = null
+    known = true
     memory = readLanguageSettings(text, platform)
     keepAside = text.trim().length > 0 && !takenWhole(text, memory)
     return memory
   }
 
+  function unreadable(): string | null {
+    get()
+    return unread !== null && !known ? file : null
+  }
+
   function set(evaluator: Evaluator, chosen: string | null): Promise<void> {
     const turn = queue.then(async () => {
-      const next = { ...get() }
+      const base = get()
+      // Written from what the file says, or not at all: from the choices last read, a lock released a moment later
+      // would let this write put one language's choice over everything a hand edit or another window had added.
+      if (unread !== null) {
+        throw new Error(`${path.basename(file)} could not be read just now (${unread}), and writing it would lose the other choices in it. Try again in a moment`)
+      }
+      const next = { ...base }
       if (chosen === null) delete next[evaluator]
       else next[evaluator] = chosen
       fsDeps.makeFolder(path.dirname(file))
@@ -136,7 +176,7 @@ export function createLanguageStore(file: string, platform: string, fsDeps: Stor
     return turn
   }
 
-  return { get, set }
+  return { get, unreadable, set }
 }
 
 // MARK: - The screen's questions
@@ -150,7 +190,10 @@ export interface LanguagesHost {
   store: LanguageStore
   runner: Runner
   platform: string
-  /** This machine's places with the store's choices (`placesFromProcess(store.get())`), afresh for each question. */
+  /**
+   * This machine's places with the store's choices (`placesFromProcess(store.get(), store.unreadable())`), afresh
+   * for each question.
+   */
   places(): ToolPlaces
   /** The open panel (main.ts `askOpen`, which an end-to-end script can answer ahead of time). */
   ask(options: PickerOptions): Promise<{ canceled: boolean; filePaths: string[] }>
@@ -169,15 +212,35 @@ export interface LanguagesHost {
 /** Larger than any path; a payload past it is not one. */
 const MAX_FILE = 4096
 
-/** The Store's app execution aliases: in use when nothing else is there, never offered as "also on this computer". */
-const STORE_ALIAS = /[\\/]Microsoft[\\/]WindowsApps[\\/]/i
-
 const identifyId = (evaluator: Evaluator) => `languages:identify:${evaluator}`
 const testId = (evaluator: Evaluator) => `languages:test:${evaluator}`
 
+/** What the Python in use really is, when it was found by itself (a choice was asked its version when it was made). */
+function foundPythonOf(tools: ToolReport, places: ToolPlaces): FoundPython | null {
+  const python = tools.python
+  return python.chosen === undefined && python.path !== null ? pythonStandIn(python.path, places) : null
+}
+
+/**
+ * WHETHER WHAT A SETUP WAS FOR IS THERE NOW: a Python that is not a stand-in (the Store's shortcut is "found" on
+ * every stock Windows, and must not make a failed install read "Python installed."), a wolframscript, a licence.
+ */
+function settled(action: SetupAction, tools: ToolReport, places: ToolPlaces): boolean {
+  switch (action) {
+    case "python": return tools.python.path !== null && !isPlaceholder(foundPythonOf(tools, places))
+    case "wolfram": return tools.wolfram.path !== null
+    case "activate": return wolframLicence(places)
+  }
+}
+
 export function registerLanguages(ipc: Pick<IpcMain, "handle">, host: LanguagesHost): void {
   let running: SetupAction | null = null
-  let last: { action: SetupAction; said: string } | null = null
+  /**
+   * What the last setup window said, and whether what it was for was there when it ended. One that was NOT ("Sign
+   * in … in the window that opened", a failed install) is taken back by the first look that finds it there after
+   * all — a sign-in done, an install finished by hand — so the row never keeps a sentence about a state it has left.
+   */
+  let last: { action: SetupAction; said: string; settled: boolean } | null = null
   /** What the window was last told is in use, so a look that finds the same thing tells it nothing. */
   let lastSent: string | null = null
 
@@ -202,16 +265,21 @@ export function registerLanguages(ipc: Pick<IpcMain, "handle">, host: LanguagesH
   function report(): LanguageReport {
     const places = host.places()
     const tools = toolReport(places)
-    const real = places.realPath ?? ((file: string) => file)
-    const key = (file: string) => (host.platform === "win32" ? real(file).toLowerCase() : real(file))
     const others = {} as Record<Evaluator, string[]>
     for (const evaluator of EVALUATORS) {
       const inUse = tools[evaluator].path
+      // Not the one in use — by what program it is, so a venv in use still lists the Python it was made from.
+      const key = (file: string) => toolIdentity(evaluator, file, places)
       others[evaluator] = foundTools(evaluator, places)
         .filter((file) => !STORE_ALIAS.test(file) && (inUse === null || key(file) !== key(inUse)))
         .slice(0, 5)
     }
-    return { tools, others, licence: tools.wolfram.path === null ? null : wolframLicence(places), setup: { running, last } }
+    if (last && !last.settled && settled(last.action, tools, places)) last = null
+    return {
+      tools, others, licence: tools.wolfram.path === null ? null : wolframLicence(places),
+      foundPython: foundPythonOf(tools, places),
+      setup: { running, last: last && { action: last.action, said: last.said } },
+    }
   }
 
   const push = (now: LanguageReport) => {
@@ -322,11 +390,8 @@ export function registerLanguages(ipc: Pick<IpcMain, "handle">, host: LanguagesH
     const finish = (result: Record<string, string> | null) => {
       running = null
       const places = host.places()
-      const tools = toolReport(places)
-      const foundAfter = action === "python" ? tools.python.path !== null
-        : action === "wolfram" ? tools.wolfram.path !== null
-          : wolframLicence(places)
-      last = { action, said: setupSentence(action, result, foundAfter, host.log) }
+      const foundAfter = settled(action, toolReport(places), places)
+      last = { action, said: setupSentence(action, result, foundAfter, host.log), settled: foundAfter }
       push(report())
     }
     void setup.start(action, wolframscript).then(finish, () => finish(null))

@@ -17,7 +17,7 @@ import { useCallback, useEffect, useRef, useState } from "react"
 import { EVALUATORS, type Evaluator, type TestAnswer } from "@writemind/core"
 import { returnFocus } from "./focusReturn"
 import {
-  ALWAYS_SHOWN, LANGUAGE_SETUP_INTRO, LANGUAGE_SETUP_TITLE, MORE, moreOpen, NO_MEMORY, rowView,
+  ALWAYS_SHOWN, keyboardHome, LANGUAGE_SETUP_INTRO, LANGUAGE_SETUP_TITLE, MORE, moreOpen, NO_MEMORY, rowView,
   type RowMemory, type RowView, type SetupCaps,
 } from "./languageSetupView"
 import type { ChooseAnswer, LanguageReport, LinkId, SetupAction } from "../shared/languages"
@@ -52,8 +52,12 @@ export function LanguageSetupDialog({ platform, capabilities, focus, onClose }: 
   const [report, setReport] = useState<LanguageReport | null>(null)
   const [memory, setMemory] = useState<Memory>({})
   const [more, setMore] = useState<boolean | null>(null)
+  /** The setups pressed in THIS dialog: what their windows said is said here, and not in a later Language Setup. */
+  const [started, setStarted] = useState<SetupAction[]>([])
   const done = useRef<HTMLButtonElement>(null)
   const dialog = useRef<HTMLDivElement>(null)
+  /** The row the keyboard was last in (each row's onFocus), so it can be given back there. */
+  const keyboardRow = useRef<Evaluator | null>(focus)
   const reportNow = useRef<LanguageReport | null>(null)
   reportNow.current = report
   const memoryNow = useRef<Memory>(memory)
@@ -97,6 +101,25 @@ export function LanguageSetupDialog({ platform, capabilities, focus, onClose }: 
     choose.focus()
     choose.scrollIntoView({ block: "nearest" })
   }, [more, focus])
+
+  // THE KEYBOARD STAYS IN THE DIALOG. A press can take away the very button that had it — Find Automatically once
+  // nothing is chosen, a Use whose copy is now in use, Install… once the language is found, Choose… while its own
+  // check runs — and the focus then falls to the page behind, where Escape and Tab no longer reach this dialog.
+  // After every change, a dialog that has lost it gives it back (`keyboardHome`): CleanUpDialog's rule, kept to the
+  // moments the focus was actually lost, so a person's own Tab is never overridden.
+  useEffect(() => {
+    const here = dialog.current
+    if (!here || !report) return
+    const active = document.activeElement
+    if (active instanceof HTMLElement && here.contains(active) && !(active instanceof HTMLButtonElement && active.disabled)) return
+    const evaluator = keyboardRow.current
+    const home = keyboardHome(evaluator ? rowView(evaluator, report, memory[evaluator] ?? NO_MEMORY, caps, started) : null)
+    const button = home === "done" ? null
+      : here.querySelector<HTMLButtonElement>(`[data-language-row="${evaluator}"] [data-language-action="${home}"]`)
+    button?.focus()
+    // A row folded away under C, C++ and Rust cannot take it: Done can.
+    if (document.activeElement !== button) done.current?.focus()
+  })
 
   const remember = (evaluator: Evaluator, next: RowMemory) => setMemory((was) => ({ ...was, [evaluator]: next }))
 
@@ -162,6 +185,7 @@ export function LanguageSetupDialog({ platform, capabilities, focus, onClose }: 
   const stop = (evaluator: Evaluator) => { void window.wm.languages?.cancel(evaluator) }
 
   const setUp = (evaluator: Evaluator, action: SetupAction) => {
+    setStarted((was) => (was.includes(action) ? was : [...was, action]))
     void window.wm.languages?.setup(action).then((answer) => {
       if (answer.kind === "refused") remember(evaluator, { ...(memoryNow.current[evaluator] ?? NO_MEMORY), problem: { text: answer.problem } })
     })
@@ -172,7 +196,7 @@ export function LanguageSetupDialog({ platform, capabilities, focus, onClose }: 
   const row = (view: RowView) => {
     const e = view.evaluator
     return (
-      <div key={e} className="language-row" data-language-row={e}>
+      <div key={e} className="language-row" data-language-row={e} onFocus={() => { keyboardRow.current = e }}>
         <div className="language-head">
           <span className="language-title">{view.title}</span>
           <span className="language-names">{view.names}</span>
@@ -180,7 +204,7 @@ export function LanguageSetupDialog({ platform, capabilities, focus, onClose }: 
         {view.path && <div className="language-path" data-language-path>{view.path}</div>}
         <div className={`language-source${view.amber ? " amber" : ""}`} data-language-source
              {...(view.alert ? { role: "alert" } : {})}>
-          {view.source}
+          {view.source}{view.sourceCommand && <> <Command command={view.sourceCommand} /></>}
         </div>
         <div className="language-check" data-language-check aria-live="polite">
           {view.check && <>{view.check.text}{view.check.command && <> <Command command={view.check.command} /></>}</>}
@@ -215,10 +239,15 @@ export function LanguageSetupDialog({ platform, capabilities, focus, onClose }: 
             <button type="button" data-language-action="get" disabled={view.busy} onClick={() => open(view.get!.link)}>{view.get.label}</button>
           )}
         </div>
-        {view.setupLine && (
+        {(view.setupSaid || view.setupLine) && (
           <div className="language-setup" data-language-setup>
-            {view.setupLine.text}
-            {view.setupLine.terms && <> <button type="button" className="link" data-language-action="terms" onClick={() => open("wolframTerms")}>Wolfram's Licence</button></>}
+            {view.setupSaid && <div data-language-said>{view.setupSaid}</div>}
+            {view.setupLine && (
+              <div>
+                {view.setupLine.text}
+                {view.setupLine.terms && <> <button type="button" className="link" data-language-action="terms" onClick={() => open("wolframTerms")}>Wolfram's Licence</button></>}
+              </div>
+            )}
           </div>
         )}
         {view.others.length > 0 && (
@@ -239,7 +268,7 @@ export function LanguageSetupDialog({ platform, capabilities, focus, onClose }: 
   }
 
   const views = (list: Evaluator[]) =>
-    report ? list.map((evaluator) => row(rowView(evaluator, report, memory[evaluator] ?? NO_MEMORY, caps))) : null
+    report ? list.map((evaluator) => row(rowView(evaluator, report, memory[evaluator] ?? NO_MEMORY, caps, started))) : null
 
   return (
     <div className="modal-backdrop" data-modal="languages" data-platform={platform}

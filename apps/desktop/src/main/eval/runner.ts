@@ -388,12 +388,13 @@ function killTreeReal(child: ChildLike): void {
  * The runner the app uses: the real spawn, the real file system, this machine's PATH — and Language Setup's
  * choices (`store`, main/eval/languages.ts), read again for every run.
  */
-export function createProcessRunner(store?: { get(): Partial<Record<Evaluator, string>> }): Runner {
+export function createProcessRunner(store?: { get(): Partial<Record<Evaluator, string>>; unreadable?(): string | null }): Runner {
   return createRunner({
     platform: process.platform,
     spawn: (command, args, options) => nodeSpawn(command, args, options),
     killTree: killTreeReal,
-    places: () => placesFromProcess(store?.get() ?? {}),
+    // A settings file that could never be read refuses every language rather than guess (tools.ts `toolEntry`).
+    places: () => placesFromProcess(store?.get() ?? {}, store?.unreadable?.() ?? null),
     scratch: {
       make: () => mkdtemp(path.join(os.tmpdir(), "WriteMind-eval-")),
       write: (file, text) => writeFile(file, text, "utf8"),

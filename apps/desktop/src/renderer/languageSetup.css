@@ -25,7 +25,10 @@
 .modal.languages .language-licence,
 .modal.languages .language-setup { margin-top: 3px; color: var(--wm-soft); font-size: 12px; line-height: 1.4; }
 .modal.languages .language-check:empty { display: none; }
-/* A choice that has gone, or nothing found: the eval marks' own amber (packages/editor/src/eval). */
+/* What the last setup window said, over the line that offers it again. */
+.modal.languages .language-setup [data-language-said] + div { margin-top: 3px; }
+/* A choice that has gone, nothing found, or a Python that is only a stand-in: the eval marks' own amber
+   (packages/editor/src/eval). */
 .modal.languages .language-source.amber { color: #d97706; }
 .modal.languages p.problem { margin: 4px 0 0; }
 .modal.languages code { padding: 1px 4px; border-radius: 4px; background: var(--wm-page); border: 1px solid var(--wm-rule); }

@@ -98,13 +98,30 @@ export const LINKS: Record<LinkId, string> = {
 export const isLinkId = (value: unknown): value is LinkId =>
   typeof value === "string" && Object.prototype.hasOwnProperty.call(LINKS, value)
 
+/**
+ * What a Python found by itself really is, when the file system can say (main/eval/tools.ts `pythonStandIn`):
+ * Windows' Microsoft Store shortcut, a py launcher with no Python 3 behind it, Apple's `/usr/bin/python3` without
+ * the Command Line Tools — or Apple's with them (`apple`), which runs and is old.
+ */
+export type FoundPython = "storeAlias" | "pyLauncher" | "appleStandIn" | "apple"
+
+/**
+ * WHETHER THAT PYTHON CANNOT RUN A CELL: it is a file called python and nothing more. ONE question, asked by the
+ * screen (Install / Get offered as if nothing were found) and by the setup window's ending ("installed" only when
+ * a real Python is found afterwards), so the two cannot disagree about whether there is a Python.
+ */
+export const isPlaceholder = (found: FoundPython | null): boolean =>
+  found === "storeAlias" || found === "pyLauncher" || found === "appleStandIn"
+
 /** What the screen shows: read off the file system, never by starting anything. */
 export interface LanguageReport {
   tools: ToolReport
-  /** Other copies found automatically: no WindowsApps entries, not the one in use (by realPath), at most 5. */
+  /** Other copies found automatically: no WindowsApps entries, not the one in use (`toolIdentity`), at most 5. */
   others: Record<Evaluator, string[]>
   /** A mathpass where activation leaves one; null when no wolframscript is in use. */
   licence: boolean | null
+  /** The Python in use, when it was found by itself and is one of `FoundPython`; null otherwise (and for a choice). */
+  foundPython: FoundPython | null
   setup: { running: SetupAction | null; last: { action: SetupAction; said: string } | null }
 }
 
