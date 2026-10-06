@@ -35,5 +35,3 @@ WriteMind is now just WriteMind. The project lives at github.com/chere005/WriteM
 **Fixes**
 - Typing an empty `` `wl:` `` no longer freezes the rendered page.
 - A code cell's language can be clicked on the rendered page again.
-
-The Mac build is still unsigned for now; the first open needs System Settings ▸ Privacy & Security ▸ Open Anyway (docs/INSTALL-MAC.md).
