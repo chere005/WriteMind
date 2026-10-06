@@ -219,7 +219,10 @@ batch in flight on that day. After it, roughly in this order:
   (3) ~~**The Mac's per-tool override**~~ done 2026-10-06 as **File ▸ Language Setup…** (port-first; PARITY
   "Language Setup"): a chosen program is the ONLY one its language uses (the Mac falls through; said in PARITY and in
   `main/eval/tools.ts`). Left there: (a) run the `installer-tools.ps1` changes under Windows PowerShell 5.1
-  (`-FromApp -Python -DryRun -NoWait`, `-FromApp -Activate -WolframScript …`) — written on a Mac with no PowerShell;
+  (`-FromApp -Python -DryRun -NoWait`, `-FromApp -Activate -WolframScript …`) — written on a Mac with no PowerShell —
+  and see that `main/toolSetup.ts`'s spawn (`detached: true, windowsHide: false`, from the windowless main process)
+  really gives the script a console window of its own (libuv's detached flag may start it with no console at all;
+  if so, start it non-detached, which a GUI parent gives a new console, and say what quitting the app then does);
   (b) run `e2e/suites/languages`; (c) a cold Wolfram Test on Windows against the 20 s limit, and a Test while a
   cell is running (the engine's kernel-count limit); (d) the Linux licence path (`~/.WolframEngine/Licensing/mathpass`,
   Wolfram's documented place) on Arch; (e) a conda environment's `Library\bin` on the PATH (not added: only with a

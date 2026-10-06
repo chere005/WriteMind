@@ -339,6 +339,23 @@ describe("the choices on disk (createLanguageStore)", () => {
       await store.set("rust", "/s/rustc")
       expect(readdirSync(dir).filter((name) => name.startsWith("languages.unreadable-")).length).toBe(1)
     }
+    // A file that cannot be read at all (held by another program): no choices, asked again at every look, and kept
+    // aside before a write replaces it.
+    const reads: string[] = []
+    const copies: string[] = []
+    const locked = createLanguageStore("/p/languages.json", "darwin", {
+      stat: () => ({ mtimeMs: 1, size: 10 }),
+      read: (one) => { reads.push(one); throw Object.assign(new Error("EBUSY"), { code: "EBUSY" }) },
+      write: async () => {},
+      copy: (_from, to) => { copies.push(to) },
+      makeFolder: () => {},
+    })
+    expect(locked.get()).toEqual({})
+    expect(locked.get()).toEqual({})
+    expect(reads.length).toBe(2)
+    await locked.set("rust", "/r/rustc")
+    expect(copies.length).toBe(1)
+    expect(copies[0]).toMatch(/\/p\/languages\.unreadable-\d+\.json$/)
     // A file it took whole is simply replaced.
     const dir = scratch()
     const file = path.join(dir, "languages.json")

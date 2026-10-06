@@ -101,9 +101,11 @@ export function createLanguageStore(file: string, platform: string, fsDeps: Stor
     try {
       text = fsDeps.read(file)
     } catch {
-      // Locked or unreadable: no choices for now, and the file is kept aside before anything replaces it.
+      // Locked or unreadable: no choices for now (asked again at the next look, a lock being a moment's), and the
+      // file is kept aside before anything replaces it.
       memory = {}
       keepAside = true
+      seen = undefined
       return memory
     }
     memory = readLanguageSettings(text, platform)
