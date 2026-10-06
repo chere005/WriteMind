@@ -17,7 +17,7 @@
  */
 
 import { execFile } from "node:child_process"
-import { accessSync, constants, existsSync } from "node:fs"
+import { accessSync, constants, existsSync, lstatSync } from "node:fs"
 import path from "node:path"
 import { promisify } from "node:util"
 import type { OcrEngine } from "@writemind/core"
@@ -124,6 +124,42 @@ export function windowsOcrScript(here: string): string | null {
   if (process.platform !== "win32") return null
   const where = shipped(here, "../helpers/wm-ocr.ps1")
   return existsSync(where) ? where : null
+}
+
+// MARK: - File ▸ Language Setup…'s Install and Activate (main/toolSetup.ts)
+
+/**
+ * The Windows installer's own optional-tools script, copied beside the app by scripts/build.mjs: Language Setup's
+ * Install Python…, Install Wolfram Engine… and Activate… run it (`-FromApp`), so the app and the installer install
+ * the same way. Windows only, and only when the file is there — a Mac or Linux build offers the download pages.
+ */
+export function toolsScript(here: string, platform: string = process.platform,
+  exists: (file: string) => boolean = existsSync): string | null {
+  if (platform !== "win32") return null
+  const where = shipped(here, "../helpers/installer-tools.ps1")
+  return exists(where) ? where : null
+}
+
+/** A file and not a folder, asked without following a link: the Store's app execution aliases are reparse points. */
+const plainFile = (file: string): boolean => {
+  try { return existsSync(file) && !lstatSync(file).isDirectory() } catch { return false }
+}
+
+/**
+ * winget (App Installer), which is what installs: on the PATH, else the Store's alias in `%LOCALAPPDATA%\Microsoft\
+ * WindowsApps` (an app started before App Installer arrived may not have that folder on its PATH) — the places
+ * installer-tools.ps1's `FindWinget` looks, kept in step. Windows only.
+ */
+export function winget(platform: string = process.platform, env: NodeJS.ProcessEnv = process.env,
+  isFile: (file: string) => boolean = plainFile): string | null {
+  if (platform !== "win32") return null
+  const folders = (env.PATH ?? env.Path ?? "").split(";").map((dir) => dir.trim().replace(/^"|"$/g, "")).filter((dir) => dir.length > 0)
+  for (const folder of folders) {
+    const where = path.win32.join(folder, "winget.exe")
+    if (isFile(where)) return where
+  }
+  const alias = env.LOCALAPPDATA ? path.win32.join(env.LOCALAPPDATA, "Microsoft", "WindowsApps", "winget.exe") : null
+  return alias && isFile(alias) ? alias : null
 }
 
 /** Windows PowerShell 5.1, which every Windows 10 and 11 has; the full path so a bad PATH cannot hide it. */

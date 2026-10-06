@@ -26,7 +26,8 @@ import { pictureFiles } from "./macDrawing"
 import { rescueUnsaved } from "./rescue"
 import { findUnused, trashNoteAndDrawing, trashSectionAndDrawings, trashUnused } from "./housekeeping"
 import type { Held } from "../shared/housekeeping"
-import { ADD_JAPANESE_OCR, penHelper, readerFor, windowsOcr } from "./helpers"
+import { ADD_JAPANESE_OCR, penHelper, readerFor, toolsScript, windowsOcr, winget } from "./helpers"
+import { createToolSetup } from "./toolSetup"
 import { ocrFor } from "./ocr"
 import { buildMenu } from "./menu"
 import { initialMenuState, type MenuState } from "../shared/commands"
@@ -409,6 +410,8 @@ app.whenReady().then(async () => {
   // The OCR engine is asked about NOW, in the background, so that the first
   // `app:capabilities` does not wait for a PowerShell to start.
   void windowsOcr(here)
+  // File ▸ Language Setup…'s Install and Activate: the installer's own script beside the app (Windows), and winget.
+  const languageScript = toolsScript(here)
   ipcMain.handle("app:capabilities", async () => {
     const reader = await readerFor(here)
     return {
@@ -416,8 +419,11 @@ app.whenReady().then(async () => {
       // `wm-vision` on macOS, Windows' own OCR engine on Windows,
       // `tesseract` anywhere. None is a dependency — with none
       // installed the app runs the same and simply does not offer to
-      // read a picture.
-      ...capabilitiesFor(process.platform, { ocr: reader.ocr, engine: reader.engine, japanese: reader.japanese }),
+      // read a picture. The same for setting a language up from the app.
+      ...capabilitiesFor(process.platform, {
+        ocr: reader.ocr, engine: reader.engine, japanese: reader.japanese,
+        languageSetup: { script: languageScript !== null, winget: winget() !== null },
+      }),
       platform: process.platform,
       root: notesRoot(),
     }
@@ -514,7 +520,11 @@ app.whenReady().then(async () => {
     // askOpen: an end-to-end script names its answer ahead of time (WRITEMIND_E2E).
     ask: (options) => (window ? askOpen(window, options as Electron.OpenDialogOptions) : Promise.resolve({ canceled: true, filePaths: [] })),
     open: (url) => shell.openExternal(url),
-    setup: null, winget: false,
+    // Windows: the installer's script in a window of its own (main/toolSetup.ts); null everywhere else.
+    setup: languageScript
+      ? createToolSetup({ script: languageScript, userData: app.getPath("userData"), e2e: !!process.env.WRITEMIND_E2E })
+      : null,
+    winget: winget() !== null,
     log: path.join(app.getPath("userData"), "tools-setup.log"),
     broadcast: (report) => window?.webContents.send(LANGUAGE_CHANNELS.changed, report),
   })
