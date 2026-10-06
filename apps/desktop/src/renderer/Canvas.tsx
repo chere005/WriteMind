@@ -2096,7 +2096,7 @@ export function Canvas({
           it will do, and ⌃G does the same. */}
       {grouping !== "nothing" && (
         <button className="wm-handle wm-handle-group" data-group={grouping}
-                style={spot(hb.x - HANDLE, hb.y + hb.height, scroll)}
+                style={spot(hb.x + hb.width / 2 - HANDLE / 2 + 18, hb.y + hb.height, scroll)}
                 title={grouping === "ungroup" ? "Ungroup these (⌃G does too)" : "Group these (⌃G does too)"}
                 onPointerDown={(event) => {
                   event.preventDefault(); event.stopPropagation()
@@ -2123,7 +2123,7 @@ export function Canvas({
               }}>✥</button>
       {/* Colour, width, fill, an arrow's heads and line, the order, a copy. */}
       <button className={`wm-handle${styling && !faint ? " wm-handle-on" : ""}`} data-handle="style"
-              style={spot(hb.x + hb.width / 2 - HANDLE / 2 + 18, hb.y + hb.height, scroll)}
+              style={spot(hb.x - HANDLE, hb.y + hb.height, scroll)}
               title="Colour, width, heads and line"
               onPointerDown={(event) => {
                 event.preventDefault(); event.stopPropagation()
