@@ -97,6 +97,14 @@ export class BundledPool {
     const worker = new Worker(path.join(this.folder, "worker.mjs"), { workerData: { folder: this.folder, threads: this.threads } })
     const slot: Slot = { worker, busy: false }
     this.slots.push(slot)
+    // A worker that dies while resting is forgotten (the next picture gets a fresh one), and its error is not an
+    // unhandled 'error' event in the main process; a read in progress hears both through its own listeners.
+    worker.on("error", () => undefined)
+    worker.once("exit", () => {
+      clearTimeout(slot.timer)
+      const at = this.slots.indexOf(slot)
+      if (at >= 0) this.slots.splice(at, 1)
+    })
     return slot
   }
 
