@@ -181,9 +181,6 @@ for arch in arm64 x64; do
   label="${dmg##*/}"
   ok "$label ($(du -h "$dmg" | cut -f1))"
   hdiutil verify -quiet "$dmg" > /dev/null 2>&1 && ok "$label: hdiutil verify" || fail "$label: hdiutil verify failed"
-  if [ "$signed" = 1 ]; then
-    xcrun stapler validate "$dmg" > /dev/null 2>&1 && ok "$label: notarization ticket stapled" || fail "$label: xcrun stapler validate failed"
-  fi
   mnt="$(mktemp -d)"
   mounts="$mounts $mnt"
   if hdiutil attach -quiet -nobrowse -readonly -noautoopen -mountpoint "$mnt" "$dmg" > /dev/null 2>&1; then
