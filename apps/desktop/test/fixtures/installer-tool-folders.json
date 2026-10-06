@@ -1,0 +1,12 @@
+{
+  "python": [
+    { "folders": ["Python313", "Python314-32", "Python314"], "pick": "Python314" },
+    { "folders": ["Python39", "Python313", "Launcher", "Python27"], "pick": "Python313" },
+    { "folders": ["python312-arm64", "Python311"], "pick": "python312-arm64" }
+  ],
+  "wolfram": [
+    { "folders": ["14.3", "14.10", "14.9"], "pick": "14.10" },
+    { "folders": ["14.3", "15.0", "Common"], "pick": "15.0" },
+    { "folders": ["9.0", "13.3.1", "13.3"], "pick": "13.3.1" }
+  ]
+}
