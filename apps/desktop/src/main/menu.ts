@@ -28,6 +28,11 @@ export interface MenuOptions {
   project: ProjectInfo
   /** Developer tools in the View menu. */
   dev?: boolean
+  /**
+   * Help's update items (Windows; shared/update.ts updateMenu): Check for Updates…'s wording and whether it restarts
+   * into a ready update, and the Check for Updates on Startup box (greyed in a copy that does not update itself).
+   */
+  update?: { label: string; ready: boolean; checkOnStartup?: boolean; canCheck?: boolean }
   /** Run a command by id: the page's, or the main process's own. */
   run(id: string): void
 }
@@ -132,6 +137,8 @@ export function buildMenu(options: MenuOptions): MenuItemConstructorOptions[] {
       const command = HEADING_COMMANDS.find((h) => h.level === level)!
       return item(command.id, headingName(level))
     }),
+    // Text's markdown twin (docs/PLAN-text-cells.md): the paragraph read as markdown.
+    item("markdownCell", "Markdown"),
     SEPARATOR,
     item("bold", "Bold"), item("italic", "Italic"), item("underline", "Underline"),
     item("strike", "Strikethrough"),
@@ -240,6 +247,22 @@ export function buildMenu(options: MenuOptions): MenuItemConstructorOptions[] {
     { label: "Close Window", click: (_item, win) => win?.close() },
   ]
 
+  // Updates come with the Windows installer (main/updater.ts): Check for Updates… looks now and answers in the page's
+  // own dialog ("Restart to Update to x" once one is downloaded); the box under it is the dialog's "Check on startup".
+  const updateId = options.update?.ready ? "installUpdate" : "checkForUpdates"
+  const canCheck = options.update?.canCheck ?? false
+  const updateItems: MenuItemConstructorOptions[] = platform === "win32"
+    ? [
+        { id: updateId, label: options.update?.label ?? "Check for Updates…", click: () => run(updateId) },
+        {
+          id: "checkUpdatesOnStartup", label: "Check for Updates on Startup", type: "checkbox",
+          checked: canCheck && (options.update?.checkOnStartup ?? true), enabled: canCheck,
+          click: () => run("checkUpdatesOnStartup"),
+        },
+        SEPARATOR,
+      ]
+    : []
+
   return [
     ...(platform === "darwin" ? [{ role: "appMenu" as const }] : []),
     { label: "File", submenu: file },
@@ -256,6 +279,7 @@ export function buildMenu(options: MenuOptions): MenuItemConstructorOptions[] {
       submenu: [
         item("keyList", "Keyboard Shortcuts"),
         SEPARATOR,
+        ...updateItems,
         { id: "about", label: "About WriteMind", click: () => run("about") },
       ],
     },

@@ -23,6 +23,7 @@ import { Decoration, EditorView, type DecorationSet } from "@codemirror/view"
 import { cellFurniture, end, firstCellFromBy, outsideFurniture, reminderOnLine, type Range } from "@writemind/core"
 import { notebook } from "../notebook"
 import { renderedField } from "../rendered"
+import { armSeam } from "../seams"
 
 /** The head of a line that can be furniture: a heading's hashes, or a list marker (a reminder's box starts with one). */
 const HEAD = /^(?:#{1,6} |[ \t]*(?:[-*+] |\d{1,4}[.)] ))/
@@ -69,6 +70,9 @@ export function reminderAt(state: EditorState, pos: number): ReturnType<typeof r
 function keptOut(tr: Transaction): Transaction | readonly [Transaction, { selection: EditorSelection; sequential: true }] {
   const selection = tr.selection
   if (!selection || !on(tr.startState)) return tr
+  // A caret parked at a bar armed by hand (two cells that touch: the start of a list under a fence) is in no line's
+  // furniture: moving it would take the bar down.
+  if (tr.effects.some((effect) => effect.is(armSeam) && effect.value !== null)) return tr
   const doc = tr.newDoc
   // Whether the line is in a code cell: asked of the cells as they were, at the place the line was (cheap, and a
   // keystroke that turns prose into code is not a caret being put among markers).

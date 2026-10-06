@@ -5,6 +5,18 @@ and a drawing layer over both. Notes are plain `.md` files in a folder —
 nothing here is a database, and nothing rewrites a file the user did not
 type in.
 
+## Install on Windows
+
+Download **`WriteMind-Setup-<version>.exe`** from the
+[latest release](https://github.com/chere005/WriteMindCross/releases/latest) and run it. It installs for
+your Windows user only (no admin prompt) and offers, on one page, to install **Python** and the **Wolfram
+Engine** for runnable cells, and to open the Wolfram activation (you sign in with your own Wolfram ID).
+The installer is not code-signed yet, so Windows SmartScreen asks first: **More info ▸ Run anyway**.
+Installed copies check for updates on startup (Help ▸ Check for Updates…). Details:
+[docs/INSTALL-WINDOWS.md](docs/INSTALL-WINDOWS.md).
+
+## The code
+
 **This repo is the cross-platform WriteMind: macOS, Windows and Linux,
 one codebase.** The macOS-only Swift app it was ported from is in `WriteMind/`
 as a reference, and its living copy is `~/GIT/WriteMind`.

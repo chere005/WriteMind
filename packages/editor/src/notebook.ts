@@ -8,7 +8,7 @@
  * did on the Mac: the model is the same, the measuring is not.
  */
 
-import { StateField, type ChangeSet, type EditorState, type Extension } from "@codemirror/state"
+import { Annotation, StateField, type ChangeSet, type EditorState, type Extension } from "@codemirror/state"
 import { EditorView } from "@codemirror/view"
 import {
   positioned, positionedUpdate, sectionsFromCells, type Hull, type PositionedBlock, type Range, type Section,
@@ -51,6 +51,12 @@ export const notebookField = StateField.define<Notebook>({
 })
 
 export const notebook = (state: EditorState): Notebook => state.field(notebookField)
+
+/**
+ * A change that WRITES a cell whole (the bar opening one of a kind, with what was typed already written by the core's
+ * rules): the text-cell typing rule (`textCells.ts`) leaves it as it is.
+ */
+export const cellWritten = Annotation.define<boolean>()
 
 /** The cells' ranges, which is what every selection rule wants. */
 export const cellRanges = (state: EditorState): Range[] =>

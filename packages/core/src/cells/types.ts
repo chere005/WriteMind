@@ -19,11 +19,14 @@ import {
   toggleList, toggleQuote, type Heading, type ListStyle,
 } from "../markdown/formatting"
 import { insertBlock } from "./editing"
+import { MARKDOWN_MARKER, escapePlain } from "../markdown/plainText"
 import { evaluatorFence, evaluatorTitle, type Evaluator } from "../eval/evaluator"
 
 export type CellKind =
   /** A paragraph — the default, and what an ordinary click on the bar arms. */
   | { kind: "text" }
+  /** A paragraph read as markdown: the marker line `<!-- markdown -->` over it (docs/PLAN-text-cells.md). Ctrl+Shift+7. */
+  | { kind: "markdown" }
   | { kind: "heading"; level: Heading }
   | { kind: "list"; style: ListStyle }
   | { kind: "quote" }
@@ -32,12 +35,12 @@ export type CellKind =
    * A cell the note RUNS (Mac 29149b9; Sean, 2026-09-22: "if the input cursor is horizontal, hitting cmd+9 puts a
    * new evaluation cell at that position"). A fenced block like any other here — the `eval ` prefix on its info
    * string is the whole difference — so it needs no second block builder, only its own fence. Deliberately NOT in
-   * KIND_GROUPS: five environments would swamp the + menu for a cell its own key (Ctrl+9) already makes.
+   * KIND_GROUPS: five environments would swamp the + menu for a cell its own key (Ctrl+Shift+8) already makes.
    */
   | { kind: "evaluation"; evaluator: Evaluator }
   /**
    * An INK cell (docsPLAN-docking-ink-cells.md): a cell you draw in with the pen. The + menu offers it (its last
-   * group) and Ctrl+0 makes one, but its line names a cell in the drawing sidecar, so the APP makes it
+   * group) and Ctrl+9 makes one, but its line names a cell in the drawing sidecar, so the APP makes it
    * (`insertInkCell`): `opening` has nothing to write for it, and the bar's typing never makes one.
    */
   | { kind: "ink" }
@@ -56,6 +59,7 @@ export function kindForHeading(level: Heading): CellKind {
 export function kindName(kind: CellKind): string {
   switch (kind.kind) {
     case "text": return headingName(0)
+    case "markdown": return "Markdown"
     case "heading": return headingName(kind.level)
     case "list": return `${listTitle(kind.style)} List`
     case "quote": return "Quote"
@@ -81,7 +85,7 @@ export function sameKind(a: CellKind, b: CellKind): boolean {
  * rungs, not "Heading 1…6"), then the lists and the quote, then the fence.
  */
 export const KIND_GROUPS: CellKind[][] = [
-  [{ kind: "text" }],
+  [{ kind: "text" }, { kind: "markdown" }],
   HEADING_LADDER.filter((level) => level !== 0).map((level): CellKind => ({ kind: "heading", level })),
   [...LIST_STYLES.map((style): CellKind => ({ kind: "list", style })), { kind: "quote" }],
   [{ kind: "code" }],
@@ -101,6 +105,13 @@ export function opening(kind: CellKind, markdown: string, caret: number): Edit |
   switch (kind.kind) {
     case "text":
       return null
+    case "markdown": {
+      // The marker goes on a line of its own above the caret's (empty) line; the caret stays where the words go.
+      let lineStart = place
+      while (lineStart > 0 && markdown.charCodeAt(lineStart - 1) !== 10) lineStart--
+      const head = MARKDOWN_MARKER + "\n"
+      return edit(range(lineStart, 0), head, range(place + head.length, 0))
+    }
     case "heading":
       // `evenIfEmpty`, because the cell is empty when the marker is written
       // and the ladder otherwise leaves a blank line alone.
@@ -160,8 +171,10 @@ function cellAtCaret(caret: number, markdown: string): Range {
 /**
  * A new cell of this kind at `offset`, with `written` already typed into it:
  * the note, the cell's OWN range, and where the caret lands inside it.
+ * `literal`: `written` was TYPED, so a text cell takes it by the escape rule; false for markdown put there as it is
+ * (a paste at the bar: cells copied whole keep their headings, formatting and markers).
  */
-export function openCell(kind: CellKind, markdown: string, offset: number, written = ""):
+export function openCell(kind: CellKind, markdown: string, offset: number, written = "", literal = true):
   { markdown: string; cell: Range; caret: number } {
   const opened = insertBlock(markdown, offset)
   let text = opened.markdown
@@ -172,8 +185,10 @@ export function openCell(kind: CellKind, markdown: string, offset: number, writt
     caret = Math.min(Math.max(change.selection.location, 0), text.length)
   }
   if (written.length > 0) {
-    text = replacing(text, range(caret, 0), written)
-    caret = Math.min(caret + written.length, text.length)
+    // A text cell is plain words: what is typed into it is written by the escape rule (a `#` stays a `#`).
+    const words = kind.kind === "text" && literal ? escapePlain(written) : written
+    text = replacing(text, range(caret, 0), words)
+    caret = Math.min(caret + words.length, text.length)
   }
   return { markdown: text, cell: cellAtCaret(caret, text), caret }
 }

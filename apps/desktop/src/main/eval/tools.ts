@@ -5,7 +5,8 @@
  * The Mac lists absolute paths because a GUI app there inherits launchd's PATH, which has no Homebrew in it. A
  * Windows app inherits the person's own PATH, so the tools are looked for BY NAME on it (`toolNames` in the core),
  * plus the one or two places a language's own installer puts them that a PATH may not reach — rustup's
- * `~\.cargo\bin`, WolframScript's folder under Program Files, the Wolfram Engine's version folder. Nothing here
+ * `~\.cargo\bin`, WolframScript's folder under Program Files, the Wolfram Engine's version folder, python.org's
+ * per-user and all-users folders (where the WriteMind installer's "Install Python" puts it). Nothing here
  * starts anything: finding is reading the file system.
  *
  * Only `.exe` / `.com` count on Windows. A `.cmd` or `.bat` shim cannot be started without a shell, and a cell is
@@ -23,6 +24,8 @@ export interface ToolPlaces {
   home: string
   /** Program Files folders, for the installers that put a tool there. */
   programFiles: string[]
+  /** `%LOCALAPPDATA%`, where a per-user Python goes (python.org's installer, and winget's `--scope user`). */
+  localAppData?: string
   isFile(file: string): boolean
   /** The folders directly inside `dir` (none when it is not there), for an installer that puts a version folder in. */
   folders?(dir: string): string[]
@@ -36,6 +39,7 @@ export function placesFromProcess(): ToolPlaces {
     home: env.USERPROFILE ?? env.HOME ?? "",
     programFiles: [...new Set([env.ProgramFiles, env.ProgramW6432, env["ProgramFiles(x86)"]]
       .filter((dir): dir is string => typeof dir === "string" && dir.length > 0))],
+    localAppData: env.LOCALAPPDATA ?? "",
     isFile: (file) => {
       try { return existsSync(file) && !lstatSync(file).isDirectory() } catch { return false }
     },
@@ -103,8 +107,30 @@ function extraPlaces(evaluator: Evaluator, places: ToolPlaces): string[] {
         ]
       })
       : ["/opt/homebrew/bin/wolframscript", "/usr/local/bin/wolframscript"]
+    // python.org's installer (and winget, which runs it) does not put Python on the PATH unless asked, and a PATH it
+    // does change reaches only programs started AFTER it: WriteMind open while the Windows installer added Python
+    // still has the old one. So its own folders: the per-user launcher, then `Python3NN` under
+    // `%LOCALAPPDATA%\Programs\Python` (per-user) and under Program Files (all users), the newest version first.
+    case "python": {
+      if (!windows) return []
+      const local = places.localAppData ? p.join(places.localAppData, "Programs", "Python") : ""
+      return [
+        ...(local ? [p.join(local, "Launcher", "py.exe")] : []),
+        ...[...(local ? [local] : []), ...places.programFiles]
+          .flatMap((dir) => pythonFolders(places.folders?.(dir) ?? []).map((name) => p.join(dir, name, "python.exe"))),
+      ]
+    }
     default: return []
   }
+}
+
+/** `Python314`, `Python313`, `Python314-32`…: Python 3 install folders, the newest first, a 64-bit one before a 32-bit. */
+export function pythonFolders(names: string[]): string[] {
+  const parse = (name: string) => /^Python3(\d+)(-32|-arm64)?$/i.exec(name)
+  return names.filter((name) => parse(name) !== null).sort((a, b) => {
+    const x = parse(a)!, y = parse(b)!
+    return Number(y[1]) - Number(x[1]) || (x[2] ? 1 : 0) - (y[2] ? 1 : 0) || a.localeCompare(b)
+  })
 }
 
 /** What a person is told was looked for: the names on the PATH, and the extra places. */
@@ -113,6 +139,9 @@ export function lookedFor(evaluator: Evaluator, places: ToolPlaces): string[] {
   // The Program Files folders are said once, as the places they are, not as three paths each.
   if (evaluator === "wolfram" && places.platform === "win32") {
     return [onPath, "Program Files\\Wolfram Research\\WolframScript", "Program Files\\Wolfram Research\\Wolfram Engine\\<version>"]
+  }
+  if (evaluator === "python" && places.platform === "win32") {
+    return [onPath, "%LOCALAPPDATA%\\Programs\\Python (Launcher, Python3<version>)", "Program Files\\Python3<version>"]
   }
   return [onPath, ...extraPlaces(evaluator, places)]
 }

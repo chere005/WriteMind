@@ -17,7 +17,14 @@ await build({ ...common, entryPoints: ["src/preload/preload.ts"], outfile: "out/
 // The helpers that are scripts rather than programs (Windows' OCR) ship as they are, beside
 // the main bundle where `shipped(here, "../helpers/...")` looks - and `asarUnpack`
 // (electron-builder.yml) takes them out of the archive, where nothing can run.
-import { cpSync, mkdirSync } from "node:fs"
+import { copyFileSync, cpSync, mkdirSync, writeFileSync } from "node:fs"
 mkdirSync("out/helpers", { recursive: true })
 cpSync("src/helpers", "out/helpers", { recursive: true })
-console.log("main and preload built; helpers copied")
+// THE ICONS a Mac needs (Sean, 2026-10-05: the Dock must show WriteMind, not Electron): the rounded logo the main
+// process sets as a dev run's dock tile (main/macIdentity.ts), and the .icns electron-builder.yml gives WriteMind.app,
+// made from the Mac app's own icon set (scripts/icns.mjs). Built on every platform, so every out/ is the same.
+import { ROUNDED_ICON, writemindIcns } from "./icns.mjs"
+mkdirSync("out/icons", { recursive: true })
+copyFileSync(ROUNDED_ICON, "out/icons/icon.png")
+writeFileSync("out/icons/WriteMind.icns", writemindIcns())
+console.log("main and preload built; helpers and icons copied")

@@ -1,7 +1,7 @@
 {
   "name": "writemind-cross",
   "private": true,
-  "version": "0.5.0",
+  "version": "1.0.0",
   "description": "WriteMind for macOS and Windows: one notebook, two platforms.",
   "workspaces": [
     "packages/*",

@@ -12,11 +12,13 @@
 
 import { blockContaining, insertBlock, listContinuation, removeBlock } from "./editing"
 import { openCell, type CellKind } from "./types"
+import { standsAlone } from "./apart"
 import { GAP_HEIGHT, seams, structuralLines, plusTarget, type CellBox, type Seam } from "./seams"
 import { firstCellFromBy, picked } from "./selection"
 import { positioned, type Block } from "../markdown/parser"
 import { fenced } from "../markdown/formatting"
 import { reminderBox } from "../markdown/sourceStyle"
+import { MARKDOWN_MARKER, escapePlain, unescapePlain } from "../markdown/plainText"
 import {
   edit, end, lineRange, range, replacing, substring, type Edit, type Range,
 } from "../text/range"
@@ -285,7 +287,8 @@ export type CellState = "closed" | "open" | "held"
  * a paragraph of its own until a word is typed after the marker; opening only
  * the cell the caret is in would draw the list above it as a list and the
  * new line as raw source. Returns, for every cell, the first and the last of
- * the run of touching cells it belongs to.
+ * the run of touching cells it belongs to. `apart` names cells that join no run
+ * (a picture; a block that `standsAlone`, apart.ts).
  */
 export function touchingRuns(cells: Range[], apart?: (index: number) => boolean): { first: number; last: number }[] {
   const out: { first: number; last: number }[] = []
@@ -312,10 +315,11 @@ export function touchingRuns(cells: Range[], apart?: (index: number) => boolean)
  * held and nothing opens. A bar that is the cursor opens nothing either.
  *
  * `apart` names the cells that stay closed (`staysClosed`: a picture or ink cell): never open, never in a run; held
- * still works.
+ * still works. `alone` names the cells that open by themselves but never join a run (`standsAlone`, apart.ts: a fence,
+ * a table, a heading touching its neighbour is a cell of its own).
  */
 export function cellStates(cells: Range[], selection: Range[], holding: boolean, armed: boolean,
-  apart?: (index: number) => boolean): CellState[] {
+  apart?: (index: number) => boolean, alone?: (index: number) => boolean): CellState[] {
   const own = cells.map((cell, index): CellState => {
     if (apart?.(index)) {
       // Drawn, or held; never open.
@@ -348,7 +352,7 @@ export function cellStates(cells: Range[], selection: Range[], holding: boolean,
     if (isHeld) return "held"
     return isOpen ? "open" : "closed"
   })
-  const runs = touchingRuns(cells, apart)
+  const runs = touchingRuns(cells, alone ? (i) => (apart?.(i) ?? false) || alone(i) : apart)
   return own.map((state, index) => {
     const run = runs[index]!
     for (let k = run.first; k <= run.last; k++) if (own[k] === "open") return "open"
@@ -364,7 +368,7 @@ export function cellStates(cells: Range[], selection: Range[], holding: boolean,
  * (`cellStates`; the editor passes `(cell) => staysClosed(cell.block)`).
  */
 export function cellStatesSparse<T>(cells: readonly T[], of: (cell: T) => Range, selection: Range[], holding: boolean,
-  armed: boolean, apart?: (cell: T, index: number) => boolean): Map<number, CellState> {
+  armed: boolean, apart?: (cell: T, index: number) => boolean, alone?: (cell: T, index: number) => boolean): Map<number, CellState> {
   const own = new Map<number, CellState>()
   for (const r of selection) {
     const from = r.location
@@ -397,6 +401,7 @@ export function cellStatesSparse<T>(cells: readonly T[], of: (cell: T) => Range,
     const b = i + 1 < cells.length ? of(cells[i + 1]!) : undefined
     return b !== undefined && a.length > 0 && b.length > 0 && b.location === end(a) + 1
       && !(apart && (apart(cells[i]!, i) || apart(cells[i + 1]!, i + 1)))
+      && !(alone && (alone(cells[i]!, i) || alone(cells[i + 1]!, i + 1)))
   }
   const result = new Map<number, CellState>(own)
   const opened = [...own].filter(([, state]) => state === "open").map(([i]) => i).sort((a, b) => a - b)
@@ -452,7 +457,7 @@ export function returnInBlock(markdown: string, selection: Range): Edit | null {
     // An empty item: it goes, and what is above it and what is below it
     // become two blocks. The list is every cell touching this one.
     const index = cells.findIndex((c) => c.range.location === at.location && c.range.length === at.length)
-    const run = touchingRuns(cells.map((c) => c.range), (i) => staysClosed(cells[i]!.block))[index]
+    const run = touchingRuns(cells.map((c) => c.range), (i) => staysClosed(cells[i]!.block) || standsAlone(cells[i]!.block))[index]
       ?? { first: index, last: index }
     const whole = range(cells[run.first]!.range.location,
       end(cells[run.last]!.range) - cells[run.first]!.range.location)
@@ -472,9 +477,20 @@ export function returnInBlock(markdown: string, selection: Range): Edit | null {
   const text = substring(markdown, at)
   const from = Math.max(selection.location, at.location) - at.location
   const to = Math.min(end(selection), end(at)) - at.location
-  const head = text.slice(0, from)
+  let head = text.slice(0, from)
   // The spaces a break absorbs: the new block does not begin with an indent.
-  const tail = text.slice(to).replace(/^[ \t]+/, "")
+  let tail = text.slice(to).replace(/^[ \t]+/, "")
+  if (cell.block.kind === "paragraph") {
+    // A markdown cell's marker stays with it (docs/PLAN-text-cells.md): Return before its words pushes the whole cell
+    // down, and the half after the caret is a markdown cell of its own. A text cell's halves are written by the
+    // escape rule again: a `#` that was in the middle of a line may now start one.
+    const marker = cell.block.head ?? 0
+    if (marker > 0 && from <= marker) return edit(at, "\n\n" + text, range(at.location + 2 + marker, 0))
+    if (marker > 0) tail = MARKDOWN_MARKER + "\n" + tail
+    else if (!cell.block.markdown) { head = escapePlain(unescapePlain(head)); tail = escapePlain(unescapePlain(tail)) }
+    const words = marker > 0 ? MARKDOWN_MARKER.length + 1 : 0
+    return edit(at, head + "\n\n" + tail, range(at.location + head.length + 2 + words, 0))
+  }
   return edit(at, head + "\n\n" + tail, range(at.location + head.length + 2, 0))
 }
 

@@ -7,6 +7,7 @@
 import { contextBridge, ipcRenderer } from "electron"
 import { PEN_CHANNELS, type PenApi } from "../shared/pen"
 import { EVAL_CHANNELS, type EvalApi } from "../shared/eval"
+import { UPDATE_CHANNELS, type UpdateApi } from "../shared/update"
 
 /** window.wm.pen: the tablet pen's feed (shared/pen.ts PenApi; every channel name is spelled once there). The E2E hooks exist only under WRITEMIND_E2E. */
 const listen = <T>(channel: string, listener: (payload: T) => void): (() => void) => {
@@ -35,7 +36,17 @@ const pen: PenApi = {
   } : {}),
 }
 
+/** window.wm.update: the "Updates available" dialog's state and answers (shared/update.ts, main/updater.ts). */
+const update: UpdateApi = {
+  status: () => ipcRenderer.invoke(UPDATE_CHANNELS.status),
+  view: () => ipcRenderer.invoke(UPDATE_CHANNELS.view),
+  answer: (choice) => ipcRenderer.invoke(UPDATE_CHANNELS.answer, choice),
+  setCheckOnStartup: (on) => ipcRenderer.invoke(UPDATE_CHANNELS.setCheckOnStartup, on),
+  onView: (listener) => listen(UPDATE_CHANNELS.viewPush, listener),
+}
+
 const api = {
+  update,
   capabilities: () => ipcRenderer.invoke("app:capabilities"),
   tree: () => ipcRenderer.invoke("notes:tree"),
   readNote: (file: string) => ipcRenderer.invoke("note:read", file),

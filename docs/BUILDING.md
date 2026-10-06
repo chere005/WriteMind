@@ -30,7 +30,9 @@ npm -w @writemind/desktop run package:linux    # pacman + AppImage + deb
 ```
 
 They land in `dist-electron/`. `apps/desktop/electron-builder.yml` is the
-whole configuration.
+whole configuration. On Windows, `tools\build-installer.ps1` builds just the
+installer (NSIS, x64, never published); the installer itself, its tools page
+and its silent options are in `docs/INSTALL-WINDOWS.md`.
 
 **A package is built on the platform it is for.** An AppImage can be
 cross-built from a Mac; a `.pkg.tar.zst` cannot, and a package nobody has
@@ -100,7 +102,156 @@ package:mac` signs without being told anything.
 `CSC_IDENTITY_AUTO_DISCOVERY=false` builds unsigned in the meantime, which
 is what a local check needs.
 
+## "WriteMind" in the Dock, not "Electron" (macOS)
+
+A dev run (`npm run dev`, `npm start`) runs inside
+`node_modules/electron/dist/Electron.app`, and the Dock's label, the menu bar's
+bold first title and the icon come from THAT bundle's `Info.plist`. So:
+
+- `apps/desktop/scripts/mac-dev-identity.mjs` (run by `dev` and `start`; by
+  hand: `node apps/desktop/scripts/mac-dev-identity.mjs`) renames the dev bundle
+  WriteMind (`CFBundleName`, `CFBundleDisplayName`, bundle id
+  `com.seancheren.writemind.dev`, WriteMind's camera wording), puts WriteMind's
+  `.icns` in place of Electron's, re-signs the bundle ad hoc (`codesign -s -`)
+  and re-registers it with LaunchServices. A no-op on Windows / Linux and when
+  the bundle already says WriteMind; an `npm ci` undoes it and the next dev
+  run redoes it. The new bundle id means macOS asks for the camera once more.
+- `main/macIdentity.ts` names the running app WriteMind before the menu is
+  built (About / Hide / Quit WriteMind; the profile stays in
+  `~/Library/Application Support/@writemind/desktop`), fills the About panel
+  (version, "Copyright © 2026 Shahean Cheren") and, in a dev run, sets the
+  dock tile to the logo (`out/icons/icon.png`).
+- The `.icns` (`out/icons/WriteMind.icns`, built by `scripts/build.mjs` with
+  `scripts/icns.mjs`, no `iconutil` needed) is the Mac app's own icon set
+  (`WriteMind/Assets.xcassets/AppIcon.appiconset`), and `electron-builder.yml`
+  gives it to the packaged `WriteMind.app` too (`mac.icon`). Linux and Windows
+  keep `packaging/icon.png`.
+
+If the Dock still shows Electron's icon after the first patched run, it is
+macOS's icon cache: quit the app, `killall Dock`, and start it again.
+
 ## The version
 
 `apps/desktop/package.json` holds it, and electron-builder reads it from
 there. The Swift app's `MARKETING_VERSION` is its own and is not this one.
+
+## Releases and updates (Windows)
+
+WriteMind for Windows is released as this repo's own GitHub Releases (the
+repo is public), and an installed copy updates itself from them —
+`electron-updater` reading the feed electron-builder writes into the
+install (`publish:` in `apps/desktop/electron-builder.yml`: provider
+github, chere005/WriteMindCross).
+
+### Cutting a release (what Sean does)
+
+```sh
+npm version 0.5.1 --no-git-tag-version -w @writemind/desktop   # or edit apps/desktop/package.json
+git commit -am "WriteMind 0.5.1: <what changed>"                # the message can be the release notes
+git tag -a v0.5.1 -m "WriteMind 0.5.1"                          # the tag is the version with a v
+git push origin main v0.5.1
+```
+
+The pushed tag starts `.github/workflows/release.yml` (windows-latest):
+
+1. the tag must be `v` + `apps/desktop/package.json`'s version, or the run
+   stops at once and says so;
+2. `npm ci`, typecheck, the unit tests, the build;
+3. `electron-builder --win nsis --x64 --publish always`: the installer,
+   its `.blockmap` and `latest.yml` go up to a **draft** release for the
+   tag, named "WriteMind 0.5.1", whose notes are the tag's annotation —
+   or, when the annotation is only a title line, the tagged commit's
+   message (Co-Authored-By lines left out);
+4. the three files are checked and the draft is published (marked Latest;
+   a version with a `-`, like `0.6.0-preview.1`, is a pre-release, which
+   installed copies of a normal version do not take).
+
+The workflow uses the repo's own `GITHUB_TOKEN` (`contents: write`): no
+secret to add. A run that fails leaves at most a draft: fix it, then
+re-run the job, or Actions ▸ Release ▸ Run workflow with the tag.
+Never `--publish always` by hand from a local machine.
+
+### What an installed copy does
+
+- **Check on startup** (on unless unticked): a few seconds after launch it
+  asks GitHub for the newest release, once. With it off it looks only when
+  asked (Help ▸ Check for Updates…). The setting is
+  `%APPDATA%\@writemind\desktop\update.json` (`{"checkOnStartup": true}`),
+  changed from the dialog's box or Help ▸ **Check for Updates on Startup**.
+- A newer release brings up WriteMind's own small dialog (the page's sheet,
+  like Rename; not a system box): **Updates available** — "WriteMind 0.5.1
+  is available (you have 0.5.0). Update now?", a **Check on startup** box,
+  **Later** and **Update now** (the default). Nothing is downloaded before
+  Update now.
+- **Update now** downloads with a quiet "Downloading… n%" line in the
+  dialog (Later becomes Cancel; the sha512 is checked against
+  `latest.yml`), then saves what the page holds (the same handshake as
+  closing the window), runs the installer silently over the install and
+  opens the new version.
+- **Later** (or Escape, or Cancel during the download) closes it; that
+  version is not asked about again until the next launch.
+- **Help ▸ Check for Updates…** looks now: the same dialog when there is a
+  newer release (one put off with Later included), else "You're up to date
+  (0.5.1)." or "Couldn't check for updates: no internet connection." (or
+  "the update server did not answer", "no release was found", GitHub's
+  rate limit). In a copy that does not update itself: "Updates come with
+  the installed app." and why.
+- The launch look's failures (offline, rate limit, no release yet) go to
+  `%APPDATA%\@writemind\desktop\update.log` and are shown to nobody. The
+  download waits in `%LOCALAPPDATA%\@writeminddesktop-updater`.
+
+Only an INSTALLED copy looks (`src/shared/update.ts`, `updateEligibility`):
+the installer's uninstaller is beside the exe and `resources\app-update.yml`
+is in the install. A development run, an end-to-end run (`WRITEMIND_E2E`),
+the portable exe, `dist-electron\win-unpacked`, and the repo's Electron
+running a build folder (like `C:\CLAUDIO\try-build`) never do. macOS and
+Linux builds do not update themselves (an unsigned Mac app cannot) and
+have no Help item for it.
+
+### Installing, unsigned
+
+Download `WriteMind-Setup-<version>.exe` from the repo's Releases page. It
+is **not signed yet**, so Windows SmartScreen says "Windows protected your
+PC": **More info ▸ Run anyway**. Its first page is the licence (the repo's
+`LICENSE`: BSD 3-Clause, "Copyright (c) 2026, Shahean Cheren"); Next waits
+for **I accept the terms of the License Agreement**. It installs for the current Windows user
+only, with no administrator: `%LOCALAPPDATA%\Programs\WriteMind`, a Start
+menu and a desktop shortcut (named "WriteMind", so they replace the ones
+`tools\setup-windows.ps1` made for a development build), and an entry in
+Settings ▸ Apps. Its own data stays in `%APPDATA%\@writemind\desktop` and
+the notes in `Documents\WriteMindCross`; uninstalling touches neither.
+The updater's own downloads are not browser downloads, so SmartScreen
+should not ask again for an update.
+
+The installer's own page offers to install and activate these with winget
+(docs/INSTALL-WINDOWS.md, "Optional tools"). The runnable cells' tools are
+found on their own once installed (Python via `py` / `python` or python.org's
+own folders; `wolframscript.exe`, including
+`C:\Program Files\Wolfram Research\Wolfram Engine\<version>\`):
+
+```powershell
+winget install --id Python.Python.3.14 -e      # or Python.Python.3.13
+winget install --id WolframResearch.WolframEngine -e
+wolframscript.exe -activate                     # signs in with YOUR Wolfram ID; nothing types it for you
+```
+
+### Trying an update without GitHub
+
+`WRITEMIND_UPDATE_FEED=http://127.0.0.1:<port>/` points an installed copy
+at a folder served over HTTP (a `latest.yml` and the installer it names).
+Only a loopback address is taken, and under it Update now installs without
+starting the new version, so a test that runs the copy with its own
+`--user-data-dir` can start it again itself. The updater lane's check
+(two test-identity builds, 0.5.0 → 0.5.1, installed silently into a
+scratch folder and uninstalled afterwards) is
+`C:\CLAUDIO\agents\instances\upd-test\{package,install,launch,after-restart,uninstall}.ps1`
+with `C:\CLAUDIO\agents\e2e\updater\0{1,2,3}-*.mjs` (written for the
+earlier footer line). The dialog's check (release-ui lane, "WriteMind
+RelUI" 0.5.0 → 0.5.1: the launch dialog, Later, the box off and a relaunch
+that does not look, the menu's look, Update now with its progress, Cancel,
+the up-to-date and could-not-check answers, the licence page) is
+`C:\CLAUDIO\agents\instances\relui-upd\*.ps1` with
+`C:\CLAUDIO\agents\e2e\release-ui\0{1..6}-*.mjs`. Under a product name with
+a space the feed must also serve the installer under the dashed name
+`latest.yml` gives it (`WriteMind-RelUI-Setup-0.5.1.exe`); "WriteMind"
+itself has no space.

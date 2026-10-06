@@ -7,7 +7,22 @@
 # remember where it put.
 appId: com.seancheren.writemind
 productName: WriteMind
-copyright: Sean Cheren
+copyright: Copyright © 2026 Shahean Cheren
+
+# UPDATES come from this repo's own GitHub Releases (public). This block makes
+# electron-builder write `resources/app-update.yml` into the installed app (what
+# electron-updater reads: main/updater.ts) and, with `--publish always`, upload
+# the installer, its .blockmap and latest.yml to the release for the version's
+# tag — .github/workflows/release.yml does that on a pushed v* tag. A draft
+# first: the workflow publishes it once every file is up, so no installed copy
+# ever sees a release without its latest.yml. A local `package:win` publishes
+# nothing (no tag, no token).
+publish:
+  provider: github
+  owner: chere005
+  repo: WriteMindCross
+  releaseType: draft
+
 directories:
   buildResources: ../../packaging
   output: ../../dist-electron
@@ -28,6 +43,11 @@ asarUnpack:
 
 mac:
   category: public.app-category.productivity
+  # THE ICON is the Mac app's own (WriteMind/Assets.xcassets/AppIcon.appiconset,
+  # 16 to 1024 px), which scripts/build.mjs packs into this .icns (scripts/icns.mjs)
+  # - so WriteMind.app looks like the Swift WriteMind in the Dock and in Finder.
+  # Without it electron-builder would convert packaging/icon.png (512 px).
+  icon: out/icons/WriteMind.icns
   # THE IDENTITY BY ITS FINGERPRINT, not by its name — this says WHICH
   # certificate is meant, and it is the valid one.
   #
@@ -50,14 +70,62 @@ mac:
     NSCameraUsageDescription: WriteMind uses the camera to take the writing off a notebook page.
 
 win:
+  # x64 only: one NSIS file holding two architectures is twice the download for
+  # everyone, and WriteMind has not been tried on Windows on ARM.
   target:
     - target: nsis
-      arch: [x64, arm64]
+      arch: [x64]
     - target: portable
       arch: [x64]
+  # THE ICON is packaging/icon.png (512 px), which electron-builder turns into
+  # the .ico for the exe, the installer, the uninstaller and the shortcuts. (The
+  # git-ignored packaging/writemind.ico is tools/setup-windows.ps1's, for its
+  # dev-build shortcuts; a clean clone or CI needs nothing more than icon.png.)
+  icon: icon.png
+  # UNSIGNED for now (no certificate, so nothing is configured to sign):
+  # SmartScreen says "Windows protected your PC" on a first install, and
+  # More info > Run anyway goes on. docs/INSTALL-WINDOWS.md.
+
+# THE WINDOWS INSTALLER (docs/INSTALL-WINDOWS.md). Assisted, not one-click: a
+# folder page and WriteMind's own page of optional tools (packaging/installer.nsh,
+# found by its name in packaging/: install Python / the Wolfram Engine with
+# winget, and activate the engine). FOR THIS WINDOWS USER ONLY, no administrator:
+# %LOCALAPPDATA%\Programs\WriteMind, HKCU, and installer.nsh's customInstallMode
+# skips the "only for me / anyone" page. Silent (/S, the updater's) installs show
+# nothing and install nothing extra.
+nsis:
+  oneClick: false
+  # THE LICENCE PAGE comes first (Sean, 2026-10-05: "make sure the installer
+  # shows the license"): the repo's own LICENSE (BSD 3-Clause, "Copyright (c)
+  # 2026, Shahean Cheren"), shown as plain text, and installer.nsh makes it the
+  # "I accept the terms of the License Agreement" box that Next waits for. The
+  # path is from packaging/ (the build resources folder), so it is the repo root's
+  # LICENSE wherever the repo is checked out. An update (/S --updated) skips it.
+  license: ../LICENSE
+  perMachine: false
+  allowElevation: false
+  allowToChangeInstallationDirectory: true
+  createDesktopShortcut: true
+  createStartMenuShortcut: true
+  shortcutName: WriteMind
+  uninstallDisplayName: WriteMind
+  # THE NOTES ARE NEVER TOUCHED (they are in Documents\WriteMindCross, not in
+  # the app's folder), and the app's own data (%APPDATA%\@writemind\desktop:
+  # settings, sessions, pen.log) stays too unless the uninstaller is run with
+  # --delete-app-data.
+  deleteAppDataOnUninstall: false
+  runAfterFinish: true
+  artifactName: ${productName}-Setup-${version}.${ext}
+
+portable:
+  artifactName: ${productName}-${version}-portable.${ext}
 
 linux:
   category: Office
+  # THE ICON is the rounded cut (packaging/icon.png, 512 px), as on Windows: a
+  # Linux desktop masks nothing. Named here because, unnamed, electron-builder
+  # would take it from mac.icon's full-bleed .icns.
+  icon: icon.png
   synopsis: A notebook, a camera and a drawing layer over both
   description: >
     WriteMind is a markdown notebook whose notes are plain .md files in a

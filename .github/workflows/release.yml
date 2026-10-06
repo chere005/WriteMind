@@ -1,0 +1,129 @@
+# Releases WriteMind for Windows. A pushed tag v<version> (or a manual run naming an existing tag) checks that the tag
+# is apps/desktop/package.json's version, runs the typecheck, the tests and the build, then has electron-builder make
+# the per-user NSIS installer and upload it, its .blockmap and latest.yml to a draft GitHub Release for that tag; the
+# last step publishes the draft. latest.yml on the newest release is the feed every installed copy's updater reads
+# (apps/desktop/src/main/updater.ts). docs/BUILDING.md ("Releases and updates") says how to cut a release.
+#
+# Unsigned for now: Windows SmartScreen says "Windows protected your PC" on a first install (More info > Run anyway).
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "An existing tag to release, e.g. v0.5.1 (it must be apps/desktop/package.json's version with a v)"
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ github.event.inputs.tag || github.ref_name }}
+  cancel-in-progress: false
+
+jobs:
+  release:
+    name: Windows installer to GitHub Releases
+    runs-on: windows-latest
+    timeout-minutes: 45
+    env:
+      TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
+      # No certificate yet: build unsigned rather than look for one.
+      CSC_IDENTITY_AUTO_DISCOVERY: "false"
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: refs/tags/${{ env.TAG }}
+          fetch-depth: 0
+
+      - name: The tag is the app's version
+        run: |
+          # Case-sensitive (-cnotmatch, -cne): PowerShell's -match / -ne ignore case, and a "V0.5.1" tag would pass, then have
+          # electron-builder make a release for a "v0.5.1" tag that does not exist.
+          if ($env:TAG -cnotmatch '^v\d+\.\d+\.\d+(-[0-9A-Za-z.-]+)?$') {
+            Write-Output "::error title=Not a version tag::'$env:TAG' is not v<major>.<minor>.<patch>[-pre]."
+            exit 1
+          }
+          $version = (Get-Content apps/desktop/package.json -Raw | ConvertFrom-Json).version
+          if ($env:TAG -cne "v$version") {
+            Write-Output "::error title=Tag and version differ::The tag is $env:TAG but apps/desktop/package.json says $version. Set the version, commit, and tag v<version> on that commit (docs/BUILDING.md, Releases and updates)."
+            exit 1
+          }
+          "VERSION=$version" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+          Write-Output "Releasing WriteMind $version from $env:TAG"
+
+      - name: Release notes from the tag's annotation (or its commit's message)
+        run: |
+          # actions/checkout can leave an annotated tag as a lightweight one: fetch the tag object itself.
+          git fetch --force origin "refs/tags/${env:TAG}:refs/tags/${env:TAG}"
+          # The annotation when it says more than a title line; else the tagged commit's whole message.
+          $body = (git for-each-ref "refs/tags/$env:TAG" --format='%(contents:body)') -join "`n"
+          if ($body.Trim()) { $notes = (git for-each-ref "refs/tags/$env:TAG" --format='%(contents:subject)%0a%0a%(contents:body)') -join "`n" }
+          else { $notes = (git log -1 --format=%B "$env:TAG^{commit}") -join "`n" }
+          $notes = (($notes -split "`n") | Where-Object { $_ -notmatch '^(Co-Authored-By|Signed-off-by):' }) -join "`n"
+          if (-not $notes.Trim()) { $notes = "WriteMind $env:VERSION" }
+          $file = Join-Path $env:RUNNER_TEMP "release-notes.md"
+          [IO.File]::WriteAllText($file, $notes.Trim() + "`n", [Text.UTF8Encoding]::new($false))
+          Get-Content $file
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - name: Typecheck
+        run: npm run typecheck
+      - name: Unit tests
+        run: npm test
+      - name: Build
+        run: npm run build
+
+      # No icon step: electron-builder.yml takes packaging/icon.png (tracked) for the exe, installer and shortcuts;
+      # the git-ignored packaging/writemind.ico is only tools/setup-windows.ps1's, for dev shortcuts.
+
+      - name: Installer, uploaded to the draft release
+        working-directory: apps/desktop
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          $notes = Join-Path $env:RUNNER_TEMP "release-notes.md"
+          & (Join-Path $env:GITHUB_WORKSPACE "node_modules/.bin/electron-builder.cmd") --win nsis --x64 --publish always `
+            --config electron-builder.yml "-c.releaseInfo.releaseNotesFile=$notes" "-c.releaseInfo.releaseName=WriteMind $env:VERSION"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Every file is there; publish the release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          $names = @(gh release view $env:TAG --json assets --jq '.assets[].name')
+          if ($LASTEXITCODE -ne 0) { Write-Output "::error::No release for $env:TAG"; exit 1 }
+          Write-Output "Assets: $($names -join ', ')"
+          $missing = @()
+          if (-not ($names -contains "latest.yml")) { $missing += "latest.yml" }
+          if (-not ($names | Where-Object { $_ -like "*$env:VERSION*.exe" })) { $missing += "the installer (.exe)" }
+          if (-not ($names | Where-Object { $_ -like "*$env:VERSION*.exe.blockmap" })) { $missing += "the .blockmap" }
+          if ($missing.Count -gt 0) {
+            Write-Output "::error title=Release incomplete::Missing $($missing -join ', '); the release stays a draft."
+            exit 1
+          }
+          if ($env:VERSION -like "*-*") { gh release edit $env:TAG --draft=false --prerelease } else { gh release edit $env:TAG --draft=false --latest }
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          gh release view $env:TAG --json url --jq .url
+
+      - name: Installer as a build artifact too
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: writemind-${{ env.TAG }}-windows
+          path: |
+            dist-electron/*.exe
+            dist-electron/*.blockmap
+            dist-electron/latest.yml
+          if-no-files-found: ignore
+          retention-days: 14

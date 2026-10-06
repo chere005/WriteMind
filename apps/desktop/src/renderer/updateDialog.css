@@ -1,0 +1,17 @@
+/* The update dialogs (UpdateDialog.tsx): the shared .modal, with the "Check on startup" box beside the buttons. */
+/* Wide enough for "WriteMind 0.5.1 is available (you have 0.5.0). Update now?" on one line. */
+.modal.update-dialog { width: min(440px, calc(100vw - 32px)); }
+.modal.update-dialog:focus { outline: none; }
+.modal.update-dialog p { text-wrap: pretty; }
+.modal.update-dialog p.update-detail { font-size: 12px; }
+.modal.update-dialog p.update-progress {
+  margin: -2px 0 10px; font-size: 12px; color: var(--wm-soft); font-variant-numeric: tabular-nums;
+}
+.modal.update-dialog p.problem { margin: -2px 0 10px; }
+.modal.update-dialog .update-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.modal.update-dialog .update-startup {
+  display: inline-flex; align-items: center; gap: 6px; color: var(--wm-soft); cursor: pointer; user-select: none;
+  white-space: nowrap;
+}
+.modal.update-dialog .update-startup input { margin: 0; accent-color: var(--wm-accent-fill); }
+.modal.update-dialog .update-startup input:focus-visible { outline: 2px solid var(--wm-accent); outline-offset: 1px; }

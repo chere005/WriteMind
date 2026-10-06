@@ -27,7 +27,7 @@ import {
 } from "@codemirror/state"
 import { Decoration, EditorView, ViewPlugin, WidgetType, type DecorationSet, type Rect, type ViewUpdate } from "@codemirror/view"
 import {
-  end, firstCellFromBy, INK_MIN_HEIGHT, PREVIEW_BLOCK_GAP, type Block, type PositionedBlock,
+  apartAbove, end, firstCellFromBy, INK_MIN_HEIGHT, PREVIEW_BLOCK_GAP, type Block, type PositionedBlock,
 } from "@writemind/core"
 import { foldField, insideHidden } from "./fold"
 import { notebook } from "./notebook"
@@ -389,7 +389,9 @@ function specs(state: EditorState): Array<{ from: number; to: number; spec: Cell
       spec: {
         alt, path, file, ink, live, aspect: live ? aspect! : 0,
         held: ranges.some((r) => !r.empty && r.from <= from && r.to >= to && (holding || r.from < from || r.to > to)),
-        touching: rendered && before !== undefined && before.length > 0 && from === end(before) + 1,
+        // (A picture stands apart from a cell it touches, core `standsAlone`: the gap in front of it is apart.ts's own
+        // block, on both pages, so this is only ever true for a kind of cell that does not.)
+        touching: rendered && before !== undefined && before.length > 0 && from === end(before) + 1 && !apartAbove(cells, i),
       },
     })
   }

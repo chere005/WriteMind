@@ -33,12 +33,28 @@ function randomEdit(text: string): { from: number; to: number; insert: string } 
   return { from, to, insert }
 }
 
+/**
+ * Text cells (docs/PLAN-text-cells.md, 2026-10-05) changed what a paragraph's TEXT is: a text cell's lines as typed,
+ * a markdown cell's lines joined (and flagged `markdown`). Everything else — every block, every range — is still
+ * what the frozen old parser read, so the comparison reads a paragraph's text the old way, from its own source.
+ */
+let current = ""
+function paragraphsAsOld(cells: ReturnType<typeof positioned>): ReturnType<typeof positioned> {
+  return cells.map((cell) => {
+    if (cell.block.kind !== "paragraph") return cell
+    const lines = current.slice(cell.range.location, cell.range.location + cell.range.length).split("\n")
+    const text = lines.map((line, i) => (i === 0 ? line.slice(0, line.length - line.trimStart().length) + line.trim() : line.trim())).join(" ")
+    return { block: { kind: "paragraph", text }, range: cell.range }
+  })
+}
+
 describe("the parser machine", () => {
   it("reads every document the way the old parser did", () => {
     seed = 7
     for (let i = 0; i < 1500; i++) {
       const text = randomDoc(Math.floor(rnd() * 40))
-      expect(positioned(text)).toEqual(positionedOld(text))
+      current = text
+      expect(paragraphsAsOld(positioned(text))).toEqual(positionedOld(text))
     }
   })
 

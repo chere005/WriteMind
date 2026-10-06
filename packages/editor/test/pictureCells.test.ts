@@ -103,9 +103,11 @@ describe("picture cells: the widgets", () => {
     }
   })
 
-  it("touching the cell above is the page's gap on the rendered page only", () => {
+  // (Since 2026-10-05 a picture stands apart from a cell it touches: the gap in front of it is a block of its own on
+  // both pages, editor apart.ts, so the widget never pads itself.)
+  it("touching the cell above: the gap is apart.ts's, not the widget's padding", () => {
     const doc = `Words\n${PIC}`
-    expect(widgets(rendered(make(doc)))[0]!.touching).toBe(true)
+    expect(widgets(rendered(make(doc)))[0]!.touching).toBe(false)
     expect(widgets(make(doc))[0]!.touching).toBe(false)
     expect(widgets(rendered(make(`Words\n\n${PIC}`)))[0]!.touching).toBe(false)
   })

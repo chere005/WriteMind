@@ -9,6 +9,8 @@
 
 import { clamped, edit, end, range, type Edit, type Range } from "../text/range"
 import { mathBlock, mathInline } from "./typesetter"
+import { cellSpacing } from "../cells/apart"
+import { keepingHalves } from "../cells/textCells"
 
 export type MathGroup = "Calculus" | "Algebra" | "Functions" | "Relations" | "Symbols" | "Greek"
 
@@ -243,22 +245,24 @@ export const templatesIn = (group: MathGroup): MathTemplate[] =>
  */
 export function insertMath(text: string, selection: Range, wl: string, display: boolean): Edit {
   const where = clamped(selection, text.length)
-  let body: string
-  let caret = 0
   if (display) {
     const before = where.location > 0 ? text.slice(0, where.location) : ""
     const after = text.slice(end(where))
-    const lead = before === "" || before.endsWith("\n") ? "" : "\n"
-    const tail = after.startsWith("\n") ? "" : "\n"
-    body = lead + mathBlock(wl) + tail
-    // PORT-ONLY. The caret goes to the line AFTER the block. The Mac leaves it at the end of the inserted
-    // text, which, when the text already had a line break there (the caret on a blank line, or at the end of
-    // a line with more below), is the END OF THE CLOSING FENCE LINE: its source pane is always on show, so
-    // nothing is lost there, but here the page is the source, and anything typed on that line is part of the
-    // fence line, which the typeset block replaces whole. The words vanished from the page.
-    if (tail === "") caret = 1
-  } else {
-    body = mathInline(wl)
+    // A CELL OF ITS OWN (Sean, 2026-10-05: "this math cell should be placed as its own cell, not connected to the cell
+    // before it"): a blank line above the block and one below it, counting the ones already there.
+    const { lead, trail: tail } = cellSpacing(before, after)
+    const block = mathBlock(wl)
+    const body = lead + block + tail
+    // PORT-ONLY. The caret goes to the line AFTER the block — the blank line under it, which is the bar there. The
+    // Mac leaves it at the end of the inserted text, which can be the END OF THE CLOSING FENCE LINE: its source pane
+    // is always on show, so nothing is lost there, but here the page is the source, and anything typed on that line
+    // is part of the fence line, which the typeset block replaces whole. At the very end of the note there is no
+    // line after it: the caret ends the note and the editor arms the bar under the block (MathPalette).
+    const closed = where.location + lead.length + block.length
+    const caret = (tail + after).startsWith("\n") ? closed + 1 : closed
+    // (A caret in a paragraph's words splits it: each half stays the kind it was.)
+    return keepingHalves(text, edit(where, body, range(caret, 0)))
   }
-  return edit(where, body, range(where.location + body.length + caret, 0))
+  const body = mathInline(wl)
+  return edit(where, body, range(where.location + body.length, 0))
 }

@@ -43,10 +43,13 @@ describe("the application menu is the Mac's", () => {
     expect(file({ hasNote: true }, []).find((one) => one.label === "Export…")!.enabled).toBe(true)
   })
 
-  it("Help: Keyboard Shortcuts (F1), then About", () => {
+  it("Help: Keyboard Shortcuts (F1), then Check for Updates… and its startup box (Windows: main/updater.ts) and About", () => {
     const help = sub(menu().map((one) => (one.role === "help" ? { ...one, label: "Help" } : one)), "Help")
-    expect(labels(help)).toEqual(["Keyboard Shortcuts", "-", "About WriteMind"])
+    expect(labels(help)).toEqual(["Keyboard Shortcuts", "-", "Check for Updates…", "Check for Updates on Startup", "-", "About WriteMind"])
     expect(help[0]!.accelerator).toBe("F1")
+    expect(help[2]!.id).toBe("checkForUpdates")
+    const mac = sub(menu({}, "darwin").map((one) => (one.role === "help" ? { ...one, label: "Help" } : one)), "Help")
+    expect(labels(mac)).toEqual(["Keyboard Shortcuts", "-", "About WriteMind"])
   })
 
   it("Project: the name, Add Folder, Remove Folder, Save, Save As, Open, New", () => {
@@ -107,7 +110,7 @@ describe("the application menu is the Mac's", () => {
 
   it("Format: the heading ladder, marks, list, quote, indentation, cells, sections", () => {
     expect(labels(sub(menu(), "Format"))).toEqual([
-      "Title", "Chapter", "Author", "Section", "Subsection", "Subsubsection", "Body Text", "-",
+      "Title", "Chapter", "Author", "Section", "Subsection", "Subsubsection", "Text", "Markdown", "-",
       "Bold", "Italic", "Underline", "Strikethrough", "-",
       "Dots List", "Quote", "-",
       "Decrease Indentation", "Increase Indentation", "-",
@@ -211,7 +214,9 @@ describe("the application menu is the Mac's", () => {
     expect(fk("Merge Cells")).toBe("Ctrl+M")
     expect(fk("Duplicate Cell")).toBe("Ctrl+Shift+D")
     expect(fk("Title")).toBe("CmdOrCtrl+1")
-    expect(fk("Body Text")).toBe("CmdOrCtrl+7")
+    expect(fk("Text")).toBe("CmdOrCtrl+7")
+    expect(fk("Markdown")).toBe("CmdOrCtrl+Shift+7")
+    expect(fk("Evaluation Cell")).toBe("CmdOrCtrl+Shift+8")
     expect(sub(menu({ camera: true }, "darwin"), "View")[2]!.accelerator).toBe("Cmd+Y")
   })
 })

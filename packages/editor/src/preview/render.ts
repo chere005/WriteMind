@@ -11,8 +11,8 @@
  */
 
 import {
-  bulletItem, codeTokens, dashItem, drawnRows, fenceLanguage, fenced, inlineSegments, isMathFence, colouring,
-  numberedItem, todoItem,
+  bulletItem, codeTokens, dashItem, drawnRows, fenceLanguage, hiddenInText, fenced, inlineSegments, isMathFence, colouring,
+  isMarkdownMarker, numberedItem, todoItem,
   type Block, type InlineSegment,
 } from "@writemind/core"
 import { safeSpanStyle } from "../decorations"
@@ -125,9 +125,41 @@ function headingBlock(source: string, context: RenderContext): HTMLElement {
   return holder
 }
 
-function paragraphBlock(source: string, context: RenderContext): HTMLElement {
+/**
+ * A TEXT cell (docs/PLAN-text-cells.md): its lines as typed, every line break kept, nothing drawn as formatting, the
+ * escape rule's backslashes not drawn. Each run starts after an escape, so a click still finds its offset.
+ */
+function textBlock(source: string): HTMLElement {
+  const holder = make("div", "wm-pv wm-pv-p wm-pv-text")
+  linesOf(source).forEach((line, index) => {
+    if (index > 0) holder.appendChild(document.createElement("br"))
+    let from = 0
+    const run = (to: number) => {
+      if (to <= from) return
+      const piece = make("span", "wm-pv-t", holder)
+      piece.dataset.s = String(line.start + from)
+      piece.textContent = line.text.slice(from, to)
+    }
+    // (Each escape's backslash, and Link Here's id anchors, are not drawn.)
+    for (const [start, stop] of hiddenInText(line.text)) {
+      run(start)
+      from = stop
+    }
+    run(line.text.length)
+    // An empty line still holds its place (a caret put there lands on it).
+    if (line.text.length === 0) {
+      const empty = make("span", "wm-pv-t", holder)
+      empty.dataset.s = String(line.start)
+    }
+  })
+  return holder
+}
+
+function paragraphBlock(block: Extract<Block, { kind: "paragraph" }>, source: string, context: RenderContext): HTMLElement {
+  if (!block.markdown) return textBlock(source)
   const holder = make("div", "wm-pv wm-pv-p")
-  const lines = linesOf(source).filter((line) => line.text.trim().length > 0)
+  // (A markdown cell's marker line is not drawn: it is what makes the cell one.)
+  const lines = linesOf(source).filter((line) => line.text.trim().length > 0 && !isMarkdownMarker(line.text))
   lines.forEach((line, index) => {
     if (index > 0) holder.appendChild(document.createTextNode(" "))
     // The first line keeps the spaces it was written with, so an indented
@@ -292,7 +324,7 @@ function ruleBlock(): HTMLElement {
 export function renderBlock(block: Block, source: string, context: RenderContext): HTMLElement {
   switch (block.kind) {
     case "heading": return headingBlock(source, context)
-    case "paragraph": return paragraphBlock(source, context)
+    case "paragraph": return paragraphBlock(block, source, context)
     case "quote": return quoteBlock(source, context)
     case "bullets": case "dashes": case "todos": case "numbered": return listBlock(source, context)
     case "code": return codeBlock(source, context)
@@ -311,7 +343,8 @@ export function estimatedHeight(block: Block, source: string): number {
   switch (block.kind) {
     // (The rendered ladder, 28/22/18/16/15/17, at its line heights.)
     case "heading": return ({ 1: 34, 2: 28, 3: 26, 4: 23, 5: 22, 6: 25 } as Record<number, number>)[block.level] ?? 24
-    case "paragraph": return Math.max(1, Math.ceil(source.length / 85)) * 22
+    case "paragraph": return block.markdown ? Math.max(1, Math.ceil(source.length / 85)) * 22
+      : source.split("\n").reduce((sum, line) => sum + Math.max(1, Math.ceil(line.length / 85)) * 22, 0)
     case "quote": return Math.max(1, Math.ceil(source.length / 80)) * 22
     case "bullets": case "dashes": case "todos": case "numbered": return lines * 22
     // Its lines at the code size, and half that size of padding top and bottom (Mac e66379c).

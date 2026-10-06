@@ -6,6 +6,8 @@
  * nothing is stored beside the file, because the file is the note.
  */
 
+import { isMarkdownMarker, unescapeLine } from "../markdown/plainText"
+
 export interface Note {
   /** The file's path. It is the id: two notes cannot share one. */
   path: string
@@ -45,12 +47,13 @@ export function makeNote(path: string, modified: number, contents: string): Note
 
   for (const raw of contents.split("\n").slice(0, 40)) {
     const line = raw.trim()
-    if (line.length === 0) continue
+    // A markdown cell's marker is not words (docs/PLAN-text-cells.md); a text cell's escapes are not drawn.
+    if (line.length === 0 || isMarkdownMarker(line)) continue
     if (title === null && line.startsWith("#")) {
       title = line.replace(/^#+/, "").trim()
       continue
     }
-    if (snippetLines.length < 2) snippetLines.push(stripInlineMarkup(line))
+    if (snippetLines.length < 2) snippetLines.push(stripInlineMarkup(unescapeLine(line)))
   }
 
   return {

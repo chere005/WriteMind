@@ -19,6 +19,7 @@
 import { mathmlString } from "../math/mathml"
 import { inlineSpans, inlineSpansHtml, mathExpressionInCode } from "../math/typesetter"
 import { readableInk } from "../drawing/textBox"
+import { ESCAPABLE } from "../markdown/plainText"
 
 /** The page's white. */
 export const PAPER_HEX = "#FFFFFF"
@@ -79,6 +80,10 @@ function tokenize(source: string): Token[] {
   while (index < source.length) {
     const rest = source.slice(index, index + 400)
     let match: RegExpExecArray | null
+    // An escape (`\<`) is the character it escapes, never the start of a tag (plainText.ts).
+    if (source.charCodeAt(index) === 92 && index + 1 < source.length && ESCAPABLE.includes(source[index + 1]!)) {
+      buffer += source.slice(index, index + 2); index += 2; continue
+    }
     if (rest.startsWith("<u>")) { flush(); tokens.push({ open: { underline: true } }); index += 3 }
     else if (rest.startsWith("</u>")) { flush(); tokens.push({ close: true }); index += 4 }
     else if (rest.startsWith("</span>")) { flush(); tokens.push({ close: true }); index += 7 }
@@ -125,6 +130,8 @@ function markdownRun(text: string): string {
     const maths = source === null ? null : mathHtml(source, "inline")
     return hold(maths ?? `<code>${escapeHtml(code)}</code>`)
   })
+  // Escapes next: `\*` is a star, and no pattern after this sees it.
+  work = work.replace(/\\([\\`*_{}[\]()#+\-.!~<>|])/g, (_whole, character: string) => hold(escapeHtml(character)))
   // Links: the label is itself inline markdown; the destination is not.
   work = work.replace(/\[([^\]\n]+)\]\(([^)\n]+)\)/g, (_whole, label: string, href: string) =>
     hold(`<a class="link"${linkTarget(href)}>${emphasis(escapeHtml(label))}</a>`))

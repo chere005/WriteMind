@@ -1,4 +1,4 @@
-# WriteMind (Windows port) status, 2026-10-05, build 0.4.0 plus the working-tree round (docking, ink cells, pen buttons)
+# WriteMind (Windows port) status, 2026-10-05, version 1.0.0 (working tree, not committed)
 
 Plain words. "Proven" = checked by an automated test or script against the real built app (offscreen, with synthetic
 mouse / key / pen events). "Fake data" = checked only with made-up input, so it still needs your hands.
@@ -55,6 +55,23 @@ its neighbour, a drawing tab of a note not in front, open (now the last plain ta
 drawing tab whose note was brought and then left for another note stayed "waiting", so that note opened later by hand
 switched the sheet to it, and Next / Previous Sheet stepped from it (the pick now ends).
 
+**v1.0.0 gate (separate cells, text cells, update dialog + licence page, fence arrows, box buttons, Mac Dock).**
+`npm test` (one full run): 127 files, 2253 pass, 1 skipped, 0 failed. Typecheck clean, locked build clean, x64
+installer `dist-electron\WriteMind-Setup-1.0.0.exe` (113,919,183 bytes) built. Smoke on one isolated instance
+(gate-r9, port 9625; scripts in `C:\CLAUDIO\agents\e2e\gate-r9\`): the lanes' text-cells 36 / 36, separate-cells
+36 / 36, 05-rendered-fence-arrows 34 / 34, box-buttons 45 / 45, plus the gate's own `gate-extra.mjs` 12 / 12 and
+`whole-sheet.mjs`; screenshots `C:\CLAUDIO\agents\shots\gate-r9\*.png` looked at. The installer UI was run to its
+licence page (BSD 3-Clause, "Copyright (c) 2026, Shahean Cheren", Next greyed until "I accept"), screenshotted and
+cancelled: nothing installed. Gate fixes: a paste at an armed bar is written as it is (cells copied whole kept
+their headings, bold and marker; it had escaped everything); a markdown cell's hidden marker leaves when `# ` / `- ` /
+`> ` / a fence typed at its words' start makes them another block, and Return there moves it down with them; Ctrl+7
+keeps Link Here's anchors and an inline picture's markdown; Link Here into a text cell leaves it a text cell (anchors
+are hidden, not formatting); the escape rule is linear on long pasted lines (it took 1.7 s on 16,000 characters,
+now ~20 ms); display maths / Ctrl+8 into a paragraph keep each half its kind; whole cells copied give other apps the
+words; /link lands its selection on the link; a whole-sheet box puts its button row under the sheet, off the box;
+PageUp / PageDown and Escape / Backspace / Delete at a bar no longer stand the caret on a fence; the launch update
+dialog never takes Enter as Update now; a failed re-check after a failed download still shows why.
+
 ## This round (2026-10-05), in plain words
 
 * **The sheet follows the note** (Sean: "automatically switch to the right note tab..."). Picking a "<note>
@@ -97,8 +114,16 @@ switched the sheet to it, and Next / Previous Sheet stepped from it (the pick no
 
 ## Needs Sean's hands (this round)
 
-* **Decide the version and say "commit, tag and push" again** after trying it: v0.4.0 exists (1321583), so this round
-  cannot be v0.4.0 without moving a published tag. Both `package.json` files still say 0.4.0.
+* **Try 1.0.0, then say "commit, tag and push"**: the version is 1.0.0 in both `package.json` files and the lock
+  file; nothing is committed. Text cells, settled by your "when converting a cell to markdown, it just processes
+  markdown": Ctrl+Shift+7 and the automatic switch (Ctrl+B, B I U S, the T menu, /link, inline maths) read the
+  cell's words as markdown (a typed `**x**` turns bold, a `# ` line a heading, single line breaks join); one Ctrl+Z
+  gives the text cell back. v1.0.0 gate (2026-10-05): typecheck clean, `npm test` 2261 passed / 1 skipped, locked
+  build clean, text-cells e2e 44/44 with real keys; fixed /link's landing selection, a selection only touching a
+  text cell, the T menu's Remove, a marker line inside a fence. **No GitHub Release exists yet** (tags v0.2.0–v0.5.0
+  have none): "commit, tag and push" must include the untracked `.github/workflows/release.yml`; tag `v1.0.0` then
+  builds the installer and publishes it with latest.yml (check: `gh release view v1.0.0 --json assets,isDraft`).
+* **Wacom pen button:** Wacom Tablet Properties ▸ Pen, first button = Middle Click (docs/INSTALL-WINDOWS.md step 7).
 * **The Intuos (CTL-472), on the page and inside an ink cell:** hold the lower button and draw over strokes (they
   erase), double tap it in the air (Undo), hold the upper button and drag (a marquee selects; drag inside it moves),
   double tap it (Redo), single taps do nothing, no right-click menu appears. If a double tap does nothing on the page,

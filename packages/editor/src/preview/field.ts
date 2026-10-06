@@ -23,8 +23,8 @@
 import { RangeSet, StateField, type EditorState, type Extension, type Range as CMRange, type Transaction } from "@codemirror/state"
 import { Decoration, EditorView, WidgetType, type DecorationSet } from "@codemirror/view"
 import {
-  cellStatesSparse, end, firstCellFromBy, isMathFence, PREVIEW_BLOCK_GAP, isStructuralLine, structuralLineStarts, toggleTodo, fenced,
-  fenceLanguage, staysClosed, todoItem, type Block, type CellState, type PositionedBlock, type Range,
+  apartAbove, cellStatesSparse, end, firstCellFromBy, isMathFence, PREVIEW_BLOCK_GAP, isStructuralLine, structuralLineStarts, toggleTodo, fenced,
+  fenceLanguage, staysClosed, standsAlone, todoItem, type Block, type CellState, type PositionedBlock, type Range,
 } from "@writemind/core"
 import { awayField } from "./away"
 import { armedField } from "../seams"
@@ -176,9 +176,10 @@ const isArmed = (state: EditorState): boolean => (state.field(armedField, false)
 function openCells(state: EditorState, cells: readonly PositionedBlock[]): Map<number, CellState> {
   if (state.field(awayField, false)) return new Map()
   const holding = state.field(holdingField, false) ?? false
-  // A picture or ink cell never opens and never joins a run (core `staysClosed`): it is drawn by `pictureCells`.
+  // A picture or ink cell never opens and never joins a run (core `staysClosed`): it is drawn by `pictureCells`. A
+  // fence, a table or a heading opens on its own: it never joins a run of cells it touches (core `standsAlone`).
   return cellStatesSparse(cells, (cell) => cell.range, selectionOf(state), holding, isArmed(state),
-    (cell) => staysClosed(cell.block))
+    (cell) => staysClosed(cell.block), (cell) => standsAlone(cell.block))
 }
 
 /** An empty block with the caret in it says what it is for: where, or -1. */
@@ -238,7 +239,10 @@ function entriesIn(state: EditorState, cells: readonly PositionedBlock[], states
       if (parts && isMathFence(fenceLanguage(parts.open))) continue
     }
     const before = cells[index - 1]?.range
+    // (A cell that stands apart from the one it touches has the gap in front of it already, as a block of its own on
+    // both pages: apart.ts.)
     const touching = before !== undefined && before.length > 0 && cell.range.location === end(before) + 1
+      && !apartAbove(cells, index)
     widgets.push(Decoration.replace({
       widget: new BlockWidget(cell.block, source, states.get(index) === "held", touching),
       block: true,

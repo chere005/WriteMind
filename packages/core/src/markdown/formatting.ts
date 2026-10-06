@@ -13,6 +13,8 @@ import {
   type Edit, type Range,
 } from "../text/range"
 import { numberedItem, todoItem } from "./parser"
+import { cellSpacing } from "../cells/apart"
+import { keepingHalves } from "../cells/textCells"
 
 export const BOLD = "**"
 export const ITALIC = "_"
@@ -49,7 +51,7 @@ export type Heading = 0 | 1 | 2 | 3 | 4 | 5 | 6
 export const HEADING_LADDER: Heading[] = [1, 2, 6, 3, 4, 5, 0]
 
 export function headingName(level: Heading): string {
-  return ["Body Text", "Title", "Chapter", "Section", "Subsection", "Subsubsection", "Author"][level]!
+  return ["Text", "Title", "Chapter", "Section", "Subsection", "Subsubsection", "Author"][level]!
 }
 
 /** What the line is written as — `#` per level, and nothing for body. */
@@ -360,8 +362,9 @@ export function codeBlock(text: string, selection: Range, language = ""): Edit {
   const where = clamped(selection, text.length)
   const before = where.location > 0 ? text.slice(0, where.location) : ""
   const after = text.slice(end(where))
-  const lead = before.length === 0 || before.endsWith("\n") ? "" : "\n"
-  const tail = after.length === 0 || after.startsWith("\n") ? "" : "\n"
+  // A CELL OF ITS OWN (Sean, 2026-10-05): a blank line above the fences and one below them, counting the ones there
+  // already — a block written straight under a line of words, or over one, was glued to it.
+  const { lead, trail: tail } = cellSpacing(before, after)
   const inner = substring(text, where)
   // An empty block keeps an empty line between its fences: the caret goes
   // on THAT line. With the caret on the closing fence's line instead,
@@ -370,8 +373,9 @@ export function codeBlock(text: string, selection: Range, language = ""): Edit {
   const replacement = lead + "```" + language + "\n" + body + "```" + tail
   const caret = inner.length === 0
     ? where.location + lead.length + 3 + language.length + 1
-    : where.location + replacement.length
-  return edit(where, replacement, range(caret, 0))
+    : where.location + replacement.length - tail.length
+  // (Round some of a paragraph's words it splits the paragraph: each half stays the kind it was.)
+  return keepingHalves(text, edit(where, replacement, range(caret, 0)))
 }
 
 /**

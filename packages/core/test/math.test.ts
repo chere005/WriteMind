@@ -122,13 +122,21 @@ describe("insertMath", () => {
     expect(e.selection.length).toBe(0)
   })
 
-  it("maths on its own line opens a line for itself", () => {
-    expect(after("before", range(6, 0), "Sqrt[2]", true).out).toBe("before\n```wl\nSqrt[2]\n```\n")
+  // A CELL OF ITS OWN (Sean, 2026-10-05): a blank line above the block and one below it, where the Mac writes one line
+  // break, and never a second blank line where there is one already (core cells/apart.ts).
+  it("maths on its own line opens a cell for itself", () => {
+    expect(after("before", range(6, 0), "Sqrt[2]", true).out).toBe("before\n\n```wl\nSqrt[2]\n```")
   })
 
-  it("maths at the start of a line does not add an empty one", () => {
+  it("maths at the start of a line does not add an empty one above it", () => {
     expect(after("before\n\nafter", range(8, 0), "Pi", true).out)
-      .toBe("before\n\n```wl\nPi\n```\nafter")
+      .toBe("before\n\n```wl\nPi\n```\n\nafter")
+  })
+
+  it("maths under an answer is not glued to it (Sean's note)", () => {
+    const note = "```out\n4\n```\n"
+    expect(after(note, range(note.length, 0), "Integrate[x^2, x]", true).out)
+      .toBe("```out\n4\n```\n\n```wl\nIntegrate[x^2, x]\n```")
   })
 
   it("the selection is replaced, not wrapped", () => {

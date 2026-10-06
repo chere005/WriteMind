@@ -9,7 +9,7 @@
 import { useEffect, useState } from "react"
 import type { EditorView } from "@codemirror/view"
 import {
-  anchorIn, linkMarkdown, makeNote, stem, triggerRange, type Note,
+  anchorIn, linkMarkdown, makeNote, stem, triggerRange, writeRich, type Note,
 } from "@writemind/core"
 import type { Section } from "./wm"
 
@@ -96,12 +96,14 @@ export function LinkBanner({ request, current, view, root, openNote, onLanded, o
     if (source === null) { setProblem("The note with the /link has gone."); return }
     const at = triggerRange(source, request.caret)
     if (!at) { setProblem("The /link is gone from that note."); return }
-    const finished = source.slice(0, at.location) + markdown + source.slice(at.location + at.length)
+    // A link in a text cell makes it a markdown cell first (docs/PLAN-text-cells.md, "Automatic").
+    const { text: finished, link } = writeRich(source, at, markdown)
     const out = await window.wm.writeNote(request.file, finished)
     if (!out.written) { setProblem("That note changed on disk; nothing was overwritten."); return }
     const known = root ? flatten(root).find((note) => note.path === request.file) : undefined
     onDone()
-    onLanded?.(request.file, at.location, at.location + markdown.length)
+    // Where the link landed, as the switch says (it can take backslashes out and put markers in on both sides of it).
+    onLanded?.(request.file, link.location, link.location + link.length)
     await openNote(known ?? makeNote(request.file, Date.now(), finished))
   }
 

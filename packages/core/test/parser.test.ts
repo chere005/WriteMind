@@ -6,7 +6,8 @@ describe("the parser", () => {
   it("reads headings, paragraphs and rules", () => {
     expect(blocks("# Title\n\nline one\nline two\n\n---\n## Sub")).toEqual<Block[]>([
       { kind: "heading", level: 1, text: "Title" },
-      { kind: "paragraph", text: "line one line two" },
+      // A TEXT cell keeps its line breaks (docs/PLAN-text-cells.md: the port's rule since 2026-10-05; the Mac joins them).
+      { kind: "paragraph", text: "line one\nline two" },
       { kind: "rule" },
       { kind: "heading", level: 2, text: "Sub" },
     ])

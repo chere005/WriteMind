@@ -55,16 +55,18 @@ describe("the quick reference's keys come from the command table", () => {
     expect(both("Pen down / up")).toEqual(["Ctrl+P", "⌘P"])
     expect(both("1 Title")).toEqual(["Ctrl+1", "⌘1"])
     expect(both("3 Author")).toEqual(["Ctrl+3", "⌘3"])
-    expect(both("7 Body Text")).toEqual(["Ctrl+7", "⌘7"])
+    // docs/PLAN-text-cells.md (Sean, 2026-10-05): 7 Text, Shift+7 Markdown, 8 Code block, Shift+8 Runnable code, 9 Drawing.
+    expect(both("7 Text")).toEqual(["Ctrl+7", "⌘7"])
+    expect(both("Shift+7 Markdown")).toEqual(["Ctrl+Shift+7", "⇧⌘7"])
     expect(both("8 Code block")).toEqual(["Ctrl+8", "⌘8"])
-    expect(both("9 Runnable cell")).toEqual(["Ctrl+9", "⌘9"])
+    expect(both("Shift+8 Runnable code")).toEqual(["Ctrl+Shift+8", "⇧⌘8"])
     expect(both("Bold / Italic / Underline")).toEqual(["Ctrl+B / I / U", "⌘B / I / U"])
     expect(both("Indent / Outdent")).toEqual(["Ctrl+] / Ctrl+[", "⌘] / ⌘["])
     expect(both("Split / Merge cell")).toEqual(["Ctrl+D / Ctrl+M", "⌃D / ⌃M"])
     expect(both("Move cell up / down")).toEqual(["Ctrl+Shift+↑ / ↓", "⌃⇧↑ / ↓"])
     expect(both("Move section up / down")).toEqual(["Ctrl+↑ / ↓", "⌃⌘↑ / ↓"])
     expect(both("Run the cell")).toEqual(["Shift+Enter", "⇧↩"])
-    expect(both("0 Drawing cell")[0]).toBe("Ctrl+0")
+    expect(both("9 Drawing cell")[0]).toBe("Ctrl+9")
     expect(both("Fold / unfold all sections")).toEqual(["Ctrl+Alt+Shift+← / →", "⌥⇧⌘← / →"])
     expect(both("Every key")).toEqual(["F1", "⇧⌘/"])
   })
@@ -89,21 +91,24 @@ describe("the quick reference's keys come from the command table", () => {
     expect(table.rows.length).toBe(WELCOME_KEYS.length + WELCOME_GROUPS.length)
     expect(table.rows.map((cells) => [cells[0], cells[1] ?? "", cells[2] ?? ""])).toEqual(expected)
   })
-  it("the ten number keys come first, as one group, 1 … 9 then 0 (Sean: group the ctrl/cmd + 1-0 keystrokes)", () => {
+  it("the number keys come first, as one group, each digit's Shift chord after it (Sean: group the ctrl/cmd + 1-0 keystrokes)", () => {
     const first = WELCOME_GROUPS[0]!
     expect(first.keys.map((one) => welcomeKeys(one, false))).toEqual(
-      ["Ctrl+1", "Ctrl+2", "Ctrl+3", "Ctrl+4", "Ctrl+5", "Ctrl+6", "Ctrl+7", "Ctrl+8", "Ctrl+9", "Ctrl+0"])
+      ["Ctrl+1", "Ctrl+2", "Ctrl+3", "Ctrl+4", "Ctrl+5", "Ctrl+6", "Ctrl+7", "Ctrl+Shift+7", "Ctrl+8", "Ctrl+Shift+8", "Ctrl+9"])
     expect(WELCOME_GROUPS.slice(1).map((group) => group.title)).toEqual(["Notes", "View", "Editing", "Help"])
   })
 
   it("the feature list names what is built, the pen buttons as Sean set them", () => {
     const text = welcomeNote()
     expect(text.startsWith("# WriteMind Quick Reference\n")).toBe(true)
-    for (const name of ["Docking", "Drawing cells", "Runnable cells", "Tablet sheets as tabs", "Wacom pen buttons"]) {
+    for (const name of ["Cells", "Drawing", "Runnable cells", "Video pane", "Wacom pen buttons"]) {
       expect(WELCOME_FEATURES.some((one) => one.startsWith(`**${name}`)), name).toBe(true)
     }
     expect(text).toContain("First button (Middle Click): hold to erase strokes, double-tap to undo.")
     expect(text).toContain("Second button (Right Click): hold to select, double-tap to redo.")
+    expect(text).toContain("Set the first button to Middle Click in Wacom Tablet Properties")
+    // Sean: "way way more brief": one line per feature
+    for (const one of WELCOME_FEATURES.filter((f) => !f.includes("\n"))) expect(one.length).toBeLessThan(140)
   })
 })
 

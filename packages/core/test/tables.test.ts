@@ -59,9 +59,9 @@ describe("reading a table", () => {
 
   it("a lone line of pipes is not a table", () => {
     expect(blocks("| a | b |")).toEqual([{ kind: "paragraph", text: "| a | b |" }])
-    expect(blocks("| a | b |\nmore words")).toEqual([{ kind: "paragraph", text: "| a | b | more words" }])
+    expect(blocks("| a | b |\nmore words")).toEqual([{ kind: "paragraph", text: "| a | b |\nmore words" }])
     // A delimiter row with a different number of cells is not one either.
-    expect(blocks("| a | b |\n|---|")).toEqual([{ kind: "paragraph", text: "| a | b | |---|" }])
+    expect(blocks("| a | b |\n|---|")).toEqual([{ kind: "paragraph", text: "| a | b |\n|---|" }])
     // A rule under a line of pipes is a rule.
     expect(blocks("| a | b |\n---").map((b) => b.kind)).toEqual(["paragraph", "rule"])
   })
@@ -81,7 +81,7 @@ describe("reading a table", () => {
     const note = "My keys:\nmore words\n| a | b |\n|---|---|\n| 1 | 2 |"
     const found = positioned(note)
     expect(found).toEqual([
-      { block: { kind: "paragraph", text: "My keys: more words" }, range: { location: 0, length: 19 } },
+      { block: { kind: "paragraph", text: "My keys:\nmore words" }, range: { location: 0, length: 19 } },
       {
         block: { kind: "table", header: ["a", "b"], align: [null, null], rows: [["1", "2"]] },
         range: { location: 20, length: note.length - 20 },

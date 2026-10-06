@@ -44,7 +44,7 @@ import { ocrAvailable, readCanvasLines, wordsForChart } from "./ocrClient"
 import { CAMERA_OFF, TABLET_SOURCE } from "../shared/commands"
 import { setSheetEraser, setSheetSelect, useSheetTools } from "./penSettings"
 import { TabletSurface, type SurfaceHandle } from "./TabletSurface"
-import { takeFromSheet, type Capture } from "./tabletCapture"
+import { eraseFromSheet, takeFromSheet, type Capture } from "./tabletCapture"
 import { currentSheet, stepSheet, useSheetTabs } from "./tabletSheets"
 import { SheetStrip } from "./SheetStrip"
 import { stepNote, useCellSheet } from "./cellSheets"
@@ -66,6 +66,11 @@ interface Props {
   /** The notes pane, which is what a capture is measured against. */
   pane: Size
   onCapture(capture: Capture): void
+  /**
+   * The tablet box's "Bring in as Drawing Cell": the writing (landed as Writing lands it) docked as a new drawing cell
+   * at the note's input cursor, one Undo step. False when the note could not take it.
+   */
+  onDockCell?(capture: Capture): boolean
   onHide(): void
   /**
    * The source picked from the Input Devices menu (or the sidebar's video menu): a camera's id, the
@@ -112,7 +117,7 @@ const hex = (colour: string): string => (/^#[0-9a-f]{6}$/i.test(colour) ? colour
 export type CameraAction = "turn-left" | "turn-right" | "original-size" | "resize-by-square"
 
 export function CameraPane({
-  platform, penColour, penWidth = 2, pane, onCapture, onHide, preferred,
+  platform, penColour, penWidth = 2, pane, onCapture, onDockCell, onHide, preferred,
   cameras = [], onPickSource, onRefreshCameras, onActiveCamera, showEditor = true, onToggleEditor, onReadText, note = null,
   fullWindow = false, onFullWindow,
 }: Props) {
@@ -489,6 +494,35 @@ export function CameraPane({
     onCapture(out.capture)
   }, [sheetBox, sheets.current, boxOn, onCapture, pane, penColour, penWidth])
 
+  /**
+   * The box's row (BoxActions.tsx). ERASE rubs out what is inside the box (one Undo on the sheet; the box stays).
+   * BRING IN AS DRAWING CELL takes the boxed writing as Writing does and docks it as a NEW drawing cell at the input
+   * cursor (App.tsx `dockSheetCell`: the armed bar, else after the caret's cell; one Undo in the note), then takes it
+   * off the sheet as Writing does; nothing leaves the sheet when the note would not take the cell.
+   */
+  const eraseBox = useCallback(() => {
+    const out = eraseFromSheet(sheetBox, surface.current?.size() ?? { width: 0, height: 0 })
+    if ("trouble" in out) { setTrouble(out.trouble); return }
+    setTrouble(null)
+    surface.current?.repaint()
+    edited((was) => was + 1)
+  }, [sheetBox])
+  const boxToCell = useCallback(async () => {
+    const takenFrom = sheets.current
+    const out = await takeFromSheet("cell", {
+      box: sheetBox, shown: surface.current?.size() ?? { width: 0, height: 0 }, pane,
+      penColour, penWidth, paper: currentPaper(),
+    })
+    if ("trouble" in out) { setTrouble(out.trouble); return }
+    if (!onDockCell?.(out.capture)) { setTrouble("the note could not take a drawing cell here"); return }
+    out.clear?.()
+    setTrouble(null)
+    setRead(null)
+    surface.current?.repaint()
+    boxOn(takenFrom, null)
+    edited((was) => was + 1)
+  }, [sheetBox, sheets.current, boxOn, onDockCell, pane, penColour, penWidth])
+
   // Pen ▸ Next / Previous Sheet (Ctrl+Alt+PageDown / PageUp): the hand without the pen changes sheet while the sheet shows.
   useEffect(() => {
     if (!tablet) return
@@ -609,7 +643,15 @@ export function CameraPane({
         ? (
           <TabletSurface ref={surface} page={sheet} colour={penColour} width={penWidth} frame={binding.frame}
                          box={sheetBox} onBox={(next) => { setSheetBox(next); setTrouble(null) }}
-                         onEdited={() => { edited((was) => was + 1); setTrouble(null) }} />
+                         onEdited={() => { edited((was) => was + 1); setTrouble(null) }}
+                         buttons={{
+                           erase: eraseBox,
+                           bring: () => takeTablet("ink"),
+                           cell: boxToCell,
+                           // As the header's Bring in: off on a drawing cell's own tab; and with no note to bring into.
+                           bringOff: binding.bound ? "This sheet is a drawing cell of the note already"
+                             : note === null ? "Open a note to bring the writing into" : null,
+                         }} />
         )
         : (
           // THE VIEWFINDER: the pane, or the shape asked for centred in it. The picture, the box and the corners are

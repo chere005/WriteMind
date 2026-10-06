@@ -19,10 +19,76 @@ section; the open tab follows the file), `/link` and following a link,
 C, C++, Python, TypeScript, Rust, Java, Bash, Zsh and Wolfram (a
 transcribed scanner, no CodeMirror language packages), Alt-D, the
 rendered-page toggle, and evaluation cells (```` ```eval python ```` and friends: Shift+Enter runs one in the main
-process and writes the answer under it, Ctrl+9 makes one, `In[n]` / `Out[n]` in the margin). The editor-level e2e scripts are in the repo now:
+process and writes the answer under it, Ctrl+Shift+8 makes one (Ctrl+9 until 2026-10-05), `In[n]` / `Out[n]` in the margin). The editor-level e2e scripts are in the repo now:
 `e2e/suites/editor` and `e2e/suites/cells` (`npm run e2e -- --suite editor`;
 `docs/TESTING.md`). A new install opens on `WriteMind Quick Reference.md` (once per notes folder,
 `main/welcome.ts`; PARITY "The Quick Reference").
+
+## Next, Sean's backlog (2026-10-05)
+
+Sean, 2026-10-05: "keep note of those remaining potential todos". **v1.0.0** is the first real release (the
+GitHub release workflow, the per-user installer with the Python / Wolfram page, auto-update), cut with the
+batch in flight on that day. After it, roughly in this order:
+
+- **Drawing polish.** Handles and an outline on hover before a click (the Mac shows them); shapes, arrows and
+  text boxes inside drawing cells; undocking a docked picture or drawing cell.
+- **Housekeeping.** Deleting a note leaves its `.drawings/<note>-<hash>.json` behind (Sean deleted four notes and
+  their sidecars stayed); orphaned files in `.drawings/media` are never swept (the sweep must read the notes'
+  markdown, `drawing/inkCell.ts` `mediaInUse`).
+- **Tables, part two.** A table button and key, grid editing on the rendered page.
+- **Scanner tabs for real.** The camera's tab strip is a stub: keep several scanned pages as tabs.
+- **Reading pictures.** Aa reading a flow chart off a picture already in the note (Swift `flowChart(from:under:)`);
+  Japanese OCR on a machine that has the engine.
+- **Runnable cells.** Language icons instead of WL / PY; C, C++ and Rust once a compiler is installed.
+- **The Mac.** Port the text-cell / markdown-cell rule (docs/PLAN-text-cells.md) so the Mac shows text cells line
+  for line. And the separate-cells rule (PARITY "Separate cells", 2026-10-05): the Mac's `insertMath` / `codeBlock`
+  still write a block glued to the line above or below, and its source pane draws touching blocks with no gap.
+- **The buttons under the sheet's box, what is left** (box-buttons lane, 2026-10-05; PARITY "Buttons under the box"):
+  Erase CUTS strokes at the box's edge (the Writing capture's rule), it does not remove whole strokes the box
+  touches: say if whole strokes are wanted (then Writing should follow, to stay one rule). A drawing cell from the
+  sheet starts its ink at the cell's left pad (not where it sat on the sheet). Not tried with Sean's real pen.
+  A pen stroke that STARTS on the button row is lost (penFeed sends the whole contact to the button it began on; the
+  row's pointerdown stops there): penFeed should hand a contact that moves past CLICK_SLOP_PX over to the sheet
+  (Wacom lane). A whole-sheet box (double-click) now puts the row in the pane's margin under the sheet (gate,
+  2026-10-05); only a pane with no margin at all puts it inside the box.
+- **Fence arrows, what is left** (fence-arrows lane + gate, 2026-10-05): a click on an opening fence that is already
+  open for its language (Left from the first content line) is sent to the content line (`fencePointer`), so the
+  language cannot be clicked into or double-click-selected on the rendered page: return the transaction unchanged
+  when the caret was already on that fence line. PageUp / PageDown now land off a fence (an EMPTY fenced cell is still
+  landed on its fence: a page move writes nothing); Escape / Backspace / Delete at a bar skip an empty fenced cell for
+  the next cell out. Whether Left/Right should skip fences too is Sean's call (it would remove the only way to edit the
+  language on the rendered page).
+- **Separate cells, what is left** (2026-10-05): moving a cell (`moveCell`) keeps a single line break between two
+  cells that touched (they still read apart); words and a list that touch are one run and, on the rendered page,
+  the lower one's bracket still reaches up over the gap its block draws.
+- **Text cells, what is left** (text-cells lane, 2026-10-05; PARITY "Text cells and markdown cells"). Decisions to
+  confirm with Sean: Return on the rendered page still starts the next cell in a text cell (Shift+Enter is the line
+  break there; the markdown side's Return is a line break as ever); joining a markdown cell onto a text cell
+  (Backspace) makes its markup literal (the upper cell's kind wins). SETTLED (Sean, 2026-10-05: "when converting a
+  cell to markdown, it just processes markdown"): Ctrl+Shift+7 and every automatic switch take the escapes out (the
+  words are read as markdown), and a multi-line text cell's lines join as markdown joins them.
+  Left: Split Cell / Merge Cells (Ctrl+D / Ctrl+M) do not re-escape a text cell's halves or carry a marker to the
+  second half (Return on the rendered page, display maths and Ctrl+8 into a paragraph do, `keepingHalves`); Ctrl+8
+  round words of a text cell keeps their escapes' backslashes inside the code; Find / Replace into a text cell writes
+  the replacement raw (a `**` there turns the cell markdown by the older-notes rule); text typed with an IME is
+  escaped only at the next ordinary edit; a markdown cell emptied of its words keeps its hidden marker (an empty cell)
+  until something is typed in it or it is deleted; there is no inline-code command to switch with; typing Link Here's
+  exact anchor HTML (`<a id="…"></a>`, `<mark id="…">`) into a text cell makes a hidden anchor, not literal text.
+  Fixed at the gate (2026-10-05): a paste at a bar is written as it is (cells copied whole keep their kind and
+  marker; only typing is literal); typing `# ` / `- ` / `> ` / a fence at the start of a markdown cell's words drops
+  its marker, Return there moves it down with the words; Ctrl+7 keeps Link Here's anchors and an inline picture's
+  markdown; Link Here into a text cell leaves it a text cell (anchors are hidden, not formatting); the escape rule is
+  linear on long lines (a budget past which every markup character is escaped); whole cells copied give other apps
+  the words (no escapes, no marker); /link in a text cell lands its selection on the link.
+  Fixed at the v1.0.0 gate: /link lands its selection on the link with escapes or markers after it too (`writeRich`
+  says where it went); a selection that only touches a text cell at an end no longer switches it; the T menu's Remove
+  on a text cell switches nothing; a marker line inside a closed fence is code, shown without a backslash.
+- **Other platforms and trust.** Linux and signed Mac builds; code-signing the Windows installer so SmartScreen
+  stops warning.
+- **"WriteMind", not "Electron", in the Mac Dock (2026-10-05): built, NOT yet seen on a Mac.** Dev bundle renamed
+  and given the Mac app's icon (`scripts/mac-dev-identity.mjs`), name / About panel / dev dock tile at run time
+  (`main/macIdentity.ts`), `mac.icon` for WriteMind.app (docs/BUILDING.md). To check on the Mac: `npm run dev`, then
+  the Dock label, the icon, the menu bar's first title and About WriteMind.
 
 ## Not ported yet, in the order they are worth doing
 
@@ -59,7 +125,7 @@ process and writes the answer under it, Ctrl+9 makes one, `In[n]` / `Out[n]` in 
   cursor behavior after evaluating a cell elegant").
   (5) **SEAN DECIDES: the wider margin moves a note's words, not its ink** (gate review, 2026-10-05). A note with an
   `eval` cell has a 48 px left margin (`EVAL_MARGIN`, so `In[n]`/`Out[n]` are one size); every other note keeps 30 px.
-  So when a note gets its FIRST evaluation cell (Ctrl+9, the menu, typing ```` ```eval ````), or loses its last one,
+  So when a note gets its FIRST evaluation cell (Ctrl+Shift+8, the menu, typing ```` ```eval ````), or loses its last one,
   all its words move 18 px sideways while pen ink stays where it was drawn (ink is placed on the page, not on the
   words). The Mac does not move other text: its 44 pt column sits in front of the eval cell only. Choices: keep it
   (only notes that gain an eval cell are affected; no note had one before this round); one wide margin for every note
@@ -369,7 +435,7 @@ process and writes the answer under it, Ctrl+9 makes one, `In[n]` / `Out[n]` in 
   Code Block after the caret's cell, Maths at a bar, a drawing cell's scoped pen. Left / Sean's hands: the feel of
   the cursor with a REAL mouse and the Intuos pen in Pen mode (CDP mouse events and synthetic pen events only); a
   drag that starts in a seam picks whole cells (the Mac's bar-drag; gate r6, proven by smoke on the markdown pane only); an empty
-  Body Text cell made from the + stays behind if nothing is typed in it (the Mac waits for the first character).
+  Text cell made from the + stays behind if nothing is typed in it (the Mac waits for the first character).
 - **The editor, what is left** (e2-editor-polish, 2026-10-03; `PARITY.md` "The editor, polished"). Done: Markers and Preview as two
   switches (Ctrl+Alt+M), the List key and menu on the chevron's style, the tab title following the heading, tabs (middle click, wheel,
   overflow list, Close Others, deleted / renamed / trashed notes), the whole /link flow incl. renames, hot exit (unsaved text in the session),
@@ -387,8 +453,9 @@ process and writes the answer under it, Ctrl+9 makes one, `In[n]` / `Out[n]` in 
 - **Packaging, the rest of it**: the three targets are configured and the
   macOS bundle has been packed and run from `dist-electron/`. Still to do:
   run the Linux build ON Linux (an Arch box or a container — a
-  `.pkg.tar.zst` cannot be cross-built from a Mac), the Windows build on
-  Windows, a signed Mac build (Sean's keychain holds TWO identities with
+  `.pkg.tar.zst` cannot be cross-built from a Mac), a SIGNED Windows build
+  (the installer is built on Windows by `.github/workflows/release.yml`,
+  unsigned, and updates itself: see "Updates" at the end), a signed Mac build (Sean's keychain holds TWO identities with
   the same name, and `codesign` refuses an ambiguous one), and a `dtp`
   lane of its own.
 - **End-to-end harness (h1-e2e-harness, 2026-10-03).** `e2e/` is in the repo:
@@ -428,16 +495,18 @@ process and writes the answer under it, Ctrl+9 makes one, `In[n]` / `Out[n]` in 
 
 - Camera round 3 (camera lane, 2026-10-05; PARITY "Camera and capture, third round"): Input Devices ▸ Aspect Ratio, double-click for the window-filling picture (never the display), captures at 0.9 of the pane, the traced pen thinned to a third and cleaned again, Esc / click-away for the Pen popover: done. Left: the shapes in the sidebar's video popover (Sidebar.tsx, editor lane); a real camera (only Chromium's fake device was used); the Aa dot gap on small boxes of the sheet (above).
 
-- Export + keys (2026-10-05; PARITY "Export and keys"): Mac e8b3266 is in (one Export… panel, every key in one list, the Mac's new keys). Left: move `C:\CLAUDIO\agents\e2e\export\*.mjs` into `e2e/suites/` (Export is covered only by those scripts so far); the older `C:\CLAUDIO\agents\e2e\p1\t-export*.mjs` click the menu id `exportPDF`, which is now `export`; Use Selection for Find has no key (Ctrl+E is Export); keys the Mac added AFTER e8b3266 belong to the lanes that port those features and go into `shared/commands.ts` + `shared/keyList.ts` + `docs/KEYS.md` together (`keyList.test.ts` fails until all three agree; ⌘9 → Ctrl+9 Evaluation Cell is in all three, re-checked 10:56). Sean's hands: the real Windows save dialog's "Save as type" list (PDF / Project) has only been answered ahead of time by the e2e, never seen.
+- Export + keys (2026-10-05; PARITY "Export and keys"): Mac e8b3266 is in (one Export… panel, every key in one list, the Mac's new keys). Left: move `C:\CLAUDIO\agents\e2e\export\*.mjs` into `e2e/suites/` (Export is covered only by those scripts so far); the older `C:\CLAUDIO\agents\e2e\p1\t-export*.mjs` click the menu id `exportPDF`, which is now `export`; Use Selection for Find has no key (Ctrl+E is Export); keys the Mac added AFTER e8b3266 belong to the lanes that port those features and go into `shared/commands.ts` + `shared/keyList.ts` + `docs/KEYS.md` together (`keyList.test.ts` fails until all three agree; ⌘9 → Ctrl+9 Evaluation Cell was in all three, re-checked 10:56; since docs/PLAN-text-cells.md it is Ctrl+Shift+8, Ctrl+9 the Drawing Cell and Ctrl+0 free). Sean's hands: the real Windows save dialog's "Save as type" list (PDF / Project) has only been answered ahead of time by the e2e, never seen.
 
 - Docking and ink cells, CORE (2026-10-05; PARITY "Docking and ink cells: the model"; plan `docs/PLAN-docking-ink-cells.md`): the picture line, the `picture` block, the `cell` drawing item, the ink cell model, the SVG snapshot writer/reader, the media rule and the PDF arms are in `packages/core` with tests. Left for later rounds: a picture inside an ink cell does not show in the cell's snapshot when the snapshot is shown AS AN IMAGE (an svg loaded as an image loads no other file; strokes do show); adopting a cell pasted from another note (`readInkSnapshot` is written, nothing calls it); forking ink ids on Duplicate Cell / duplicateNote; undocking; the Mac reading `../` media paths and `cell` items (it drops an unknown item kind).
 
 - Docking and ink cells, EDITOR (2026-10-05; PARITY "Picture and ink cells on the page"): the picture / ink widgets in both panes, the caret above and below, the resize strip, the registry and the dock helpers are in `packages/editor`; e2e `C:\CLAUDIO\agents\e2e\dock\picture-cells.mjs` (46 checks; to move into `e2e/suites/`). Left: the alt words of a picture cell cannot be edited in place (the whole line is one widget on both sides; hold + retype, or Undo); a picture's ROTATION or crop is not kept when docked (size rule only); the read-only snapshot of an ink cell is not resizable; Sean's hands: how a real pen feels on the 8 px resize strip (with the pen down Canvas hands a press on `.wm-cell-resize` to the strip: dock lane, e2e dock/s3.mjs), and the caret beside a photo with Up / Down on the markdown side (CodeMirror's own arrows; the rendered page walks bar → bar).
 
-- Docking and ink cells, DOCK (2026-10-05; PARITY "Docking, and drawing in ink cells"): drawing / erasing / picking / moving in ink cells, the dock handle (click and drag, into a cell), Drawing Cell (Insert, Ctrl+0, + menu), one Undo for every dock, the snapshots, the PDF arms and moved notes' media are in. e2e `C:\CLAUDIO\agents\e2e\dock\s1.mjs` … `s4.mjs` (to move into `e2e/suites/`). Left: undocking; shapes / arrows / text boxes, crop and read-into-words inside cells; a cell that grows as you write past its bottom; orphan cell items stay in the sidecar after their line is deleted (Undo needs them; nothing prunes them). Sean's hands: the Intuos pen drawing, erasing (lower button held) and selecting (upper button held) inside a cell, double taps there, resizing a cell with the pen, the feel of the dock drag.
+- Docking and ink cells, DOCK (2026-10-05; PARITY "Docking, and drawing in ink cells"): drawing / erasing / picking / moving in ink cells, the dock handle (click and drag, into a cell), Drawing Cell (Insert, Ctrl+9 (was Ctrl+0), + menu), one Undo for every dock, the snapshots, the PDF arms and moved notes' media are in. e2e `C:\CLAUDIO\agents\e2e\dock\s1.mjs` … `s4.mjs` (to move into `e2e/suites/`). Left: undocking; shapes / arrows / text boxes, crop and read-into-words inside cells; a cell that grows as you write past its bottom; orphan cell items stay in the sidecar after their line is deleted (Undo needs them; nothing prunes them). Sean's hands: the Intuos pen drawing, erasing (lower button held) and selecting (upper button held) inside a cell, double taps there, resizing a cell with the pen, the feel of the dock drag.
 - A drawing cell opened as a tablet sheet (cell-to-sheet lane, 2026-10-05; PARITY "A drawing cell opened as a tablet sheet"): right-click ▸ Open in Tablet Sheet / Delete Drawing Cell, the bound tab, writing into the cell as one note undo step, restarts. e2e `C:\CLAUDIO\agents\e2e\cell-to-sheet\cell-sheet.mjs first|restart` (to move into `e2e/suites/`). Left: ~~writing on a tab whose note is not in front~~ (no longer a way of working: sheet-note-sync, 2026-10-05, opens a bound tab only with its note in front; `pending` is left for a sheets file from before); the "cell gone" path is proven with a fake app only; after a restart, writing done while the note was away replaces the cell's strokes with re-made copies (their ids, groups and transforms baked; nothing is lost); a very flat cell is a thin band of the tablet (the frame keeps the cell's shape, never stretched); the sheet's strokes are converted at the cell's shown width, so a stroke written after the window was resized is a little thinner or thicker than the sheet showed. Gate r6 (fixed): close asks while writing waits; Undo while away is the sheet's own; the margin takes no stroke; a cell scrolled away keeps its width (last shown, else the column). Still open (gate r6): the binding is dropped for good when the cell is missing for 1.2 s, so Undo past the cell's creation then a late Redo leaves the tab a plain sheet and a second Open in Tablet Sheet makes "<note> Drawing 2" (keep the ref dormant while the note is in front and rebind if the same id comes back); a stroke that leaves the cell and comes back in is two strokes, two note undo steps. Sean's hands: writing in the frame with the real Intuos, how the band feels on a flat cell.
 
 - Gate (2026-10-05, docking / ink cells / pen buttons round; PARITY "Gate fixes for docking..."): fixed at the gate, see PARITY. Left, LOW: (1) the bottom 8 px of every live ink cell is an invisible resize zone with the pen down (a stroke started there resizes the cell): put the grip below the drawing area, or show it on pen hover and take only a press that began there; (2) inside a cell only a MOVE is kept inside it: a scale, a turn, or a stroke run past the cell's left, right or top edge leaves ink clipped out of sight that the strip cannot bring back (it changes the height only): clamp scale / turn like `keptInside`, and a committed stroke's points; (3) after a dock, a refused note save (the file changed on disk) still writes the sidecar, so the docked ink is on disk only as an orphan cell (plus the Recovered text): hold the sidecar while the note is stale, or show orphan cell items on open; (4) a routed arrow whose BOTH ends let go when their objects are docked becomes a straight line at the next `reconnect` (an unrouted line keeps no bends); (5) `pdfPicture.test` "reads it again only when changed" was seen flaky by the dock lane (passed in the gate's full run); (6) the gate smoke `C:\CLAUDIO\agents\e2e\gate\smoke.mjs` and the lanes' `C:\CLAUDIO\agents\e2e\dock\*.mjs` are to move into `e2e/suites/`; `e2e/suites/tablet/01-sheet-as-camera.mjs` crashes at line 55 (no `.camera-bar [data-tablet=box]`, older than this round); the old `C:\CLAUDIO\agents\e2e\wacom\buttons-*.mjs` expect the old button model.
 
 - Quick Reference (welcome lane, 2026-10-05; PARITY "The Quick Reference"): a new install opens on `WriteMind Quick Reference.md`, once per notes folder. Left: (1) its FEATURE list is written by hand (`shared/welcome.ts` `WELCOME_FEATURES`; the keys table is generated): add a line there when a feature lands (it reaches new installs only; nobody's existing note changes); ~~(2) ask Sean: it opens in the markdown pane~~ (Sean, 2026-10-05: "open on rendered page": its first open on a new install is rendered, nothing else changes; `renderer/welcomeView.ts`); (3) move `C:\CLAUDIO\agents\e2e\welcome\welcome.mjs` into `e2e/suites/` (it starts its own instances: it needs `WRITEMIND_WELCOME=1`, because test instances are left alone without it).
 - The sheet and the note follow each other (sheet-note-sync lane, 2026-10-05; PARITY "The sheet and the note follow each other"): a picked drawing tab brings its note, another note sends the sheet back to the last plain tab. e2e `C:\CLAUDIO\agents\e2e\sheet-note-sync\sync.mjs` and `welcome-rendered.mjs` (to move into `e2e/suites/`). Left: there is no Ctrl+Tab between note tabs to test (none exists); a restart with a drawing tab open is unit-tested only; the Quick Reference's feature list does not mention drawing tabs yet (`shared/welcome.ts`). Sean's hands: the pen's Next / Previous Sheet buttons onto a drawing tab.
+- Updates from GitHub Releases (updater lane, 2026-10-05; `apps/desktop/src/main/updater.ts`, `src/shared/update.ts`, `renderer/UpdateDialog.tsx`, `.github/workflows/release.yml`, docs/BUILDING.md "Releases and updates"). DIALOG (release-ui lane, 2026-10-05, Sean's ask; replaces the footer line and the 4-hourly background download): "Check on startup" (default on, `userData/update.json`) = one look ~3 s after launch, else only Help ▸ Check for Updates… looks; a newer release brings up the page's own "Updates available — WriteMind x is available (you have y). Update now?" sheet with [Later] [Update now] and the "Check on startup" box; Update now downloads with a progress line (Cancel), flushes the notes (close handshake) and restarts into the silent installer; Later puts that version off until the next launch; the menu item answers "You're up to date (x)." / "Couldn't check for updates: …" / "Updates come with the installed app."; Help ▸ Check for Updates on Startup mirrors the box. Unit: `apps/desktop/test/updater.test.ts`. E2E (local test-identity builds 0.5.0 → 0.5.1 on 127.0.0.1, installed into a scratch folder and uninstalled): `C:\CLAUDIO\agents\e2e\release-ui\0{1..6}-*.mjs` + `C:\CLAUDIO\agents\instances\relui-upd\*.ps1` (the older footer-era `e2e\updater\0{1,2,3}` + `upd-test` are superseded; to move into `e2e/`). Left: (0) a check that comes while Sean is typing takes the keyboard (keys in its first 0.7 s are ignored; since the gate, Enter on the sheet the launch look brought up is never Update now — a click or Tab to the button is; the Help ▸ Check for Updates… sheet still takes Enter) — watch whether ~3 s after launch is early enough; Later/Escape are harmless; (1) the first real release (Sean: bump, tag, push) and the GitHub provider against a real release — only the generic provider was exercised; the differential (blockmap) download was not (the test feed had no old blockmap, it fell back to a full download); (2) signing (SmartScreen warns until then); (3) (gone: the dialog shows with or without an open note); (4) the relaunch after Update now (`--force-run`) was not exercised (the test feed turns it off so the relaunched copy cannot open on the default profile); (5) Mac / Linux do not update themselves (Help has no item there).
+- The Windows installer (installer lane, 2026-10-05; `apps/desktop/electron-builder.yml` `win` / `nsis`, `packaging/installer.nsh`, `packaging/installer-tools.ps1`, `tools/build-installer.ps1`, docs/INSTALL-WINDOWS.md): per-user assisted NSIS (`%LOCALAPPDATA%\Programs\WriteMind`, no administrator, no all-users page), Start menu + desktop shortcuts, icon from `packaging/icon.png`, unsigned; ONE extra page: Install Python / Install Wolfram Engine (licence link) / Activate the Wolfram Engine, run with winget after the files are in place, in a visible console, never failing the install; `/S` installs nothing extra; the uninstaller also removes the updater's folder and keeps the notes and the app data. `eval/tools.ts` now finds python.org's per-user and Program Files folders without the PATH (`apps/desktop/test/toolsInstallFolders.test.ts`). Checked: silent install / update / uninstall into a scratch folder; the installed app (`C:\CLAUDIO\agents\e2e\installer\installed-app.mjs`: welcome note, koffi from the asar, pen.log, a Python cell); the page driven and captured without installing, and once through Install with `/WM-DRYRUN` (`C:\CLAUDIO\agents\instances\inst-1\ui-page.ps1`). LICENCE PAGE (release-ui lane, 2026-10-05): `nsis.license: ../LICENSE` (BSD 3-Clause, "Copyright (c) 2026, Shahean Cheren") is the first page, with the "I accept the terms of the License Agreement" box (`installer.nsh` `MUI_LICENSEPAGE_CHECKBOX`); installer / exe / uninstaller properties and the Settings ▸ Apps Publisher say Shahean Cheren (`C:\CLAUDIO\agents\instances\relui-upd\license-page.ps1`, `install.ps1`). Left: (1) a real winget install of Python and of the Wolfram Engine, and the activation window, on a machine without them (Sean's has both): only dry runs here; (2) the end-of-install message box after a failed tools step in a non-silent install (the silent path was checked); (3) a cancelled installer leaves an empty install folder (electron-builder's `.onInit` makes it); (4) no arm64 Windows build.

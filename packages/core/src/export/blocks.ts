@@ -137,7 +137,11 @@ export function blockHtml(block: Block, paper: string = PAPER_HEX, media?: Block
         + `${block.level === 6 ? "font-style:italic;" : ""}color:${colour}">${inline(block.text)}</div>`
     }
     case "paragraph":
-      return `<div class="para">${inline(block.text)}</div>`
+      // A TEXT cell is its words as typed, line for line, nothing drawn as formatting (docs/PLAN-text-cells.md);
+      // `.para` keeps the line breaks (pre-wrap). A markdown cell is its inline markdown.
+      return block.markdown
+        ? `<div class="para">${inline(block.text)}</div>`
+        : `<div class="para">${escapeHtml(block.text)}</div>`
     case "bullets":
       return `<div class="list">${block.items.map((item) => row("•", inline(item), `color:${SECONDARY}`)).join("")}</div>`
     case "dashes":

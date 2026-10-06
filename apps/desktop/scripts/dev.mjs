@@ -9,6 +9,9 @@ const run = (command, args, env) =>
   spawn(command, args, { stdio: "inherit", shell: process.platform === "win32", env: { ...process.env, ...env } })
 
 await import("./build.mjs")
+// On a Mac the dev Electron.app is renamed WriteMind (Dock label and icon); a no-op anywhere else.
+const { applyDevIdentity } = await import("./mac-dev-identity.mjs")
+applyDevIdentity()
 const vite = run("npx", ["vite", "--port", "5173", "--strictPort"])
 await wait(1200)
 const electron = run("npx", ["electron", "."], { WRITEMIND_DEV: "1" })

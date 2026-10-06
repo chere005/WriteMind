@@ -44,7 +44,7 @@ ONE LIST, the Mac's README table and `Shortcut` enum (Mac e8b3266, 2026-09-21: S
 table is `shared/keyList.ts` row for row, and **`apps/desktop/test/keyList.test.ts` fails** when a key moves,
 is added or is taken away until this table says so too; the same test holds the list to the menu bar, fails
 on any chord two commands want, and fails when the editor's keymaps bind a menu chord outside
-`shared/commands.ts`. Help ▸ Keyboard Shortcuts (F1) shows the same rows in the app, with the ten number keys (Ctrl / ⌘ + 1 … 9, 0: the cell kinds) taken out of their menus and shown first as one group (`shared/keyGroups.ts`, Sean 2026-10-05). The Mac column is the
+`shared/commands.ts`. Help ▸ Keyboard Shortcuts (F1) shows the same rows in the app, with the number keys (Ctrl / ⌘ (+ Shift) + 1 … 9: the cell kinds, each digit's Shift chord after it) taken out of their menus and shown first as one group, "Cell Types — Ctrl (+Shift) + a Number" (`shared/keyGroups.ts`, Sean 2026-10-05). Digits are matched by the PHYSICAL key (`KeyboardEvent.code` `Digit7`): Shift+7 types `&` on a US layout. Ctrl+0 is free. The Mac column is the
 Mac app's own chord; "—" is a port-only key.
 
 | Menu | Command | Windows / Linux | Mac |
@@ -81,7 +81,8 @@ Mac app's own chord; "—" is a port-only key.
 | Format | Section | Ctrl+4 | ⌘4 |
 | Format | Subsection | Ctrl+5 | ⌘5 |
 | Format | Subsubsection | Ctrl+6 | ⌘6 |
-| Format | Body Text | Ctrl+7 | ⌘7 |
+| Format | Text | Ctrl+7 | ⌘7 |
+| Format | Markdown | Ctrl+Shift+7 | — |
 | Format | Bold | Ctrl+B | ⌘B |
 | Format | Italic | Ctrl+I | ⌘I |
 | Format | Underline | Ctrl+U | ⌘U |
@@ -93,7 +94,7 @@ Mac app's own chord; "—" is a port-only key.
 | Format | Split Cell | Ctrl+D | ⌃D |
 | Format | Merge Cells | Ctrl+M | ⌃M |
 | Format | Duplicate Cell | Ctrl+Shift+D | ⌃⇧D |
-| Format | Evaluation Cell | Ctrl+9 | ⌘9 |
+| Format | Evaluation Cell | Ctrl+Shift+8 | ⌘9 |
 | Format | Move Cell Up | Ctrl+Shift+Up | ⌃⇧↑ |
 | Format | Move Cell Down | Ctrl+Shift+Down | ⌃⇧↓ |
 | Format | Move Section Up | Ctrl+Up | ⌃⌘↑ |
@@ -101,7 +102,7 @@ Mac app's own chord; "—" is a port-only key.
 | Insert | Image… | Ctrl+Shift+I | ⇧⌘I |
 | Insert | Maths… | Ctrl+Shift+M | — |
 | Insert | Code Block | Ctrl+8 | ⌘8 |
-| Insert | Drawing Cell | Ctrl+0 | — |
+| Insert | Drawing Cell | Ctrl+9 | — |
 | Pen | Pen Down / Up | Ctrl+Alt+1 | — |
 | Pen | Erase Tool | Ctrl+Alt+2 | — |
 | Pen | Select Tool | Ctrl+Alt+3 | — |
@@ -161,6 +162,43 @@ Notes, so nobody "fixes" them:
 - **Format ▸ List and Ctrl+Shift+L** both write the style the list button's chevron picked (dots `- `, dashes
   `* `, numbers `1. `, to-dos `- [ ] `), and the choice is remembered.
 
+## Text cells and markdown cells (docs/PLAN-text-cells.md; Sean, 2026-10-05; port-first)
+
+A body-text paragraph is a TEXT cell unless it is marked: plain words, line for line, nothing formatted. A MARKDOWN
+cell is the hidden line `<!-- markdown -->` over a paragraph. Both panes and the paper agree.
+
+| Key | Does |
+|---|---|
+| Ctrl+7 (Format ▸ Text) | a markdown cell becomes a text cell: the marker and the formatting go, the words and their line breaks stay (one Undo). On a heading: body text, as before. At a bar: a new text cell there |
+| Ctrl+Shift+7 (Format ▸ Markdown) | a text cell becomes a markdown cell and its words are read as markdown from then on: the marker goes on top and the escapes' backslashes go (a literal `**x**` is bold now, a line starting `# ` a heading, single line breaks join); the selection stays on the same characters, one Undo gives the text cell back. Ctrl+B / I / U, the B I U S buttons, the T menu, /link and inline maths (a `wl:` code span) in a text cell do the same first; a selection that only touches a text cell at an end leaves it alone. On a heading: a markdown paragraph of its words. At a bar: a new markdown cell there |
+| Ctrl+B / I / U, Ctrl+Shift+X, the toolbar's B I U S, the T menu, `/link`, inline maths in a TEXT cell | make it a markdown cell first, then format: ONE Undo takes both back |
+| typing `**`, `#`, `- `, `>`, `1.`… in a text cell | stays literal: the file gets a backslash before what would mean something else, and only that; WriteMind hides it and the caret takes it with its character |
+| Shift+Enter in a text cell on the rendered page | a line break in the cell (Return still starts the next cell); on the markdown side Return is a line break as ever |
+| Copy / Cut in a text cell | the words, without the hidden backslashes (held cells copy whole, as markdown) |
+| Backspace at the start of a markdown cell's words, Delete at the end of the line above it | as if the marker were not there: the cell moves up, or its words join the line above (the marker goes with the line break) |
+
+Older notes: a paragraph with no marker that holds unescaped markup WriteMind writes (`**…**`, `_…_`, `~~…~~`, `<u>`,
+`<span style>`, `[…](…)`, `` `…` ``, `wl:` maths) is read as a markdown cell and gets its marker when it is next edited.
+
+## The bar on the markdown side (Sean, 2026-10-05)
+
+The arrows walk cell, bar, cell here as on the rendered page (`packages/editor/src/barWalk.ts`, wired in `seams.ts`).
+A cell's edge is its row ON SCREEN: a wrapped paragraph's last row, a code block's closing fence, a table's last row.
+
+| Key | Does |
+|---|---|
+| Down / Up on a cell's last / first row | arms the bar beneath / above it (the caret hides, the bar is the cursor): on the blank line between two cells, between two that touch (a heading and the line under it), after the last cell, above the first |
+| Down / Up at a bar | the first row of the cell below / the last row of the cell above (the column kept from a blank line); at either end of the note the bar stays. A picture or ink cell is never entered: the bar steps over it to the far side |
+| Left / Right at a bar | the end of the cell above / the start of the cell below (a picture or ink cell: the bar on its far side, as Up / Down) |
+| Escape at a bar | puts it out; a bar an arrow armed gives the caret back where it was |
+| Enter, a character, a paste at a bar | as after a click: a new cell there, a blank line above and below it |
+| Shift / Ctrl / Alt + arrows, arrows over a selection | the editor's own (a picked drawing keeps its arrow nudge first) |
+
+While a bar is the cursor no cell holds the caret (Sean, 2026-10-05), on either page: typeset maths, list markers and
+drawn blocks stay as they are; a cell opens only when an arrow (or a click) goes into it. Two cells that touch with
+no blank line, where one is a fence, a table, a picture, a heading or a rule, have a bar of the page's own height
+between them (`apart.ts`): Down / Up stop there on both pages, cell, bar, cell.
+
 ## The rendered page (Write in the preview)
 
 Ctrl+T (or the sidebar's document button). Everything in the table above works on the block that is
@@ -175,6 +213,7 @@ one of them declines on the markdown side:
 | Delete | at the end of a to-do's words, joins the next to-do's words on (port addition: the editor's own Delete would pull the next box in as text); at a bar, as Backspace |
 | Home / Left | the caret never stands in a heading's hashes, a bullet, a number or a to-do's box on this page: Home and a click on the left edge land on the first word; Left from the first word steps over the marker to the line above |
 | Up / Down | inside a block, its lines; off its top or bottom, onto the bar beside it (the caret hides, the bar is the cursor); again, into the next block at its start (up: the block above, at its end). Off the first/last block they arm the bar above/under the note |
+| Up / Down into or through a fenced cell (code, an evaluation cell, its `out` cell, `wl` maths, any fence) | never on a fence (backtick) line (Sean, 2026-10-05): in from above, the first CONTENT line (from below, the end of the last); inside, the content lines; Down from the last content line (Up from the first) leaves the cell to the bar beside it. An empty cell is given an empty line to stand on; a click on an open cell's fence strip lands on the content line beside it. Left / Right still reach the opening fence, where the language is typed; Shift+arrows and drags select across fences as before (`preview/fences.ts`) |
 | Shift+Up / Shift+Down | off the edge of a block, extend the selection a whole block at a time |
 | Page Up / Page Down (+ Shift) | the window moves a page and the caret goes to the block at the same height |
 | Escape | at a bar, takes it back (the caret returns to the block above); over held cells, lets go of them; in an open block, closes it — the block is drawn again and the caret is put away (Mac `move(.out)`); the next arrow, Home or End only brings the caret back where it was, a character goes in where it was |
@@ -201,8 +240,8 @@ core `tableTab` / `tableReturn`. No table button or menu key yet (docs/TODO.md).
 | Key | What it does |
 |---|---|
 | Shift+Enter in an evaluation cell (```` ```eval python ````, `eval wl`, `eval c`, `eval c++`, `eval rust`) | runs THAT cell: the answer goes under it as an ```` ```out ```` cell (replacing the last one), and the bar is left under the answer. Anywhere else Shift+Enter is what it always was. Not a menu key, on purpose (an accelerator would take Shift+Enter from every field) |
-| Ctrl+8 (Insert ▸ Code Block) with nothing selected in a cell of words | a new, empty code cell AFTER that cell, the caret in it (2026-10-05; Ctrl+9's rule). At a bar: there. Round a selection: fences it. On an empty line: there |
-| Ctrl+9 (Format ▸ Evaluation Cell) | at a bar: a new evaluation cell there, caret inside. In a fenced cell: that cell becomes one, keeping its code. Anywhere else: a new one after the caret's cell. The environment is Wolfram until one has been picked from a cell's mark, then the last one picked |
+| Ctrl+8 (Insert ▸ Code Block) with nothing selected in a cell of words | a new, empty code cell AFTER that cell, the caret in it (2026-10-05; Ctrl+Shift+8's rule). At a bar: there. Round a selection: fences it. On an empty line: there |
+| Ctrl+Shift+8 (Format ▸ Evaluation Cell; Ctrl+9 until 2026-10-05, the Mac's ⌘9) | at a bar: a new evaluation cell there, caret inside. In a fenced cell: that cell becomes one, keeping its code. Anywhere else: a new one after the caret's cell. The environment is Wolfram until one has been picked from a cell's mark, then the last one picked |
 | a click on the mark left of an unrun cell (`WL ▾`, `PY ▾`, …), or on the language under a cell's `In[n]` | the environment menu ("not installed" beside a tool this machine has not got); picking one rewrites the fence |
 | a click on the spinner under a running cell's mark | stops the run (the child and what it started are killed) |
 | Ctrl+Z after a run | takes the answer out (it is its own undo step) |
@@ -211,7 +250,7 @@ core `tableTab` / `tableReturn`. No table button or menu key yet (docs/TODO.md).
 
 | Key | What it does |
 |---|---|
-| Ctrl+0 (Insert ▸ Drawing Cell; the + menu's Drawing Cell at a bar) | an empty ink cell (200 px tall) at the armed bar, else after the caret's cell; one Ctrl+Z takes its line and its sidecar item out. The pen draws, erases and selects in it as on the page. AND THE POINTER BECOMES A PEN FOR THAT CELL (2026-10-05): with the pen up, a press in the new cell draws there (its box is ringed, the cursor a crosshair); a press anywhere else ends it and is just a click (the caret; never a stroke, not even from a pen that always draws); Escape ends it; Ctrl+P (the pen for the whole page) ends it too |
+| Ctrl+9 (Insert ▸ Drawing Cell; the + menu's Drawing Cell at a bar; Ctrl+0 until 2026-10-05) | an empty ink cell (200 px tall) at the armed bar, else after the caret's cell; one Ctrl+Z takes its line and its sidecar item out. The pen draws, erases and selects in it as on the page. AND THE POINTER BECOMES A PEN FOR THAT CELL (2026-10-05): with the pen up, a press in the new cell draws there (its box is ringed, the cursor a crosshair); a press anywhere else ends it and is just a click (the caret; never a stroke, not even from a pen that always draws); Escape ends it; Ctrl+P (the pen for the whole page) ends it too |
 | the dock handle (⤵, right of a picked set of floating strokes and / or pictures on the page) | a click docks them at the cursor (the armed bar, else after the caret's cell): one picture → a picture cell, anything else → one ink cell. A drag shows the drop bar under the pointer and docks where it is let go; over an ink cell (it lights up) they go INTO it. Escape or letting go outside the note docks nothing. One Ctrl+Z (or the pen's lower-button double tap) puts them back on the page and takes the line out |
 | arrows, Backspace / Delete, Ctrl+C / Ctrl+X / Ctrl+V, Ctrl+G with strokes picked IN an ink cell | nudge, delete, copy, cut, paste (back into the same cell), group, as on the page |
 | a right-click on a drawing cell (either pane, pen up or down; the pen's Right-click action too) | its menu: **Open in Tablet Sheet** (the video pane shows the Tablet, on a sheet tab "<note> Drawing" BOUND to the cell: writing there writes into the cell, one Ctrl+Z in the note per stroke or erase) and **Delete Drawing Cell** (its line goes, as Delete on the held cell; Ctrl+Z brings it back). A read-only ink line keeps the notebook's Cut / Copy / Paste menu |
@@ -223,7 +262,8 @@ section of the bar put away. Inside: **arrows** pick a shape (Left/Right one, Up
 group, Home/End the ends) and the form follows; **Tab / Shift+Tab** walk Slots, Wolfram Language line, the
 "On its own line" tick, Insert, and wrap; **Enter** inserts (as the tick says; not while an input method is
 composing), **Ctrl+Enter** inserts the other way, **Space** on the tick toggles it, **Esc** closes and gives the
-keyboard back to the note. This holds however the palette was opened (the key, a click on ƒ(x), the Insert menu)
+keyboard back to the note. Maths on its own line goes in as a cell of its own (a blank line above and below it), the
+caret on the bar under it; at the very end of the note that bar is armed, so the next character is a new cell. This holds however the palette was opened (the key, a click on ƒ(x), the Insert menu)
 and after a click on a bare part of it (its heading hands the keyboard to the picked shape); only a click away
 from the palette puts it away. The Mac popover has none of these (it is mouse-first); the pane itself is the Mac's.
 

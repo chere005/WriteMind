@@ -9,7 +9,7 @@
  *
  *     ```eval wl     ```eval python     ```eval c     ```eval c++     ```eval rust
  *
- * Ctrl+9 makes one, or turns the cell the caret is in into one. Shift+Enter runs it. The mark at its left says
+ * Ctrl+Shift+8 makes one (Ctrl+9 until 2026-10-05), or turns the cell the caret is in into one. Shift+Enter runs it. The mark at its left says
  * which environment it is and changes it.
  *
  * `wl` inside the fence is safe: `isMathFence` compares the WHOLE info string to "wl", and "eval wl" is not that.
@@ -156,7 +156,7 @@ export type Refusal =
 export function refusalMessage(refusal: Refusal): string {
   switch (refusal.kind) {
     case "notAnEvaluationCell":
-      return "That is not an evaluation cell. Ctrl+9 makes one, or turns the cell the caret is in into one."
+      return "That is not an evaluation cell. Ctrl+Shift+8 makes one, or turns the cell the caret is in into one."
     case "unknownEnvironment": {
       // The list is GENERATED, so adding an environment cannot leave a sentence behind naming the old ones.
       const known = EVALUATORS.map(evaluatorTitle)

@@ -19,7 +19,7 @@ import { ALL_KINDS, KIND_GROUPS, kindName, openCell, type CellKind, type ListSty
 import { textTimeline } from "./editTimeline"
 import { historyOf, stashText, takeText } from "./noteHistory"
 import { evaluationCells, evalHost, inkCellPainter, pictureCells, type InkCellPainter } from "@writemind/editor"
-import { tables } from "@writemind/editor"
+import { tables, textCells } from "@writemind/editor"
 import { evalHostOfApp } from "./evalHost"
 import "./editor.css"
 
@@ -121,10 +121,12 @@ export function Notebook({ file, text, version, restore, rendered: showRendered,
       rendered,
       listStyleSource.of(() => listRef.current),
       notebookDecorations,
+      // Text cells and markdown cells (docs/PLAN-text-cells.md): the marker hidden, typing literal, copy plain.
+      textCells,
       hiddenMarkerDeletion,
       find,
       cellBrackets,
-      // Evaluation cells: Shift+Enter runs one (in the shell, main/eval), Ctrl+9 makes one, the In/Out marks.
+      // Evaluation cells: Shift+Enter runs one (in the shell, main/eval), Ctrl+Shift+8 makes one, the In/Out marks.
       evaluationCells,
       evalHost.of(evalHostOfApp),
       mathRendering,

@@ -88,6 +88,8 @@ declare global {
       sheets?: { load(): Promise<string | null>; save(text: string): void }
       /** Evaluation cells (shared/eval.ts): run one cell on Shift+Enter, take a run back, where the tools are. */
       evaluate: import("../shared/eval").EvalApi
+      /** Updates (shared/update.ts): the "Updates available" dialog (UpdateDialog.tsx); absent in an old preload. */
+      update?: import("../shared/update").UpdateApi
       onNotesChanged(listener: () => void): () => void
       onFlushRequest(listener: () => Promise<void> | void): () => void
       onEdit(listener: (which: "undo" | "redo") => void): () => void

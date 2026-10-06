@@ -7,11 +7,13 @@
  * is the same model the Swift app runs.
  */
 
-export { notebookState, notebookField, notebook, cellRanges, selectedRanges, applyEdit } from "./notebook"
+export { notebookState, notebookField, notebook, cellRanges, selectedRanges, applyEdit, cellWritten } from "./notebook"
 export { notebookDecorations, safeSpanStyle } from "./decorations"
 export { seamExtensions, armedField, armedTypeField, armSeam, setArmedType, pageSeams } from "./seams"
 export { cellBrackets, heldCells, GUTTER_WIDTH } from "./brackets"
-export { notebookKeys, wrap, heading, list, listStyleSource, quote, fence, indentLines, outdentLines } from "./keys"
+export { notebookKeys, wrap, heading, list, listStyleSource, quote, fence, indentLines, outdentLines, textCell, markdownCell } from "./keys"
+// Text cells and markdown cells (docs/PLAN-text-cells.md): the hidden marker, literal typing, plain copy.
+export { textCells, markerField, hiddenMarkers, plainSelection } from "./textCells"
 export { codeTypingKeys } from "./codeTyping"
 export { notebookTheme } from "./theme"
 export { textConventions } from "./conventions"
@@ -30,7 +32,9 @@ export {
 } from "./preview"
 export { cellBoxes, showDropBar, dropBarField, seamAfterCellAt } from "./seams"
 // The pointer over the page, and making a cell (Sean, 2026-10-05: one hit-test for cursor and click; the cell made at once).
-export { pointerPlace, armAt, openCellAt, openBarForWriting, OWN_POINTER, type PointerPlace } from "./seams"
+export { pointerPlace, armAt, openCellAt, openBarForWriting, armAtNoteEnd, OWN_POINTER, type PointerPlace } from "./seams"
+// A cell that touches another but stands apart from it (Sean, 2026-10-05): the gap drawn over it, and the measure.
+export { apartCells, gapAt, APART_GAP } from "./apart"
 export { makesCellAfter } from "./dock"
 // Picture and ink cells, the rect registry and docking (docs\PLAN-docking-ink-cells.md (c), (d)).
 export {

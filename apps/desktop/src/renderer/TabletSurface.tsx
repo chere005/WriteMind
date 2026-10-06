@@ -29,6 +29,7 @@ import {
   type BoxHandle, type BoxHit, type InkStroke, type TabletPage,
 } from "./tabletPage"
 import { colourOfPaper, inkOn, paintPaper, usePaper } from "./tabletPaper"
+import { BoxActions, type BoxButtons } from "./BoxActions"
 import "./tablet.css"
 
 export interface SurfaceHandle {
@@ -53,6 +54,8 @@ interface Props {
   onEdited(): void
   /** A sheet bound to an ink cell (cellSheets.ts): the cell, in FRACTIONS of the sheet. The rest is shaded and a stroke stops at its edge. */
   frame?: Rect | null
+  /** The row of buttons under the box (BoxActions.tsx): Erase, Bring in Writing, Bring in as Drawing Cell. */
+  buttons?: BoxButtons | null
 }
 
 /** How near a stroke the eraser has to be, in points. */
@@ -79,7 +82,7 @@ const CURSORS: Record<Exclude<BoxHit, null>, string> = {
 }
 
 export const TabletSurface = forwardRef<SurfaceHandle, Props>(function TabletSurface(
-  { page, colour, width, box, onBox, onEdited, frame: cellBox = null }, handle) {
+  { page, colour, width, box, onBox, onEdited, frame: cellBox = null, buttons = null }, handle) {
   const host = useRef<HTMLDivElement | null>(null)
   const wrap = useRef<HTMLDivElement | null>(null)
   const [fit, setFit] = useState({ x: 0, y: 0, width: 0, height: 0 })
@@ -89,6 +92,8 @@ export const TabletSurface = forwardRef<SurfaceHandle, Props>(function TabletSur
   const context = useRef<CanvasRenderingContext2D | null>(null)
   const size = useRef<Size>({ width: 0, height: 0 })
   const gesture = useRef<Gesture | null>(null)
+  /** The box is being dragged, moved or resized: its row of buttons waits until it is let go. */
+  const [boxing, setBoxing] = useState(false)
   const lastClick = useRef<{ time: number; x: number; y: number } | null>(null)
   const frame = useRef<number | null>(null)
   const everything = useRef(true)
@@ -219,6 +224,28 @@ export const TabletSurface = forwardRef<SurfaceHandle, Props>(function TabletSur
     const element = host.current
     return element ? watchSheetPen(element.closest(".camera") ?? element) : undefined
   }, [])
+
+  /**
+   * A Bring in from the box's row: what it did is in the NOTE, so the next Ctrl+Z is the note's (the row goes with the
+   * box, and the sheet under the mouse is not "the pen over the sheet" until the pointer moves onto it again).
+   */
+  const leaveFor = async (action: () => void | Promise<void>): Promise<void> => {
+    hovered.current = false
+    // The row goes from under a still pointer, and the browser then says it entered the sheet: that does not count.
+    quietAt.current = lastAt.current
+    if (wrap.current && wrap.current.contains(document.activeElement)) wrap.current.blur()
+    await action()
+  }
+  /** The last place a pointer was seen over the host (the sheet or the row), in client px. */
+  const lastAt = useRef<Point | null>(null)
+  /** Where the pointer was when a Bring in left the sheet: "entering" the sheet there is not the pointer moving onto it. */
+  const quietAt = useRef<Point | null>(null)
+  const enter = (event: { clientX: number; clientY: number }) => {
+    const quiet = quietAt.current
+    if (quiet && Math.hypot(event.clientX - quiet.x, event.clientY - quiet.y) < 3) return
+    quietAt.current = null
+    hovered.current = true
+  }
 
   useEffect(() => {
     setTabletUndo((which, byPen) => {
@@ -377,6 +404,7 @@ export const TabletSurface = forwardRef<SurfaceHandle, Props>(function TabletSur
     } else {
       const here = at(event)
       if (!g.dragged && !isBoxDrag(here.px.x - g.startPx.x, here.px.y - g.startPx.y)) return
+      if (!g.dragged) setBoxing(true)
       g.dragged = true
       if (g.mode === "move") latest.current.onBox(moveBox(g.origin!, here.unit.x - g.start.x, here.unit.y - g.start.y))
       else if (g.mode === "resize") latest.current.onBox(resizeBox(g.origin!, g.handle!, here.unit, size.current, MIN_BOX_PX))
@@ -404,6 +432,7 @@ export const TabletSurface = forwardRef<SurfaceHandle, Props>(function TabletSur
     } else if (g.kind === "erase") {
       if (g.marked) latest.current.onEdited()
     } else if (g.dragged) {
+      setBoxing(false)
       lastClick.current = null
       if (g.mode === "new") {
         const made = boxFromPoints(g.start, at(event).unit)
@@ -427,14 +456,15 @@ export const TabletSurface = forwardRef<SurfaceHandle, Props>(function TabletSur
   const erasing = tools.eraser
   return (
     <div className="tablet-host" ref={host} data-tablet="host"
+         onPointerMove={(event) => { lastAt.current = { x: event.clientX, y: event.clientY } }}
          onPointerDown={(event) => { if (event.target === host.current) latest.current.onBox(null) }}>
       <div className="tablet" ref={wrap} tabIndex={0} data-tablet="surface" data-paper={paper.kind} data-paper-colour={paper.colour}
            style={{ cursor: erasing ? "cell" : "crosshair", left: fit.x, top: fit.y, width: fit.width, height: fit.height,
              backgroundColor: colourOfPaper(paper.colour).paper }}
-           onPointerEnter={() => { hovered.current = true }}
+           onPointerEnter={(event) => enter(event)}
            onPointerLeave={() => { hovered.current = false }}
-           onPointerDown={(event: React.PointerEvent) => down(event.nativeEvent)}
-           onPointerMove={(event: React.PointerEvent) => move(event.nativeEvent)}
+           onPointerDown={(event: React.PointerEvent) => { quietAt.current = null; hovered.current = true; down(event.nativeEvent) }}
+           onPointerMove={(event: React.PointerEvent) => { if (!hovered.current) enter(event); move(event.nativeEvent) }}
            onPointerUp={(event: React.PointerEvent) => up(event.nativeEvent)}
            onPointerCancel={(event: React.PointerEvent) => up(event.nativeEvent)}
            onContextMenu={(event) => event.preventDefault()}>
@@ -459,6 +489,17 @@ export const TabletSurface = forwardRef<SurfaceHandle, Props>(function TabletSur
           </div>
         )}
       </div>
+      {box && buttons && !boxing && fit.width > 0 && (
+        // Beside the sheet's element, not in it: a click here is the button's, never a box gesture (BoxActions.tsx).
+        <BoxActions box={box} sheet={fit} bringOff={buttons.bringOff}
+                    erase={async () => {
+                      await buttons.erase()
+                      // Ctrl+Z next takes the erase back: the sheet has the keys again.
+                      wrap.current?.focus({ preventScroll: true })
+                    }}
+                    bring={() => leaveFor(buttons.bring)}
+                    cell={() => leaveFor(buttons.cell)} />
+      )}
     </div>
   )
 })

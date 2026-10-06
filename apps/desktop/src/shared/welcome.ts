@@ -17,29 +17,15 @@ export const WELCOME_FILE = "WriteMind Quick Reference.md"
 
 /** What the app has, in a line or two each: Sean's approved note, kept to what is built. */
 export const WELCOME_FEATURES: string[] = [
-  "**Markdown notebook in cells.** Headings, lists and to-dos, quotes, code and tables. Each block is a cell with a " +
-    "bracket in the gutter; the bar between two cells adds a cell, and its + menu picks the kind.",
-  "**Sections that fold.** Double-click a section's bracket. Sections can be moved and nested.",
-  "**Rendered page.** Shows the note as a finished page that you can still type in.",
-  "**Drawing layer.** Pen ink with pressure, shapes, arrows that route around boxes, text boxes, marks, pictures " +
-    "with crop, grouping, and one undo for words and drawings together.",
-  "**Docking.** The ⤵ handle on a selected picture or ink docks it into the note as its own cell, so text sits only " +
-    "above and below it. Click the handle to dock at the cursor, or drag it to the gap you want.",
-  "**Drawing cells.** A cell you draw in with the pen. Its ink stays editable and moves with the text, and you can " +
-    "drag its bottom edge to resize it.",
-  "**Runnable cells.** Python, Wolfram, C, C++ and Rust, shown as In[n] / Out[n] with the language under In[n].",
-  "**Maths.** Wolfram Language typeset in the note, with a palette of templates.",
-  "**Video pane.** A document camera or the Wacom tablet sheet. Bring handwriting in as editable ink (Writing), as " +
-    "a picture (Page), or as words; flow charts come in as boxes and arrows.",
-  "**Tablet sheets as tabs.** Each tab is its own sheet with its own ink and paper (blank, dot grid, lines, grid, " +
-    "isometric or Cornell); + adds one, and Pen ▸ Next / Previous Sheet changes sheet from the keyboard. Right-click a " +
-    "drawing cell ▸ Open in Tablet Sheet to write in it on the tablet: its tab brings its note to the front.",
-  "**Wacom pen buttons.**\n" +
+  "**Cells:** text, markdown, headings, lists, code, runnable code, maths, tables and drawings; the bar between cells adds one.",
+  "**Rendered page:** Ctrl+T shows the note as a finished page you can still type in.",
+  "**Drawing:** pen ink, shapes, arrows and pictures over the note; the ⤵ handle docks them into it as cells.",
+  "**Runnable cells:** Python, Wolfram, C, C++ and Rust, with In[n] / Out[n]; Shift+Enter runs one.",
+  "**Video pane:** a document camera or the Wacom tablet's sheets (tabs); bring writing in as ink, a picture or a drawing cell.",
+  "**Wacom pen buttons:**\n" +
     "  - First button (Middle Click): hold to erase strokes, double-tap to undo.\n" +
     "  - Second button (Right Click): hold to select, double-tap to redo.\n" +
-    "  - Set the two buttons to Middle Click and Right Click in Wacom Tablet Properties.",
-  "**Notes and projects.** Notes and folders in a sidebar, tabs, links between notes, Find / Replace, and export to " +
-    "PDF and other formats.",
+    "  - Set the first button to Middle Click in Wacom Tablet Properties ▸ Pen (on Pan/Scroll the driver keeps it).",
 ]
 
 /**
@@ -56,17 +42,20 @@ export interface WelcomeGroup { title: string; keys: WelcomeKey[] }
 
 /**
  * The most important keys, grouped as Sean's approved note is (2026-10-05: "group the ctrl/cmd + 1-0 keystrokes"): the
- * ten number keys that make cells first, in keyboard order (the heading ladder, then Code Block, Runnable Cell, Drawing
- * Cell), then Notes, View, Editing and Help. The F1 list groups them the same way (keyGroups.ts).
+ * number keys that make cells first, in keyboard order (the heading ladder down to 7 Text, Shift+7 Markdown, 8 Code
+ * block, Shift+8 Runnable code, 9 Drawing cell: docs/PLAN-text-cells.md), then Notes, View, Editing and Help. The F1
+ * list groups them the same way (keyGroups.ts).
  */
 export const WELCOME_GROUPS: WelcomeGroup[] = [
   {
-    title: "Cell types — Ctrl / ⌘ + a number",
+    title: "Cell types — Ctrl / ⌘ (+ Shift) + a number",
     keys: [
       ...HEADING_LADDER.map((level, index) => ({ what: `${index + 1} ${headingName(level)}`, ids: [headingId(level)] })),
+      // docs/PLAN-text-cells.md: 7 plain Text, Shift+7 its markdown twin; 8 Code block, Shift+8 Runnable code; 9 Drawing.
+      { what: "Shift+7 Markdown", ids: ["markdownCell"] },
       { what: "8 Code block", ids: ["codeBlock"] },
-      { what: "9 Runnable cell", ids: ["evaluationCell"] },
-      { what: "0 Drawing cell", ids: ["insertInkCell"] },
+      { what: "Shift+8 Runnable code", ids: ["evaluationCell"] },
+      { what: "9 Drawing cell", ids: ["insertInkCell"] },
     ],
   },
   {

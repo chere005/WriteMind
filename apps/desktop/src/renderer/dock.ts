@@ -15,8 +15,8 @@
  */
 
 import {
-  dockable, inkCellFrom, inkCellMarkdown, inkCellOf, mergedInto, newInkCell, pictureMarkdown, takenOut, withInkCell,
-  type Column, type Drawing, type Point, type Size,
+  bounds, INK_PAD, shifted, dockable, inkCellFrom, inkCellMarkdown, inkCellOf, mergedInto, newInkCell, pictureMarkdown, takenOut, withInkCell,
+  type CanvasItem, type Column, type Drawing, type Point, type Size,
 } from "@writemind/core"
 import type { DrawingHistory } from "./drawingHistory"
 import type { EditClock } from "./editTimeline"
@@ -128,6 +128,29 @@ export function dockInto(deps: DockDeps, ids: Set<string>, pane: Size, cellId: s
 export function insertInkCell(deps: DockDeps, offset: number, width: number): string | null {
   const cell = newInkCell(width > 0 ? width : 720)
   const whole = deps.drawing()
+  const next = withInkCell(whole, cell)
+  const done = oneStep(deps.history.clock,
+    () => writeAhead(deps, next, inkCellMarkdown(cell.id, deps.depth), offset),
+    () => { deps.history.record(whole); deps.apply(next); return true })
+  return done ? cell.id : null
+}
+
+/**
+ * Ink that is NOT on the page yet (the tablet sheet's boxed writing, landed in pane fractions as Bring in Writing lands
+ * it) docked as a NEW ink cell at the seam `offset`: `inkCellFrom`'s rule (the strokes keep their shape and size, scaled
+ * down only when wider than the column; the cell as tall as the ink and its pads), the ink starting at the cell's left
+ * pad (where it sat on the sheet means nothing in the note: the text's own edge), its line and its sidecar item in ONE
+ * Undo step. Nothing on the page is taken. Returns the new cell's id, or null (no ink, or the words would not take it).
+ */
+export function dockNewInk(deps: DockDeps, items: CanvasItem[], pane: Size, column: Column, offset: number): string | null {
+  if (items.length === 0 || !(column.width > 0) || !(pane.width > 0)) return null
+  const lefts = items.map((item) => bounds(item, pane).x).filter(Number.isFinite)
+  const dx = lefts.length > 0 ? column.left + INK_PAD - Math.min(...lefts) : 0
+  const moved = Math.abs(dx) < 1e-9 ? items : items.map((item): CanvasItem => (item.kind === "stroke"
+    ? { kind: "stroke", stroke: { ...item.stroke, points: item.stroke.points.map((p) => ({ x: p.x + dx / pane.width, y: p.y })) } }
+    : shifted([item], dx, 0, pane)[0]!))
+  const whole = deps.drawing()
+  const cell = inkCellFrom(moved, pane, column)
   const next = withInkCell(whole, cell)
   const done = oneStep(deps.history.clock,
     () => writeAhead(deps, next, inkCellMarkdown(cell.id, deps.depth), offset),

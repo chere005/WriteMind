@@ -38,6 +38,7 @@ import { holdingField, setHolding } from "./preview/hold"
 import { renderedField } from "./rendered"
 import { groupsIn } from "./eval/index"
 import { groupRange, isGroupedCell } from "@writemind/core"
+import { apartCells, gapAt } from "./apart"
 
 export const GUTTER_WIDTH = 22
 /** How far an In/Out pair's bracket stands proud of the two cells inside it (the Mac's `overhang`, 799b13b). */
@@ -142,7 +143,8 @@ function brackets(view: EditorView): Bracket[] {
     const first = view.lineBlockAt(from)
     const last = view.lineBlockAt(to)
     if (last.bottom - first.top < 1) return null
-    return { top: first.top + pad, bottom: last.bottom + pad }
+    // A cell that touches the one above but stands apart from it starts below the gap drawn over it (apart.ts).
+    return { top: first.top + pad + gapAt(view.state, r.location), bottom: last.bottom + pad }
   }
 
   // Only the brackets the viewport (and its margin) reaches are measured,
@@ -525,7 +527,8 @@ const holdingClass = EditorView.editorAttributes.compute([holdingField], (state)
   (state.field(holdingField, false) ?? false) ? { class: "wm-holding" } : ({} as Record<string, string>))
 
 // (The two fields are named here as well as by their own extensions, so the compute above can never ask for one that is not there.)
-export const cellBrackets: Extension = [holdingField, renderedField, gutterPlugin, heldLines, holdingClass]
+// (And the gap over a cell that touches one it stands apart from, which the brackets are measured below: apart.ts.)
+export const cellBrackets: Extension = [holdingField, renderedField, gutterPlugin, heldLines, holdingClass, apartCells]
 
 /** Which cells a command over "the selection" takes. */
 export function heldCells(view: EditorView): Range[] {

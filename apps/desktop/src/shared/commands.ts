@@ -101,6 +101,8 @@ export const COMMANDS: CommandDef[] = [
   c("unfoldAll", "Unfold All Sections", "page", "CmdOrCtrl+Alt+Shift+Right", "Alt+Shift+Cmd+Right"),
   // Format
   ...HEADING_COMMANDS.map((h) => c(h.id, "", "editor", h.key)),
+  // Ctrl+7 is the ladder's last rung, Text (a plain-text cell); Ctrl+Shift+7 its markdown twin (docs/PLAN-text-cells.md).
+  c("markdownCell", "Markdown", "editor", "CmdOrCtrl+Shift+7"),
   c("bold", "Bold", "editor", "CmdOrCtrl+B"),
   c("italic", "Italic", "editor", "CmdOrCtrl+I"),
   c("underline", "Underline", "editor", "CmdOrCtrl+U"),
@@ -112,9 +114,10 @@ export const COMMANDS: CommandDef[] = [
   c("splitCell", "Split Cell", "editor", "Ctrl+D"),
   c("mergeCells", "Merge Cells", "editor", "Ctrl+M"),
   c("duplicateCell", "Duplicate Cell", "editor", "Ctrl+Shift+D"),
-  // The Mac's ⌘9: an evaluation cell here (main/eval runs it; Shift+Enter in the cell, which is NOT a menu key —
-  // an accelerator would take Shift+Enter from every field in the app).
-  c("evaluationCell", "Evaluation Cell", "editor", "CmdOrCtrl+9"),
+  // The Mac's ⌘9: an evaluation cell (main/eval runs it; Shift+Enter in the cell, which is NOT a menu key — an
+  // accelerator would take Shift+Enter from every field in the app). Ctrl+Shift+8 here, beside Ctrl+8 Code Block
+  // (Sean, 2026-10-05: "ctrl + shift + 8 runnable code"; docs/PLAN-text-cells.md).
+  c("evaluationCell", "Evaluation Cell", "editor", "CmdOrCtrl+Shift+8"),
   // No key (Sean, 2026-09-21: "backspace is enough to delete the selected cell so no need for ^+backspace").
   c("deleteCell", "Delete Cell", "editor"),
   c("moveCellUp", "Move Cell Up", "editor", "Ctrl+Shift+Up"),
@@ -128,8 +131,8 @@ export const COMMANDS: CommandDef[] = [
   c("insertMath", "Maths…", "page", "CmdOrCtrl+Shift+M"),
   c("codeBlock", "Code Block", "editor", "CmdOrCtrl+8"),
   // An empty ink cell (docs\PLAN-docking-ink-cells.md): at the armed bar, else after the caret's cell. Port-only;
-  // Ctrl+0 follows Ctrl+8 Code Block and Ctrl+9 Evaluation Cell.
-  c("insertInkCell", "Drawing Cell", "page", "CmdOrCtrl+0"),
+  // Ctrl+9 (Sean, 2026-10-05: "make ctrl + 9 drawing cell"; it was Ctrl+0, which is free now).
+  c("insertInkCell", "Drawing Cell", "page", "CmdOrCtrl+9"),
   // Pen (port-only): the tablet's ExpressKeys type these. Ctrl+Alt+digit and
   // a few Ctrl+Alt+letters, none of which anything else uses.
   c("penToggle", "Pen Down", "page", "CmdOrCtrl+Alt+1"),
@@ -215,6 +218,9 @@ export function matches(event: KeyLike, accelerator: string, platform: string): 
   if (event.ctrlKey !== wantCtrl || event.metaKey !== wantMeta) return false
   if (event.altKey !== chord.alt || event.shiftKey !== chord.shift) return false
   const typed = event.key.toLowerCase()
+  // A digit is its PHYSICAL key (docs/PLAN-text-cells.md): Shift+7 types "&" on a US keyboard, and Ctrl+Shift+7 is
+  // still the 7 key.
+  if (/^\d$/.test(chord.key) && event.code && /^Digit\d$/.test(event.code)) return event.code === `Digit${chord.key}`
   if (typed === chord.key) return true
   // Ctrl+Alt is AltGr on layouts that have one, and then `key` is the typed
   // character; a chord of one letter or digit still means its physical key.

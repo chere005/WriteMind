@@ -68,6 +68,9 @@ describe("ShortcutTests", () => {
     expect(commandForKey(press("k", { ctrl: true }), "win32")?.id).toBe("toggleSidebar")
     expect(commandForKey(press(";", { ctrl: true }), "win32")?.id).toBe("collapseSubsections")
     expect(commandForKey(press("F1"), "win32")?.id).toBe("keyList")
+    // A digit is its physical key: Ctrl+Shift+7 types "&" and is still the 7 key; Ctrl+9 makes a drawing cell, Ctrl+0 nothing.
+    expect(commandForKey({ ...press("9", { ctrl: true }), code: "Digit9" }, "win32")?.id).toBe("insertInkCell")
+    expect(commandForKey({ ...press("0", { ctrl: true }), code: "Digit0" }, "win32")).toBeNull()
     // Ctrl+Y stays Redo, which is useUndo's and not the page's.
     expect(commandForKey(press("y", { ctrl: true }), "win32")).toBeNull()
   })
@@ -184,7 +187,9 @@ describe("Help ▸ Keyboard Shortcuts (shared/keyList.ts)", () => {
     expect(name("toggleSidebar")).toBe("Show / Hide Notes Sidebar")
     expect(name("togglePen")).toBe("Draw / Stop Drawing")
     expect(name("heading:1")).toBe("Title")
-    expect(name("heading:0")).toBe("Body Text")
+    // Ctrl+7 is a plain-text cell now (docs/PLAN-text-cells.md: "Text (was Body Text)").
+    expect(name("heading:0")).toBe("Text")
+    expect(name("markdownCell")).toBe("Markdown")
     expect(name("keyList")).toBe("Keyboard Shortcuts")
   })
 })

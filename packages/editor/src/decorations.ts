@@ -24,11 +24,12 @@ import {
   type DecorationSet, type ViewUpdate,
 } from "@codemirror/view"
 import {
-  codeTokens, firstCellFromBy, headingLevel, colouring, toggleTodo, todoItem,
+  anchorSpans, codeTokens, escapeOffsets, firstCellFromBy, headingLevel, colouring, maskEscapes, toggleTodo, todoItem,
   type Block, type CodeToken, type CodeTokenKind, type MarkerStructure, type Range,
 } from "@writemind/core"
 import { applyEdit, hullOf, notebook } from "./notebook"
 import { marksAway, renderedField } from "./rendered"
+import { armedField } from "./seams"
 
 /** A round bullet where the file has `- ` (or `+ `), a dash where it has `* ` — the Mac's `BulletGlyphs`. */
 class BulletWidget extends WidgetType {
@@ -154,14 +155,18 @@ const SPAN = /<span style="([^"]*)">/g
 const LINK = /\[([^\]\n]+)\]\(([^)\n]+)\)/g
 const linkMark = Decoration.mark({ class: "wm-link" })
 const hidden = Decoration.replace({})
+/** A text cell's escape (docs/PLAN-text-cells.md): its backslash is not drawn, and the caret takes it with what it escapes. */
+const escapeHidden = Decoration.replace({})
 
 /** The colours of a code block, kept while the block is: an edit makes a new block, and the old one is let go. */
 const tokenCache = new WeakMap<Block, CodeToken[]>()
 
-interface Entry { from: number; to: number; deco: Decoration; kind: 0 | 1 | 2; atomic: boolean }
+interface Entry { from: number; to: number; deco: Decoration; kind: 0 | 1 | 2; atomic: boolean | "only" }
 // kind: 0 = line decoration (sorts first at a position), 1 = mark/replace
 
-function inlineSpans(text: string, offset: number, out: Entry[]): void {
+function inlineSpans(source: string, offset: number, out: Entry[]): void {
+  // Read with its escapes masked (core plainText.ts): an escaped star is a star, never a mark; offsets are the same.
+  const text = maskEscapes(source)
   // What has been claimed already: a later pattern never styles inside it, which
   // is how a `**` in a code span stays a `**`, and a URL's underscores stay put.
   const covered = new Uint8Array(text.length)
@@ -291,8 +296,14 @@ function inlineSpans(text: string, offset: number, out: Entry[]): void {
   }
 }
 
+/**
+ * A bar that is the cursor is in no line (Sean, 2026-10-05: "it shouldn't unrender ... until i'm actually in that
+ * cell"): the caret parked against the cell below the bar opens none of its marks.
+ */
+const atTheBar = (state: EditorState): boolean => (state.field(armedField, false) ?? null) !== null
+
 const touches = (state: EditorState, from: number, to: number): boolean =>
-  state.selection.ranges.some((r) => r.from <= to && r.to >= from)
+  !atTheBar(state) && state.selection.ranges.some((r) => r.from <= to && r.to >= from)
 
 /** Whether a line is a bullet (not a task) and where its `- ` begins, or -1. */
 const BULLET = /^([ \t]*)[-*+] /
@@ -304,6 +315,7 @@ const BULLET = /^([ \t]*)[-*+] /
  */
 function touchedLines(state: EditorState): Set<number> {
   const out = new Set<number>()
+  if (atTheBar(state)) return out
   for (const r of state.selection.ranges) {
     const first = state.doc.lineAt(r.from).number
     const last = Math.min(state.doc.lineAt(r.to).number, first + 400)
@@ -316,6 +328,7 @@ function editingKey(state: EditorState): string {
   const doc = state.doc
   // On the rendered page a line's marks show while the selection is on it.
   let key = marksAway(state) ? `r:${[...touchedLines(state)].join(",")}|` : ""
+  if (atTheBar(state)) return key + "bar"
   for (const r of state.selection.ranges) {
     const first = doc.lineAt(r.from)
     const last = doc.lineAt(r.to)
@@ -345,9 +358,23 @@ function build(state: EditorState, from: number, to: number): { all: DecorationS
   // Code cells that reach into the window, and which of ITS lines are fence (the lines of a long cell that are
   // far off the page are nobody's business). The cells are in order: search for the first, walk to the last.
   const fenceLines = new Set<number>()
+  // Text cells' lines (plain words: no marks, the escapes' backslashes hidden) and markdown cells' marker lines (hidden
+  // whole by textCells.ts), docs/PLAN-text-cells.md.
+  const textLines = new Set<number>()
+  const markerLines = new Set<number>()
   for (let i = Math.max(0, firstCellFromBy(cells, from, (cell) => cell.range) - 1); i < cells.length; i++) {
     const cell = cells[i]!
     if (cell.range.location > to) break
+    if (cell.block.kind === "paragraph") {
+      if (cell.range.location + cell.range.length < from) continue
+      const first = doc.lineAt(cell.range.location).number
+      if (cell.block.head) markerLines.add(first)
+      if (!cell.block.markdown) {
+        const last = doc.lineAt(cell.range.location + cell.range.length).number
+        for (let n = Math.max(first, startLine); n <= Math.min(last, endLine); n++) textLines.add(n)
+      }
+      continue
+    }
     if (cell.block.kind !== "code" || cell.range.location + cell.range.length < from) continue
     const first = doc.lineAt(cell.range.location)
     const last = doc.lineAt(Math.max(cell.range.location, cell.range.location + cell.range.length - 1))
@@ -377,6 +404,18 @@ function build(state: EditorState, from: number, to: number): { all: DecorationS
     const text = line.text
     if (fenceLines.has(number)) {
       entries.push({ from: line.from, to: line.from, deco: codeLine, kind: 0, atomic: false })
+      continue
+    }
+    if (markerLines.has(number)) continue
+    if (textLines.has(number)) {
+      for (const at of escapeOffsets(text)) {
+        entries.push({ from: line.from + at, to: line.from + at + 1, deco: escapeHidden, kind: 1, atomic: false })
+        entries.push({ from: line.from + at, to: line.from + at + 2, deco: escapeHidden, kind: 1, atomic: "only" })
+      }
+      // Link Here's id anchors (where links from other notes land) are not drawn either, and the caret steps over them.
+      for (const [start, stop] of anchorSpans(text)) {
+        entries.push({ from: line.from + start, to: line.from + stop, deco: escapeHidden, kind: 1, atomic: true })
+      }
       continue
     }
 
@@ -444,7 +483,7 @@ function build(state: EditorState, from: number, to: number): { all: DecorationS
   const all = new RangeSetBuilder<Decoration>()
   const atomic = new RangeSetBuilder<Decoration>()
   for (const e of entries) {
-    all.add(e.from, e.to, e.deco)
+    if (e.atomic !== "only") all.add(e.from, e.to, e.deco)
     if (e.atomic) atomic.add(e.from, e.to, e.deco)
   }
   return { all: all.finish(), atomic: atomic.finish() }
@@ -516,8 +555,20 @@ class Decorator {
       || state.field(renderedField, false) !== startState.field(renderedField, false)) return false
     const hull = hullOf(changes)
     const doc = state.doc
-    const regionFrom = doc.lineAt(Math.min(hull.from, doc.length)).from
-    const regionTo = doc.lineAt(Math.min(hull.toNew, doc.length)).to
+    let regionFrom = doc.lineAt(Math.min(hull.from, doc.length)).from
+    let regionTo = doc.lineAt(Math.min(hull.toNew, doc.length)).to
+    // A paragraph is decorated as a whole: whether it is a text cell or a markdown cell is the cell's, not the line's
+    // (a marker put on top of it changes every line of it).
+    {
+      const cells = notebook(state).cells
+      for (let i = Math.max(0, firstCellFromBy(cells, regionFrom, (cell) => cell.range) - 1); i < cells.length; i++) {
+        const cell = cells[i]!
+        if (cell.range.location > regionTo + 1) break
+        if (cell.block.kind !== "paragraph" || cell.range.location + cell.range.length < regionFrom - 1) continue
+        regionFrom = Math.min(regionFrom, doc.lineAt(cell.range.location).from)
+        regionTo = Math.max(regionTo, doc.lineAt(cell.range.location + cell.range.length).to)
+      }
+    }
     // The page must still be inside what is decorated (positions as they are now, after the change).
     const page = windowHoldsPage(changes, { from: this.from, to: this.to }, update.view.visibleRanges, { from: regionFrom, to: regionTo })
     if (!page.holds) return false
@@ -564,7 +615,7 @@ class Decorator {
       const { visibleFrom, visibleTo } = this.window(update.view)
       if (visibleFrom < this.from || visibleTo > this.to) { this.rebuild(update.view); return }
     }
-    if (update.selectionSet) {
+    if (update.selectionSet || atTheBar(update.state) !== atTheBar(update.startState)) {
       const key = editingKey(update.state)
       if (key !== this.editing) this.rebuild(update.view)
     }

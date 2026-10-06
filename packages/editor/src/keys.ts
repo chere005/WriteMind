@@ -13,10 +13,11 @@ import type { Extension } from "@codemirror/state"
 import { EditorView, keymap, type Command } from "@codemirror/view"
 import {
   BOLD, ITALIC, STRIKE, UNDERLINE_CLOSE, UNDERLINE_OPEN, copyCell, deleteCell, duplicateCell,
-  editsOver, movingCells, pasteCell,
+  editsOver, movingCells, pasteCell, plainCells,
   caretLine, codeBlock, indent, listContinuation, mergeCells, moveSection, outdent,
   outdentForBackspace, setHeading, splitCell, substring, toggleList, toggleQuote, toggleWrap,
-  kindForHeading, type CellKind, type Edit, type Heading, type ListStyle, type Range,
+  kindForHeading, makeMarkdownCell, makeTextCell, positioned, viaMarkdownCells, wholeChange,
+  type CellKind, type Edit, type Heading, type ListStyle, type Range,
 } from "@writemind/core"
 import { heldCells } from "./brackets"
 import { codeTypingKeys } from "./codeTyping"
@@ -39,8 +40,31 @@ const run = (make: (text: string, where: Range) => Edit | null): Command => (vie
   return true
 }
 
+/**
+ * Bold, italic, underline, strike: in a TEXT cell the cell is made a markdown cell first, in the same edit (one Undo
+ * takes both back: docs/PLAN-text-cells.md, "Automatic").
+ */
 export const wrap = (open: string, close = open): Command =>
-  run((text, where) => toggleWrap(text, where, open, close))
+  run((text, where) => viaMarkdownCells(text, where, (marked, at) => toggleWrap(marked, at, open, close)))
+
+/**
+ * A command that makes the cell a heading, a list or a quote, on a MARKDOWN cell: the marker goes first (it only ever
+ * marks a paragraph), in the same edit.
+ */
+const unmarked = (make: (text: string, where: Range) => Edit | null) => (text: string, where: Range): Edit | null => {
+  const cell = positioned(text).find((one) => one.range.location <= where.location && where.location <= end(one.range))
+  const head = cell && cell.block.kind === "paragraph" ? cell.block.head ?? 0 : 0
+  if (!cell || head === 0) return make(text, where)
+  const at = cell.range.location
+  const bare = text.slice(0, at) + text.slice(at + head)
+  const shift = (pos: number) => (pos >= at + head ? pos - head : Math.min(pos, at))
+  const from = shift(where.location)
+  const change = make(bare, { location: from, length: Math.max(0, shift(end(where)) - from) })
+  if (!change) return null
+  const final = bare.slice(0, change.range.location) + change.replacement + bare.slice(end(change.range))
+  return wholeChange(text, final, change.selection)
+}
+const end = (r: Range): number => r.location + r.length
 
 /**
  * At a bar on the rendered page a command that makes a KIND of block MAKES that
@@ -62,11 +86,25 @@ export const nameKind = (kind: CellKind, command: Command): Command => (view) =>
   return true
 }
 
-export const heading = (level: Heading): Command =>
-  nameKind(kindForHeading(level), run((text, where) => setHeading(text, where, level)))
+/**
+ * Ctrl+7, TEXT (docs/PLAN-text-cells.md): a markdown cell becomes a text cell (its marker and its formatting go, its
+ * words and their line breaks stay); a heading becomes body text, as the ladder's last rung always did.
+ */
+export const textCell: Command = nameKind({ kind: "text" },
+  run((text, where) => makeTextCell(text, where) ?? setHeading(text, where, 0)))
+
+/** Ctrl+Shift+7, MARKDOWN: the paragraph (or the heading's words) becomes a markdown cell — the marker on top. */
+export const markdownCell: Command = nameKind({ kind: "markdown" }, (view) => {
+  const change = makeMarkdownCell(view.state.doc.toString(), selection(view))
+  if (change) applyEdit(view, change)
+  return true
+})
+
+export const heading = (level: Heading): Command => level === 0 ? textCell
+  : nameKind(kindForHeading(level), run(unmarked((text, where) => setHeading(text, where, level))))
 
 export const list = (style: ListStyle): Command =>
-  nameKind({ kind: "list", style }, run((text, where) => toggleList(text, where, style)))
+  nameKind({ kind: "list", style }, run(unmarked((text, where) => toggleList(text, where, style))))
 
 /**
  * The style Format ▸ List writes: the one the chevron beside the list button
@@ -80,7 +118,7 @@ export const listStyleSource = Facet.define<() => ListStyle, () => ListStyle>({
 /** The list key: the chevron's style, read at the moment of the press. */
 const chosenList: Command = (view) => list(view.state.facet(listStyleSource)())(view)
 
-export const quote: Command = nameKind({ kind: "quote" }, run((text, where) => toggleQuote(text, where)))
+export const quote: Command = nameKind({ kind: "quote" }, run(unmarked((text, where) => toggleQuote(text, where))))
 export const fence: Command = nameKind({ kind: "code" }, makesCellAfter({ kind: "code" }, run((text, where) => codeBlock(text, where))))
 export const indentLines: Command = run((text, where) => indent(text, where))
 export const outdentLines: Command = run((text, where) => outdent(text, where))
@@ -144,7 +182,10 @@ const baseKeys: Extension = keymap.of([
   { key: "Mod-4", run: heading(3) },
   { key: "Mod-5", run: heading(4) },
   { key: "Mod-6", run: heading(5) },
+  // The cell kinds by number (docs/PLAN-text-cells.md): 7 Text, Shift+7 Markdown, 8 Code block. CodeMirror reads a
+  // Shift+digit by its key code, so Ctrl+Shift+7 is heard although Shift+7 types "&" (Shift+8 Runnable code: eval/index.ts).
   { key: "Mod-7", run: heading(0) },
+  { key: "Shift-Mod-7", run: markdownCell, preventDefault: true },
   { key: "Mod-8", run: fence },
   { key: "Mod-]", run: indentLines, preventDefault: true },
   { key: "Mod-[", run: outdentLines, preventDefault: true },
@@ -241,7 +282,8 @@ const cellClipboard = EditorView.domEventHandlers({
     const held = heldOnes(view)
     if (held.length === 0 || !event.clipboardData) return false
     const markdown = heldMarkdown(view, held)
-    event.clipboardData.setData("text/plain", markdown)
+    // Other apps get the words (no hidden escapes or markers); WriteMind gets the cells' markdown.
+    event.clipboardData.setData("text/plain", plainCells(markdown))
     event.clipboardData.setData(CELLS_MIME, markdown)
     event.preventDefault()
     return true
@@ -250,7 +292,7 @@ const cellClipboard = EditorView.domEventHandlers({
     const held = heldOnes(view)
     if (held.length === 0 || !event.clipboardData) return false
     const markdown = heldMarkdown(view, held)
-    event.clipboardData.setData("text/plain", markdown)
+    event.clipboardData.setData("text/plain", plainCells(markdown))
     event.clipboardData.setData(CELLS_MIME, markdown)
     event.preventDefault()
     deleteHeldCells(view)

@@ -42,7 +42,7 @@ export function cursorSeam(state: EditorState): number {
 
 /**
  * A command that MAKES a cell, run with nothing selected in a cell that has words: the new cell goes at `cursorSeam`,
- * AFTER that cell, empty, the caret in it — Ctrl+9's rule and Ctrl+0's (Sean, 2026-10-05: "pressing an input in the
+ * AFTER that cell, empty, the caret in it — Ctrl+Shift+8's rule and Ctrl+9's (Sean, 2026-10-05: "pressing an input in the
  * menu bar like code block etc should create a new cell with the cursor ready to start typing"). On an empty line, or
  * round a selection, `otherwise` (the block written there, or round what is selected).
  */

@@ -16,7 +16,7 @@ import {
   type CodeLanguage, type Edit, type Heading, type ListStyle, type Range,
 } from "@writemind/core"
 import {
-  applyEdit, evaluationCell, fence, foldAll, foldedKeys, heading, heldCells, indentLines, list, outdentLines, quote,
+  applyEdit, evaluationCell, fence, foldAll, foldedKeys, heading, heldCells, indentLines, list, markdownCell, outdentLines, quote,
   sectionAtCaret, selectAllOccurrences, selectNext, tagFence, toggleFold, unfoldAll, wrap,
 } from "@writemind/editor"
 import { EditorSelection } from "@codemirror/state"
@@ -95,6 +95,7 @@ export function runEditorCommand(view: EditorView, id: string, options: EditorOp
     case "italic": wrap(ITALIC)(view); return true
     case "underline": wrap(UNDERLINE_OPEN, UNDERLINE_CLOSE)(view); return true
     case "strike": wrap(STRIKE)(view); return true
+    case "markdownCell": markdownCell(view); return true
     case "list": list(options.listStyle)(view); return true
     case "quote": quote(view); return true
     case "outdent": outdentLines(view); return true

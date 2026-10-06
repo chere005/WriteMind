@@ -11,6 +11,7 @@
 
 import { positioned } from "../markdown/parser"
 import { end, intersection, range, type Edit, type Range } from "../text/range"
+import { cellSpacing } from "./apart"
 
 /**
  * The cell and the blank line that separates it from the next one — what
@@ -32,10 +33,17 @@ export function extent(cell: Range, text: string): Range {
   return range(start, stop - start)
 }
 
-/** Taking a cell out; the caret goes where the cell was. */
+/**
+ * Taking a cell out; the caret goes where the cell was. What is left either side of it stays two cells: a cell that
+ * touched one of them (no blank line, `apart.ts`) must not leave the other glued to it.
+ */
 export function deleteCell(cell: Range, text: string): Edit {
   const taken = extent(cell, text)
-  return { range: taken, replacement: "", selection: range(taken.location, 0) }
+  const before = text.slice(0, taken.location)
+  const after = text.slice(end(taken))
+  const joiner = before.length > 0 && after.length > 0 && !before.endsWith("\n\n") && !after.startsWith("\n")
+    ? (before.endsWith("\n") ? "\n" : "\n\n") : ""
+  return { range: taken, replacement: joiner, selection: range(taken.location, 0) }
 }
 
 /** A cell on the clipboard is its own markdown, so pasting it puts a cell in. */
@@ -46,14 +54,19 @@ export function copyCell(cell: Range, text: string): string {
   return text.slice(start, stop).replace(/^\n+|\n+$/g, "")
 }
 
-/** Putting a cell in after this one. */
+/**
+ * Putting a cell in after this one, a cell of its own: a blank line above it, and one below it when the cell after
+ * touched this one (`cellSpacing`) — an answer written under a cell with a ```wl block straight under it was glued
+ * to that block.
+ */
 export function pasteCell(markdown: string, after: Range, text: string): Edit {
   const body = markdown.replace(/^\n+|\n+$/g, "")
   const at = Math.min(end(after), text.length)
   const opening = "\n\n"
+  const { trail } = cellSpacing(text.slice(0, at) + opening, text.slice(at))
   return {
     range: range(at, 0),
-    replacement: opening + body,
+    replacement: opening + body + trail,
     selection: range(at + opening.length, body.length),
   }
 }

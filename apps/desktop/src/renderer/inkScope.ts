@@ -1,7 +1,7 @@
 /**
  * A PEN FOR ONE INK CELL (Sean, 2026-10-05: "selecting a cell type ... should create a new cell with the cursor ready
  * to start typing (obviously with the exception of drawing cells, where it becomes a pen that can only draw in that
- * cell"). Making a drawing cell (Ctrl+0, Insert ▸ Drawing Cell, the + menu) scopes the pointer to it: with the pen up,
+ * cell"). Making a drawing cell (Ctrl+9, Insert ▸ Drawing Cell, the + menu) scopes the pointer to it: with the pen up,
  * a press in that cell draws there and nowhere else; the page keeps its own pointer; a press anywhere outside the cell,
  * or Escape, ends it, and that press is the click it would have been (the caret), never a stroke. The pen mode itself
  * (Ctrl+P) is untouched and ends any scope.

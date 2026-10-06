@@ -30,6 +30,22 @@
 .tablet .box .handle[data-handle="sw"] { left: 0; top: 100%; }
 .tablet .box .handle[data-handle="se"] { left: 100%; top: 100%; }
 
+/* The row under the box (BoxActions.tsx): one slim dark strip of three small buttons, readable on any paper. It sits
+   beside the sheet's element in the host (placed in px by boxRow.ts), never over the box. */
+.tablet-host .box-actions {
+  position: absolute; z-index: 3; display: flex; align-items: center; gap: 1px; height: 22px; box-sizing: border-box;
+  padding: 0 2px; border-radius: 6px; white-space: nowrap; user-select: none;
+  background: rgba(28, 28, 32, 0.86); border: 1px solid rgba(255, 255, 255, 0.14);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.28);
+}
+.tablet-host .box-actions button {
+  height: 18px; padding: 0 7px; border: 0; border-radius: 4px; background: transparent; color: #e8e8ea;
+  font: inherit; font-size: 11px; line-height: 18px; cursor: pointer;
+}
+.tablet-host .box-actions button:hover:not(:disabled) { background: var(--wm-accent, #2D7DD2); color: #fff; }
+.tablet-host .box-actions button:disabled { opacity: 0.4; cursor: default; }
+.tablet-host .box-actions .sep { width: 1px; height: 12px; margin: 0 2px; background: rgba(255, 255, 255, 0.2); }
+
 /* The sheet's header: quiet. The small words are for the person, never a panel. */
 .camera-bar .pen-word { font-size: 11px; color: rgba(255, 255, 255, 0.55); padding: 0 4px; align-self: center; white-space: nowrap; }
 .camera-bar .bring-in { display: inline-flex; align-items: center; gap: 4px; }

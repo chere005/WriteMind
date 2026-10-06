@@ -159,7 +159,8 @@ describe("Code Block in a cell with words (no bar, nothing selected)", () => {
     const view = fakeView("Hello world", 0)
     view.dispatch({ selection: { anchor: 0, head: 5 } })
     fence(view)
-    expect(view.state.doc.toString()).toBe("```\nHello\n```\n world")
+    // (A cell of its own since 2026-10-05: a blank line between the fence and the words left after it.)
+    expect(view.state.doc.toString()).toBe("```\nHello\n```\n\n world")
   })
 
   it("makesCellAfter leaves an empty line to `otherwise`", () => {

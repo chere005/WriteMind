@@ -11,7 +11,7 @@
  */
 
 import {
-  app, BrowserWindow, nativeTheme, dialog, ipcMain, Menu, net, powerMonitor, protocol, screen, session, shell, systemPreferences,
+  app, BrowserWindow, nativeImage, nativeTheme, dialog, ipcMain, Menu, net, powerMonitor, protocol, screen, session, shell, systemPreferences,
 } from "electron"
 import { promises as fs } from "node:fs"
 import path from "node:path"
@@ -39,11 +39,18 @@ import { rememberWindow, windowPlacement } from "./windowMemory"
 import { installPerfProbe } from "./perfProbe"
 import { registerEval } from "./eval/ipc"
 import { registerSheets } from "./sheets"
+import { startUpdater, type Updater } from "./updater"
+import { UPDATE_COMMAND_IDS } from "../shared/update"
 import { takeWelcomed, welcomeOnce, welcomeWanted } from "./welcome"
 import type { Runner as EvalRunner } from "./eval/runner"
 import { MIN_WINDOW } from "../shared/layout"
+import { applyMacIdentity } from "./macIdentity"
 
 const here = path.dirname(fileURLToPath(import.meta.url))
+
+// ON A MAC IT IS "WriteMind", not "Electron": the name before any menu is built, the About panel, a dev run's dock
+// icon (main/macIdentity.ts; the dev bundle's Dock label is scripts/mac-dev-identity.mjs's). Nothing elsewhere.
+applyMacIdentity({ platform: process.platform, app, nativeImage, here })
 
 // The pictures are served over a scheme of the app's own rather than read
 // into the page as base64: a capture is a megabyte or two, and the note
@@ -141,11 +148,13 @@ async function tellFolders(): Promise<void> {
 let pen: PenSubsystem | null = null
 /** Evaluation cells' runner (main/eval): every child it started is killed on quit and when the window closes. */
 let evalRunner: EvalRunner | null = null
+/** Updates from GitHub Releases (main/updater.ts): only an installed Windows copy looks. */
+let updater: Updater | null = null
 
 // MARK: - The application menu
 
 /** Commands that are the main process's own: dialogs and the project file. */
-const MAIN_OWNED = new RegExp(`^(about|${PROJECT_COMMANDS.source.slice(2, -2)})$`)
+const MAIN_OWNED = new RegExp(`^(about|${UPDATE_COMMAND_IDS.join("|")}|${PROJECT_COMMANDS.source.slice(2, -2)})$`)
 
 /** End-to-end scripts cannot click a native dialog: they name the answer ahead of time. */
 let e2ePick: string | null = null
@@ -175,6 +184,7 @@ async function runCommand(id: string): Promise<void> {
     })
     return
   }
+  if ((UPDATE_COMMAND_IDS as readonly string[]).includes(id)) { await updater?.command(id); return }
   await runProjectCommand(id, {
     project, window: () => window, home: notesRoot, documents: () => app.getPath("documents"),
     askOpen, askSave, changed: projectChanged,
@@ -209,6 +219,7 @@ function rebuildMenu(): void {
       folders: project.folders.map((folder) => ({ path: folder, name: path.basename(folder) || folder })),
     },
     dev: DEV || process.env.WRITEMIND_E2E === "1",
+    ...(updater ? { update: updater.menu() } : {}),
     run: (id) => { void runCommand(id) },
   })
   const key = JSON.stringify(template, (_k, v) => (typeof v === "function" ? undefined : v))
@@ -521,6 +532,13 @@ app.whenReady().then(async () => {
     app, screen, ipc: ipcMain, powerMonitor, window: () => window, e2e: !!process.env.WRITEMIND_E2E,
     env: process.env, platform: process.platform,
     log: (line) => console.log(line),
+  })
+  // UPDATES (main/updater.ts): before the window, so the page's first question about them has an answer. Restart
+  // into one has the page write what it holds BEFORE the installer starts; the quit that follows goes through the
+  // close handshake as any quit does (nothing left to write by then, so it is quick).
+  updater = startUpdater({
+    ipc: ipcMain, window: () => window, menuChanged: rebuildMenu,
+    beforeInstall: async () => { if (window && !window.isDestroyed()) await askPageToFlush(window) },
   })
   rebuildMenu()
   // Lets the end-to-end scripts press Edit > Undo without a pointer.

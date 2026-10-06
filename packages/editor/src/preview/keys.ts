@@ -10,16 +10,18 @@
  * these declines and the ordinary editor keys answer.
  */
 
-import { EditorSelection, Prec, type Extension } from "@codemirror/state"
+import { EditorSelection, Prec, type Extension, type StateEffect } from "@codemirror/state"
 import { EditorView, keymap, type Command } from "@codemirror/view"
 import {
-  backspaceInEmptyBlock, end, furnitureBehind, minimalChange, outdentForBackspace, returnInBlock, staysClosed,
-  touchingRuns, type Edit, type PositionedBlock,
+  apartAbove, backspaceInEmptyBlock, end, furnitureBehind, minimalChange, outdentForBackspace, returnInBlock, staysClosed,
+  standsAlone, touchingRuns, type Edit, type PositionedBlock,
 } from "@writemind/core"
 import { awayField, putAway } from "./away"
 import { furnitureAt, reminderAt } from "./furniture"
+import { contentEnd, fenceLines, fencePointer, landingOffFence, onFence } from "./fences"
 import { insideHidden } from "../fold"
 import { firstCellReaching } from "../seams"
+import { cellBeside } from "../barWalk"
 import { openBlock, press } from "./field"
 import { holdingField } from "./hold"
 import { notebook } from "../notebook"
@@ -256,25 +258,12 @@ const stepFromBar = (up: boolean): Command => (view) => {
   if (armed === null) return false
   const main = view.state.selection.main
   if (!main.empty) return false
-  const cells = notebook(view.state).cells
-    .filter((cell) => cell.block.kind !== "blank" && !insideHidden(view.state, cell.range))
-  let target: number | null = null
-  if (up) {
-    const above = [...cells].reverse().find((cell) => cell.range.location < armed)
-    if (above && staysClosed(above.block)) return armBeside(view, above, false)
-    if (above) target = end(above.range)
-  } else {
-    const below = cells.find((cell) => cell.range.location >= armed)
-    if (below && staysClosed(below.block)) return armBeside(view, below, true)
-    if (below) target = below.range.location
-  }
-  if (target !== null) {
-    view.dispatch({
-      selection: EditorSelection.cursor(target),
-      effects: armSeam.of(null),
-      scrollIntoView: true,
-    })
-  }
+  // The cell beside the bar is the markdown side's rule too (barWalk.ts); the page draws no cells of empty lines.
+  const beside = cellBeside(view.state, armed, up, false)
+  if (beside && staysClosed(beside.block)) return armBeside(view, beside, !up)
+  const target = beside === null ? null : up ? end(beside.range) : beside.range.location
+  // (Into a fenced cell: its first / last content line, never a fence — fences.ts.)
+  if (target !== null) caretInto(view, target, [armSeam.of(null)])
   return true
 }
 
@@ -291,9 +280,22 @@ const leaveBar: Command = (view) => {
   if (armed === null) return false
   const cells = notebook(view.state).cells.filter((cell) => cell.block.kind !== "blank" && cell.range.length > 0
     && !insideHidden(view.state, cell.range))
-  const above = [...cells].reverse().find((cell) => cell.range.location < armed)
-  const below = cells.find((cell) => cell.range.location >= armed)
-  const target = above ? end(above.range) : below ? below.range.location : null
+  // Into a fenced cell: onto its content, not its fence (fences.ts). An EMPTY fenced cell has no content line, and none
+  // is written here (the note stays byte for byte): the caret goes on to the next cell out instead.
+  const landOn = (at: number): number | null => {
+    const landing = landingOffFence(view.state, at)
+    return landing === null ? at : "at" in landing ? landing.at : null
+  }
+  const outward = [
+    ...[...cells].reverse().filter((cell) => cell.range.location < armed).map((cell) => end(cell.range)),
+    ...cells.filter((cell) => cell.range.location >= armed).map((cell) => cell.range.location),
+  ]
+  let target: number | null = null
+  for (const at of outward) {
+    target = landOn(at)
+    if (target !== null) break
+  }
+  if (target === null && outward.length > 0) target = outward[0]!
   view.dispatch({
     ...(target === null ? {} : { selection: EditorSelection.cursor(target) }),
     effects: armSeam.of(null),
@@ -326,30 +328,35 @@ const vertical = (down: boolean): Command => (view) => {
   const doc = state.doc
   const all = notebook(state).cells
   const cells = all.map((cell) => cell.range)
-  const runs = touchingRuns(cells, (i) => staysClosed(all[i]!.block))
+  const runs = touchingRuns(cells, (i) => staysClosed(all[i]!.block) || standsAlone(all[i]!.block))
   const index = all.findIndex((cell) => cell.range.length > 0 && main.head >= cell.range.location
     && main.head <= end(cell.range))
   // Beside a picture or ink cell (the caret before or after it): the bar on the side the arrow points to.
   if (index >= 0 && staysClosed(all[index]!.block)) return armBeside(view, all[index]!, down)
   let target: number | null = null
-  // In an open code block the ``` lines are shut to a strip of padding, too thin for the editor's own arrow to land
-  // on: up from the first line of code (down from the last) is onto the fence, which opens for its language.
-  if (index >= 0 && all[index]!.block.kind === "code") {
-    const line = doc.lineAt(main.head)
-    const next = down ? (line.number < doc.lines ? doc.line(line.number + 1) : null) : (line.number > 1 ? doc.line(line.number - 1) : null)
-    const cell = all[index]!.range
-    if (next && /^\s*```/.test(next.text) && next.from >= cell.location && next.from <= end(cell)
-      && !/^\s*```/.test(line.text)) {
-      view.dispatch({ selection: EditorSelection.cursor(Math.min(next.from + (main.head - line.from), next.to)), scrollIntoView: true })
-      return true
-    }
+  // A fenced cell's ``` lines are never stood on (fences.ts): from a fence (Left and Right reach the opening one) the
+  // arrow goes into the code, or out of the cell; on the code, its first / last line is the edge the arrow leaves from.
+  const fence = index >= 0 ? fenceLines(doc, cells[index]!) : null
+  let edge: number | null = null
+  if (fence) {
+    const line = doc.lineAt(main.head).number
+    if (onFence(fence, line) && (line === fence.open) === down) return caretInto(view, main.head)
+    if (!onFence(fence, line)) edge = contentEnd(doc, fence, !down)
   }
   if (index >= 0) {
-    const run = runs[index]!
+    const run = fence ? { first: index, last: index } : runs[index]!
     const first = cells[run.first]!.location
     const last = end(cells[run.last]!)
     // Still inside the block: the editor's own arrows.
-    if (!sameScreenLine(view, main.head, down ? last : first, down ? -1 : 1)) return false
+    if (!sameScreenLine(view, main.head, edge ?? (down ? last : first), down ? -1 : 1)) return ownStep(view, down)
+    // Off the edge onto a cell this one touches but stands apart from (apart.ts): the bar between them, armed by hand
+    // (no blank line to land on), as the markdown side's arrows do — cell, bar, cell.
+    const beyond = down ? run.last + 1 : run.first
+    if (beyond < all.length && apartAbove(all, beyond)) {
+      const at = all[beyond]!.range.location
+      view.dispatch({ selection: EditorSelection.cursor(at), effects: armSeam.of(at), scrollIntoView: true })
+      return true
+    }
     if (down) {
       if (last >= doc.length) {
         view.dispatch({ selection: EditorSelection.cursor(doc.length), effects: armSeam.of(doc.length), scrollIntoView: true })
@@ -373,8 +380,34 @@ const vertical = (down: boolean): Command => (view) => {
   // Onto a picture or ink cell that touches this block: the bar between them (down: above it; up: under it).
   const picture = pictureCellAt(view, target)
   if (picture) return armBeside(view, picture, !down)
-  view.dispatch({ selection: EditorSelection.cursor(target), scrollIntoView: true })
+  return caretInto(view, target)
+}
+
+/**
+ * The caret to `at` — or, when `at` is on a fence line of a fenced cell, onto the content line beside it (fences.ts),
+ * an empty one made in a cell that has none. `effects` go with it.
+ */
+function caretInto(view: EditorView, at: number, effects: readonly StateEffect<unknown>[] = []): true {
+  const landing = landingOffFence(view.state, at)
+  if (landing && "make" in landing) {
+    const { from, insert, caret } = landing.make
+    view.dispatch({
+      changes: { from, insert }, selection: EditorSelection.cursor(caret), effects, scrollIntoView: true,
+      userEvent: "input.preview.fence",
+    })
+    return true
+  }
+  view.dispatch({ selection: EditorSelection.cursor(landing ? landing.at : at), effects, scrollIntoView: true })
   return true
+}
+
+/**
+ * The editor's own step up or down inside a block — unless it would stand on a fence line (measured onto a fence's
+ * thin strip), where the caret goes onto the content line beside the fence instead.
+ */
+function ownStep(view: EditorView, down: boolean): boolean {
+  const moved = view.moveVertically(view.state.selection.main, down)
+  return landingOffFence(view.state, moved.head) === null ? false : caretInto(view, moved.head)
 }
 
 /**
@@ -427,6 +460,12 @@ const page = (down: boolean, extend: boolean): Command => (view) => {
   else {
     // (Searched for, not found by measuring every cell of the note and looking down the list.)
     target = firstCellReaching(view, next + rel) ?? state.doc.length
+  }
+  // A code cell is landed in on its content, not on its opening fence (fences.ts). (An empty one is left as it is: a
+  // page move writes nothing.)
+  if (!extend) {
+    const landing = landingOffFence(state, target)
+    if (landing && "at" in landing) target = landing.at
   }
   scroller.scrollTop = next
   view.dispatch({
@@ -495,7 +534,7 @@ const typingOverHeld = EditorView.inputHandler.of((view, _from, _to, typed) => {
   return true
 })
 
-export const previewKeys: Extension = [Prec.highest(typingOverHeld), marginPresses, Prec.highest(keymap.of([
+export const previewKeys: Extension = [Prec.highest(typingOverHeld), marginPresses, fencePointer, Prec.highest(keymap.of([
   { key: "Enter", run: previewReturn },
   { key: "Escape", run: (view) => leaveBar(view) || releaseHeld(view) || putCaretAway(view) },
   { key: "Delete", run: (view) => leaveBar(view) || reminderDelete(view) },

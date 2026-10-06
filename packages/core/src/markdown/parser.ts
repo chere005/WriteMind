@@ -15,6 +15,7 @@
 import { range, type Range } from "../text/range"
 import { inkCellId, mediaFile, pictureLine } from "./images"
 import { delimiterAligns, hasPipe, headerCells, tableOf, type TableAlign } from "./table"
+import { isMarkdownMarker, looksMarkdown, plainLine } from "./plainText"
 
 export type { Range }
 
@@ -25,7 +26,13 @@ export interface TodoItem {
 
 export type Block =
   | { kind: "heading"; level: number; text: string }
-  | { kind: "paragraph"; text: string }
+  /**
+   * Body text (docs/PLAN-text-cells.md). A TEXT cell (no `markdown`): `text` is its lines as they are shown — every
+   * line break kept, escapes gone (`plainText.ts`). A MARKDOWN cell (`markdown`): `text` is its lines joined, as
+   * markdown reads them; `head` is the length of the marker line (`<!-- markdown -->` and its newline) that opens the
+   * cell's range, absent when the older-notes rule made it one.
+   */
+  | { kind: "paragraph"; text: string; markdown?: true; head?: number }
   | { kind: "bullets"; items: string[] }
   /** A list written with `* `, shown with a dash. Ordinary markdown either way. */
   | { kind: "dashes"; items: string[] }
@@ -160,6 +167,11 @@ function continuesTable(line: string): boolean {
 class Machine {
   readonly out: PositionedBlock[] = []
   private paragraph: string[] = []
+  /** The open paragraph's lines as written (its marker left out): a text cell's words. */
+  private paraRaw: string[] = []
+  /** The open paragraph began with the markdown marker (its first entry in `paragraph`), and how long that line is. */
+  private paraMarked = false
+  private paraHead = 0
   private bullets: string[] = []
   private todos: TodoItem[] = []
   private dashes: string[] = []
@@ -208,7 +220,19 @@ class Machine {
   private flush(endAt: number = this.blockEnd): void {
     const kept = this.blockEnd
     this.blockEnd = endAt
-    if (this.paragraph.length) { this.emit({ kind: "paragraph", text: this.paragraph.join(" ") }); this.paragraph = [] }
+    if (this.paragraph.length) {
+      const marked = this.paraMarked
+      const words = marked ? this.paragraph.slice(1) : this.paragraph
+      if (marked || looksMarkdown(this.paraRaw)) {
+        const head = Math.min(this.paraHead, this.blockEnd - this.blockStart + 1)
+        this.emit(marked ? { kind: "paragraph", text: words.join(" "), markdown: true, head } : { kind: "paragraph", text: words.join(" "), markdown: true })
+      } else {
+        this.emit({ kind: "paragraph", text: this.paraRaw.map(plainLine).join("\n") })
+      }
+      this.paragraph = []
+      this.paraRaw = []
+      this.paraMarked = false
+    }
     if (this.bullets.length) { this.emit({ kind: "bullets", items: this.bullets }); this.bullets = [] }
     if (this.todos.length) { this.emit({ kind: "todos", items: this.todos }); this.todos = [] }
     if (this.dashes.length) { this.emit({ kind: "dashes", items: this.dashes }); this.dashes = [] }
@@ -331,6 +355,7 @@ class Machine {
         const header = this.paraLastRaw
         const headerStart = this.paraLastStart
         this.paragraph.pop()
+        this.paraRaw.pop()
         if (this.paragraph.length) this.flush(this.paraPrevEnd)
         this.blockStart = headerStart
         this.table = [header, rawLine]
@@ -338,6 +363,20 @@ class Machine {
         this.lineStart += size
         return
       }
+    }
+    // The markdown marker opens a paragraph of its own (whatever was open ends): the cell it marks, from this line.
+    if (isMarkdownMarker(line)) {
+      this.flush(previousEnd)
+      this.blockStart = this.lineStart
+      this.paraMarked = true
+      this.paraHead = size
+      this.paraPrevEnd = previousEnd
+      this.paraLastStart = this.lineStart
+      this.paraLastRaw = rawLine
+      this.paraHeader = -1
+      this.paragraph.push(line)
+      this.lineStart += size
+      return
     }
     if (isRule(line)) {
       this.flush(previousEnd); this.blockStart = this.lineStart; this.emit({ kind: "rule" })
@@ -404,7 +443,8 @@ class Machine {
     // The first line keeps the spaces it was written with, so an indented
     // paragraph is drawn indented. Four spaces is NOT a code block here —
     // code is what is inside ```, ` or `` and nothing else.
-    this.paragraph.push(this.paragraph.length === 0 ? leadingSpaces(rawLine) + line : line)
+    this.paragraph.push(this.paragraph.length === (this.paraMarked ? 1 : 0) ? leadingSpaces(rawLine) + line : line)
+    this.paraRaw.push(rawLine.endsWith("\r") ? rawLine.slice(0, -1) : rawLine)
     this.lineStart += size
   }
 

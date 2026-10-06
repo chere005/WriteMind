@@ -42,6 +42,7 @@ import {
   type InlineSpan, type MathDisplay, type MathNode, type PositionedBlock,
 } from "@writemind/core"
 import { notebook, notebookField } from "./notebook"
+import { armedField } from "./seams"
 
 export const MATHML_NS = "http://www.w3.org/1998/Math/MathML"
 
@@ -341,8 +342,11 @@ class MathWidget extends WidgetType {
  * typeset — it is selected AS maths.
  */
 export function showsSource(state: EditorState, from: number, to: number): boolean {
+  // A BAR THAT IS THE CURSOR IS IN NO CELL (Sean, 2026-10-05: "when i put the cursor in between, it shouldn't unrender
+  // the math until i'm actually in that cell"): the caret parked against the cell below a bar is not a caret in it.
+  const armed = (state.field(armedField, false) ?? null) !== null
   return state.selection.ranges.some((r) => {
-    if (r.empty) return r.from >= from && r.from <= to
+    if (r.empty) return !armed && r.from >= from && r.from <= to
     const overlaps = r.from < to && r.to > from
     const covers = r.from <= from && r.to >= to
     return overlaps && !covers
@@ -412,7 +416,7 @@ const inlinePlugin = ViewPlugin.fromClass(class {
   decorations: DecorationSet
   constructor(view: EditorView) { this.decorations = inlineDecorations(view) }
   update(update: ViewUpdate) {
-    if (update.docChanged || update.selectionSet || update.viewportChanged) {
+    if (update.docChanged || update.selectionSet || update.viewportChanged || armedMoved(update.startState, update.state)) {
       this.decorations = inlineDecorations(update.view)
     }
   }
@@ -425,6 +429,10 @@ const inlinePlugin = ViewPlugin.fromClass(class {
 
 /** A ```wl block that is drawn as maths: the lines it takes (opening fence to the end of the closing one) and its source. */
 export interface TypesetBlock { from: number; to: number; source: string }
+
+/** Whether a transaction put a bar up or took one down (the caret parked at a bar is in no cell, `showsSource`). */
+const armedMoved = (before: EditorState, after: EditorState): boolean =>
+  (before.field(armedField, false) ?? null) !== (after.field(armedField, false) ?? null)
 
 /** Whether the maths in a fence parses (kept: the parse is the expensive part and the same fence is asked about on every caret move). */
 const parses = new Map<string, boolean>()
@@ -522,7 +530,7 @@ export function typesetOf(state: EditorState, before?: { value: Typeset; changes
 const blockField = StateField.define<Typeset>({
   create: (state) => typesetOf(state),
   update(value, transaction) {
-    if (!transaction.docChanged && !transaction.selection) return value
+    if (!transaction.docChanged && !transaction.selection && !armedMoved(transaction.startState, transaction.state)) return value
     // A caret that moves between lines of prose changes nothing here: the decorations are rebuilt only when the
     // set of blocks being drawn is not the one before.
     if (!transaction.docChanged) {

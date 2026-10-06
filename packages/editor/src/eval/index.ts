@@ -1,5 +1,5 @@
 /**
- * EVALUATION CELLS in the notebook: Shift+Enter runs the cell the caret is in, Ctrl+9 makes one, the answer is
+ * EVALUATION CELLS in the notebook: Shift+Enter runs the cell the caret is in, Ctrl+Shift+8 makes one, the answer is
  * written under it as an `out` cell and the bar is left under the answer, and the mark at the cell's left says what
  * it runs as — or, once it has run, `In[n]` over the code and `Out[n]` over the answer.
  *
@@ -145,7 +145,7 @@ export const runCell: Command = (view) => {
   return plugin ? runCellAt(view, plugin) : false
 }
 
-/** Apply a whole-document rewrite as the one change it really is (the seams' own `rewrite`, for Ctrl+9 at a bar). */
+/** Apply a whole-document rewrite as the one change it really is (the seams' own `rewrite`, for Ctrl+Shift+8 at a bar). */
 function rewrite(view: EditorView, markdown: string, caret: number): void {
   const old = view.state.doc.toString()
   let from = 0
@@ -163,7 +163,7 @@ function rewrite(view: EditorView, markdown: string, caret: number): void {
 }
 
 /**
- * Ctrl+9 — AN EVALUATION CELL HERE, of whichever environment was picked last (Wolfram until one has been).
+ * Ctrl+Shift+8 — AN EVALUATION CELL HERE, of whichever environment was picked last (Wolfram until one has been).
  * AT A BAR THE CELL IS MADE THERE, caret inside it (29149b9: the caret at a bar is parked against the cell BELOW
  * it, so asking for "the caret's cell" turned that cell into one instead). Anywhere else the caret's own fenced cell
  * becomes one, keeping its code; any other cell gets a new one after it.
@@ -475,7 +475,10 @@ class EvalPlugin {
         evaluator = evaluatorFrom(cell.block.language)
       }
       if (!role) continue
-      const block = view.lineBlockAt(cell.range.location)
+      let block = view.lineBlockAt(cell.range.location)
+      // A cell that touches one it stands apart from has the air of a blank line in front of it (apart.ts), and that
+      // air is part of its line block: the cell is the last part of it.
+      if (Array.isArray(block.type)) block = block.type[block.type.length - 1] ?? block
       // ON THE BASELINE OF THE CELL'S FIRST LINE: a drawn cell's first line of code (its box's padding above it), an
       // open one's fence line. In and Out are measured the same way, so the two marks of a pair sit the same.
       let top: number
@@ -761,7 +764,8 @@ const evalPlugin = ViewPlugin.fromClass(EvalPlugin)
  */
 const evalKeys = Prec.highest(keymap.of([
   { key: "Shift-Enter", run: runCell },
-  { key: "Mod-9", run: evaluationCell, preventDefault: true },
+  // Ctrl+Shift+8 (docs/PLAN-text-cells.md: it was Ctrl+9, the Mac's ⌘9; Ctrl+9 is the drawing cell now).
+  { key: "Shift-Mod-8", run: evaluationCell, preventDefault: true },
 ]))
 
 export const evaluationCells: Extension = [evalField, evalPlugin, evalKeys, evalMargin]

@@ -19,31 +19,37 @@ describe("insertMath puts the caret OFF the closing fence's line (a typeset bloc
     return { out, caret: e.selection.location, rest: out.slice(e.selection.location) }
   }
 
+  // (A cell of its own since 2026-10-05, Sean: a blank line either side of the block, and the caret on the blank line
+  // UNDER it — the bar there — rather than on the words below.)
   it("on a blank line between two paragraphs: after the closing fence's line break, not before it", () => {
     const text = "first paragraph\n\nsecond paragraph"
     const { out, caret, rest } = caretAfter(text, "first paragraph\n".length)
-    expect(out).toBe(`first paragraph\n${FENCE}wl\nPi\n${FENCE}\nsecond paragraph`)
-    expect(rest, "the caret is at the start of the line under the block").toBe("second paragraph")
+    expect(out).toBe(`first paragraph\n\n${FENCE}wl\nPi\n${FENCE}\n\nsecond paragraph`)
+    expect(rest, "the caret is on the blank line under the block").toBe("\nsecond paragraph")
     expect(out.slice(0, caret).endsWith(`${FENCE}\n`)).toBe(true)
   })
 
   it("at the end of a line that has more below it", () => {
     const { out, rest } = caretAfter("first\nsecond", "first".length)
-    expect(out).toBe(`first\n${FENCE}wl\nPi\n${FENCE}\nsecond`)
-    expect(rest).toBe("second")
+    expect(out).toBe(`first\n\n${FENCE}wl\nPi\n${FENCE}\n\nsecond`)
+    expect(rest).toBe("\nsecond")
   })
 
-  it("where the insert had to add the line break itself, the caret is already after it", () => {
-    expect(caretAfter("before", 6).out).toBe(`before\n${FENCE}wl\nPi\n${FENCE}\n`)
+  it("at the end of the note the caret ends it (the palette arms the bar under the block)", () => {
+    expect(caretAfter("before", 6).out).toBe(`before\n\n${FENCE}wl\nPi\n${FENCE}`)
     expect(caretAfter("before", 6).rest).toBe("")
-    expect(caretAfter("before\n\nafter", 8).rest).toBe("after")
+    expect(caretAfter("before\n\nafter", 8).rest).toBe("\nafter")
   })
 
-  it("never at the end of the closing fence, wherever it goes", () => {
-    for (const [text, at] of [["a\nb", 1], ["\nb", 0], ["a\n\n\nb", 2], ["", 0], ["a", 1]] as [string, number][]) {
+  it("never at the end of the closing fence, wherever it goes, but at the very end of the note", () => {
+    for (const [text, at] of [["a\nb", 1], ["\nb", 0], ["a\n\n\nb", 2], ["a\n", 1]] as [string, number][]) {
       const { out, caret } = caretAfter(text, at)
       const lineStart = out.lastIndexOf("\n", caret - 1) + 1
       expect(out.slice(lineStart, caret), JSON.stringify(text)).not.toMatch(/```$/)
+    }
+    for (const [text, at] of [["", 0], ["a", 1], ["a\n", 2]] as [string, number][]) {
+      const { out, caret } = caretAfter(text, at)
+      expect(caret, JSON.stringify(text)).toBe(out.length)
     }
   })
 

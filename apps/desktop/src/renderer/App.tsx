@@ -16,7 +16,7 @@ import {
   type CanvasItem, type CodeLanguage, type Drawing, type ListStyle, type Note, type Placement,
 } from "@writemind/core"
 import { Canvas, type CanvasMode } from "./Canvas"
-import { depthOf, insertInkCell } from "./dock"
+import { depthOf, dockNewInk, insertInkCell } from "./dock"
 import { scopePenTo } from "./inkScope"
 import { dockHostFor, inkPainter, shownWidth, snapshotNow, snapshotsAfterSave, snapshotsOnOpen, syncInkCells } from "./inkCells"
 import { cellSheetsSaw, setCellSheetHost } from "./cellSheets"
@@ -53,6 +53,7 @@ import { useProject, type SessionApi } from "./useProject"
 import type { Platform, Section } from "./wm"
 import { friendly, leaf } from "./errors"
 import { NO_FOLDER_TEXT, targetFolderOf } from "./sidebarTree"
+import { UpdateDialog } from "./UpdateDialog"
 
 /** How long after the last keystroke the note is written. */
 const SAVE_AFTER = 500
@@ -879,7 +880,7 @@ export function App() {
   const { project, switching } = useProject({ session: sessionRef, reload, lastTree })
 
   // DOCKING (docs\PLAN-docking-ink-cells.md (d)): the editor's side of it, for the drawing layer's dock handle, and a
-  // new empty ink cell (Insert ▸ Drawing Cell, Ctrl+0, the + menu's Drawing Cell). A picture line's path climbs out
+  // new empty ink cell (Insert ▸ Drawing Cell, Ctrl+9, the + menu's Drawing Cell). A picture line's path climbs out
   // of the note's section folders to its project folder's `.drawings/media` (`depth`), so other viewers find it.
   const depth = useMemo(() => (current
     ? depthOf(current, (project?.folders ?? []).map((one) => one.path), platform?.root ?? null) : 0),
@@ -901,6 +902,23 @@ export function App() {
     if (cell) snapshotNow(file, cell, width)
     // The pointer becomes a pen for this cell alone (inkScope.ts: Sean, 2026-10-05).
     if (id) scopePenTo(id)
+  }, [changeDrawing, depth, dockHost, history])
+  // The tablet box's "Bring in as Drawing Cell" (BoxActions.tsx): the boxed writing, landed in the pane as Bring in
+  // Writing lands it, docked as a NEW drawing cell at the input cursor (the armed bar, else after the caret's cell),
+  // its snapshot written at once. One Undo step in the note.
+  const dockSheetCell = useCallback((capture: Capture): boolean => {
+    const editor = viewRef.current
+    const file = openRef.current
+    if (!editor || !file || !dockHost || !capture.strokes || capture.strokes.length === 0) return false
+    const column = columnBox(editor)
+    const left = editor.scrollDOM.getBoundingClientRect().left
+    const id = dockNewInk({
+      history, drawing: () => drawingRef.current, apply: changeDrawing, words: dockHost.words, depth,
+      ahead: dockHost.ahead,
+    }, capture.strokes, currentPane(editor, lastPane), { left: column.left - left, width: column.width }, cursorSeam(editor.state))
+    const cell = id ? inkCellOf(drawingRef.current, id) : null
+    if (cell) snapshotNow(file, cell, column.width)
+    return id !== null
   }, [changeDrawing, depth, dockHost, history])
   // "None of the project's folders is there" is taken back when one is (a drive plugged in, a share back).
   useEffect(() => {
@@ -1458,6 +1476,7 @@ export function App() {
           penWidth={penWidth}
           pane={currentPane(view, lastPane)}
           onCapture={(capture) => { void addCapture(capture) }}
+          onDockCell={dockSheetCell}
           // The Mac's toggleCameraPane: the notes come back and full-window is left behind with the video.
           onHide={toggleCameraPane}
           preferred={cameraPick}
@@ -1474,6 +1493,7 @@ export function App() {
         />
       )}
       {showKeys && <KeyList platform={kind} onClose={() => setShowKeys(false)} />}
+      <UpdateDialog />{/* "Updates available" and Help ▸ Check for Updates…'s answers (main/updater.ts); otherwise nothing */}
       <CellMenu />
     </div>
   )

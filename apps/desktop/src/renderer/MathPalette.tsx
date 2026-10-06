@@ -24,10 +24,10 @@ import { useCallback, useEffect, useRef, useState } from "react"
 import type { KeyboardEvent as ReactKeyboardEvent, MouseEvent as ReactMouseEvent } from "react"
 import type { EditorView } from "@codemirror/view"
 import {
-  initialValues, insertMath, MATH_GROUPS, MATH_TEMPLATES, range, templatesIn, templateWL,
+  initialValues, insertMath, MATH_GROUPS, MATH_TEMPLATES, range, templatesIn, templateWL, viaMarkdownCells,
   type MathTemplate,
 } from "@writemind/core"
-import { applyEdit, mathElement, openBarForWriting } from "@writemind/editor"
+import { applyEdit, armAtNoteEnd, mathElement, openBarForWriting } from "@writemind/editor"
 
 /** The event the Insert > Maths... command (Ctrl+Shift+M) sends. */
 export const MATH_OPEN_EVENT = "wm:math-open"
@@ -127,8 +127,15 @@ export function MathPalette({ view, showButton = true }: { view: EditorView | nu
     // At an armed bar the maths goes in a new cell there, as every command that writes does (the Mac's `perform`).
     openBarForWriting(target)
     const selection = target.state.selection.main
-    applyEdit(target, insertMath(target.state.doc.toString(),
-      range(selection.from, selection.to - selection.from), wl.trim(), display))
+    // On its own line it is a cell of its own, a blank line either side (core `insertMath`, Sean 2026-10-05); at the
+    // very end of the note the bar under it is the cursor, so what is typed next is not glued to its closing fence.
+    // Inline maths in a text cell makes it a markdown cell first, in the same edit (docs/PLAN-text-cells.md).
+    const text = target.state.doc.toString()
+    const where = range(selection.from, selection.to - selection.from)
+    const change = display ? insertMath(text, where, wl.trim(), display)
+      : viaMarkdownCells(text, where, (marked, at) => insertMath(marked, at, wl.trim(), display))
+    if (change) applyEdit(target, change)
+    if (display) armAtNoteEnd(target)
     setOpen(false)
   }
 

@@ -16,12 +16,15 @@ import {
 } from "@codemirror/state"
 import { Decoration, EditorView, ViewPlugin, keymap, type ViewUpdate } from "@codemirror/view"
 import {
-  armIn, between, end, firstCellFromBy, GAP_HEIGHT, onPlus, openCell, plus, seamAt, seams, type CellBox, type CellKind,
+  between, end, firstCellFromBy, GAP_HEIGHT, onPlus, openCell, plus, seamAt, seams, armIn, type CellBox, type CellKind,
   type PositionedBlock, type Range, type Seam,
 } from "@writemind/core"
-import { hiddenNow, insideHidden } from "./fold"
+import { barCaret, sameLineOnScreen, shownBeyond, sideMove, verticalMove, type BarMove } from "./barWalk"
+import { insideHidden, revealAt } from "./fold"
 import { setHolding } from "./preview/hold"
-import { notebook } from "./notebook"
+import { cellWritten, notebook } from "./notebook"
+import { gapAt } from "./apart"
+import { renderedField } from "./rendered"
 
 /** Arm a seam by hand — the two ends of the page, which no caret can name. */
 export const armSeam = StateEffect.define<number | null>()
@@ -83,6 +86,25 @@ export const armedTypeField = StateField.define<CellKind>({
   },
 })
 
+/** An arrow armed the bar: where the caret was before it (`barFromField`). */
+const setBarFrom = StateEffect.define<number | null>()
+
+/**
+ * Where the caret was before an ARROW armed the bar that is up (null for a bar a click armed), so Escape can put it
+ * back there: a caret left on the blank line under a bar put out would glue whatever is typed next to the cells
+ * either side of it. It goes with the bar.
+ */
+export const barFromField = StateField.define<number | null>({
+  create() { return null },
+  update(value, transaction) {
+    for (const effect of transaction.effects) if (effect.is(setBarFrom)) return effect.value
+    const before = transaction.startState.field(armedField, false) ?? null
+    const after = transaction.state.field(armedField, false) ?? null
+    if (after === null || after !== before) return null
+    return value === null || !transaction.docChanged ? value : transaction.changes.mapPos(value)
+  },
+})
+
 /** Where the note's left margin is, so the + sits outside the words. */
 export const PLUS_LEADING = 6
 /** How far (px) a press in a seam must travel before it picks cells (the Mac's CellInsertions.dragThreshold, in points). */
@@ -96,7 +118,8 @@ export function cellBoxes(view: EditorView): CellBox[] {
     const from = Math.min(cell.range.location, length)
     const to = Math.min(Math.max(cell.range.location, cell.range.location + cell.range.length - 1), length)
     const pad = view.documentPadding.top
-    const top = view.lineBlockAt(from).top + pad
+    // (Below the gap over a cell that stands apart from one it touches: that gap is the seam between them, apart.ts.)
+    const top = view.lineBlockAt(from).top + pad + gapAt(view.state, cell.range.location)
     const bottom = view.lineBlockAt(to).bottom + pad
     return { top, bottom, offset: cell.range.location }
   })
@@ -119,25 +142,17 @@ export function pageSeams(view: EditorView): Seam[] {
 // note. A seam is the space between two cells, and its box is a function of those two cells' boxes alone, so the
 // ones near a point are made from the cells near it.
 
-/** The next cell (`dir` 1) or the one before (`dir` -1) that is on show, or -1 / `cells.length` past the ends. */
-function shownBeyond(view: EditorView, cells: readonly PositionedBlock[], from: number, dir: 1 | -1): number {
-  let i = from + dir
-  while (i >= 0 && i < cells.length && insideHidden(view.state, cells[i]!.range)) {
-    // A closed section hides a run of cells: jump past all of it.
-    const at = cells[i]!.range.location
-    const hidden = hiddenNow(view.state).find((r) => at > r.location && at < end(r))
-    if (!hidden) { i += dir; continue }
-    i = dir > 0 ? firstCellFromBy(cells, end(hidden) + 1, (c) => c.range) : firstCellFromBy(cells, hidden.location, (c) => c.range) - 1
-  }
-  return i
-}
+// (`shownBeyond`, the next cell on show past a closed section, is the arrows' too: barWalk.ts.)
 
 const boxOf = (view: EditorView, cell: PositionedBlock): CellBox => {
   const length = view.state.doc.length
   const from = Math.min(cell.range.location, length)
   const to = Math.min(Math.max(cell.range.location, cell.range.location + cell.range.length - 1), length)
   const pad = view.documentPadding.top
-  return { top: view.lineBlockAt(from).top + pad, bottom: view.lineBlockAt(to).bottom + pad, offset: cell.range.location }
+  return {
+    top: view.lineBlockAt(from).top + pad + gapAt(view.state, cell.range.location),
+    bottom: view.lineBlockAt(to).bottom + pad, offset: cell.range.location,
+  }
 }
 
 /**
@@ -153,21 +168,21 @@ export function seamsAround(view: EditorView, index: number): Seam[] {
   // The centre is a cell on show: this one, or the nearest before it, or the first after.
   let centre = Math.min(Math.max(index, 0), cells.length - 1)
   if (insideHidden(view.state, cells[centre]!.range)) {
-    const before = shownBeyond(view, cells, centre, -1)
-    centre = before >= 0 ? before : shownBeyond(view, cells, centre, 1)
+    const before = shownBeyond(view.state, cells, centre, -1)
+    centre = before >= 0 ? before : shownBeyond(view.state, cells, centre, 1)
   }
   if (centre < 0 || centre >= cells.length) return none()
   const window: number[] = [centre]
   let low = centre
   let high = centre
   for (let k = 0; k < 2; k++) {
-    const b = shownBeyond(view, cells, low, -1)
+    const b = shownBeyond(view.state, cells, low, -1)
     if (b >= 0) { window.unshift(b); low = b }
-    const a = shownBeyond(view, cells, high, 1)
+    const a = shownBeyond(view.state, cells, high, 1)
     if (a < cells.length) { window.push(a); high = a }
   }
-  const startsPage = shownBeyond(view, cells, low, -1) < 0
-  const endsPage = shownBeyond(view, cells, high, 1) >= cells.length
+  const startsPage = shownBeyond(view.state, cells, low, -1) < 0
+  const endsPage = shownBeyond(view.state, cells, high, 1) >= cells.length
   const made = seams({
     cells: window.map((i) => boxOf(view, cells[i]!)),
     pageTop: 0,
@@ -209,8 +224,8 @@ export function cellOffsetAt(view: EditorView, y: number): number | null {
   if (cells.length === 0) return null
   let index = cellIndexAtY(view, y)
   if (insideHidden(view.state, cells[index]!.range)) {
-    const before = shownBeyond(view, cells, index, -1)
-    index = before >= 0 ? before : shownBeyond(view, cells, index, 1)
+    const before = shownBeyond(view.state, cells, index, -1)
+    index = before >= 0 ? before : shownBeyond(view.state, cells, index, 1)
   }
   return index >= 0 && index < cells.length ? cells[index]!.range.location : null
 }
@@ -230,7 +245,7 @@ export function firstCellReaching(view: EditorView, y: number): number | null {
     else low = middle + 1
   }
   if (low >= cells.length) return null
-  if (insideHidden(view.state, cells[low]!.range)) low = shownBeyond(view, cells, low, 1)
+  if (insideHidden(view.state, cells[low]!.range)) low = shownBeyond(view.state, cells, low, 1)
   return low < cells.length ? cells[low]!.range.location : null
 }
 
@@ -279,15 +294,9 @@ export function pointerPlace(view: EditorView, target: EventTarget | null, clien
  * two ends of the note, two cells that touch) the caret waits at the offset and the bar is armed by hand.
  */
 export function armAt(view: EditorView, offset: number): void {
-  const doc = view.state.doc
-  const at = Math.min(Math.max(offset, 0), doc.length)
-  let caret = at
-  if (at > 0 && at < doc.length) {
-    const line = doc.lineAt(at - 1)
-    if (line.text.trim().length === 0
-      && armIn({ location: line.from, length: 0 }, doc, () => notebook(view.state).cells, null) === at) caret = line.from
-  }
-  view.dispatch({ selection: { anchor: caret }, effects: armSeam.of(at), userEvent: "select" })
+  const at = Math.min(Math.max(offset, 0), view.state.doc.length)
+  // (Where the caret waits is `barCaret`, the arrows' rule too — and never on a blank line a closed section hides.)
+  view.dispatch({ selection: { anchor: barCaret(view.state, at) }, effects: armSeam.of(at), userEvent: "select" })
 }
 
 /** The seam that opens a cell at `offset` (a cell's start, or the note's end), or null. */
@@ -312,13 +321,13 @@ export function seamAfterCellAt(view: EditorView, y: number): number {
   if (cells.length === 0) return length
   let index = cellIndexAtY(view, y)
   if (insideHidden(view.state, cells[index]!.range)) {
-    const before = shownBeyond(view, cells, index, -1)
-    index = before >= 0 ? before : shownBeyond(view, cells, index, 1)
+    const before = shownBeyond(view.state, cells, index, -1)
+    index = before >= 0 ? before : shownBeyond(view.state, cells, index, 1)
   }
   if (index < 0 || index >= cells.length) return length
   // Past any run of extra blank lines (a cell of its own to the parser, not a place a picture goes after).
-  let next = shownBeyond(view, cells, index, 1)
-  while (next < cells.length && cells[next]!.block.kind === "blank") next = shownBeyond(view, cells, next, 1)
+  let next = shownBeyond(view.state, cells, index, 1)
+  while (next < cells.length && cells[next]!.block.kind === "blank") next = shownBeyond(view.state, cells, next, 1)
   return next < cells.length ? cells[next]!.range.location : length
 }
 
@@ -564,6 +573,20 @@ export function openBarForWriting(view: EditorView): boolean {
 }
 
 /**
+ * After a command wrote a cell at the very END of the note (maths from the palette), the caret ends the note against
+ * the cell's last line: the bar under the cell is the cursor there, so what is typed next is a cell of its own and
+ * not words on a closing fence (the eval answer's and the dock's rule). Returns whether a bar was put up.
+ */
+export function armAtNoteEnd(view: EditorView): boolean {
+  const { state } = view
+  const main = state.selection.main
+  if (state.selection.ranges.length !== 1 || !main.empty || main.head !== state.doc.length || state.doc.length === 0) return false
+  if ((state.field(armedField, false) ?? null) === state.doc.length) return true
+  view.dispatch({ effects: armSeam.of(state.doc.length) })
+  return true
+}
+
+/**
  * Typing at an armed bar opens a cell of the chosen kind and puts the
  * character in it — the funnel, and the only one: a caller that NAMES a
  * range means that range.
@@ -583,15 +606,26 @@ function rewrite(view: EditorView, markdown: string, caret: number): void {
     effects: armSeam.of(null),
     scrollIntoView: true,
     userEvent: "input.type",
+    // The cell is written whole by the core's rules (a text cell's first character already literal): textCells.ts
+    // leaves it as it is.
+    annotations: cellWritten.of(true),
   })
+  // The bar under a closed section stands before the next heading, and a cell written there is that section's: it
+  // opens, so nothing typed goes out of sight. (The caret is set again, so the fold's own "step out of what is
+  // hidden", queued for the edit, leaves it where it is.)
+  const head = view.state.selection.main.head
+  if (revealAt(view, head)) view.dispatch({ selection: EditorSelection.cursor(head), scrollIntoView: true })
 }
 
-/** Open the cell an armed bar stands for, with `written` already in it. */
-export function openArmed(view: EditorView, written: string): boolean {
+/**
+ * Open the cell an armed bar stands for, with `written` already in it. `literal`: it was typed (a text cell takes it by
+ * the escape rule); false for a paste, which goes in as the markdown it is.
+ */
+export function openArmed(view: EditorView, written: string, literal = true): boolean {
   const armed = view.state.field(armedField, false) ?? null
   if (armed === null) return false
   const kind = view.state.field(armedTypeField, false) ?? { kind: "text" as const }
-  const opened = openCell(kind, view.state.doc.toString(), armed, written)
+  const opened = openCell(kind, view.state.doc.toString(), armed, written, literal)
   rewrite(view, opened.markdown, opened.caret)
   return true
 }
@@ -612,20 +646,107 @@ const barKeys = keymap.of([
     key: "Escape",
     run: (view) => {
       if ((view.state.field(armedField, false) ?? null) === null) return false
-      view.dispatch({ effects: armSeam.of(null) })
+      // A bar an arrow armed gives the caret back where the arrow found it; one a click armed leaves it where it is.
+      const from = view.state.field(barFromField, false) ?? null
+      const back = from === null ? null : Math.min(from, view.state.doc.length)
+      view.dispatch({ ...(back === null ? {} : { selection: EditorSelection.cursor(back), scrollIntoView: true }), effects: armSeam.of(null) })
       return true
     },
   },
 ])
 
-/** Text pasted at a bar is a new cell, the same as a character typed there. */
+// MARK: - The arrows on the markdown side (barWalk.ts has the rules)
+
+const markdownSide = (view: EditorView): boolean => view.state.field(renderedField, false) !== true
+
+/** Carry out what `barWalk` said, keeping the column a vertical walk was keeping where that is cheap. */
+function applyBarMove(view: EditorView, move: BarMove, vertical: "up" | "down" | null): boolean {
+  if (move === null) return false
+  if (move.kind === "stay") return true
+  const state = view.state
+  const main = state.selection.main
+  const armed = state.field(armedField, false) ?? null
+  if (move.kind === "arm") {
+    // The column the caret was walking down rides with the bar to the next cell.
+    const goal = vertical === null ? undefined : main.goalColumn ?? view.moveVertically(main, vertical === "down").goalColumn
+    view.dispatch({
+      // (A range handed to `dispatch` as it is is read as {anchor, head} and loses its column: wrapped, it keeps it.)
+      selection: EditorSelection.create([EditorSelection.cursor(move.caret, 0, undefined, goal)]),
+      // (From bar to bar over a picture: the caret before the first of them.)
+      effects: [
+        armSeam.of(move.offset), setBarFrom.of(armed === null ? main.head : state.field(barFromField, false) ?? null),
+        // The bar is drawn just past the caret's line (under the last cell, it is the page's last few pixels): room for it.
+        EditorView.scrollIntoView(move.caret, { yMargin: 24 }),
+      ],
+      userEvent: "select",
+    })
+    return true
+  }
+  const doc = state.doc
+  let target = EditorSelection.cursor(move.at)
+  // From the blank line right against the cell, the editor's own step keeps the column (and lands on the right row
+  // of a wrapped line); anywhere else the cell's start or end.
+  if (vertical !== null) {
+    const line = doc.lineAt(main.head).number
+    const edge = doc.lineAt(vertical === "down" ? move.cell.location : end(move.cell)).number
+    if (edge === line + (vertical === "down" ? 1 : -1)) {
+      const moved = view.moveVertically(main, vertical === "down")
+      if (doc.lineAt(moved.head).number === edge && moved.head >= move.cell.location && moved.head <= end(move.cell)) target = moved
+    }
+  }
+  view.dispatch({ selection: EditorSelection.create([target]), effects: armSeam.of(null), scrollIntoView: true, userEvent: "select" })
+  return true
+}
+
+/** Whether the caret is on the line on screen that `edge` is on: the same line of the note, and the same row of it. */
+function onEdgeRow(view: EditorView, head: number, edge: number, up: boolean): boolean {
+  const doc = view.state.doc
+  if (doc.lineAt(head).number !== doc.lineAt(edge).number) return false
+  // Measured the way the editor's own vertical step measures where it starts from.
+  // (CodeMirror's `moveVertically`: an empty caret with no side of its own is read on the row the step leaves from.)
+  const here = view.coordsAtPos(head, view.state.selection.main.assoc || (up ? -1 : 1))
+  const there = view.coordsAtPos(edge, up ? 1 : -1)
+  return !here || !there || sameLineOnScreen(here, there)
+}
+
+const barVertical = (up: boolean) => (view: EditorView): boolean => {
+  if (!markdownSide(view)) return false
+  const armed = view.state.field(armedField, false) ?? null
+  const move = verticalMove(view.state, armed, up, (head, edge) => onEdgeRow(view, head, edge, up))
+  return applyBarMove(view, move, up ? "up" : "down")
+}
+
+const barSide = (left: boolean) => (view: EditorView): boolean => {
+  if (!markdownSide(view)) return false
+  return applyBarMove(view, sideMove(view.state, view.state.field(armedField, false) ?? null, left), null)
+}
+
+/**
+ * Up and Down walk cell, bar, cell on the markdown side as they do on the rendered page (whose own keys come first
+ * there); Left and Right at a bar go into the cell beside it. Shift, Ctrl and Alt with an arrow are the editor's own.
+ */
+const arrowKeys = keymap.of([
+  { key: "ArrowUp", run: barVertical(true) },
+  { key: "ArrowDown", run: barVertical(false) },
+  { key: "ArrowLeft", run: barSide(true) },
+  { key: "ArrowRight", run: barSide(false) },
+])
+
+/** keys.ts's cell clipboard: cells copied or cut whole, as their markdown. */
+const CELLS_MIME = "application/x-writemind-cells"
+
+/**
+ * What is pasted at a bar is a new cell, written there AS IT IS: cells copied whole (their markdown, markers and all,
+ * preferred) or text from elsewhere — markdown pasted between cells stays what it was (textCells.ts). Only what is
+ * TYPED at the bar is taken literally.
+ */
 const pasteAtTheBar = EditorView.domEventHandlers({
   paste(event, view) {
     const armed = view.state.field(armedField, false) ?? null
-    const text = event.clipboardData?.getData("text/plain")
+    const text = event.clipboardData?.getData(CELLS_MIME) || event.clipboardData?.getData("text/plain")
     if (armed === null || !text) return false
     event.preventDefault()
-    openArmed(view, text)
+    openArmed(view, text, false)
     return true
   },
 })
@@ -665,6 +786,7 @@ export function seamLayer(onPlusPressed: (view: EditorView, seam: Seam) => void)
 export const seamExtensions = (onPlusPressed: (view: EditorView, seam: Seam) => void): Extension => [
   armedField,
   armedTypeField,
+  barFromField,
   dropBarField,
   typingAtTheBar,
   // An attribute the editor owns, not a class toggled by hand: CodeMirror
@@ -673,6 +795,7 @@ export const seamExtensions = (onPlusPressed: (view: EditorView, seam: Seam) => 
   EditorView.editorAttributes.compute([armedField], (state) =>
     (state.field(armedField, false) ?? null) !== null ? { class: "wm-armed" } : ({} as Record<string, string>)),
   Prec.high(barKeys),
+  Prec.high(arrowKeys),
   Prec.high(pasteAtTheBar),
   hideCaret,
   pointerCursors,

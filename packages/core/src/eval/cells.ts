@@ -12,6 +12,7 @@
 import { positioned, type PositionedBlock } from "../markdown/parser"
 import { fenced } from "../markdown/formatting"
 import { pasteCell } from "../cells/commands"
+import { cellSpacing } from "../cells/apart"
 import { end, lineRange, range, substring, type Edit, type Range } from "../text/range"
 import { evaluatorBadge, evaluatorFence, evaluatorFrom, type Evaluator } from "./evaluator"
 import { isOut, outCell, type EvalResult } from "./output"
@@ -187,7 +188,7 @@ export function setEnvironment(evaluator: Evaluator, cell: Range, text: string):
 }
 
 /**
- * Ctrl+9 — an evaluation cell here. An existing fenced block becomes one, keeping its code; anything else gets a
+ * Ctrl+Shift+8 (the Mac's ⌘9) — an evaluation cell here. An existing fenced block becomes one, keeping its code; anything else gets a
  * new one after it. (The caret goes on the empty line inside a NEW cell, ready to be typed into — the Mac's edit
  * selected the pasted cell; its tests do not ask.)
  */
@@ -200,7 +201,8 @@ export function makeEvaluation(evaluator: Evaluator, cell: Range | null, text: s
   const fresh = opening + "\n```"
   if (!cell) {
     const at = text.length
-    const lead = text.length === 0 ? "" : "\n\n"
+    // A cell of its own: a blank line above it, never a second one (a note that already ends on one).
+    const { lead } = cellSpacing(text, "")
     return { range: range(at, 0), replacement: lead + fresh, selection: range(at + lead.length + opening.length, 0) }
   }
   const paste = pasteCell(fresh, cell, text)

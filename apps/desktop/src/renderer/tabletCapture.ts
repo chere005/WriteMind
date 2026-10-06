@@ -9,6 +9,7 @@
 import {
   placement, resolveShape, shapeSize, type CanvasItem, type Rect, type Size,
 } from "@writemind/core"
+import { eraseRegion } from "./boxRow"
 import { bandUnder, chartSummary, sheetChartLabelled } from "./capturePipeline"
 import { wordsForChart } from "./ocrClient"
 import {
@@ -60,7 +61,11 @@ const learned = { shape: null as number | null, nudge: 0 }
 
 export type SheetTake =
   | { trouble: string }
-  | { capture: Capture; read: string | null; cleared: boolean }
+  | {
+    capture: Capture; read: string | null; cleared: boolean
+    /** CELL only: take what was brought in off the sheet now (one Undo on the sheet), once the cell is in the note. */
+    clear?: () => void
+  }
 
 /**
  * Take what is on the sheet. The same arithmetic as a camera with no page
@@ -75,8 +80,13 @@ export type SheetTake =
  * on it), `pane` the notes pane the capture is landed on. WRITING takes what it
  * brought off the sheet (one Undo brings it back); PAGE leaves the sheet as it is.
  * The paper is in the Page picture and nowhere else.
+ *
+ * CELL is Writing for a new drawing cell (the box's "Bring in as Drawing Cell", BoxActions.tsx): the same strokes at
+ * the same size, but no flow-chart reader (a cell holds ink), no nudge (nothing lands on the page to step aside from),
+ * and the sheet is NOT cleared here: `clear()` takes them off once the cell is in the note, so a cell the note would
+ * not take leaves the sheet as it was.
  */
-export async function takeFromSheet(mode: "ink" | "page", options: {
+export async function takeFromSheet(mode: "ink" | "page" | "cell", options: {
   box: Rect | null
   shown: Size
   pane: Size
@@ -125,12 +135,22 @@ export async function takeFromSheet(mode: "ink" | "page", options: {
       width: extent.width * pageSize.width + 2 * pad, height: extent.height * pageSize.height + 2 * pad,
     }
   }
-  const where = placement({ frame: frameOnPage, pageSize, pane, nudge: learned.nudge })
-  learned.nudge = (learned.nudge + 0.02) % 0.1
+  const cell = mode === "cell"
+  const where = placement({ frame: frameOnPage, pageSize, pane, nudge: cell ? 0 : learned.nudge })
+  if (!cell) learned.nudge = (learned.nudge + 0.02) % 0.1
   const aspect = frameOnPage.height / Math.max(1, frameOnPage.width)
-  const strokes = mode === "ink"
+  const strokes = mode !== "page"
     ? landStrokes(parts.inside, { surface: units, pageSize, frame: frameOnPage, where, pane })
     : undefined
+  if (cell) {
+    const taken = sheet.strokes
+    return {
+      read: null, cleared: false,
+      capture: { strokes: strokes!, center: where.center, width: where.width, aspect },
+      // What the pen wrote meanwhile (nothing: no reader is waited for) is kept all the same.
+      clear: () => { sheet.replace([...parts.outside, ...sheet.strokes.filter((one) => !taken.includes(one))]) },
+    }
+  }
 
   // What was taken leaves the sheet NOW, before the text reader is waited for
   // (it takes a few hundred milliseconds, and the pen keeps writing meanwhile:
@@ -151,6 +171,20 @@ export async function takeFromSheet(mode: "ink" | "page", options: {
       ...(chart.length > 0 ? { chart } : {}),
     },
   }
+}
+
+/**
+ * The box's Erase: what is inside the box rubbed off the OPEN sheet, by the Writing capture's own rule
+ * (boxRow.ts `eraseRegion`), as ONE undo step on the sheet. The box stays. A trouble when there was nothing to rub out.
+ */
+export function eraseFromSheet(box: Rect | null, shown: Size): { trouble: string } | { removed: number } {
+  const sheet = currentSheet()
+  const region = regionOfSheetBox(box, shown)
+  if (!region) return { trouble: "that box is not on the sheet" }
+  const out = eraseRegion(sheet.strokes, region)
+  if (out.removed === 0) return { trouble: "nothing written in that box" }
+  sheet.replace(out.strokes)
+  return { removed: out.removed }
 }
 
 // (End-to-end scripts read the open sheet as `window.__wmSheet`: tabletSheets.ts.)

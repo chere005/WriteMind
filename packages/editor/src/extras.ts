@@ -7,7 +7,7 @@
 import { EditorSelection, type Extension } from "@codemirror/state"
 import { EditorView, keymap, type Command } from "@codemirror/view"
 import {
-  allOccurrences, applySpan, codeBlock, justTypedTrigger, selectNextOccurrence, substring, wordRange,
+  allOccurrences, applySpan, codeBlock, justTypedTrigger, selectNextOccurrence, substring, viaMarkdownCells, wordRange,
   type Range, type SpanStyle,
 } from "@writemind/core"
 import { applyEdit, notebook } from "./notebook"
@@ -20,10 +20,13 @@ const selection = (view: EditorView): Range => {
   return { location: main.from, length: main.to - main.from }
 }
 
-/** Font, size and colour on the selection, written as a `<span style>`. */
+/**
+ * Font, size and colour on the selection, written as a `<span style>` — in a TEXT cell, the cell made a markdown cell
+ * first, in the same edit (docs/PLAN-text-cells.md, "Automatic").
+ */
 export const applyTextStyle = (style: SpanStyle): Command => (view) => {
-  const change = applySpan(view.state.doc.toString(), selection(view), style)
-  applyEdit(view, change)
+  const change = viaMarkdownCells(view.state.doc.toString(), selection(view), (text, where) => applySpan(text, where, style))
+  if (change) applyEdit(view, change)
   return true
 }
 

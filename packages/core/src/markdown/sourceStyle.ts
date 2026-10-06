@@ -12,6 +12,7 @@
 
 import { end, lineRange, range, type Range } from "../text/range"
 import { todoItem } from "./parser"
+import { maskEscapes } from "./plainText"
 import { codeTokens, languageFrom, type CodeTokenKind } from "./code"
 import { colouring } from "../eval/evaluator"
 import { MATH_INLINE_PREFIX, isMathFence } from "../math/typesetter"
@@ -153,10 +154,13 @@ export function sourceStyleRuns(source: string): SourceRun[] {
   // A fence left open by a half-typed block still colours its body.
   if (fence !== null) closeFence(source.length)
 
+  // The inline patterns read the line with its ESCAPES masked (plainText.ts): an escaped star is a star, never a mark.
+  const inline = maskEscapes(source)
+
   // ``a ` b`` — two backticks either side, which is how a code span holds a
   // backtick of its own. Before the single-backtick pattern, which would
   // otherwise read the first two as an empty span.
-  for (const found of matches(CODE_PAIR, source)) {
+  for (const found of matches(CODE_PAIR, inline)) {
     const r = range(found.index, found[0].length)
     if (!isFree(r) || r.length <= 4) continue
     push(range(r.location, 2), "marker")
@@ -166,7 +170,7 @@ export function sourceStyleRuns(source: string): SourceRun[] {
   }
 
   // Code first, because what is inside it is not markdown at all.
-  for (const found of matches(CODE, source)) {
+  for (const found of matches(CODE, inline)) {
     const r = range(found.index, found[0].length)
     if (!isFree(r)) continue
     const inner = range(found.index + 1, found[1]!.length)
@@ -183,7 +187,7 @@ export function sourceStyleRuns(source: string): SourceRun[] {
     cover(r)
   }
 
-  for (const found of matches(LINK, source)) {
+  for (const found of matches(LINK, inline)) {
     const r = range(found.index, found[0].length)
     if (!isFree(r)) continue
     const text = range(found.index + 1, found[1]!.length)
@@ -197,7 +201,7 @@ export function sourceStyleRuns(source: string): SourceRun[] {
   }
 
   // <u>, <span style=…>, <mark id=…> — the toolbar's own HTML.
-  for (const found of matches(TAG, source)) {
+  for (const found of matches(TAG, inline)) {
     const r = range(found.index, found[0].length)
     if (!isFree(r)) continue
     push(r, "marker")
@@ -205,7 +209,7 @@ export function sourceStyleRuns(source: string): SourceRun[] {
   }
 
   for (const [pattern, kind] of [[BOLD, "bold"], [ITALIC, "italic"]] as const) {
-    for (const found of matches(pattern, source)) {
+    for (const found of matches(pattern, inline)) {
       const r = range(found.index, found[0].length)
       if (!isFree(r)) continue
       const marker = found[1]!.length
@@ -219,7 +223,7 @@ export function sourceStyleRuns(source: string): SourceRun[] {
   }
 
   // ~~struck~~
-  for (const found of matches(STRIKE, source)) {
+  for (const found of matches(STRIKE, inline)) {
     const r = range(found.index, found[0].length)
     if (!isFree(r) || r.length <= 4) continue
     push(range(r.location, 2), "marker")
@@ -340,7 +344,7 @@ export function inlineSegments(source: string): InlineSegment[] {
       else if (entry.style >= 0) styleIndex.fill(entry.style, last, upTo)
     }
   }
-  for (const found of matches(TAG, source)) {
+  for (const found of matches(TAG, maskEscapes(source))) {
     const at = found.index
     const tag = found[0]
     if (!claimed.has(`${at}:${tag.length}`)) continue

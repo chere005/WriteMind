@@ -81,7 +81,7 @@ const kinds = async (label) => {
   return names
 }
 const names = await kinds("Quote")
-ok("the + is drawn on the armed bar and opens the kinds", !!names && ["Body Text", "Quote", "Code Block", "Title"].every((n) => names.includes(n)), JSON.stringify(names))
+ok("the + is drawn on the armed bar and opens the kinds", !!names && ["Text", "Markdown", "Quote", "Code Block", "Title"].every((n) => names.includes(n)), JSON.stringify(names))
 await typeText("q")
 ok("the next thing typed is a quote cell", (await doc()) === "One\n\n> q\n\nTwo", JSON.stringify(await doc()))
 await kinds("Title"); await typeText("T")

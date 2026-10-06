@@ -300,26 +300,35 @@ describe("to-do bullets", () => {
   })
 })
 
-/** Transcribed from the code-block tests. */
+/**
+ * Transcribed from the code-block tests — with a blank line either side of the fences where the Mac writes one line
+ * break (Sean, 2026-10-05: a block is a cell of its own, never glued to the words above or below it; apart.ts).
+ */
 describe("the code block button", () => {
   it("fences a selection on lines of its own", () => {
     const text = "a\nb\nc"
     const change = codeBlock(text, range(2, 1))
-    expect(apply(text, change)).toBe("a\n```\nb\n```\nc")
-    expect(change.selection.location).toBe(2 + "```\nb\n```".length)
+    expect(apply(text, change)).toBe("a\n\n```\nb\n```\n\nc")
+    expect(change.selection.location).toBe(3 + "```\nb\n```".length)
   })
 
   it("opens an empty block with the caret inside", () => {
     const change = codeBlock("hi", range(2, 0))
-    expect(apply("hi", change)).toBe("hi\n```\n\n```")
-    expect(change.selection).toEqual(range(7, 0))
+    expect(apply("hi", change)).toBe("hi\n\n```\n\n```")
+    expect(change.selection).toEqual(range(8, 0))
   })
 
   it("keeps what is typed into an empty block inside it", () => {
     const change = codeBlock("hi", range(2, 0))
     const opened = apply("hi", change)
     const typed = opened.slice(0, change.selection.location) + "FSADF" + opened.slice(change.selection.location)
-    expect(typed).toBe("hi\n```\nFSADF\n```")
+    expect(typed).toBe("hi\n\n```\nFSADF\n```")
     expect(blocks(typed).at(-1)).toEqual({ kind: "code", language: null, body: "FSADF" })
+  })
+
+  it("never doubles a blank line that is already there", () => {
+    expect(apply("a\n\nb\n\nc", codeBlock("a\n\nb\n\nc", range(3, 1)))).toBe("a\n\n```\nb\n```\n\nc")
+    expect(apply("a\n\n", codeBlock("a\n\n", range(3, 0)))).toBe("a\n\n```\n\n```")
+    expect(apply("", codeBlock("", range(0, 0)))).toBe("```\n\n```")
   })
 })
