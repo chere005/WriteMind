@@ -75,7 +75,10 @@ The installer's own page has three tick boxes:
   administrator prompt: the console says what happened, the installer says it once more at the
   end with a link here, and the log is `%LOCALAPPDATA%\Programs\WriteMind\tools-setup.log`. What
   the end says is one short line per tool, the common winget outcomes in words: installed
-  (restart needed), already installed, cancelled (the prompt to allow it was declined),
+  (restart needed), already installed, the installer stopped or its prompt to allow it was
+  declined (winget's `0x8A150006`: a declined prompt ends the installer with 1223, which winget
+  has no word for, so it never shows as "cancelled"; the installer's own exit code is in the
+  console, `Installer failed with exit code: ...`), cancelled (the installer's own Cancel),
   winget is too old (update App Installer from the Microsoft Store), not available for this PC,
   the download did not finish; anything else as `failed: winget exit code 0x...`, the code to
   search for. If the tools step stopped before it could say anything (its console closed with

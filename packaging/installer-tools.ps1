@@ -239,8 +239,17 @@ function WingetOutcome([int]$code) {
     # No applicable upgrade / the package is already installed.
     "0x8A15002B" { return "already installed" }
     "0x8A150061" { return "already installed" }
-    # Windows' prompt to allow it was answered No (or closed), or the installer was cancelled.
-    "0x8A15010C" { return "failed: cancelled, the prompt to allow it was declined or the install was stopped ($hex)" }
+    # The installer quit with a code winget has no word for. For a burn installer (both of these are) winget's own
+    # list (GetDefaultKnownReturnCodes in winget-cli's ManifestCommon.cpp) knows only the MSI codes, and Windows'
+    # prompt to allow the install answered No (or closed, or one a standard user cannot approve) ends a burn bundle
+    # with 1223, ERROR_CANCELLED, which is not among them: so a declined prompt shows as THIS code, never as the
+    # cancelled one below. It is the Wolfram Engine's likeliest failure: its manifest is a zip holding a burn
+    # installer that raises the prompt itself, and adds no codes of its own. Which of the two it was is the
+    # installer's own exit code, which winget prints in the console ("Installer failed with exit code: 1223") and
+    # nowhere this script can read it.
+    "0x8A150006" { return "failed: the installer stopped or its prompt to allow it was declined, its own exit code is in the console ($hex)" }
+    # The installer's own Cancel: 1602 (ERROR_INSTALL_USEREXIT), the one code winget's list calls cancelled by the user.
+    "0x8A15010C" { return "failed: cancelled, the install was stopped in the installer's own window ($hex)" }
     # The manifest is newer than this winget, or it does not know an argument: App Installer is too old.
     "0x8A150007" { return "failed: winget is too old, update App Installer from the Microsoft Store ($hex)" }
     "0x8A150002" { return "failed: winget is too old, update App Installer from the Microsoft Store ($hex)" }

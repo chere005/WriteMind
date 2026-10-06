@@ -116,6 +116,21 @@ describe("installer-tools.ps1", () => {
     expect(ps1).not.toMatch(/^\s*& \$winget\b/m)
     expect(ps1).toMatch(/try \{ \$code = RunInConsole \$winget \$arguments \}/)
   })
+
+  // winget's own list for a burn installer (GetDefaultKnownReturnCodes, src/AppInstallerCommonCore/Manifest/
+  // ManifestCommon.cpp in microsoft/winget-cli) turns only 1602, the installer's own Cancel, into its "cancelled"
+  // 0x8A15010C. A burn bundle whose prompt to allow it is declined quits with 1223 (ERROR_CANCELLED), which is not on
+  // that list, and the Wolfram Engine's manifest (a zip holding a burn installer that elevates itself) adds nothing to
+  // it: winget reports its generic 0x8A150006, so that is where the words for a declined prompt have to be. Read off
+  // the helper's text, so it is checked here and not only by the Windows run below.
+  it("says a declined prompt under winget's 0x8A150006, and keeps 0x8A15010C for the installer's own Cancel", () => {
+    const said = new Map([...ps1.matchAll(/^\s*"(0x[0-9A-F]{8})" \{ return "([^"]*)" \}$/gm)].map((m) => [m[1], m[2]]))
+    expect(said.get("0x8A150006")).toMatch(/^failed: .*prompt to allow it was declined.* \(\$hex\)$/)
+    expect(said.get("0x8A15010C")).toMatch(/^failed: cancelled, .* \(\$hex\)$/)
+    expect(said.get("0x8A15010C")).not.toMatch(/prompt/)
+    expect(docs).toMatch(/prompt\s+to\s+allow\s+it\s+was\s+declined[^.]*0x8A150006/)
+    expect(docs).not.toMatch(/cancelled\s+\(the\s+prompt/)
+  })
 })
 
 /** Windows paths for tools.ts's own lookup, as the installed app would see them. */
@@ -370,7 +385,8 @@ describe.skipIf(!windows)("installer-tools.ps1 under Windows PowerShell 5.1", ()
     { exit: -1978334967, python: "installed (restart needed)", code: 0 }, // 0x8A150109 restart to finish
     { exit: -1978335135, python: "already installed", code: 0 }, // 0x8A150061
     { exit: -1978335189, python: "already installed", code: 0 }, // 0x8A15002B no applicable upgrade
-    { exit: -1978334964, python: /^failed: cancelled, .* \(0x8A15010C\)$/, code: 1 },
+    { exit: -1978335226, python: /^failed: the installer stopped or its prompt to allow it was declined, .* \(0x8A150006\)$/, code: 1 },
+    { exit: -1978334964, python: /^failed: cancelled, .* own window \(0x8A15010C\)$/, code: 1 },
     { exit: -1978335225, python: /^failed: winget is too old, update App Installer .* \(0x8A150007\)$/, code: 1 },
     { exit: -1978335216, python: "failed: not available for this PC (0x8A150010)", code: 1 },
     { exit: -2147012889, python: /^failed: the download did not finish, .* \(0x80072EE7\)$/, code: 1 },
