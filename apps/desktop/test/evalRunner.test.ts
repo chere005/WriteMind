@@ -510,6 +510,25 @@ describe("only a press starts a child (EvaluationSpawnTests)", () => {
     }
   })
 
+  it("the page asks Language Setup to start anything from ONE file, and only from a press there", () => {
+    const calls = /languages\??\.(test|choose|use)\(/
+    expect(holding("apps/desktop/src/renderer", calls)).toEqual(["apps/desktop/src/renderer/LanguageSetupDialog.tsx"])
+    const dialog = readFileSync(path.join(ROOT, "apps/desktop/src/renderer/LanguageSetupDialog.tsx"), "utf8").replace(/\r\n/g, "\n")
+    // Each such call sits in a `press…` function…
+    const presses = new Map<string, string>()
+    for (const match of dialog.matchAll(/const (press\w+) = async \([^)]*\) => \{\n([\s\S]*?)\n {2}\}\n/g)) presses.set(match[1]!, match[2]!)
+    expect([...presses.keys()].sort()).toEqual(["pressChoose", "pressTest", "pressUse"])
+    let inPresses = 0
+    for (const body of presses.values()) inPresses += body.match(new RegExp(calls.source, "g"))?.length ?? 0
+    expect(inPresses).toBe(dialog.match(new RegExp(calls.source, "g"))!.length)
+    // …and each press is reached from an onClick and nothing else (not an effect, not the report, not a focus).
+    for (const name of presses.keys()) {
+      const uses = dialog.split("\n").filter((line) => line.includes(`${name}(`) && !line.includes(`const ${name} =`))
+      expect(uses.length, name).toBeGreaterThan(0)
+      for (const line of uses) expect(line, name).toMatch(/onClick=\{\(\) => \{ void press\w+\(/)
+    }
+  })
+
   it("the run channel is the preload's and the eval IPC's alone, and the page reaches it from one file", () => {
     expect(holding("apps/desktop/src", /EVAL_CHANNELS\.run\b/).sort())
       .toEqual(["apps/desktop/src/main/eval/ipc.ts", "apps/desktop/src/preload/preload.ts"])
