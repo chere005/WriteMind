@@ -48,16 +48,15 @@ ok("Ctrl+Z over the sheet takes back the last stroke", (await px()) < before, `$
 await barBtn("clear"); await sleep(100)
 ok("Clear wipes the sheet", (await px()) === 0)
 
-// 3. The BOX: only the section in it comes in; the rest stays on the sheet. (The Box button went, 2026-10-05: the
-// Select toggle makes the pen pull the dashed box, and the box gets its own row of buttons under it.)
+// 3. The BOX: only the section in it comes in; the rest stays on the sheet. (The Box button went, 2026-10-05, and the
+// Select toggle, 2026-10-06: the mouse pulls the dashed box, and the box gets its own row of buttons under it.)
 await penStroke(seg(X + 30, Y + 100, X + 110, Y + 100, 8))      // left
 await penStroke(seg(X + 150, Y + 100, X + 230, Y + 100, 8))     // right
-await barBtn("select")
-await pe("pointerdown", X + 10, Y + 60); await pe("pointermove", X + 80, Y + 120); await pe("pointermove", X + 130, Y + 150); await pe("pointerup", X + 130, Y + 150, { buttons: 0 })
+ok("there is no Select toggle on the sheet (Sean, 2026-10-06)", !(await js(`!!document.querySelector('.camera-bar [data-tablet=select]')`)))
+const M = { type: "mouse", pressure: 0 }
+await pe("pointerdown", X + 10, Y + 60, M); await pe("pointermove", X + 80, Y + 120, M); await pe("pointermove", X + 130, Y + 150, M); await pe("pointerup", X + 130, Y + 150, { ...M, buttons: 0 })
 ok("the dashed box is shown", await js(`!!document.querySelector('.camera .box')`))
 ok("...with its row of buttons (Erase, Bring in Writing, Bring in as Drawing Cell)", await js(`!!document.querySelector('[data-tablet=box-actions]')`))
-await barBtn("select")
-ok("the Select toggle lets go when pressed again", !(await js(`document.querySelector('.camera-bar [data-tablet=select]').classList.contains('on')`)))
 await js(`document.querySelector('.cm-content').focus()`)
 const n1 = (await saved(file)).items.length
 await takeBtn("Bring the writing in")

@@ -42,7 +42,7 @@ import { idleProblem } from "./cameraDevices"
 import { useCameraStream, useHeldFrame } from "./useCameraStream"
 import { ocrAvailable, readCanvasLines, wordsForChart } from "./ocrClient"
 import { CAMERA_OFF, TABLET_SOURCE } from "../shared/commands"
-import { setSheetSelect, usePenSettings, useSheetTools } from "./penSettings"
+import { usePenSettings, useSheetTools } from "./penSettings"
 import { TabletSurface, type SurfaceHandle } from "./TabletSurface"
 import { eraseFromSheet, takeFromSheet, type Capture } from "./tabletCapture"
 import { currentSheet, stepSheet, useSheetTabs } from "./tabletSheets"
@@ -798,10 +798,9 @@ export function CameraPane({
           <>
             <PaperMenu />
             <OrientationSelect compact />
-            <button className={`icon-button${pen.selectTool ? " on" : ""}`} data-tablet="select" aria-pressed={pen.selectTool}
-                    title="Select on the sheet: the pen pulls the dashed box too, as the mouse does"
-                    onClick={() => setSheetSelect(!pen.selectTool)}
-                    style={{ width: "auto", padding: "0 8px", fontSize: 11 }}>Select</button>
+            {/* No Select toggle on the sheet (Sean, 2026-10-06: left on, it held the pen in a mode he took for a stuck
+                eraser: "i had the select button pressed.. remove that button"). The mouse boxes a part; so does the pen
+                with its select button held, or the Pen ▸ Select Tool toggle (an ExpressKey / double tap). */}
             <button className="icon-button" data-tablet="undo" disabled={binding.bound && !binding.away ? false : !sheet.canUndo}
                     title={binding.bound && binding.away
                       ? "Take back what was written here since its note was put away (it has not reached the drawing cell yet)"
