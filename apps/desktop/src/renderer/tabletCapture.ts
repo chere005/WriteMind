@@ -67,9 +67,7 @@ const learned = { shape: null as number | null, nudge: 0 }
 export type SheetTake =
   | { trouble: string }
   | {
-    capture: Capture; read: string | null; cleared: boolean
-    /** CELL only: take what was brought in off the sheet now (one Undo on the sheet), once the cell is in the note. */
-    clear?: () => void
+    capture: Capture; read: string | null
   }
 
 /**
@@ -82,15 +80,14 @@ export type SheetTake =
  *
  * `box` is the dashed box in FRACTIONS of the sheet (or null for all of it),
  * `shown` the sheet's size on screen (only the box's minimum size depends
- * on it), `pane` the notes pane the capture is landed on. WRITING takes what it
- * brought off the sheet (one Undo brings it back); PAGE leaves the sheet as it is.
- * The paper is in the Page picture and nowhere else.
+ * on it), `pane` the notes pane the capture is landed on. NOTHING LEAVES THE
+ * SHEET, whichever way it is brought in (Sean, 2026-10-06: "don't clear from the
+ * drawing screen when bringing contents into the notebook"): Clear and Erase are
+ * how writing goes. The paper is in the Page picture and nowhere else.
  *
  * CELL is Writing for a new drawing cell (the box's "Bring in as Drawing Cell", BoxActions.tsx): the same strokes at
  * the same size, with the box landed beside them (`frame`: the cell is the box), but no flow-chart reader (a cell holds
- * ink), no nudge (nothing lands on the page to step aside from),
- * and the sheet is NOT cleared here: `clear()` takes them off once the cell is in the note, so a cell the note would
- * not take leaves the sheet as it was.
+ * ink) and no nudge (nothing lands on the page to step aside from).
  */
 export async function takeFromSheet(mode: "ink" | "page" | "cell", options: {
   box: Rect | null
@@ -101,7 +98,6 @@ export async function takeFromSheet(mode: "ink" | "page" | "cell", options: {
   paper: Paper
 }): Promise<SheetTake> {
   const { box, shown, pane, penColour, penWidth, paper } = options
-  const clearAfter = mode === "ink"
   // The OPEN sheet, as it is now: switching tabs while the reader works does not move what was taken.
   const sheet = currentSheet()
   if (shown.width <= 0 || shown.height <= 0) return { trouble: "no sheet to take from" }
@@ -149,29 +145,19 @@ export async function takeFromSheet(mode: "ink" | "page" | "cell", options: {
     ? landStrokes(parts.inside, { surface: units, pageSize, frame: frameOnPage, where, pane })
     : undefined
   if (cell) {
-    const taken = sheet.strokes
     // The box landed as the strokes are (the same page scale, no nudge): the cell's frame.
     const frame = landedFrame(onPage, pageSize, pane)
-    return {
-      read: null, cleared: false,
-      capture: { strokes: strokes!, center: where.center, width: where.width, aspect, frame },
-      // What the pen wrote meanwhile (nothing: no reader is waited for) is kept all the same.
-      clear: () => { sheet.replace([...parts.outside, ...sheet.strokes.filter((one) => !taken.includes(one))]) },
-    }
+    return { read: null, capture: { strokes: strokes!, center: where.center, width: where.width, aspect, frame } }
   }
 
-  // What was taken leaves the sheet NOW, before the text reader is waited for
-  // (it takes a few hundred milliseconds, and the pen keeps writing meanwhile:
-  // clearing afterwards would drop what was written in between).
-  if (clearAfter) sheet.replace(parts.outside)
   // The nodes of a chart are labelled with the words the machine's text reader
   // finds in the sheet (only a sheet that holds a chart is ever sent to it).
-  // (The sheet is already cleared, so a chart that cannot be read must not lose the capture.)
+  // (A chart that cannot be read must not lose the capture.)
   const chart = await sheetChartLabelled(parts.inside, pageSize, onPage, frameOnPage, scale, pane, penColour, penWidth,
     bandUnder(where.center, where.width, aspect, pane), (canvas) => wordsForChart(canvas)).catch(() => [])
   const read = chartSummary(chart)
   return {
-    read, cleared: clearAfter,
+    read,
     capture: {
       ...(blob ? { blob } : {}),
       ...(strokes ? { strokes } : {}),

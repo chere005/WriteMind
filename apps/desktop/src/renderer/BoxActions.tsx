@@ -126,7 +126,7 @@ export function BoxActions({ box, sheet, erase, bring, cell, bringOff }: Props) 
               onClick={run(erase)}>Erase</button>
       <span className="sep" aria-hidden />
       <button type="button" data-box-action="ink" disabled={off || pending}
-              title={bringOff ?? "Bring the writing inside the box into the note as strokes. It leaves the sheet (Undo on the sheet brings it back)."}
+              title={bringOff ?? "Bring the writing inside the box into the note as strokes. The sheet keeps it."}
               onClick={run(bring)}>{compact ? "Writing" : "Bring in Writing"}</button>
       <button type="button" data-box-action="cell" disabled={off || pending}
               title={bringOff ?? "Bring the writing inside the box into the note as a new drawing cell: at the bar if one is up, else after the caret's cell (one Undo in the note takes it out)"}

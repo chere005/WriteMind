@@ -487,19 +487,20 @@ export function CameraPane({
   const takeTablet = useCallback(async (mode: "ink" | "page") => {
     const startedIn = noteRef.current
     const takenFrom = sheets.current
+    // The sheet keeps the writing, so the next Ctrl+Z is the note's (taking the capture back), not a stroke's.
+    surface.current?.leave()
     const out = await takeFromSheet(mode, {
       box: sheetBox, shown: surface.current?.size() ?? { width: 0, height: 0 }, pane,
       penColour, penWidth, paper: currentPaper(),
     })
     if ("trouble" in out) { setTrouble(out.trouble); return }
     if (noteRef.current !== startedIn) {
-      // The sheet was already cleared for it: one Undo on the sheet brings the writing back.
-      setTrouble(SWITCHED); surface.current?.repaint(); edited((was) => was + 1); return
+      // The sheet still has it: take it again from there.
+      setTrouble(SWITCHED); return
     }
     setTrouble(null)
     setRead(out.read)
-    // Writing leaves the sheet once it is in the note (one Undo on the sheet brings it back); the box goes either way, as on the Mac.
-    if (out.cleared) surface.current?.repaint()
+    // The sheet keeps what was brought in (tabletCapture.ts); the box goes, as on the Mac.
     boxOn(takenFrom, null)
     edited((was) => was + 1)
     onCapture(out.capture)
@@ -508,8 +509,8 @@ export function CameraPane({
   /**
    * The box's row (BoxActions.tsx). ERASE rubs out what is inside the box (one Undo on the sheet; the box stays).
    * BRING IN AS DRAWING CELL takes the boxed writing as Writing does and docks it as a NEW drawing cell at the input
-   * cursor (App.tsx `dockSheetCell`: the armed bar, else after the caret's cell; one Undo in the note), then takes it
-   * off the sheet as Writing does; nothing leaves the sheet when the note would not take the cell.
+   * cursor (App.tsx `dockSheetCell`: the armed bar, else after the caret's cell; one Undo in the note). The sheet keeps
+   * the writing, as Writing does.
    */
   const eraseBox = useCallback(() => {
     const out = eraseFromSheet(sheetBox, surface.current?.size() ?? { width: 0, height: 0 })
@@ -526,10 +527,8 @@ export function CameraPane({
     })
     if ("trouble" in out) { setTrouble(out.trouble); return }
     if (!onDockCell?.(out.capture)) { setTrouble("the note could not take a drawing cell here"); return }
-    out.clear?.()
     setTrouble(null)
     setRead(null)
-    surface.current?.repaint()
     boxOn(takenFrom, null)
     edited((was) => was + 1)
   }, [sheetBox, sheets.current, boxOn, onDockCell, pane, penColour, penWidth])
@@ -815,7 +814,7 @@ export function CameraPane({
             <span className="bring-in" role="group" aria-label="Bring in">
               <span className="label">Bring in</span>
               <button className="icon-button" data-capture="ink" disabled={binding.bound}
-                      title={binding.bound ? "This sheet is a drawing cell of the note already" : "Bring the writing in as strokes: the boxed part, or the whole sheet. It leaves the sheet (Undo on the sheet brings it back)."}
+                      title={binding.bound ? "This sheet is a drawing cell of the note already" : "Bring the writing in as strokes: the boxed part, or the whole sheet. The sheet keeps it."}
                       onClick={() => { void takeTablet("ink") }}
                       style={{ width: "auto", padding: "0 8px", fontSize: 11 }}>Writing</button>
               <button className="icon-button" data-capture="page" disabled={binding.bound}

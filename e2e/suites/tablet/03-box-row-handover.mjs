@@ -121,6 +121,7 @@ await click(cellBtn.x, cellBtn.y); await sleep(900)
 const text = await js(`document.querySelector('.cm-content').cmTile.view.state.doc.toString()`)
 const m = /!\[ink\]\(\.drawings\/media\/ink-([0-9a-f-]+)\.svg\)/.exec(text)
 ok("Bring in as Drawing Cell writes a drawing cell after the caret's paragraph", !!m && text.startsWith(`First paragraph.\n\n${m[0]}`), JSON.stringify(text))
+ok("...and the sheet keeps the writing (Sean, 2026-10-06)", (await sheetStrokes()).length > 0)
 const cell = m ? (await saved(file, (d) => d.items.some((i) => i.kind === "cell" && i.id === m[1]))).items.find((i) => i.kind === "cell" && i.id === m[1]) : null
 const live = m ? await rect(`.wm-inkcell[data-ink-cell="${m[1]}"]`) : null
 if (cell && live) {
