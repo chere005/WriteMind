@@ -146,7 +146,7 @@ describe("the system's own tools read what this writes", () => {
     expect(test.status, test.stdout + test.stderr).toBe(0)
     const code = `import zipfile,sys\nz=zipfile.ZipFile(sys.argv[1])\nprint(z.namelist()[0]);print(z.read('mimetype').decode());print(z.getinfo('note.mdwm').compress_type)\nprint(z.getinfo('media/é ü.svg').filename)`
     const read = spawnSync("python3", ["-c", code, target], { encoding: "utf8" })
-    expect(read.stdout.split("\n").slice(0, 3)).toEqual(["mimetype", WM_MIME, "8"])
+    expect(read.stdout.split(/\r?\n/).slice(0, 3)).toEqual(["mimetype", WM_MIME, "8"])
   })
 
   it.skipIf(!have("python3", ["-c", "import zipfile"]))("this reader reads an archive python wrote, ZIP64 records included", () => {
