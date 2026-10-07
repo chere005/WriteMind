@@ -26,6 +26,7 @@ interface Options {
   view: EditorView | null
   history: DrawingHistory
   drawing: Drawing
+  platform: string | null
   /** Put a drawing back (it is saved like any other edit). */
   apply(next: Drawing): void
 }
@@ -63,8 +64,9 @@ export function useUndo(options: Options): void {
       // A label being typed has its own undo.
       if (event.target instanceof Element && event.target.closest("input, textarea")) return
       const k = event.key.toLowerCase()
-      // Ctrl+Y, not Ctrl+Shift+Y: that is View ▸ Show / Hide Video (the Mac's ⌘Y, shared/commands.ts).
-      const which = k === "z" ? (event.shiftKey ? "redo" : "undo") : k === "y" && !event.metaKey && !event.shiftKey ? "redo" : null
+      // Ctrl+Y is Redo on Windows/Linux only; on the Mac Redo is ⇧⌘Z and ⌘Y toggles the video.
+      const which = k === "z" ? (event.shiftKey ? "redo" : "undo")
+        : latest.current.platform !== "darwin" && k === "y" && !event.metaKey && !event.shiftKey ? "redo" : null
       if (!which) return
       run(which)
       event.preventDefault(); event.stopPropagation()

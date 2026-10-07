@@ -527,7 +527,7 @@ export function App() {
     history.record(drawingRef.current)
     changeDrawing(next)
   }, [changeDrawing, history])
-  useUndo({ view, history, drawing, apply: changeDrawing })
+  useUndo({ view, history, drawing, platform: platform?.platform ?? null, apply: changeDrawing })
 
   // INK CELLS (docs\PLAN-docking-ink-cells.md). The editor draws each cell's line as a widget and paints its canvas
   // with this one painter, from the drawing as it is now; a resize by the cell's bottom edge is one undo step.
