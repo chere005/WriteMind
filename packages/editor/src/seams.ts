@@ -632,6 +632,13 @@ export function openArmed(view: EditorView, written: string, literal = true): bo
 
 const typingAtTheBar = EditorView.inputHandler.of((view, _from, _to, text) => {
   if (text.length === 0) return false
+  // A leading `*` is the Markdown list gesture. The bar normally opens a
+  // literal text cell, so choose Markdown before the first character is
+  // written; otherwise the text-cell escaper makes the list marker literal.
+  if (text === "*" || text.startsWith("* ")) {
+    const kind = view.state.field(armedTypeField, false) ?? { kind: "text" as const }
+    if (kind.kind === "text") view.dispatch({ effects: setArmedType.of({ kind: "markdown" }) })
+  }
   return openArmed(view, text)
 })
 
