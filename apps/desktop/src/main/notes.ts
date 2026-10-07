@@ -456,6 +456,32 @@ const found = new Map<string, string>()
 const missing = (name: string): string => path.join(cacheRoot, "missing", path.basename(name))
 
 /**
+ * A picture written out ONCE however many ask for it at once (a page asks for the same picture from several places in one
+ * breath): the asks share one write, and each write goes through a part file of its own name before it is renamed in.
+ */
+const writing = new Map<string, Promise<void>>()
+let parts = 0
+function writeOut(where: string, bytes: Uint8Array): Promise<void> {
+  let job = writing.get(where)
+  if (!job) {
+    job = (async () => {
+      await fs.mkdir(path.dirname(where), { recursive: true })
+      const partial = `${where}.${process.pid}-${parts++}.part`
+      try {
+        await fs.writeFile(partial, bytes)
+        await fs.rename(partial, where)
+      } catch (error) {
+        await fs.rm(partial, { force: true }).catch(() => undefined)
+        // (somebody else's copy of the same bytes is as good)
+        if (!(await fs.access(where).then(() => true, () => false))) throw error
+      }
+    })().finally(() => { writing.delete(where) })
+    writing.set(where, job)
+  }
+  return job
+}
+
+/**
  * The picture's file: the entry `name` of the note's container (`note`, else the one in front, else any note the app has
  * read) written out once; a path that is not there when no note has it.
  */
@@ -467,12 +493,7 @@ export async function findMedia(_root: string, file: string, note?: string | nul
   if (!where || !(await fs.access(where).then(() => true, () => false))) {
     const stamp = createHash("sha1").update(bytes).digest("hex").slice(0, 16)
     where = path.join(cacheRoot, stamp, name)
-    if (!(await fs.access(where).then(() => true, () => false))) {
-      await fs.mkdir(path.dirname(where), { recursive: true })
-      const partial = `${where}.part`
-      await fs.writeFile(partial, bytes)
-      await fs.rename(partial, where)
-    }
+    if (!(await fs.access(where).then(() => true, () => false))) await writeOut(where, bytes)
     made.set(bytes, where)
   }
   found.set(name, where)

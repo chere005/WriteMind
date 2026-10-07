@@ -102,6 +102,10 @@ declare global {
       notesFolderNotice?(): Promise<string | null>
       /** What the conversion of the old .md notes did at this launch, once (main/convert.ts); null when it did nothing. */
       conversionNotice?(): Promise<string | null>
+      takeOpenFiles?(): Promise<string[]>
+      onOpenPending?(listener: () => void): () => void
+      openFile?(file: string): Promise<void>
+      pathOfFile?(file: File): string
       onConversionNotice?(listener: (text: string) => void): () => void
       /** The tablet's sheets (tabs), as text (renderer/sheetSet.ts), kept in userData/sheets.json; absent in an old preload. */
       sheets?: { load(): Promise<string | null>; save(text: string): void }

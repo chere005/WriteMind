@@ -1037,6 +1037,42 @@ export function App() {
   })
   sessionRef.current = session
   touchBuffer.current = session.touchBuffer
+  // NOTES OPENED FROM OUTSIDE (main/openFiles.ts): a .wm double-clicked in Finder or Explorer, a .wm or .md dropped on the
+  // window (a .md has been made a .wm beside it by now). They open as tabs, the last one in front, once the session is
+  // back (so they come over the notes that were open) and whenever the shell says there is more.
+  useEffect(() => {
+    if (!session.ready) return
+    let live = true
+    const pull = () => {
+      void (async () => {
+        const files = (await window.wm.takeOpenFiles?.().catch(() => [] as string[])) ?? []
+        for (const file of files) {
+          if (!live) return
+          try {
+            const known = openList.current.find((one) => one.path === file)
+              ?? (rootRef.current ? notesIn(rootRef.current).find((one) => one.path === file) : undefined)
+            await openNoteRef.current(known ?? makeNote(file, Date.now(), await window.wm.readNote(file)))
+          } catch (error) {
+            say(`${friendly(error)}`, null, `open:${file}`)
+          }
+        }
+      })()
+    }
+    pull()
+    const stop = window.wm.onOpenPending?.(pull)
+    return () => { live = false; stop?.() }
+  }, [session.ready, say])
+  // A .wm or a .md let go on the window opens (the page's own drop, on a picture, is handled where the picture lands).
+  useEffect(() => {
+    const drop = (event: DragEvent) => {
+      const files = [...(event.dataTransfer?.files ?? [])].filter((one) => /\.(wm|md|markdown)$/i.test(one.name))
+      if (files.length === 0 || !window.wm.pathOfFile || !window.wm.openFile) return
+      event.preventDefault()
+      for (const one of files) void window.wm.openFile(window.wm.pathOfFile(one))
+    }
+    window.addEventListener("drop", drop)
+    return () => window.removeEventListener("drop", drop)
+  }, [])
   // CLOSING THE WINDOW: the shell holds the close until this has run (main.ts `askPageToFlush`) — the note and its
   // drawing written (or kept in Recovered), and the session. A keystroke typed just before the X is on disk.
   useEffect(() => window.wm.onFlushRequest(async () => {

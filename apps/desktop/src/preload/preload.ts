@@ -4,7 +4,7 @@
  * in the page.
  */
 
-import { contextBridge, ipcRenderer } from "electron"
+import { contextBridge, ipcRenderer, webUtils } from "electron"
 import { PEN_CHANNELS, type PenApi } from "../shared/pen"
 import { EVAL_CHANNELS, type EvalApi } from "../shared/eval"
 import { UPDATE_CHANNELS, type UpdateApi } from "../shared/update"
@@ -127,6 +127,18 @@ const api = {
   welcomed: (): Promise<string | null> => ipcRenderer.invoke("welcome:take"),
   /** "Your notes stay in Documents\WriteMindCross…" once, when both notes folders are there; else null (main/notesFolderMove.ts). */
   notesFolderNotice: (): Promise<string | null> => ipcRenderer.invoke("notesFolder:notice"),
+  /** Notes asked for from outside the app (a double click in Finder or Explorer, a drop): the page takes them once. */
+  takeOpenFiles: (): Promise<string[]> => ipcRenderer.invoke("file:take"),
+  /** More were asked for while the app runs: take them. */
+  onOpenPending: (listener: () => void) => {
+    const wrapped = () => listener()
+    ipcRenderer.on("file:pending", wrapped)
+    return () => ipcRenderer.removeListener("file:pending", wrapped)
+  },
+  /** A .wm (as a tab) or a .md (imported into a new .wm beside it) by path, as a drop or an Open does. */
+  openFile: (file: string): Promise<void> => ipcRenderer.invoke("file:open", file),
+  /** The path of a file the person dropped on the window. */
+  pathOfFile: (file: File): string => webUtils.getPathForFile(file),
   /** What the conversion of the old .md notes did at this launch (convert.ts), once; null when it did nothing. */
   conversionNotice: (): Promise<string | null> => ipcRenderer.invoke("conversion:notice"),
   /** The same, said while the app runs (a folder was added to the project and its old notes were converted). */

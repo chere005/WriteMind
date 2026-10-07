@@ -160,7 +160,10 @@ export function useSession({
     try {
       const session = readSession(await window.wm.readSession(file), tree.path)
       const known = new Map(flatten(tree).map((note) => [note.path, note]))
-      const kept = surviving(session, (path) => known.has(path))
+      // A note opened from Finder or Explorer lives outside the project's folders: it comes back too, while its file is there.
+      const outside = session.open.map((note) => note.path).filter((path) => !known.has(path) && /\.wm$/i.test(path))
+      const there = new Set(outside.length > 0 ? await window.wm.existing(outside).catch(() => [] as string[]) : [])
+      const kept = surviving(session, (path) => known.has(path) || there.has(path))
       const applied = await applyBuffers(kept.unsavedBuffers)
       if (kept.open.length > 0) {
         for (const note of kept.open) {

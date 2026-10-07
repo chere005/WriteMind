@@ -60,7 +60,8 @@ import { startUpdater, type Updater } from "./updater"
 import { UPDATE_COMMAND_IDS } from "../shared/update"
 import { takeWelcomed, welcomeOnce, welcomeWanted } from "./welcome"
 import { MOVE_STATE_FILE, NOTES_FOLDER, settleNotesFolder, type Settled } from "./notesFolderMove"
-import { conversionNotice, convertFolders } from "./convert"
+import { conversionNotice, convertFolders, importMarkdownNote } from "./convert"
+import { OpenQueue, admit, candidates } from "./openFiles"
 import { conversionRefusal } from "./convertGuard"
 import type { Runner as EvalRunner } from "./eval/runner"
 import { MIN_WINDOW } from "../shared/layout"
@@ -373,6 +374,38 @@ async function createWindow(): Promise<void> {
   await ready
 }
 
+// NOTES OPENED FROM OUTSIDE (openFiles.ts): a double click on a .wm in Finder or Explorer, a .wm or .md dropped on the window.
+// A .wm opens as a tab; a .md is imported into a new .wm beside it (the original untouched) and that opens. What is asked for
+// waits here for the page (`file:take`), which takes it once its session is back; macOS says `open-file` possibly before ready.
+const openQueue = new OpenQueue()
+const askedEarly: string[] = []
+let appReady = false
+async function openFromOutside(files: string[]): Promise<void> {
+  let any = false
+  for (const file of files) {
+    const out = await admit(file, (markdown) => importMarkdownNote(markdown, { appVersion: app.getVersion(), log: (line) => console.log(`WriteMind: ${line}`) }))
+    if ("error" in out) {
+      console.warn(`WriteMind: ${out.error}`)
+      if (!process.env.WRITEMIND_E2E && window) await dialog.showMessageBox(window, { type: "warning", message: "WriteMind could not open that file.", detail: out.error })
+      continue
+    }
+    openQueue.push(out.file)
+    any = true
+  }
+  if (!any || !window || window.isDestroyed()) return
+  window.webContents.send("file:pending")
+  if (!process.env.WRITEMIND_OFFSCREEN) {
+    if (window.isMinimized()) window.restore()
+    window.show()
+    window.focus()
+  }
+}
+// (registered at once: macOS can deliver it before the app is ready)
+app.on("open-file", (event, file) => {
+  event.preventDefault()
+  if (appReady) void openFromOutside([file]); else askedEarly.push(file)
+})
+
 // ONE WINDOW PER PROFILE. A second launch (a double-click on a shortcut that is already running) brings the
 // first one forward instead of opening a second window on the same notes — two writers on one folder is the
 // bug `mayWrite` exists for. The lock is per user-data folder, so a test instance never meets the real app.
@@ -383,7 +416,11 @@ const gotLock = app.requestSingleInstanceLock()
 if (!gotLock) {
   app.quit()
 } else {
-  app.on("second-instance", () => {
+  app.on("second-instance", (_event, argv, workingDirectory) => {
+    // A second launch with a note on its command line (Windows and Linux hand a double-clicked .wm to a new process):
+    // the note opens in the window that is already there.
+    const named = candidates(argv, workingDirectory, app.isPackaged)
+    if (named.length > 0 && window && !window.isDestroyed()) void openFromOutside(named)
     if (process.env.WRITEMIND_OFFSCREEN) return
     // The process outlived its window (a helper window kept it): a second launch makes a new one instead of doing nothing.
     if (!window || window.isDestroyed()) { if (app.isReady()) void createWindow(); return }
@@ -810,6 +847,15 @@ app.whenReady().then(async () => {
   }
   // ...and its first open is on the rendered page: the page asks once which note was written now.
   ipcMain.handle("welcome:take", () => takeWelcomed())
+
+  ipcMain.handle("file:take", () => openQueue.take())
+  ipcMain.handle("file:open", async (_event, file: string) => { await openFromOutside([String(file)]) })
+  appReady = true
+  // What was double-clicked to start the app (the command line on Windows and Linux, `open-file` on a Mac).
+  for (const file of [...candidates(process.argv, process.cwd(), app.isPackaged), ...askedEarly.splice(0)]) {
+    const out = await admit(file, (markdown) => importMarkdownNote(markdown, { appVersion: app.getVersion() })).catch(() => null)
+    if (out && !("error" in out)) openQueue.push(out.file)
+  }
 
   await createWindow()
 

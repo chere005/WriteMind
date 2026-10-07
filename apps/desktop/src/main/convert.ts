@@ -635,6 +635,35 @@ export async function convertFolders(folders: readonly string[], options: Conver
   return report
 }
 
+// MARK: - One markdown file opened from outside
+
+/**
+ * A plain `.md` the person opened or dropped on the window: it becomes a NEW `.wm` beside it, made as the conversion
+ * makes one (its `.drawings` pictures and drawing, if it has any beside it, come inside; its text is rewritten the same
+ * way), and the original is NOT touched, not moved and not rewritten. Opening the same unchanged file again opens the
+ * note made the first time. Returns the `.wm`'s path; throws with the reason when the file is not UTF-8 text.
+ */
+export async function importMarkdownNote(file: string, options: Pick<ConvertOptions, "appVersion" | "now" | "log">): Promise<string> {
+  const folder = path.dirname(file)
+  const note: Legacy = { file, folder, relative: path.basename(file) }
+  const bytes = await fs.readFile(file)
+  const digest = sha256(bytes)
+  const made = (await earlier(folder)).get(note.relative)?.find((one) => one.sha256 === digest)
+  if (made) return path.join(folder, made.name)
+  const taken = new Set(await fs.readdir(folder))
+  const name = newNames([{ relative: note.relative }], () => taken).get(note.relative)!
+  const context: Context = {
+    options: { root: folder, appVersion: options.appVersion, ...(options.now ? { now: options.now } : {}), ...(options.log ? { log: options.log } : {}) },
+    notes: [note], nameOf: () => name, folders: [folder], now: options.now ?? new Date(), app: { name: "WriteMind", version: options.appVersion },
+  }
+  try {
+    return (await convertNote(note, context)).newFile
+  } catch (error) {
+    if (error instanceof SkipNote || error instanceof Failure) throw new Error(error.message)
+    throw error
+  }
+}
+
 // MARK: - What the person is told
 
 /** The notice: what was converted and where the backup is. Null when there is nothing to say. */

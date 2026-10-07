@@ -47,6 +47,17 @@ extraResources:
     to: LICENSE
   - from: ../../THIRD-PARTY-NOTICES.md
     to: THIRD-PARTY-NOTICES.md
+# A `.wm` IS A WRITEMIND NOTE (docs/SPEC-WM.md): a double click on one in Finder or Explorer opens it here (main.ts
+# A `.wm` IS A WRITEMIND NOTE (docs/SPEC-WM.md): a double click on one in Finder or Explorer opens it here (main.ts
+# `open-file` on a Mac, the command line on Windows and Linux). `mimeType` is the type the format names; on Linux it goes into
+# the desktop entry and the shared-mime-info file the package installs. Only `.wm` is claimed: a plain `.md` can be opened
+# from the app (it is imported into a new .wm beside it), but this app does not take .md away from the editor that has it.
+fileAssociations:
+  - ext: wm
+    name: WriteMind note
+    description: WriteMind note
+    mimeType: application/vnd.writemind.note+zip
+    role: Editor
 
 # THE HELPER MUST BE A FILE ON DISK. Everything inside an asar archive is
 # read through Electron, and nothing inside one can be executed — so the
@@ -100,6 +111,16 @@ mac:
   # The prompts' wording, which macOS shows verbatim. The notes live in
   # ~/Documents/WriteMind, and Documents is a folder macOS asks about.
   extendInfo:
+    # The note's own type (a ZIP archive that says what it is): Finder shows it as "WriteMind note".
+    UTExportedTypeDeclarations:
+      - UTTypeIdentifier: com.seancheren.writemind.note
+        UTTypeDescription: WriteMind note
+        UTTypeConformsTo:
+          - public.data
+          - public.zip-archive
+        UTTypeTagSpecification:
+          public.filename-extension: [wm]
+          public.mime-type: application/vnd.writemind.note+zip
     NSCameraUsageDescription: WriteMind uses the camera to take the writing off a notebook page.
     NSDocumentsFolderUsageDescription: WriteMind keeps your notes in the WriteMind folder in Documents.
 
@@ -166,12 +187,12 @@ linux:
   icon: icon.png
   synopsis: A notebook, a camera and a drawing layer over both
   description: >
-    WriteMind is a markdown notebook whose notes are plain .md files in a
-    folder, with a drawing layer over the words and a camera that takes the
-    writing off a page.
+    WriteMind is a notebook whose notes are .wm files in a folder (one file
+    each: the words, the drawing and the pictures), with a drawing layer over
+    the words and a camera that takes the writing off a page.
   desktop:
     entry:
-      MimeType: text/markdown;text/plain;
+      MimeType: application/vnd.writemind.note+zip;text/markdown;
       Keywords: notes;markdown;notebook;writing;
   target:
     - target: pacman

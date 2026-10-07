@@ -49,6 +49,9 @@ LAUNCH
 
   install -Dm644 packaging/arch/writemind.desktop \
     "$pkgdir/usr/share/applications/$pkgname.desktop"
+  # The note's own type: shared-mime-info makes `.wm` (and any ZIP that says what it is) "WriteMind note".
+  install -Dm644 packaging/arch/writemind-mime.xml \
+    "$pkgdir/usr/share/mime/packages/$pkgname.xml"
   install -Dm644 packaging/icon.png \
     "$pkgdir/usr/share/icons/hicolor/512x512/apps/$pkgname.png"
   # WriteMind's own licence, and the notices for everything it uses or shows (Wolfram's trademarks, each library's

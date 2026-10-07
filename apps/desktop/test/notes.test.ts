@@ -201,6 +201,17 @@ describe("pictures", () => {
     expect(existsSync(mediaPath(home, "nowhere.png"))).toBe(false)
   })
 
+  it("the same picture asked for many times at once is written out once, and every ask gets its file (a page asks from several places in one breath)", async () => {
+    const home = scratch()
+    const a = note(home, "a.wm")
+    await readNote(a)
+    const saved = await saveMedia(home, new Uint8Array([4, 4, 4, 4, 4, 4]), ".png", a)
+    const files = await Promise.all(Array.from({ length: 24 }, () => findMedia(home, saved.file, a)))
+    expect(new Set(files).size).toBe(1)
+    expect([...readFileSync(files[0]!)]).toEqual([4, 4, 4, 4, 4, 4])
+    expect(readdirSync(path.dirname(files[0]!))).toEqual([saved.file])
+  })
+
   it("an ink cell's snapshot goes into snapshots/ink-<id>.svg, is rewritten in place, and is left alone when it is there and the page says so", async () => {
     const home = scratch()
     const a = note(home, "a.wm")

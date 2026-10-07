@@ -90,12 +90,12 @@ export function CleanUpDialog({ platform, held, onClose }: Props) {
     buttons = <button ref={first} data-modal="cancel" onClick={onClose}>Cancel</button>
   } else if (scan.files.length === 0) {
     title = "No unused files"
-    body = <p data-cleanup="none">Every drawing and picture in this project is in use.{later}</p>
+    body = <p data-cleanup="none">Every picture in this project is in use.{later}</p>
     buttons = ok
   } else {
     title = cleanUpTitle(scan.files.length, scan.bytes, bin)
     body = <>
-      <p>Drawings whose note is gone, and pictures no note or drawing uses. You can put them back from the {bin}.{later}</p>
+      <p>Pictures inside a note that neither its words nor its drawing use. You can put them back from the {bin}.{later}</p>
       <ul className="cleanup-list" data-cleanup="list">
         {scan.files.map((one) => (
           <li key={one.path} data-cleanup-file={one.path} title={one.path}>
