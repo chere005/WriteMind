@@ -3,7 +3,8 @@
 The menu bar, the toolbar tooltips and the key handler all read ONE table:
 `apps/desktop/src/shared/commands.ts`. A key shown is a key that works.
 
-**The Quick Reference** a new install opens on (`WriteMind Quick Reference.md`, `shared/welcome.ts`) reads its
+**The Quick Reference** a new install opens on (`WriteMind Quick Reference.wm`, `shared/welcome.ts`; Help ▸ Quick
+Reference, no key, writes or refreshes it and shows it rendered, overwriting any edit made to it) reads its
 keys table from that same table: a short curated list of command ids (`WELCOME_KEYS`), Windows and Mac chords
 from `acceleratorFor`, so it cannot drift. `apps/desktop/test/welcome.test.ts` fails when one of its ids is gone
 or has no key on Windows. Run the cell (Shift+Enter) is the one row that is not a menu key: the test finds it in

@@ -96,8 +96,10 @@ declare global {
       e2eClipboard?(command: "read" | "save" | "restore"): Promise<Record<string, string> | boolean>
       /** The tablet pen's native feed (shared/pen.ts PenApi); present on every platform, `available: false` off Windows. */
       pen: import("../shared/pen").PenApi
-      /** The quick reference written at this launch (a new install), once, else null (main/welcome.ts); absent in an old preload. */
-      welcomed?(): Promise<string | null>
+      /** Where the Quick Reference is (or will be) in the notes root (main/welcome.ts); absent in an old preload. */
+      quickReferencePath?(): Promise<string>
+      /** Help ▸ Quick Reference: written if missing, rewritten if out of date; its path (main/welcome.ts); absent in an old preload. */
+      quickReference?(): Promise<string>
       /** The "your notes stay in WriteMindCross" notice, once, else null (main/notesFolderMove.ts); absent in an old preload. */
       notesFolderNotice?(): Promise<string | null>
       /** What the conversion of the old .md notes did at this launch, once (main/convert.ts); null when it did nothing. */

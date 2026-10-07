@@ -1,32 +1,59 @@
 /**
- * THE QUICK REFERENCE, the first note a new install opens (Sean, 2026-10-05: "have the brief summary of feature and
- * keystrokes be the first thing that open on a new install"). `main/welcome.ts` writes it, once, into an empty notes
- * folder; this file is only its text.
+ * THE QUICK REFERENCE, the note a new install opens on (Sean, 2026-10-05: "have the brief summary of feature and
+ * keystrokes be the first thing that open on a new install"; 2026-10-07: "make sure the features md file that ships is
+ * rendered by default and correct"). It is app-owned reference material, not a note of the person's: `main/welcome.ts`
+ * writes it into an empty notes folder at the first launch and, from Help ▸ Quick Reference, whenever it is missing
+ * or differs from `welcomeNote()` (the current app's text over whatever was there: edits to it are not kept).
+ * `renderer/welcomeView.ts` shows it on the rendered page every time it is in front. This file is only its text.
  *
- * The feature list is written here and is kept to what is built. The keys are NOT written here: each row names
+ * The feature list is written here and is kept to what the app does: `test/welcome.test.ts` holds every line to a
+ * command, a menu item or a button that exists in the source. The keys are NOT written here: each row names
  * commands of `commands.ts` and its chords are `acceleratorFor()` of them, the source the menu bar and the key
- * handler read, so a key that moves moves here too. `test/welcome.test.ts` holds every row to a command that has a
- * key, and the one row that is not a menu command (Shift+Enter runs a cell) to the editor keymap that binds it.
+ * handler read, so a key that moves moves here too. The test holds every row to a command that has a key, and the one
+ * row that is not a menu command (Shift+Enter runs a cell) to the editor keymap that binds it.
  */
 
 import { HEADING_LADDER, headingName } from "@writemind/core"
 import { HEADING_COMMANDS, acceleratorFor } from "./commands"
 
-/** The file it is written as, in the notes folder's top level. */
+/**
+ * The file it is written as, in the notes root's top level: a Note (`.wm`, docs/SPEC-WM.md) like every other, so the
+ * sidebar lists it and the app opens it the way it opens any note.
+ */
 export const WELCOME_FILE = "WriteMind Quick Reference.wm"
 
-/** What the app has, in a line or two each: Sean's approved note, kept to what is built. */
+/**
+ * The line under the title. A paragraph with no marker is a TEXT cell (docs/PLAN-text-cells.md): shown exactly as
+ * typed, so nothing in it is markup.
+ */
+export const WELCOME_INTRO =
+  "What WriteMind does, then the keys that matter. Keys are written for Windows (Ctrl); the table at the end gives the Mac's too. " +
+  "Help ▸ Quick Reference opens this page again and brings it up to date, so keep your own words in notes of your own."
+
+/**
+ * What the app has, in a line or two each (Sean's approved style: a bold lead, brief): kept to what is built. Menu
+ * items and buttons are named as the menu bar and the panes name them.
+ */
 export const WELCOME_FEATURES: string[] = [
-  "**Cells:** text, markdown, headings, lists, code, runnable code, maths, tables and drawings; the bar between cells adds one.",
-  "**Maths cells:** Ctrl+9 makes one, or turns a cell's words into one; Wolfram Language, typeset when the caret leaves.",
+  "**Cells:** headings, text, markdown, lists, quotes, code, runnable code, maths, tables and drawings; the + on the bar between two cells adds one.",
+  "**Text and markdown cells:** Ctrl+7 makes a text cell, shown exactly as typed; Ctrl+Shift+7 a markdown cell, read as markdown.",
+  "**Maths cells:** Ctrl+9 makes one, or turns a cell's words into one; Wolfram Language, typeset when the caret leaves. Ctrl+Shift+M opens the palette.",
+  "**Tables:** a pipe table (`| a | b |`) is one cell, a real table on the rendered page; Tab and Return move along it.",
   "**Rendered page:** Ctrl+T shows the note as a finished page you can still type in.",
-  "**Drawing:** pen ink, shapes, arrows and pictures over the note; the ⤵ handle docks them into it as cells.",
-  "**Runnable cells:** Python, Wolfram, C, C++ and Rust, with In[n] / Out[n]; Shift+Enter runs one.",
-  "**Video pane:** a document camera or the Wacom tablet's sheets (tabs); bring writing in as ink, a picture or a drawing cell.",
+  "**Drawing:** pen ink, shapes, arrows, text boxes and pictures float over the note; the ⤵ handle docks them into it as cells. Ctrl+0 makes a drawing cell.",
+  "**Runnable cells:** Python, Wolfram, C, C++ and Rust, each with its icon and In[n] / Out[n]; Shift+Enter runs one.",
+  "**Language Setup:** File ▸ Language Setup… shows which program runs each language, tests it, lets you choose another and helps you get a missing one.",
+  "**Video pane:** a document camera: its box and the Writing, Page and Raw buttons bring a page in as ink or a picture; + keeps each scanned page as a tab.",
+  "**Wacom tablet:** Input Devices ▸ Tablet makes the video pane sheets (tabs) to write on; Writing, Page and the box's Bring in as Drawing Cell take them into the note.",
+  "**Mathematica:** File ▸ Export… ▸ Wolfram Notebook writes a `.nb`; with a Wolfram Engine, a copied drawing cell pastes into a notebook as a transparent image.",
   "**Wacom pen buttons:**\n" +
     "  - First button (Middle Click): hold to erase strokes, double-tap to undo.\n" +
     "  - Second button (Right Click): hold to select, double-tap to redo.\n" +
-    "  - Set the first button to Middle Click in Wacom Tablet Properties ▸ Pen (on Pan/Scroll the driver keeps it).",
+    "  - On Windows set the first button to Middle Click in Wacom Tablet Properties ▸ Pen (on Pan/Scroll the driver keeps it).\n" +
+    "  - On a Mac the Tablet sheet reads both buttons from the tablet itself (macOS asks once for Input Monitoring).",
+  "**Notes are files:** each note is a `.wm` file (a Note) holding `note.mdwm` (the MarkdownNote text), the drawing and the pictures; a project is a small JSON file.",
+  "**Updates:** Help ▸ Check for Updates… looks now; an installed copy also looks at launch. Windows installs it; a Mac that cannot replace itself opens the release page.",
+  "**About:** Help ▸ About WriteMind shows the version, the licence, the Wolfram statement and every library with its licence text.",
 ]
 
 /**
@@ -168,6 +195,8 @@ export function welcomeKeyTable(): string {
 export function welcomeNote(): string {
   return [
     "# WriteMind Quick Reference",
+    "",
+    WELCOME_INTRO,
     "",
     "## Features",
     "",

@@ -160,6 +160,9 @@ export const COMMANDS: CommandDef[] = [
   c("cameraRefresh", "Refresh Device List", "page", "CmdOrCtrl+Alt+R", "Alt+Cmd+R"),
   // Help: every key in one list (shared/keyList.ts). F1 is a PC's help key; the Mac's is ⌘?.
   c("keyList", "Keyboard Shortcuts", "page", "F1", "Shift+Cmd+/"),
+  // The Quick Reference note (shared/welcome.ts, main/welcome.ts): written or brought up to date, opened, shown rendered.
+  // No key (Help's own item, as About and Check for Updates are): so the key list, which lists keys, does not name it.
+  c("quickReference", "Quick Reference", "page"),
 ]
 
 const byId = new Map(COMMANDS.map((command) => [command.id, command]))

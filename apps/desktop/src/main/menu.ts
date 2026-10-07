@@ -304,6 +304,8 @@ export function buildMenu(options: MenuOptions): MenuItemConstructorOptions[] {
     {
       role: "help",
       submenu: [
+        // The app's own one-page reference (shared/welcome.ts): no key; written if missing, rewritten if out of date.
+        item("quickReference", "Quick Reference"),
         item("keyList", "Keyboard Shortcuts"),
         SEPARATOR,
         ...updateItems,

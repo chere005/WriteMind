@@ -185,6 +185,20 @@ describe("Help ▸ Keyboard Shortcuts (shared/keyList.ts)", () => {
     expect(keyList("win32").map((group) => ({ menu: group.menu, ids: group.rows.map((row) => row.id) }))).toEqual(fromMenu)
   })
 
+  // Help ▸ Quick Reference is a command with NO key (shared/welcome.ts): the key list lists keys, so it is not in it, and
+  // nothing in the table grabs a chord for it; the Help menu has it (menu.test.ts).
+  it("Quick Reference is in the command table and has no key, so the key list and docs/KEYS.md do not carry it", () => {
+    const one = COMMANDS.find((command) => command.id === "quickReference")!
+    expect(one).toMatchObject({ label: "Quick Reference", owner: "page" })
+    expect(one.key).toBeUndefined()
+    expect(one.macKey).toBeUndefined()
+    expect(shown("quickReference", "win32")).toBe("")
+    expect(shown("quickReference", "darwin")).toBe("")
+    expect(keyList("win32").flatMap((group) => group.rows.map((row) => row.id))).not.toContain("quickReference")
+    expect(keyList("darwin").flatMap((group) => group.rows.map((row) => row.id))).not.toContain("quickReference")
+    expect(readFileSync(path.join(ROOT, "docs/KEYS.md"), "utf8")).not.toMatch(/\|\s*Help\s*\|\s*Quick Reference\s*\|/)
+  })
+
   it("names the toggles for both their states and the headings by their rung", () => {
     const rows = keyList("win32").flatMap((group) => group.rows)
     const name = (id: string) => rows.find((row) => row.id === id)?.name

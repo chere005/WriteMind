@@ -67,23 +67,49 @@ describe("the application menu is the Mac's", () => {
     expect(asked).toEqual(["languageSetup"])
   })
 
-  it("Help: Keyboard Shortcuts (F1), then Check for Updates… and its startup box (main/updater.ts) and About", () => {
-    const help = sub(menu().map((one) => (one.role === "help" ? { ...one, label: "Help" } : one)), "Help")
-    expect(labels(help)).toEqual(["Keyboard Shortcuts", "-", "Check for Updates…", "Check for Updates on Startup", "-", "About WriteMind"])
-    expect(help[0]!.accelerator).toBe("F1")
-    expect(help[2]!.id).toBe("checkForUpdates")
+  it("Help: Quick Reference, Keyboard Shortcuts (F1), then Check for Updates… and its startup box (main/updater.ts) and About", () => {
+    const helpOf = (items: MenuItemConstructorOptions[]) => sub(items.map((one) => (one.role === "help" ? { ...one, label: "Help" } : one)), "Help")
+    const help = helpOf(menu())
+    expect(labels(help)).toEqual(["Quick Reference", "Keyboard Shortcuts", "-", "Check for Updates…", "Check for Updates on Startup", "-", "About WriteMind"])
+    expect(help[1]!.accelerator).toBe("F1")
+    expect(help[3]!.id).toBe("checkForUpdates")
     // A Mac looks too (download mode: its dialog opens the release's page), and never has an install item.
-    const mac = sub(menu({}, "darwin").map((one) => (one.role === "help" ? { ...one, label: "Help" } : one)), "Help")
-    expect(labels(mac)).toEqual(["Keyboard Shortcuts", "-", "Check for Updates…", "Check for Updates on Startup", "-", "About WriteMind"])
-    expect(mac[2]!.id).toBe("checkForUpdates")
+    const mac = helpOf(menu({}, "darwin"))
+    expect(labels(mac)).toEqual(["Quick Reference", "Keyboard Shortcuts", "-", "Check for Updates…", "Check for Updates on Startup", "-", "About WriteMind"])
+    expect(mac[3]!.id).toBe("checkForUpdates")
     const macReady = buildMenu({
       platform: "darwin", state: initialMenuState, project, run: () => {},
       update: { label: "Restart to Update to 1.0.1", ready: true, checkOnStartup: true, canCheck: true },
     }).find((one) => one.role === "help")!.submenu as MenuItemConstructorOptions[]
     expect(macReady.map((one) => one.id)).not.toContain("installUpdate")
     expect(macReady.find((one) => one.id === "checkForUpdates")!.label).toBe("Check for Updates…")
-    const linux = sub(menu({}, "linux").map((one) => (one.role === "help" ? { ...one, label: "Help" } : one)), "Help")
-    expect(labels(linux)).toEqual(["Keyboard Shortcuts", "-", "About WriteMind"])
+    const linux = helpOf(menu({}, "linux"))
+    expect(labels(linux)).toEqual(["Quick Reference", "Keyboard Shortcuts", "-", "About WriteMind"])
+  })
+
+  // Help ▸ Quick Reference (shared/welcome.ts, main/welcome.ts): the page's command, no key, never greyed, on every platform;
+  // it is in the command table (so the page's `run` and the key list's rules see it) and reaches the page when clicked.
+  it("Help ▸ Quick Reference: id quickReference, no accelerator, never greyed, on every platform, and it reaches the page", () => {
+    for (const platform of ["win32", "darwin", "linux"]) {
+      for (const state of [{}, { hasNote: true }] as Partial<MenuState>[]) {
+        const help = sub(menu(state, platform).map((one) => (one.role === "help" ? { ...one, label: "Help" } : one)), "Help")
+        const one = help.find((item) => item.label === "Quick Reference")!
+        expect(one.id).toBe("quickReference")
+        expect(one.accelerator).toBeUndefined()
+        expect(one.enabled).not.toBe(false)
+        expect(help.indexOf(one)).toBe(0)
+      }
+    }
+    expect(commandById("quickReference")).toMatchObject({ id: "quickReference", label: "Quick Reference", owner: "page" })
+    expect(acceleratorFor("quickReference", "win32")).toBeUndefined()
+    expect(acceleratorFor("quickReference", "darwin")).toBeUndefined()
+    const asked: string[] = []
+    const help = buildMenu({ platform: "win32", state: initialMenuState, project, run: (id) => asked.push(id) })
+      .find((one) => one.role === "help")!.submenu as MenuItemConstructorOptions[]
+    ;(help.find((item) => item.id === "quickReference")!.click as () => void)()
+    expect(asked).toEqual(["quickReference"])
+    // a key press never runs it: no chord is its own
+    expect(commandForKey({ key: "F1", ctrlKey: false, metaKey: false, altKey: false, shiftKey: false }, "win32")?.id).toBe("keyList")
   })
 
   it("Project: the name, Add Folder, Remove Folder, Save, Save As, Open, New", () => {

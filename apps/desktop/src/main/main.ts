@@ -58,7 +58,7 @@ import { registerSheets } from "./sheets"
 import { registerScans } from "./scans"
 import { startUpdater, type Updater } from "./updater"
 import { UPDATE_COMMAND_IDS } from "../shared/update"
-import { takeWelcomed, welcomeOnce, welcomeWanted } from "./welcome"
+import { ensureQuickReference, quickReferencePath, welcomeOnce, welcomeWanted } from "./welcome"
 import { MOVE_STATE_FILE, NOTES_FOLDER, settleNotesFolder, type Settled } from "./notesFolderMove"
 import { conversionNotice, convertFolders, importMarkdownNote, importMdwmNote } from "./convert"
 import { OpenQueue, admit, candidates } from "./openFiles"
@@ -846,8 +846,10 @@ app.whenReady().then(async () => {
   if (welcomeWanted()) {
     await welcomeOnce(notesRoot(), project.folders).catch((error) => console.error("WriteMind: no quick reference", error))
   }
-  // ...and its first open is on the rendered page: the page asks once which note was written now.
-  ipcMain.handle("welcome:take", () => takeWelcomed())
+  // It always opens on the rendered page (renderer/welcomeView.ts): the page asks where it is, and Help ▸ Quick Reference
+  // asks for it to be there and current (missing: written; out of date: rewritten, edits and all) in THIS process's notes root.
+  ipcMain.handle("quickReference:path", () => quickReferencePath(notesRoot()))
+  ipcMain.handle("quickReference:ensure", async () => (await ensureQuickReference(notesRoot())).file)
 
   ipcMain.handle("file:take", () => openQueue.take())
   ipcMain.handle("file:open", async (_event, file: string) => { await openFromOutside([String(file)]) })

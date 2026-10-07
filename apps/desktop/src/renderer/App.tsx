@@ -24,7 +24,7 @@ import { dockHostFor, inkPainter, shownWidth, snapshotNow, snapshotsAfterSave, s
 import { cellSheetsSaw, setCellSheetHost } from "./cellSheets"
 import { CellMenu } from "./CellMenu"
 import { renameBoundNotes } from "./tabletSheets"
-import { NO_WELCOME, welcomeFor, welcomeStep, type WelcomeView } from "./welcomeView"
+import { QUICK_AWAY, quickStep, samePath, type QuickView } from "./welcomeView"
 import { DrawingHistory } from "./drawingHistory"
 import { useUndo } from "./useUndo"
 import { lazyText } from "./lazyText"
@@ -153,15 +153,18 @@ export function App() {
   const lastQuery = useRef("")
   // The rendered page: the same editor with the markdown's marks put away.
   const [rendered, setRendered] = useState(false)
-  // A NEW INSTALL's quick reference opens on the rendered page, its first open only (welcomeView.ts). Before the
-  // paint, so it never shows as markdown first.
-  const [welcome, setWelcome] = useState<WelcomeView>(NO_WELCOME)
-  useEffect(() => { void window.wm.welcomed?.().then((note) => { if (note) setWelcome(welcomeFor(note)) }, () => undefined) }, [])
+  // THE QUICK REFERENCE IS ALWAYS ON THE RENDERED PAGE (welcomeView.ts): whenever it comes to the front the rendered
+  // page is put up, and when another note does the mode the other notes were in comes back. Before the paint, so it
+  // never shows as markdown first. `quickPath` is where it is (main/welcome.ts); `quickAsked` counts Help ▸ Quick Reference.
+  const [quickPath, setQuickPath] = useState<string | null>(null)
+  useEffect(() => { void window.wm.quickReferencePath?.().then(setQuickPath, () => undefined) }, [])
+  const [quick, setQuick] = useState<QuickView>(QUICK_AWAY)
+  const [quickAsked, setQuickAsked] = useState(0)
   useLayoutEffect(() => {
-    const step = welcomeStep(welcome, current, rendered)
-    if (step.state !== welcome) setWelcome(step.state)
+    const step = quickStep(quick, current, quickPath, rendered, quickAsked)
+    if (step.state !== quick) setQuick(step.state)
     if (step.rendered !== undefined) setRendered(step.rendered)
-  }, [welcome, current, rendered])
+  }, [quick, current, quickPath, rendered, quickAsked])
   // View ▸ Hide / Show Markdown Markers: a second, independent switch (the Mac keeps it in its defaults, shown by default).
   const [markers, setMarkers] = useState<boolean>(() => remembered<boolean>("markers", true))
   // BOTH PANES, EVERY LAUNCH (the Mac: "default video always to side by
@@ -1351,6 +1354,25 @@ export function App() {
     thinner: () => setPenWidth((now) => stepWidth(now, PEN_WIDTHS, -1)),
   }), [toggleMode])
 
+  // HELP ▸ QUICK REFERENCE (main/welcome.ts): the note is written if it is missing and rewritten with this app's text if
+  // it is out of date (any edit to it is overwritten: it is the app's, not the person's), then opened in a tab and shown
+  // rendered (welcomeView.ts). What is typed into it and not yet written goes to the file FIRST, so the rewrite is the
+  // newer of the two and the guard has nothing to refuse.
+  const openQuickReference = useCallback(async () => {
+    const ensure = window.wm.quickReference
+    if (!ensure) return
+    try {
+      if (openRef.current && quickPath && samePath(openRef.current, quickPath)) await flushNow(false)
+      const file = await ensure()
+      setQuickPath(file)
+      await reload()
+      await openNote(makeNote(file, Date.now(), await window.wm.readNote(file)))
+      setQuickAsked((was) => was + 1)
+    } catch (error) {
+      say(`The Quick Reference could not be opened: ${friendly(error)}`, null, "quick-reference")
+    }
+  }, [flushNow, openNote, quickPath, reload, say])
+
   const run = (id: string) => {
     // Input Devices ▸ Aspect Ratio: the shape of the viewfinder (cameraSettings.ts, CameraPane's viewfinder).
     if (id.startsWith("cameraAspect:")) { setCameraAspect(parseCameraAspect(id.slice("cameraAspect:".length))); return }
@@ -1392,6 +1414,7 @@ export function App() {
       // Ctrl+P: the same writer as Pen ▸ Pen Down and the pen button.
       case "togglePen": runPenCommand("penToggle"); return
       case "keyList": setShowKeys((was) => !was); return
+      case "quickReference": void openQuickReference(); return
       case "cleanUp": setCleanUp(true); return
       case "languageSetup": setLanguageSetup({ focus: null }); return
       case "about": setAbout(true); return

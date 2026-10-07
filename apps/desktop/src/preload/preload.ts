@@ -123,8 +123,10 @@ const api = {
   },
   /** The tablet pen's native feed (main/pen/*): see PenApi in shared/pen.ts. */
   pen,
-  /** The quick reference written at this launch (a new install), once; null otherwise (main/welcome.ts). */
-  welcomed: (): Promise<string | null> => ipcRenderer.invoke("welcome:take"),
+  /** Where the Quick Reference is (or will be): the notes root's `WriteMind Quick Reference.wm` (main/welcome.ts). */
+  quickReferencePath: (): Promise<string> => ipcRenderer.invoke("quickReference:path"),
+  /** Help ▸ Quick Reference: written if missing, rewritten if out of date; resolves to its path (main/welcome.ts). */
+  quickReference: (): Promise<string> => ipcRenderer.invoke("quickReference:ensure"),
   /** "Your notes stay in Documents\WriteMindCross…" once, when both notes folders are there; else null (main/notesFolderMove.ts). */
   notesFolderNotice: (): Promise<string | null> => ipcRenderer.invoke("notesFolder:notice"),
   /** Notes asked for from outside the app (a double click in Finder or Explorer, a drop): the page takes them once. */

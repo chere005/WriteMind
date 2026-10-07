@@ -22,7 +22,7 @@ rendered-page toggle, and evaluation cells (```` ```eval python ```` and friends
 process and writes the answer under it, Ctrl+Shift+8 makes one (Ctrl+9 until 2026-10-05; Ctrl+9 is the maths cell since 2026-10-06), `In[n]` / `Out[n]` in the margin). The editor-level e2e scripts are in the repo now:
 `e2e/suites/editor` and `e2e/suites/cells` (`npm run e2e -- --suite editor`;
 `docs/TESTING.md`). A new install opens on `WriteMind Quick Reference.wm` (once per notes folder,
-`main/welcome.ts`; PARITY "The Quick Reference").
+`main/welcome.ts`; PARITY "The Quick Reference"); Help ▸ Quick Reference opens it on any install, always rendered.
 
 ## Next, Sean's backlog (2026-10-05)
 
