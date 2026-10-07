@@ -24,7 +24,7 @@ import { validRequest } from "../src/main/eval/ipc"
 const ROOT = path.resolve(__dirname, "../../..")
 
 interface Script {
-  stdout?: string; stderr?: string; code?: number | null; hang?: boolean; error?: string; flood?: number
+  stdout?: string; stderr?: string; code?: number | null; signal?: NodeJS.Signals; hang?: boolean; error?: string; flood?: number
   /** The child exits but something it started keeps both pipes open (Node's `close` waits for the pipes). */
   orphan?: boolean
 }
@@ -50,13 +50,13 @@ class FakeChild extends EventEmitter implements ChildLike {
         this.emit("exit", script.code ?? 0)
         return
       }
-      if (!script.hang) this.end(script.code ?? 0)
+      if (!script.hang) this.end(script.signal ? null : script.code ?? 0, script.signal ?? null)
     }, 1)
   }
-  end(code: number | null): void {
+  end(code: number | null, signal: NodeJS.Signals | null = null): void {
     this.stdout.end()
     this.stderr.end()
-    setTimeout(() => this.emit("close", code), 1)
+    setTimeout(() => this.emit("close", code, signal), 1)
   }
   kill(): boolean { this.killed = true; this.end(null); return true }
 }
@@ -237,6 +237,34 @@ describe("running a cell (runner.ts, process layer faked)", () => {
     expect(h.spawned.length).toBe(1)
     expect(h.spawned[0]!.args[0]).toBe("-std=c++20")
     expect(outBody(result)).toBe("[stderr]\ncell.cpp:1: error: expected ';'\n[it did not compile]\n[exit 1]")
+  })
+
+  it("says which signal ended a program that crashed, where it used to read as a run that printed nothing", async () => {
+    // Node reports a child killed by a signal as NO exit status and the signal's name: the Out cell was "[no output]".
+    const h = harness(["C:\\mingw\\bin\\gcc.exe"], (command) => command.endsWith("gcc.exe") ? {} : { signal: "SIGSEGV" })
+    const result = ran(await createRunner(h.deps).run({ id: "s", evaluator: "c", source: "int main(){ return *(int*)0; }" }))
+    expect(result.status).toBeNull()
+    expect(result.signal).toBe("SIGSEGV")
+    expect(outBody(result)).toBe("[stopped by SIGSEGV (segmentation fault)]")
+    // One the app cut short never names a signal: that is the timeout's doing, not the program's.
+    const slow = harness(["C:\\Windows\\py.exe"], () => ({ hang: true }), { timeoutMs: 30 })
+    const cut = ran(await createRunner(slow.deps).run({ id: "t", evaluator: "python", source: "while True: pass" }))
+    expect(cut.signal).toBeNull()
+    expect(outBody(cut)).toBe("[timed out]")
+  })
+
+  it("takes the scratch folder's path off a compiler's diagnostics, a panic and a traceback, and off nothing a program printed", async () => {
+    const dir = "C:\\Temp\\WriteMind-eval-1\\"
+    const bad = harness(["C:\\mingw\\bin\\gcc.exe"], () => ({ stderr: `${dir}cell.c:2:11: error: expected expression\n`, code: 1 }))
+    expect(outBody(ran(await createRunner(bad.deps).run({ id: "e", evaluator: "c", source: "x" }))))
+      .toBe("[stderr]\ncell.c:2:11: error: expected expression\n[it did not compile]\n[exit 1]")
+    const warned = harness(["C:\\Users\\S\\.cargo\\bin\\rustc.exe"], (command) => command.endsWith("rustc.exe")
+      ? { stderr: ` --> ${dir}cell.rs:2:9\n` } : { stderr: `thread 'main' panicked at ${dir}cell.rs:2:5:\nboom\n`, code: 101 })
+    expect(outBody(ran(await createRunner(warned.deps).run({ id: "r", evaluator: "rust", source: "x" }))))
+      .toBe("[stderr]\n --> cell.rs:2:9\n\nthread 'main' panicked at cell.rs:2:5:\nboom\n[exit 101]")
+    const trace = harness(["C:\\Windows\\py.exe"], () => ({ stdout: `${dir}data\n`, stderr: `  File "${dir}cell.py", line 1\n`, code: 1 }))
+    expect(outBody(ran(await createRunner(trace.deps).run({ id: "p", evaluator: "python", source: "x" }))))
+      .toBe(`${dir}data\n[stderr]\n  File "cell.py", line 1\n[exit 1]`)
   })
 
   it("hands Microsoft's cl its own flags", async () => {
