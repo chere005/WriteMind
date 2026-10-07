@@ -40,6 +40,21 @@ describe("kernelSpelling", () => {
     expect(kernelSpelling("f[x_] := x^2")).toBe("f[x_] := x^2")
     expect(kernelSpelling("2 +")).toBe("2 +")
   })
+
+  it("still writes the signs typed for the eye as ASCII in source it cannot read (the kernel reads x² as a symbol)", () => {
+    // None of these parse in the port, so the character-level pass is the only thing between them and the kernel.
+    expect(kernelSpelling("f[x_] := x²")).toBe("f[x_] := x^2")
+    expect(kernelSpelling("f[x_] := a·x")).toBe("f[x_] := a*x")
+    expect(kernelSpelling("Solve[x² == 4, x] /. x -> 1")).toBe("Solve[x^2 == 4, x] /. x -> 1")
+    expect(kernelSpelling("a·b // N")).toBe("a*b // N")
+    expect(kernelSpelling("Map[#² &, {1, 2}]")).toBe("Map[#^2 &, {1, 2}]")
+    expect(kernelSpelling("π r² + √2 // N")).toBe("π r^2 + √2 // N")
+    expect(kernelSpelling("f[x_] := (x + 1)³ − x⁻¹⁰ ≤ 6 ÷ 3 × y ≥ 1 ≠ 2")).toBe("f[x_] := (x + 1)^3 - x^-10 <= 6 / 3 * y >= 1 != 2")
+  })
+
+  it("leaves a string literal's characters alone in source it cannot read", () => {
+    expect(kernelSpelling("f[x_] := StringJoin[\"x²·y \\\" −\", x²]")).toBe("f[x_] := StringJoin[\"x²·y \\\" −\", x^2]")
+  })
 })
 
 describe("mathsCellSource", () => {

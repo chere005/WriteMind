@@ -796,7 +796,7 @@ export function App() {
     const paste = (event: ClipboardEvent) => {
       // A paste carrying WriteMind's own cells is the cells and nothing else (a drawing cell copied for Mathematica has
       // a PNG beside them, which would otherwise land as a floating picture too).
-      if (!takesPastedPicture([...(event.clipboardData?.types ?? [])], event.defaultPrevented)) return
+      if (!takesPastedPicture([...(event.clipboardData?.types ?? [])])) return
       const file = [...(event.clipboardData?.items ?? [])]
         .find((item) => item.kind === "file" && item.type.startsWith("image/"))
         ?.getAsFile()

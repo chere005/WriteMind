@@ -68,6 +68,37 @@ describe("the drawing cell's svg, with the export's options", () => {
     expect(wide.shown).toBe(640)
     expect(wide.svg).toContain(`width="640" height="320" viewBox="0 0 900 450"`)
   })
+
+  // The engine's SVG importer sets a whole line in tofu for an astral code point and refuses the whole drawing for a
+  // character XML 1.0 has no place for (checked against the engine: apps/desktop/scripts/check-wolfram.ts).
+  describe("words the importer can take", () => {
+    const labelled = (label: string): InkCell => ({
+      ...cell,
+      items: [{ ...items[2]!, shape: { ...(items[2] as Extract<CanvasItem, { kind: "shape" }>).shape, label } } as CanvasItem,
+        { ...items[3]!, shape: { ...(items[3] as Extract<CanvasItem, { kind: "shape" }>).shape, label } } as CanvasItem],
+    })
+    const svgOf = (label: string) => inkCellSvg(labelled(label), 400, { mediaUrl: (file) => file, words: (text) => [text] })
+    const spoken = (svg: string) => [...svg.matchAll(/<tspan [^>]*>([^<]*)<\/tspan>/g)].map((m) => m[1]!)
+
+    it("sets no code point above U+FFFF: an emoji becomes a box the importer draws, the rest of the line stays", () => {
+      const lines = spoken(svgOf("no emoji \u{1F600} hello \u{20000}\u{1D538}"))
+      expect(lines).toEqual(["no emoji □ hello □□", "no emoji □ hello □□"])
+      for (const line of lines) expect([...line].every((ch) => ch.codePointAt(0)! <= 0xFFFF)).toBe(true)
+      // A lone surrogate is no code point at all.
+      expect(spoken(svgOf("a\uD83Db"))[0]).toBe("a□b")
+    })
+
+    it("sets no character outside XML 1.0's Char: a vertical tab or a form feed reads as a space", () => {
+      const lines = spoken(svgOf("soft\u000Bbreak and\u000Cpage\u0001\u0008￾￿"))
+      // eslint-disable-next-line no-control-regex
+      for (const line of lines) expect(line).not.toMatch(/[\u0000-\u0008\u000B\u000C\u000E-\u001F￾￿]/)
+      expect(lines[0]).toBe("soft break and page    ")
+    })
+
+    it("leaves what the importer reads alone: accents, CJK, curly quotes, a tab", () => {
+      expect(spoken(svgOf("café 中文 “q”\tz"))[0]).toBe("café 中文 “q”\tz")
+    })
+  })
 })
 
 describe("floatingBands", () => {

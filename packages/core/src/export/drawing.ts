@@ -156,6 +156,20 @@ function imageBody(item: Extract<CanvasItem, { kind: "image" }>, size: Size, opt
 const LABEL = { size: 13, line: 16, lines: 6, padX: 6 } as const
 
 /**
+ * Words as the Wolfram Engine's SVG importer can take them. Checked against the engine (12.x, Mac): a code point above
+ * U+FFFF (an emoji) sets the WHOLE line in tofu boxes, ASCII included; a character outside XML 1.0's Char production
+ * (a vertical tab from Word, a form feed from a PDF, U+0001, U+FFFE) makes the whole import fail, and the drawing
+ * with it. So an astral code point (or a lone surrogate) becomes U+25A1 — a box the importer does draw — and an
+ * illegal control becomes a space, which is what a soft break or a page break read as. Tab, LF and CR are legal and
+ * stay (the breaker takes the lines apart before they get here).
+ */
+export function importable(text: string): string {
+  // eslint-disable-next-line no-control-regex
+  return text.replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F￾￿]/g, " ")
+    .replace(/[\uD800-\uDBFF][\uDC00-\uDFFF]|[\uD800-\uDFFF]/g, "□")
+}
+
+/**
  * A shape's words as SVG `<text>` (`InkOptions.words`): the lines the screen broke them into, in the shape's own
  * transform. A text box's start inside its padding, each on the baseline the canvas puts it on (the canvas sets a
  * line's TOP, half the leading down; an em's top is about 0.8 of the size above its baseline), and a line whose
@@ -169,13 +183,13 @@ function shapeText(shape: ShapeItem, box: Rect, colour: string, turn: string, wo
     const room = Math.max(1, box.width - TEXT_BOX.padding.width * 2)
     const top = box.y + TEXT_BOX.padding.height + (TEXT_BOX.lineHeight - TEXT_BOX.fontSize) / 2 + 0.8 * TEXT_BOX.fontSize
     const baseline = (index: number) => top + index * TEXT_BOX.lineHeight
-    const lines = words(shape.label, room, { size: TEXT_BOX.fontSize, line: TEXT_BOX.lineHeight })
+    const lines = words(importable(shape.label), room, { size: TEXT_BOX.fontSize, line: TEXT_BOX.lineHeight })
       .filter((_line, index) => index === 0 || baseline(index) <= box.y + box.height)
     const body = tspans(lines, box.x + TEXT_BOX.padding.width, baseline)
     return body ? `<text font-family="${family}" font-size="${TEXT_BOX.fontSize}" fill="${colour}" transform="${turn}">${body}</text>` : ""
   }
   const room = Math.max(10, box.width - LABEL.padX * 2)
-  const lines = words(shape.label, room, { size: LABEL.size, line: LABEL.line }).slice(0, LABEL.lines)
+  const lines = words(importable(shape.label), room, { size: LABEL.size, line: LABEL.line }).slice(0, LABEL.lines)
   // The canvas centres each line's middle on the box's (`textBaseline = "middle"`): an em's middle is 0.3 of the
   // size above its baseline.
   const middle = box.y + box.height / 2 + 0.3 * LABEL.size

@@ -585,7 +585,7 @@
      "colorHex": "#2D7DD2",
      "lineWidth": 2,
      "fillHex": null,
-     "label": "Start",
+     "label": "Start 😀",
      "transform": {
       "dx": 0,
       "dy": 0,
@@ -655,7 +655,7 @@
      "colorHex": "#1C1C1E",
      "lineWidth": 2,
      "fillHex": null,
-     "label": "α β 中文 “curly” and a longer line that has to wrap round",
+     "label": "α β 中文 “curly” and a longer line\u000bthat has to wrap round",
      "transform": {
       "dx": 0,
       "dy": 0,

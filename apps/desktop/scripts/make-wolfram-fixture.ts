@@ -41,7 +41,7 @@ const cell1: CanvasItem[] = [
   stroke("s2", "#C0392B", 5, wave(0.06, 0.5, 0.22, 0.03, 30)),
   stroke("s3", "#1E8449", 3, [{ x: 0.08, y: 0.3 }, { x: 0.16, y: 0.35 }, { x: 0.24, y: 0.29 }, { x: 0.32, y: 0.35 }, { x: 0.4, y: 0.3 }, { x: 0.48, y: 0.35 }]),
   stroke("s4", "#B9770E", 8, wave(0.62, 0.95, 0.08, 0.025, 24)),
-  shape("n1", "roundedRectangle", 0.14, 0.46, 0.2, 0.25, "#2D7DD2", "Start"),
+  shape("n1", "roundedRectangle", 0.14, 0.46, 0.2, 0.25, "#2D7DD2", "Start \u{1F600}"),
   shape("n2", "oval", 0.5, 0.46, 0.2, 0.25, "#8E44AD", "End", 0, "#F4ECF7"),
   {
     kind: "connector",
@@ -50,7 +50,7 @@ const cell1: CanvasItem[] = [
       line: "solid", colorHex: "#444444", lineWidth: 2, transform: noTransform(), bends: [],
     },
   },
-  shape("t1", "text", 0.8, 0.34, 0.3, 0.3, "#1C1C1E", "α β 中文 “curly” and a longer line that has to wrap round", -0.25),
+  shape("t1", "text", 0.8, 0.34, 0.3, 0.3, "#1C1C1E", "α β 中文 “curly” and a longer line\u000Bthat has to wrap round", -0.25),
 ]
 const cell2: CanvasItem[] = [
   stroke("q1", "#2D7DD2", 4, wave(0.05, 0.9, 0.08, 0.05, 50)),

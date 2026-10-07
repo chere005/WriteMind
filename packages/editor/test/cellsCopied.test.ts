@@ -71,10 +71,9 @@ describe("cellsCopied", () => {
 
 describe("takesPastedPicture", () => {
   it("takes a picture nothing else took", () => {
-    expect(takesPastedPicture(["Files", "image/png"], false)).toBe(true)
+    expect(takesPastedPicture(["Files", "image/png"])).toBe(true)
   })
-  it("never takes one beside WriteMind's own cells, nor one the notebook has already taken", () => {
-    expect(takesPastedPicture(["text/plain", CELLS_MIME, "image/png"], false)).toBe(false)
-    expect(takesPastedPicture(["image/png"], true)).toBe(false)
+  it("never takes one beside WriteMind's own cells", () => {
+    expect(takesPastedPicture(["text/plain", CELLS_MIME, "image/png"])).toBe(false)
   })
 })

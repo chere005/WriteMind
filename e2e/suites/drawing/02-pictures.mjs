@@ -93,5 +93,12 @@ await key("z", { modifiers: CTRL })
 await key("z", { modifiers: CTRL | 8 })
 d = await saved(file)
 ok("Ctrl+Z then Ctrl+Shift+Z leaves two pictures", d.items.filter(i => i.kind === "image").length === 2)
+// A paste that reaches the focused notebook is still a picture when the clipboard holds only one: CodeMirror's own
+// paste handler prevents the default of every paste it sees, so the window's listener must not read that as "taken".
+await js(`document.querySelector('.cm-content').focus()`)
+await js(`(async () => { const dt = new DataTransfer(); dt.items.add(await window.__png()); document.querySelector('.cm-content').dispatchEvent(new ClipboardEvent('paste', { clipboardData: dt, bubbles: true, cancelable: true })) })()`)
+await sleep(600)
+d = await saved(file)
+ok("a picture pasted into the focused notebook lands too", d.items.filter(i => i.kind === "image").length === 3, String(d.items.filter(i => i.kind === "image").length))
 await shot("pic3")
 finish()
