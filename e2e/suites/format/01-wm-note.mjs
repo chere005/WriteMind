@@ -21,6 +21,9 @@ const INK = "3f2b8c1e-0a4d-4e6f-9b1a-7c5d2e8f1a90"
 const PNG = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==", "base64")
 const put = (rel, data) => { const file = path.join(notes, rel); fs.mkdirSync(path.dirname(file), { recursive: true }); fs.writeFileSync(file, data); return file }
 const have = (tool, args) => spawnSync(tool, args, { stdio: "ignore" }).status !== null
+// A tool that is not there is a SKIP on a person's machine and a FAILURE under CI (a check that does not run in the one place
+// meant to run everything is no check).
+const missing = (name, why) => { if (process.env.CI) ok(name, false, `${why} (and in CI that is a failure, not a skip)`); else skip(name, why) }
 const sha1 = (text) => spawnSync("shasum", ["-a", "1"], { input: text, encoding: "utf8" }).stdout.slice(0, 12)
 
 // ---- 1. a legacy folder converts on launch -----------------------------------------------------------------------------
@@ -76,11 +79,11 @@ ok("...with nothing left beside it (no .tmp)", !fs.readdirSync(notes).some((name
 if (have("unzip", ["-v"])) {
   const test = spawnSync("unzip", ["-t", path.join(notes, "Alpha.wm")], { encoding: "utf8" })
   ok("the system's unzip -t finds no error in what the app wrote", test.status === 0 && /No errors detected/.test(test.stdout), test.stdout + test.stderr)
-} else skip("unzip -t", "unzip is not installed")
+} else missing("unzip -t", "unzip is not installed")
 if (have("python3", ["-c", "import zipfile"])) {
   const test = spawnSync("python3", ["-m", "zipfile", "-t", path.join(notes, "Alpha.wm")], { encoding: "utf8" })
   ok("python3 -m zipfile -t is satisfied too", test.status === 0, test.stdout + test.stderr)
-} else skip("python3 -m zipfile -t", "python3 is not installed")
+} else missing("python3 -m zipfile -t", "python3 is not installed")
 
 // ---- 3. a pen stroke and a pasted picture land inside it ----------------------------------------------------------------
 const file = await freshNote()

@@ -65,6 +65,7 @@ media/3f9c2a7e5b1d4c80.png                          stored   58 311
 - Names are UTF-8. Writers set general-purpose bit 11 on any entry whose name is not pure ASCII. Readers read names as UTF-8 whether or not bit 11 is set, and refuse the file if a name is not valid UTF-8.
 - Writers write an empty archive comment, no data descriptors on `mimetype`, and MAY use them elsewhere. Readers MUST handle both, and MUST take sizes and CRCs from the central directory and check them: a CRC mismatch or an entry that inflates past its declared size makes the file unreadable (refused, untouched).
 - Entry timestamps are not normative; writers SHOULD use the note's `modified` time.
+- A reader MUST vet the structure BEFORE it inflates anything, and refuse the whole file (untouched) when: the end record is not the only one that fits the end of the file (a second one in its comment), or the central directory holds more or fewer entries than it counts, or does not end where it says; a name is invalid (1.5), twice, or `mimetype` or `manifest.json` is missing; a local header names another entry than the directory does, or has another method; two entries share bytes, or an entry's data reaches into the central directory; a limit of 1.6 is passed. A ZIP64 extra field shorter than the sizes it stands for is a damaged file (an error, never a crash).
 
 ### 1.4 Compression
 
@@ -80,7 +81,7 @@ An entry name is valid when all of these hold; a reader MUST refuse the whole fi
 - relative: it does not start with `/`, and has no drive part (`C:`);
 - forward slashes only: no `\`;
 - no segment is empty, `.` or `..`;
-- no control character (U+0000-U+001F, U+007F) anywhere;
+- no control character (U+0000-U+001F, U+007F) and no U+FEFF anywhere (a decoder that strips a byte-order mark would read another name);
 - no segment is longer than 255 UTF-8 bytes, and the whole name is not longer than 1024;
 - no segment ends in a space or a dot (Windows would drop it).
 
@@ -88,7 +89,7 @@ Case and Unicode:
 
 - Names are compared exactly, byte for byte, when a reference is resolved. A reader MUST NOT fold case or normalise Unicode to find an entry.
 - Two entries with the same exact name make the file invalid.
-- A writer MUST NOT write two entries whose names are equal after Unicode simple case folding (`A.png`, `a.png`): the file would not unpack on macOS or Windows.
+- A writer MUST NOT write two entries whose names are equal after Unicode simple case folding (`A.png`, `a.png`, and `ς`/`σ`, `ſ`/`s`, which a lower-casing alone does not equate; compared as NFC with upper case then lower case): the file would not unpack on macOS or Windows. A reader that meets such a pair, or a `Manifest.json` beside `manifest.json`, opens the file READ-ONLY (1.8) instead of failing every save.
 - Writers SHOULD write NFC.
 - A directory entry (a name ending `/`) is allowed, ignored, and not written.
 
@@ -98,7 +99,9 @@ File names inside `media/`, `snapshots/` and `attachments/` are one segment. A p
 
 ### 1.6 Limits
 
-A reader MUST accept, and MAY refuse beyond: 20 000 entries; 256 MiB for each of `note.mdwm`, `drawing.json`, `manifest.json`; 2 GiB for any other entry; 8 GiB uncompressed in all. A reader refuses a file that exceeds the limits it enforces without reading further, and says which limit. A reader SHOULD also refuse an entry whose declared ratio is above 1000:1 when it inflates to more than 16 MiB.
+A reader MUST accept, and MAY refuse beyond: 20 000 entries; 256 MiB for each of `note.mdwm`, `drawing.json`, `manifest.json`; 2 GiB for any other entry; 8 GiB uncompressed in all. A reader refuses a file that exceeds the limits it enforces without reading further, and says which limit. A reader SHOULD also refuse an entry whose declared ratio is above 1000:1 when it inflates to more than 16 MiB, and a file whose entries declare more than 1000 times the file's own size (plus 16 MiB) in all: each entry may fit the rule and the sum be a bomb.
+
+This implementation reads the file whole into memory (`fs.readFile`), which Node limits to 2 GiB: a note larger than that is refused with Node's own message, though 8 GiB is what a reader is asked to accept. It is not streamed (decided 2026-10-07: no note approaches it, and a streaming reader is another reader).
 
 Note: the sidebar needs a note's title and snippet, which today come from the first 8192 bytes of the file ([code] `notes.ts` `noteAt`). For a `.wm` that is the first 8192 bytes of `note.mdwm`; reading it needs the central directory and one inflate, not the whole file.
 
@@ -121,7 +124,7 @@ UTF-8 JSON object. [new]
 |---|---|---|
 | `format` | string | MUST be `writemind-note`. Anything else: refuse. |
 | `version` | integer >= 1 | The format version, 1 here. Raised only for a change an older reader would misread (1.8). |
-| `id` | string | A UUID, lower case. Set when the note is created and never changed by a save. A copy of a note (Duplicate) gets a new one. |
+| `id` | string | A UUID, lower case. Set when the note is created and never changed by a save. A copy of a note (Duplicate) gets a new one. An upper-case spelling of a valid UUID is the same id: a save writes it in lower case. |
 | `created` | string | RFC 3339 UTC (`Z`). Set once. |
 | `modified` | string | RFC 3339 UTC. Set by every write that changes any entry; not by opening. |
 | `app` | object | `name` and `version` of the app that last wrote the file. Informational. |
@@ -133,6 +136,7 @@ A reader MUST tolerate a missing `app`, `modified` or `legacy`. A missing `id` o
 
 - **Unknown entries** (any name this section does not define, in any folder) are preserved on write: same name, same decoded bytes, same relative order.
 - **Unknown keys** in `manifest.json` and in `drawing.json` (at the top level, and inside any item) are preserved: same key, same JSON value.
+- **A file that reads but cannot be written back as it is** is opened READ-ONLY too, with the reason: text (`note.mdwm`) or a drawing (`drawing.json`) that is not valid UTF-8 (shown with U+FFFD for the bad bytes, never written back so), two names that differ only by case, a `Manifest.json` beside `manifest.json`. Nothing writes it.
 - **A file with `version` greater than the reader's own** is opened READ-ONLY. The reader MUST NOT write it (no autosave, no conversion, no "repair"), and says that a newer WriteMind wrote it. Changes that only add entries, keys, item kinds or text constructs do not raise `version`; those a reader preserves (above and 2.8, 3.6).
 - **A file with the same `version`** is written with everything it had.
 - A writer never deletes an entry the person did not remove. In particular a picture no longer named by the text or the drawing stays in `media/` until the person runs a clean-up ([code] `housekeeping.ts`: nothing is ever deleted on its own).
@@ -143,14 +147,14 @@ A `.wm` is never edited in place. Every save writes the whole archive again, [co
 
 1. Writes to one file go one after the other (a queue per absolute path; case-folded on Windows).
 2. The target must not be read-only (`access(W_OK)`); if it is, throw, at once.
-3. Write the new archive to `<file>.tmp` beside it (`Name.wm.tmp`: the same directory, so the rename never crosses a disk).
+3. Write the new archive to a temporary file beside it (the same directory, so the rename never crosses a disk), under a name of its own, `Name.wm.<pid>-<random>.tmp`, created exclusively (so two instances never share one, and a leftover is never opened and truncated). A `Name.wm.tmp` left by an older writer is unlinked first. If the note is a symbolic link, the file it points at is the target (and the folder of the temporary file): the link is not replaced.
 4. [new] `fsync` the temporary file, then close it.
 5. Run the guard (below), immediately before the rename. It is also run once before step 3, so that a refusal costs no work.
 6. `rename` the temporary file over the target. On `EBUSY`, `EPERM` or `EACCES` retry up to 5 times, waiting 15 ms and doubling each time; any other error is final.
 7. [new] On POSIX, `fsync` the directory.
 8. On any failure remove the temporary file, leave the target as it was, and report the error. The buffer in memory is kept.
 
-A reader never opens `*.tmp` as a note. A new note is created without replacing a file that appeared since its name was chosen ([code] `createNote` uses `wx`; [new] for a `.wm`: write the temporary file, then `link` it to the name and remove the temporary, or an equivalent no-replace rename).
+A reader never opens `*.tmp` as a note. A new note is created without replacing a file that appeared since its name was chosen ([code] `createNote` uses `wx`; [new] for a `.wm`: write the temporary file, then `link` it to the name and remove the temporary AT ONCE, before the directory is flushed, so the note's bytes never have two names across a kill; or an equivalent no-replace rename).
 
 **The write guard** [code] `packages/core/src/notes/writing.ts` `mayWrite`, over digests instead of text [new]: the app owns the file only while the bytes on disk are the bytes it last read or wrote. It keeps, per absolute path, `known` = the SHA-256 of the file bytes it last read or wrote, and before each write computes `onDisk` = the SHA-256 of what is there now (or none):
 
@@ -697,7 +701,7 @@ Hidden folders beside the notes:
 
 ### 5.2 When and what
 
-Conversion runs once per project folder, on the first launch that opens it with the `.wm`-capable app, and again when a folder is added to a project, over every legacy note (`.md` or `.markdown`; a `.txt` is left alone, 8.1) under that folder (recursively, skipping every folder whose name starts with `.` and the project's `excluded` folders; those are converted when they are brought back). It is one-way: nothing converts a `.wm` back.
+Conversion runs once per project folder, on the first launch that opens it with the `.wm`-capable app, and again when a folder is added to a project, over every legacy note (`.md` or `.markdown`; a `.txt` is left alone, 8.1) under that folder (recursively, skipping every folder whose name starts with `.`, the project's `excluded` folders (those are converted when they are brought back), `node_modules`, and any folder that holds a `.git` (a working tree's notes are tracked files: the folder is left, and named in the notice when it holds notes), and every folder the guard of 8.15 refuses, asked of each folder as it is entered). A project folder that is not the app's notes root is converted only after the person has said yes to that folder once (8.18). It is one-way: nothing converts a `.wm` back.
 
 Two passes. Pass 1 decides every note's new name for the whole project (links cross folders). Pass 2 builds the containers.
 
@@ -729,9 +733,9 @@ After pass 2 for a folder `F`:
 
 1. The backup folder is `<parent of F>/<name of F> legacy backup <YYYYMMDD-HHMMSS>/` (local time); if the parent is not writable, `F/.writemind/legacy/<YYYYMMDD-HHMMSS>/`. It mirrors `F`'s layout: `Section/Stem.md` for every converted note, `.drawings/...` and `.writemind/order.json`.
 2. Each verified note, and each sidecar it used, is **moved** there (same-volume `rename`; across volumes: copy, `fsync`, compare SHA-256, then remove the original). An original is never removed before a byte-identical copy exists in the backup.
-3. `F/.drawings/` (the media, every sidecar, orphans) is moved whole only when every legacy note under `F` was converted; otherwise it stays where it is and the backup receives a copy. The Mac's `<stem>.json` files go with it.
+3. `F/.drawings/` (the media, every sidecar, orphans) is moved whole only when EVERY legacy note and `.txt` under `F` was converted or is not a note (counting the folders left out of the project, the ones not walked, and any folder that could not be listed), and each original was still byte-identical to what was converted when it was moved; otherwise it stays where it is and the backup receives a copy. The Mac's `<stem>.json` files go with it.
 4. `.writemind/order.json` is copied to the backup first and then rewritten atomically with each converted row's name changed to its new name (`Stem.md` becomes `Stem.wm`); every other byte of the file's structure is kept.
-5. Open-note paths in the remembered sessions that name a converted note are changed to the new path, each session file rewritten atomically. A note's unsaved text in a session is written into its new `.wm` only when the legacy file still has the bytes the session was an edit of; otherwise it stays in the backup's `unsaved/` (never discarded).
+5. Open-note paths in the remembered sessions that name a converted note are changed to the new path, each session file rewritten atomically, BEFORE the originals move (a run cut short leaves sessions that name notes that exist). A note's unsaved text in a session is written into its new `.wm` only when the legacy file still has the bytes the session was an edit of (compared with or without CRLF line ends); otherwise it stays in the backup's `unsaved/` (never discarded, never over an earlier file there) and the notice says so.
 
 The backup is never deleted by the app.
 
@@ -741,6 +745,9 @@ The backup is never deleted by the app.
 - Running conversion on a folder with no legacy notes does nothing and writes nothing (no backup folder is made).
 - A run interrupted between 5.3 and 5.4 is finished by the next run: converted notes are recognised by the rule above and only the move to the backup is done.
 - A legacy note whose bytes changed after its `.wm` was made (another app edited it) is a new note: it is converted under a new name (5.3 step 2), not merged and not overwriting.
+- An original is looked at again just before it is moved (5.4): if its bytes are no longer those that were converted, it is NOT moved, the run reports it, and the next launch converts it as a note of its own (the line above).
+- A drawing, picture, folder or file that cannot be READ (anything but "not there") leaves the note it belongs to as it is, reported, and tried again at the next launch; a missing drawing is converted without one, an unreadable one is not.
+- The converted `.wm` has the original's modified time (as its file time), so "newest first" and sync clients see no change in a note that was only converted.
 - A `.wm` file that exists and is not the conversion of the note is never overwritten.
 
 ## 6. Conformance
@@ -783,7 +790,7 @@ Everything tagged [new] above, and in particular: the note listing and `noteAt` 
 
 What the spec left open or said one way and the build decided another. Each is in force; the text above is changed to match.
 
-1. **`.txt` is not converted** (Sean, 2026-10-07). It was a note in 2.15.0, and it stays a plain text file: the conversion does not touch it, the sidebar does not list it, a link to `X.txt` is not read as a link to `X.wm`, and the conversion's notice says how many were left alone. Only `.md` and `.markdown` are converted, and `.md` is what is imported when one is opened (8.8). A `.drawings` folder is moved whole only when no `.txt` is left under the folder either (5.4 item 3: it may hold a `.txt` note's drawing).
+1. **`.txt` is not converted** (Sean, 2026-10-07). It was a note in 2.15.0, and it stays a plain text file: the conversion does not touch it, the sidebar does not list it, a link to `X.txt` is not read as a link to `X.wm`, and the conversion's notice says how many were left alone (when it has anything else to say, 20). Only `.md` and `.markdown` are converted, and `.md` is what is imported when one is opened (8.8). A `.drawings` folder is moved whole only when no `.txt` is left under the folder either (5.4 item 3: it may hold a `.txt` note's drawing).
 2. **Pictures are named in the order met, drawing first** (5.3 step 4): the drawing's pictures and its cells' snapshots, then the names the text uses. So where `X.png` is named by the text and `x.png` by the drawing, the drawing's `x.png` keeps its name and the text's `X.png` becomes `X-2.png`.
 3. **A sidecar that reads in full keeps what this build does not know** (`keepUnknown`, as every save does); one that does not (damaged, or the Mac's spelling) is written as the items that could be read and its original goes to `legacy/sidecar.json` (5.3 step 3), so the converted note does not open "damaged" on every visit.
 4. **ZIP64 is read, not written.** A note of 4 GiB or 65 535 entries is refused by the writer with a message; every reader handles ZIP64 (1.3).
@@ -797,6 +804,14 @@ What the spec left open or said one way and the build decided another. Each is i
 12. **The write guard also covers pictures, snapshots and the drawing**, as 1.9's note says, and a refused drawing or picture write is reported to the page like a failed save ("WriteMind will keep trying" for the drawing); a refused text write returns `written: false` as before.
 13. **A copy of a note (Duplicate) is another note**: a new `manifest.id`, `created` kept, every other entry as it was.
 14. **Recovered text is a `.wm`** (the words as a note of its own, in the app's user-data folder), a drawing's JSON stays `.drawing.json`; the quick reference is a `.wm`.
-15. **The Swift app's folder is never converted.** On a Mac, `~/Documents/WriteMind` is the Swift WriteMind's notes unless this app is known to have made it its own (it moved `WriteMindCross` there, welcomed a new install into it, kept drawings there under this app's names, or `WRITEMIND_NOTES` says so); any note folder of a test instance outside its scratch folders is refused too, and `WRITEMIND_NO_CONVERT=1` turns the conversion off.
+15. **The Swift app's folder is never converted.** On a Mac, `~/Documents/WriteMind` is the Swift WriteMind's notes unless this app is known to have made it its own (it moved `WriteMindCross` there, welcomed a NEW install into it (19), kept drawings there under this app's names, or `WRITEMIND_NOTES` says so); any note folder of a test instance outside its scratch folders is refused too, and `WRITEMIND_NO_CONVERT=1` turns the conversion off.
 16. **A picture's copy as a file.** The things that read pictures as files (the page's `<img>` through `wm://`, the readers of words in a picture, the Wolfram export, the printer) are given a copy of the entry in a folder of the system's temporary files, named by what is in it; a day-old copy is taken away at launch.
 17. **A standalone MarkdownNote (`.mdwm`) is opened by import**, as a `.md` is: a new `.wm` beside it holding its words, the original untouched (an association is declared for `.mdwm` in electron-builder.yml and the Arch package, with the media type and UTI of the README). The app never writes a `.mdwm` of its own.
+18. **A folder that is not the notes root is asked about once** (review, 2026-10-07). The notes root and what is under it converts without a question; any other project folder (a vault, a drive, somebody else's markdown) converts only after the person says yes to it ("Convert N notes in <folder> to WriteMind notes? The originals are kept in <backup>"), the answer remembered per folder (real place, case folded where the volume folds it) in `convert-consent.json` of the user-data folder. A no leaves the folder as it is and says nothing of it, ever. A git working tree (a folder holding `.git`) and `node_modules` are never walked.
+19. **The guard compares real places** (symlinks followed, case folded on a Mac and Windows, the same device and inode) and is asked of every folder the walk enters, so a project folder that is the parent of the Swift app's folder converts what is beside it and not what is in it; a `.md` or `.mdwm` opened from inside that folder is not imported (no `.wm` is made there). The welcome marker (`.writemind/welcomed`) proves the app made a folder only when it names the quick reference it wrote AND the folder holds a `.wm` (or that `.md`) of the app's own: a folder that held notes when the app first looked, the Swift app's, gets the marker with the date alone and is never taken for the app's.
+20. **The sessions follow before the originals move, and what a conversion leaves is said.** The notice names refused folders and why (a test instance's refusals and a switched-off conversion are not said), the `.txt` files left alone (when anything else is said: alone they are not worth a notice at every launch), and any unsaved text kept apart. A run that takes over a second shows "Converting your notes (n of N)…" in a small window of its own (never in a test instance).
+21. **Looking is not taking.** The folder watcher's read of the open note is a PEEK that leaves the app owning the bytes it last read or wrote; the page ADOPTS the file's state (`note:adopt`, by the digest it saw) only after it has put the words and drawing on screen, and a save that is then refused (the file changed) is kept in Recovered and the newer file read in. A note that was there and is gone, or was moved away from, is a tombstone: a save is refused as gone and writes nothing at that name until a new note is created there.
+22. **A picture or snapshot a written drawing or text names, and the note lacks, is copied into it** from the other notes the app has read (the note's own entries first), so a picture copied between notes is the destination's own entry from the first save. Looking a picture up by name is case-insensitive; an ink snapshot is never given a twin that differs by case from one the note holds. A write the format would refuse fails alone.
+23. **Only opening a note changes which note is in front** (where a picture goes when none is named); a read of another note does not. Duplicate and a note's read-only state read the file, not the cache.
+24. **Hot exit drops nothing**: text that cannot be put back (refused, the copy beside it refused, the note gone or no longer a note of the project, a `.md` left unconverted) is kept as a Recovered copy.
+25. **The ZIP reader is strict before it is generous** (1.3, 1.6): the structure is vetted before an entry is inflated, an end record that is not the only one is refused, local headers must match the directory, and a 20 KB file whose 64 entries shared one block (1.13 GiB of memory) is refused on its structure. The sidebar's head reader allocates no more than its end record can honestly claim.
