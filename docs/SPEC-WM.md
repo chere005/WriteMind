@@ -16,7 +16,7 @@ A note is a `.wm` file: a ZIP archive holding the text (`note.wmdm`), the drawin
 
 ### 1.1 Identity
 
-- Extension `.wm` (readers match it case-insensitively; writers write lower case). Media type `application/vnd.writemind.note+zip`.
+- Extension `.wm` (readers match it case-insensitively; writers write lower case). Media type `application/vnd.writemind.note+zip`. The `.wmdm` text has the extension `.wmdm` and media type `text/vnd.writemind.wmdm; charset=utf-8`. macOS UTIs: `com.seancheren.writemind.note` (conforms to `public.zip-archive`) and `com.seancheren.writemind.wmdm` (conforms to `public.plain-text`). The `vnd.` types are unregistered.
 - [new] The first entry of the archive is `mimetype`, **stored** (method 0), no extra field, no data descriptor, whose content is exactly the 34 bytes `application/vnd.writemind.note+zip` (no newline). So every conforming file has, at fixed offsets:
 
   | Bytes | Value |
