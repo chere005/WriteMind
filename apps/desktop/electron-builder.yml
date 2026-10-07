@@ -153,8 +153,7 @@ linux:
   description: >
     WriteMind is a markdown notebook whose notes are plain .md files in a
     folder, with a drawing layer over the words and a camera that takes the
-    writing off a page. Nothing here is a database and nothing rewrites a
-    file you did not type in.
+    writing off a page.
   desktop:
     entry:
       MimeType: text/markdown;text/plain;
