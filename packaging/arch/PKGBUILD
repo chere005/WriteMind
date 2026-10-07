@@ -11,7 +11,7 @@ pkgrel=1
 pkgdesc="A notebook, a camera and a drawing layer over both"
 arch=('x86_64' 'aarch64')
 url="https://github.com/chere005/WriteMind"
-license=('MIT')
+license=('BSD-3-Clause')
 depends=('electron' 'gtk3' 'nss' 'alsa-lib' 'glib2' 'xdg-utils')
 makedepends=('npm' 'nodejs' 'git')
 optdepends=(
@@ -51,5 +51,9 @@ LAUNCH
     "$pkgdir/usr/share/applications/$pkgname.desktop"
   install -Dm644 packaging/icon.png \
     "$pkgdir/usr/share/icons/hicolor/512x512/apps/$pkgname.png"
+  # WriteMind's own licence, and the notices for everything it uses or shows (Wolfram's trademarks, each library's
+  # licence text): tools/gen-notices.mjs writes THIRD-PARTY-NOTICES.md. The same list is out/notices.json, copied
+  # above with out/, which the About dialog reads. Chromium's licences ride with the system electron package.
   install -Dm644 LICENSE "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
+  install -Dm644 THIRD-PARTY-NOTICES.md "$pkgdir/usr/share/licenses/$pkgname/THIRD-PARTY-NOTICES.md"
 }

@@ -5,11 +5,12 @@
  *
  * What a running app can say about itself, said before the menu is built:
  * - its NAME (`app.setName`), which the app menu's About / Hide / Quit items
- *   and the About panel read. The profile does NOT move with it: the userData
+ *   read. The profile does NOT move with it: the userData
  *   folder was named after the package (`@writemind/desktop`) and stays there,
  *   so settings, sessions and the pen log are where they were.
- * - the ABOUT PANEL: WriteMind, the app's version (a dev run would otherwise
- *   show Electron's), the copyright.
+ *   (There is no About PANEL set up here any more: since 2026-10-07 About is
+ *   the page's own dialog on every platform, AboutDialog.tsx, and the app menu's
+ *   About item opens that - menu.ts.)
  * - in a DEVELOPMENT run, the DOCK ICON: the WriteMind logo, from the build's
  *   out/icons (build.mjs copies it there) or the repo's packaging/. A packaged
  *   WriteMind.app already carries the icon in its bundle (electron-builder.yml),
@@ -25,7 +26,6 @@ import { existsSync, readFileSync } from "node:fs"
 import path from "node:path"
 
 export const MAC_APP_NAME = "WriteMind"
-export const MAC_COPYRIGHT = "Copyright © 2026 Shahean Cheren"
 /** Apple's icon grid: the body of a macOS app icon is 824 of its 1024 px, centred. */
 export const ICON_BODY = 824 / 1024
 
@@ -63,7 +63,7 @@ type ImageMaker = {
 
 export interface MacIdentityDeps {
   platform: NodeJS.Platform
-  app: Pick<App, "getPath" | "setPath" | "setName" | "setAboutPanelOptions" | "getVersion" | "whenReady" | "isPackaged" | "dock">
+  app: Pick<App, "getPath" | "setPath" | "setName" | "whenReady" | "isPackaged" | "dock">
   nativeImage: ImageMaker
   /** The main bundle's folder (out/main). */
   here: string
@@ -98,13 +98,6 @@ export function applyMacIdentity(deps: MacIdentityDeps): void {
   const userData = app.getPath("userData")
   app.setName(MAC_APP_NAME)
   app.setPath("userData", userData)
-  app.setAboutPanelOptions({
-    applicationName: MAC_APP_NAME,
-    applicationVersion: app.getVersion(),
-    // The build number in brackets after the version: a dev run's would be Electron's.
-    version: "",
-    copyright: MAC_COPYRIGHT,
-  })
   if (app.isPackaged) return
   void app.whenReady().then(() => {
     try {

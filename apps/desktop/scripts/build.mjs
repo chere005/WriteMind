@@ -31,4 +31,12 @@ import { ROUNDED_ICON, writemindIcns } from "./icns.mjs"
 mkdirSync("out/icons", { recursive: true })
 copyFileSync(ROUNDED_ICON, "out/icons/icon.png")
 writeFileSync("out/icons/WriteMind.icns", writemindIcns())
-console.log("main and preload built; helpers and icons copied")
+// THE NOTICES (Sean, 2026-10-07: attribution for Wolfram and for every library, in the About dialog): the list of what
+// ships, with each licence's text, written from package-lock.json and node_modules by tools/gen-notices.mjs - the same
+// generator that writes THIRD-PARTY-NOTICES.md, so the dialog and the file cannot disagree. A library with no licence
+// text stops the build. main/about.ts reads it.
+import { generate } from "../../../tools/gen-notices.mjs"
+const { notices, problems } = generate()
+if (problems.length > 0) throw new Error("notices: " + problems.join("; "))
+writeFileSync("out/notices.json", JSON.stringify(notices))
+console.log("main and preload built; helpers, icons and notices written")

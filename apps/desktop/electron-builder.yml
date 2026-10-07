@@ -38,6 +38,16 @@ files:
   - out/**
   - package.json
 
+# THE LICENCES ride beside the app as plain files (Sean, 2026-10-07: attribution for Wolfram and for every library):
+# WriteMind's own LICENSE and THIRD-PARTY-NOTICES.md (tools/gen-notices.mjs writes it), in the app's resources folder -
+# Contents/Resources in WriteMind.app, resources\ in the Windows install and in a Linux package. The same list, with
+# each text, is out/notices.json inside the archive, which is what the About dialog reads.
+extraResources:
+  - from: ../../LICENSE
+    to: LICENSE
+  - from: ../../THIRD-PARTY-NOTICES.md
+    to: THIRD-PARTY-NOTICES.md
+
 # THE HELPER MUST BE A FILE ON DISK. Everything inside an asar archive is
 # read through Electron, and nothing inside one can be executed — so the
 # macOS Vision binary is unpacked beside it, and `helpers.ts` knows to look
@@ -70,6 +80,11 @@ mac:
   identity: "Sean Cheren (2LGYTL3FSJ)"
   hardenedRuntime: true
   notarize: true
+  # Chromium's licences: Electron ships LICENSES.chromium.html beside Electron.app and electron-builder takes it away
+  # again (app-builder-lib electronMac.js), so a Mac copy would carry none. Windows and Linux keep it in the app's folder.
+  extraResources:
+    - from: ../../node_modules/electron/dist/LICENSES.chromium.html
+      to: LICENSES.chromium.html
   entitlements: ../../packaging/entitlements.mac.plist
   entitlementsInherit: ../../packaging/entitlements.mac.plist
   # ONE DMG PER CHIP, the chip in the name (WriteMind-1.0.0-mac-arm64.dmg for

@@ -9,6 +9,7 @@ import { PEN_CHANNELS, type PenApi } from "../shared/pen"
 import { EVAL_CHANNELS, type EvalApi } from "../shared/eval"
 import { UPDATE_CHANNELS, type UpdateApi } from "../shared/update"
 import { LANGUAGE_CHANNELS, type LanguagesApi } from "../shared/languages"
+import { ABOUT_CHANNELS, type AboutApi } from "../shared/about"
 
 /** window.wm.pen: the tablet pen's feed (shared/pen.ts PenApi; every channel name is spelled once there). The E2E hooks exist only under WRITEMIND_E2E. */
 const listen = <T>(channel: string, listener: (payload: T) => void): (() => void) => {
@@ -159,6 +160,11 @@ const api = {
     open: (link) => ipcRenderer.invoke(LANGUAGE_CHANNELS.open, link),
     onChanged: (listener) => listen(LANGUAGE_CHANNELS.changed, listener),
   } satisfies LanguagesApi,
+  /** Help ▸ About WriteMind (shared/about.ts): the licence, the Wolfram statement and each library's licence; the project page. */
+  about: {
+    info: () => ipcRenderer.invoke(ABOUT_CHANNELS.info),
+    openProject: () => ipcRenderer.invoke(ABOUT_CHANNELS.openProject),
+  } satisfies AboutApi,
   /** End-to-end scripts only (WRITEMIND_E2E): read the menu bar and press an item. */
   ...(process.env.WRITEMIND_E2E ? {
     e2eMenu: () => ipcRenderer.invoke("e2e:menu"),

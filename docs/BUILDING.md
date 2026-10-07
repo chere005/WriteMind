@@ -21,6 +21,22 @@ the shell (esbuild → `out/main/main.mjs` and `out/preload/preload.cjs`), and
 run on a Mac and **does nothing anywhere else** — that is not a failure, it
 is the capability rule: see `docs/PORT.md`.
 
+## Notices (licences and attribution)
+
+```sh
+npm run notices      # rewrites THIRD-PARTY-NOTICES.md from package-lock.json and node_modules
+```
+
+`tools/gen-notices.mjs` writes `THIRD-PARTY-NOTICES.md` (the Wolfram statement,
+WriteMind's own licence, then every library that ships with its licence text).
+Run it after any dependency change; a unit test fails while the file is stale
+or a shipped package has no licence text. The build also writes
+`out/notices.json` from the same generator, which Help ▸ About WriteMind reads.
+Packages carry `LICENSE` and `THIRD-PARTY-NOTICES.md` in the app's resources
+folder (`extraResources` in `electron-builder.yml`, plus Chromium's
+`LICENSES.chromium.html` on a Mac), and the Arch PKGBUILD installs both under
+`/usr/share/licenses/writemind/`.
+
 ## Packages
 
 ```sh

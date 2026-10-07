@@ -59,6 +59,7 @@ import { NO_FOLDER_TEXT, targetFolderOf } from "./sidebarTree"
 import { UpdateDialog } from "./UpdateDialog"
 import { CleanUpDialog } from "./CleanUpDialog"
 import { heldBy } from "./cleanUp"
+import { AboutDialog } from "./AboutDialog"
 import { LanguageSetupDialog } from "./LanguageSetupDialog"
 import { setLanguageSetupOpener } from "./evalHost"
 import { FolderNotice } from "./FolderNotice"
@@ -136,6 +137,8 @@ export function App() {
   const [showKeys, setShowKeys] = useState(false)
   // File ▸ Clean Up Unused Files… (CleanUpDialog.tsx, main/housekeeping.ts).
   const [cleanUp, setCleanUp] = useState(false)
+  // Help ▸ About WriteMind (AboutDialog.tsx, main/about.ts): one dialog on every platform, the Mac's app menu included.
+  const [about, setAbout] = useState(false)
   // File ▸ Language Setup… (LanguageSetupDialog.tsx, main/eval/languages.ts), opened at a language from a cell's
   // Runs As menu (`focus`), or at the top from the menu bar.
   const [languageSetup, setLanguageSetup] = useState<{ focus: Evaluator | null } | null>(null)
@@ -1344,6 +1347,7 @@ export function App() {
       case "keyList": setShowKeys((was) => !was); return
       case "cleanUp": setCleanUp(true); return
       case "languageSetup": setLanguageSetup({ focus: null }); return
+      case "about": setAbout(true); return
       case "undoDrawing": {
         const back = history.undo(drawingRef.current)
         if (back) changeDrawing(back)
@@ -1602,6 +1606,7 @@ export function App() {
       })} />}
       {languageSetup && <LanguageSetupDialog platform={kind} capabilities={platform} focus={languageSetup.focus}
                                              onClose={() => setLanguageSetup(null)} />}
+      {about && <AboutDialog platform={kind} onClose={() => setAbout(false)} />}
       <UpdateDialog />{/* "Updates available" and Help ▸ Check for Updates…'s answers (main/updater.ts); otherwise nothing */}
       <CellMenu onPlace={arm} />
     </div>
