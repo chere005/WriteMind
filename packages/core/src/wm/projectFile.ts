@@ -45,7 +45,10 @@ export function parseProjectData(text: string): ProjectData | null {
   try { given = JSON.parse(text.charCodeAt(0) === 0xfeff ? text.slice(1) : text) } catch { return null }
   if (!isRecord(given)) return null
   const extra: Json = {}
-  for (const [key, value] of Object.entries(given)) if (!KNOWN.has(key)) extra[key] = value
+  // (Defined, not assigned: `extra["__proto__"] = x` would set the prototype and lose the key.)
+  for (const [key, value] of Object.entries(given)) {
+    if (!KNOWN.has(key)) Object.defineProperty(extra, key, { value, enumerable: true, writable: true, configurable: true })
+  }
   const version = typeof given.version === "number" && Number.isFinite(given.version) ? given.version : 1
   return { version, folders: strings(given.folders), excluded: strings(given.excluded), files: strings(given.files), extra }
 }

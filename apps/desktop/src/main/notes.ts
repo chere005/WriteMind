@@ -355,7 +355,7 @@ export const noteInfo = (file: string): Promise<NoteState> => noteState(file)
 export async function writeNote(file: string, text: string):
   Promise<{ written: boolean; onDisk: string | null; readOnly?: boolean }> {
   const out = await writeText(file, text)
-  return { written: out.written, onDisk: out.onDisk, ...(out.refused === "newer" ? { readOnly: true } : {}) }
+  return { written: out.written, onDisk: out.onDisk, ...(out.refused === "newer" || out.refused === "unwritable" ? { readOnly: true } : {}) }
 }
 
 /** A name nothing else in the folder has. */

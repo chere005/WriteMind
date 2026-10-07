@@ -221,10 +221,10 @@ export function adoptNote(file: string, token: string): Promise<boolean> {
 }
 
 /** What the page needs to know about a note it has open: whether it may be written. Read from the file, not from what was cached. */
-export interface NoteState { readOnly: boolean; version: number; newer: boolean }
+export interface NoteState { readOnly: boolean; version: number; newer: boolean; why: string | null }
 export async function noteState(file: string): Promise<NoteState> {
   const wm = await freshNote(file)
-  return { readOnly: wm.readOnly, version: wm.version, newer: wm.readOnly }
+  return { readOnly: wm.readOnly, version: wm.version, newer: wm.version > 1, why: wm.readOnlyWhy ?? null }
 }
 
 /** The note's drawing as the app holds it (JSON text), or null: no `drawing.json`, or the note has not been read. */
@@ -237,7 +237,7 @@ export async function readDrawingText(file: string): Promise<string | null> {
 
 // MARK: - Writing
 
-export type Refused = "changed" | "gone" | "unread" | "newer"
+export type Refused = "changed" | "gone" | "unread" | "newer" | "unwritable"
 
 export interface Committed {
   /** The archive was written (or there was nothing to change and it is as the page has it). */
@@ -289,7 +289,7 @@ async function drain(key: string): Promise<void> {
     const created = base === null
     base ??= newWmFile(Date.now(), app)
     if (base.readOnly) {
-      for (const op of ops) op.done({ written: false, refused: "newer", wm: base })
+      for (const op of ops) op.done({ written: false, refused: base.version > 1 ? "newer" : "unwritable", wm: base })
       return
     }
     let wm = base
@@ -317,7 +317,11 @@ async function drain(key: string): Promise<void> {
     await fs.mkdir(path.dirname(file), { recursive: true })
     remember(file)
     remember(partialOf(file))
-    const wrote = await writeNow(file, parts, {
+    // A note that is a SYMLINK is written through it: the new bytes go to the file it points at (beside which the temporary
+    // file is made), not over the link, which a rename would replace by an ordinary file and leave the target as it was.
+    const target = await fs.realpath(file).catch(() => file)
+    if (target !== file) { remember(target); remember(partialOf(target)) }
+    const wrote = await writeNow(target, parts, {
       durable: true,
       guard: async () => mayWrite((await disk(file))?.digest ?? null, known),
     })
@@ -361,6 +365,7 @@ export const refusedMessage = (file: string, why: Refused | null): string => {
   const name = path.basename(file)
   switch (why) {
     case "newer": return `${name} was written by a newer WriteMind, so it is open read-only here`
+    case "unwritable": return `${name} is open read-only here: ${held(file)?.readOnlyWhy ?? "it cannot be written back as it is"}`
     case "gone": return `${name} is not there any more, so it was not written`
     case "unread": return `${name} has not been opened by WriteMind, so it was not overwritten`
     default: return `the file ${name} changed on disk, so it was not overwritten`

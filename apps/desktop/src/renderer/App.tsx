@@ -479,7 +479,10 @@ export function App() {
     setReadOnly(info.readOnly === true)
     readOnlyRef.current = info.readOnly === true
     if (info.readOnly === true) {
-      say(`${leaf(note.path)} was written by a newer WriteMind, so it is open read-only here.`, null, `newer:${note.path}`)
+      const why = (info as { why?: string | null }).why
+      say(why && !/newer WriteMind/.test(why)
+        ? `${leaf(note.path)} is open read-only here: ${why}.`
+        : `${leaf(note.path)} was written by a newer WriteMind, so it is open read-only here.`, null, `newer:${note.path}`)
     }
   }, [flushNow, keepCopy, say, setDocument])
 

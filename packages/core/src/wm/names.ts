@@ -22,7 +22,7 @@ export function entryNameError(name: string): string | null {
   if (/^[A-Za-z]:/.test(name)) return `“${name}” has a drive part`
   if (name.includes("\\")) return `“${name}” uses a backslash`
   // eslint-disable-next-line no-control-regex
-  if (/[\u0000-\u001f\u007f]/.test(name)) return "an entry name holds a control character"
+  if (/[\u0000-\u001f\u007f\ufeff]/.test(name)) return "an entry name holds a control character"
   if (encoder.encode(name).length > MAX_NAME_BYTES) return `“${name.slice(0, 40)}…” is too long`
   for (const segment of body.split("/")) {
     if (segment === "") return `“${name}” has an empty part`
@@ -48,8 +48,12 @@ export function readNamesError(names: readonly string[]): string | null {
   return null
 }
 
-/** What two names must not differ by: Unicode normal form and case (a file that holds both would not unpack everywhere). */
-export const foldedName = (name: string): string => name.normalize("NFC").toLowerCase()
+/**
+ * What two names must not differ by: Unicode normal form and case (a file that holds both would not unpack everywhere).
+ * The case is folded as a file system's table does (simple case folding), which `toLowerCase` alone is not: `ς` and `σ` are
+ * one letter to NTFS and APFS, and so are `ſ` and `s`, and only the upper case of each is the same (`Σ`, `S`).
+ */
+export const foldedName = (name: string): string => name.normalize("NFC").toUpperCase().toLowerCase()
 
 /** The first problem with a list of names about to be WRITTEN: anything `readNamesError` finds, or two that fold together. */
 export function writeNamesError(names: readonly string[]): string | null {

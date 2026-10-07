@@ -31,7 +31,7 @@ declare global {
       /** The file's words and drawing as they are now, WITHOUT the app taking that state as its own (the watcher's look); `adoptNote` takes it. */
       peekNote(file: string): Promise<{ text: string; drawing: string | null; token: string }>
       adoptNote(file: string, token: string): Promise<boolean>
-      noteInfo(file: string): Promise<{ readOnly: boolean; version: number; newer: boolean }>
+      noteInfo(file: string): Promise<{ readOnly: boolean; version: number; newer: boolean; why: string | null }>
       writeNote(file: string, text: string): Promise<{ written: boolean; onDisk: string | null }>
       createNote(folder: string): Promise<string>
       renameNote(file: string, title: string): Promise<string>

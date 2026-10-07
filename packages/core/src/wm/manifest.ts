@@ -55,7 +55,9 @@ export function parseManifest(text: string): ManifestRead {
  */
 export function stamped(manifest: Manifest, now: Date | number, app: AppStamp, fileTime?: Date | number): Manifest {
   const out: Manifest = { ...manifest }
-  if (typeof out.id !== "string" || !UUID.test(out.id)) out.id = newManifestId()
+  // (An id that is a UUID in upper case is the same id, spelled the other way: 1.7 asks for it in lower case, and it keeps its value.)
+  if (typeof out.id === "string" && UUID.test(out.id.toLowerCase())) out.id = out.id.toLowerCase()
+  else out.id = newManifestId()
   if (typeof out.created !== "string") out.created = rfc3339(fileTime ?? now)
   out.modified = rfc3339(now)
   out.app = { ...(isRecord(out.app) ? out.app : {}), ...app }

@@ -21,6 +21,12 @@ type Json = Record<string, unknown>
 
 const isRecord = (value: unknown): value is Json => typeof value === "object" && value !== null && !Array.isArray(value)
 const list = (value: unknown): unknown[] => (Array.isArray(value) ? value : [])
+/** Whether `object` has `key` of its OWN: `in` also finds `constructor`, `toString`, `valueOf` and the rest of Object.prototype. */
+const has = (object: object, key: string): boolean => Object.hasOwn(object, key)
+/** `object[key] = value` that is safe for ANY key: `__proto__` set by assignment sets the prototype and drops the key. */
+const put = (object: Json, key: string, value: unknown): void => {
+  Object.defineProperty(object, key, { value, enumerable: true, writable: true, configurable: true })
+}
 
 /** The fields this build reads and writes on each kind of item (everything else is unknown). */
 const KNOWN: Record<string, ReadonlySet<string>> = {
@@ -78,11 +84,11 @@ function mergeItems(before: unknown[], strokes: number, next: unknown[], nested:
 /** One item the model wrote, with the unknown fields (and the unknown shape word) of the same item from the file. */
 function carry(old: Json, item: Json, nested: boolean): Json {
   const kind = typeof item.kind === "string" ? item.kind : ""
-  const known = KNOWN[kind]
+  const known = has(KNOWN, kind) ? KNOWN[kind] : undefined
   if (!known) return item
   const out: Json = { ...item }
   for (const [key, value] of Object.entries(old)) {
-    if (!known.has(key) && !(key in out)) out[key] = value
+    if (!known.has(key) && !has(out, key)) put(out, key, value)
   }
   if (kind === "shape") {
     const word = old.shapeKind ?? old.kindName
@@ -111,8 +117,8 @@ export function keepUnknown(previous: string | null, next: string): string {
   const merged = mergeItems([...strokes, ...list(before.items)], strokes.length, list(after.items), false)
   const out: Json = { ...after, items: merged }
   for (const [key, value] of Object.entries(before)) {
-    if (key === "items" || key === "strokes" || key in out) continue
-    out[key] = value
+    if (key === "items" || key === "strokes" || has(out, key)) continue
+    put(out, key, value)
   }
   return JSON.stringify(out, null, 1)
 }

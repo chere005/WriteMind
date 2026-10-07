@@ -22,7 +22,7 @@ export function legacyOrder(name: string): number {
   return CONVERTED_EXTENSIONS.indexOf(name.slice(dot).toLowerCase() as typeof CONVERTED_EXTENSIONS[number])
 }
 
-const fold = (name: string): string => name.normalize("NFC").toLowerCase()
+const fold = (name: string): string => name.normalize("NFC").toUpperCase().toLowerCase()
 
 export interface LegacyNote {
   /** Its path relative to the project folder, `/`-separated, with the extension (`Ideas/Plan.md`). */
@@ -96,7 +96,26 @@ export function containerNames(names: readonly string[]): Map<string, string> {
 
 // MARK: - The text (5.3 step 5)
 
-const PICTURE = /^(\s*<?)((?:\.[\\/])?(?:\.\.[\\/])*\.drawings[\\/]media[\\/])([^\\/\s>]+)([\s\S]*)$/
+/** A picture destination in the 2.15.0 spelling: the prefix, and the name (which has spaces in it when the destination was `<in angle brackets>`). */
+const PICTURE = /^((?:\.[\\/])?(?:\.\.[\\/])*\.drawings[\\/]media[\\/])([^\\/]+)$/
+
+/**
+ * Where the destination is inside what is in a link's or picture's parentheses: `<in angle brackets>` (it may hold spaces)
+ * or the first run without whitespace. `start` and `end` bound it in `inside`; what is left of it (a title) is not touched.
+ */
+function destinationIn(inside: string): { start: number; end: number } | null {
+  let start = 0
+  while (start < inside.length && /\s/.test(inside[start]!)) start++
+  if (start >= inside.length) return null
+  if (inside[start] === "<") {
+    const close = inside.indexOf(">", start + 1)
+    if (close > 0) return { start: start + 1, end: close }
+    start++
+  }
+  let end = start
+  while (end < inside.length && !/\s/.test(inside[end]!) && inside[end] !== ">") end++
+  return end > start ? { start, end } : null
+}
 
 export interface Rewrite {
   /** Where each picture name went (only the renamed ones): the text follows. */
@@ -118,24 +137,26 @@ const encodePath = (name: string): string =>
 
 /** One `![alt](inside)`'s inside: the 2.15.0 picture spelling made the container's, or null when it is not that. */
 function pictureInside(inside: string, rewrite: Rewrite): string | null {
-  const found = PICTURE.exec(inside)
-  if (!found) return null
-  const [, lead, , written, rest] = found
-  const name = decodePart(written!)
+  const where = destinationIn(inside)
+  const found = where ? PICTURE.exec(inside.slice(where.start, where.end)) : null
+  if (!where || !found) return null
+  const written = found[2]!
+  const name = decodePart(written)
   if (rewrite.missing?.has(name)) return null
   const renamed = rewrite.renamed?.get(name)
-  const part = renamed !== undefined ? encodeRefName(renamed) : written!
+  const part = renamed !== undefined ? encodeRefName(renamed) : written
   const final = renamed ?? name
-  return `${lead}${isSnapshotName(final) || inkCellId(final) !== null ? WM_SNAPSHOTS : WM_MEDIA}${part}${rest}`
+  const next = `${isSnapshotName(final) || inkCellId(final) !== null ? WM_SNAPSHOTS : WM_MEDIA}${part}`
+  return inside.slice(0, where.start) + next + inside.slice(where.end)
 }
 
 /** One `[text](inside)`'s inside: a link to a note being converted, its extension (and name) made the `.wm`'s. */
 function linkInside(inside: string, rewrite: Rewrite): string | null {
   if (!rewrite.link) return null
-  const trimmed = inside.trim()
-  // `dest "title"` and `<dest>` are dealt with by working on the first token only.
-  const lead = inside.slice(0, inside.length - inside.trimStart().length)
-  const token = /^<?([^\s>]*)>?/.exec(trimmed)?.[1] ?? ""
+  // `dest "title"` and `<dest with spaces>` are dealt with by working on the destination only.
+  const where = destinationIn(inside)
+  if (!where) return null
+  const token = inside.slice(where.start, where.end)
   if (token === "" || token.startsWith("#")) return null
   const hash = token.indexOf("#")
   const written = hash < 0 ? token : token.slice(0, hash)
@@ -153,7 +174,8 @@ function linkInside(inside: string, rewrite: Rewrite): string | null {
   // The extension alone changes unless the note was given another name (`A 2.wm`): then the file part is that name.
   const name = target === `${stem}.wm` ? written.slice(slash + 1, written.lastIndexOf(".")) + ".wm" : encodePath(target)
   const next = `${directory}${name}${anchor}`
-  return inside.replace(token, next).replace(/^\s*/, lead)
+  // (Put in by position: `String.replace` reads `$&`, `$'` and the like in the new text, and finds the FIRST copy of the old.)
+  return inside.slice(0, where.start) + next + inside.slice(where.end)
 }
 
 /**
@@ -199,13 +221,16 @@ function rewriteCell(source: string, rewrite: Rewrite): string {
     if (c === "[" || (c === "!" && source[i + 1] === "[")) {
       const picture = c === "!"
       const open = picture ? i + 1 : i
-      const close = source.indexOf("](", open)
-      if (close > 0 && !source.slice(open + 1, close).includes("\n")) {
+      // A picture's words end at the first `]` (as the page reads them); a link's text may hold brackets, such as a picture
+      // (`[![alt](.drawings/media/x.png)](https://…)`), whose own destination is rewritten as any picture's.
+      const close = picture ? source.indexOf("]", open + 1) : closingBracket(source, open)
+      if (close > 0 && source[close + 1] === "(" && !source.slice(open + 1, close).includes("\n")) {
         const end = source.indexOf(")", close + 2)
         const inside = end < 0 ? null : source.slice(close + 2, end)
-        if (inside !== null && !inside.includes("\n") && !source.slice(open + 1, close).includes("]")) {
+        if (inside !== null && !inside.includes("\n")) {
           const next = picture ? pictureInside(inside, rewrite) : linkInside(inside, rewrite)
-          out += source.slice(i, close + 2) + (next ?? inside) + ")"
+          const words = source.slice(open + 1, close)
+          out += source.slice(i, open + 1) + (picture ? words : rewriteCell(words, rewrite)) + "](" + (next ?? inside) + ")"
           i = end + 1
           continue
         }
@@ -215,6 +240,19 @@ function rewriteCell(source: string, rewrite: Rewrite): string {
     i++
   }
   return out
+}
+
+/** The `]` that closes the `[` at `open`, brackets inside matched (escapes skipped), or -1 (not on this line). */
+function closingBracket(source: string, open: number): number {
+  let depth = 0
+  for (let i = open; i < source.length; i++) {
+    const c = source[i]!
+    if (c === "\n") return -1
+    if (c === "\\") { i++; continue }
+    if (c === "[") depth++
+    else if (c === "]" && --depth === 0) return i
+  }
+  return -1
 }
 
 /** The index of the next run of exactly `n` backticks at or after `from`, or -1. */

@@ -72,7 +72,10 @@ export interface WmFile {
   manifestData: Uint8Array
   /** The version the file said; above `WM_VERSION` it is read-only (1.8). */
   version: number
+  /** Whether this build may write it: not a newer version's, and not one whose text could not be written back as it is. */
   readOnly: boolean
+  /** Why it is read-only, in words the person is told (absent when it is not). */
+  readOnlyWhy?: string
   /** Every entry except `mimetype` and `manifest.json` (this build writes those itself), in the order the file had them. */
   entries: WmEntry[]
 }
@@ -94,10 +97,29 @@ export function openWm(all: readonly WmEntry[]): WmFile {
   try { text = strictDecoder.decode(given.data) } catch { throw new WmError("manifest.json is not UTF-8") }
   const read = parseManifest(text)
   if (!read.ok) throw new WmError(read.error)
-  return {
-    manifest: read.manifest, manifestData: given.data, version: read.version, readOnly: read.version > WM_VERSION,
-    entries: real.filter((entry) => entry.name !== WM_MIMETYPE && entry.name !== WM_MANIFEST),
+  const entries = real.filter((entry) => entry.name !== WM_MIMETYPE && entry.name !== WM_MANIFEST)
+  return { manifest: read.manifest, manifestData: given.data, version: read.version, ...unwritable(read.version, entries), entries }
+}
+
+/**
+ * Whether a note that READS cannot be WRITTEN, and why (it opens read-only, with the reason, and nothing ever writes it): a
+ * newer version's (1.8); two names that differ only by case, or a `Manifest.json` beside `manifest.json` (every save would
+ * be refused by the writer's own check, so none is tried); text or a drawing that is not valid UTF-8 (read lossily to be
+ * shown, and WRITTEN BACK lossily by the first edit: the person's bytes are not ours to replace with U+FFFD).
+ */
+function unwritable(version: number, entries: readonly WmEntry[]): { readOnly: boolean; readOnlyWhy?: string } {
+  const why = (text: string) => ({ readOnly: true, readOnlyWhy: text })
+  if (version > WM_VERSION) return why("a newer WriteMind wrote this note")
+  const collision = writeNamesError([WM_MIMETYPE, WM_MANIFEST, ...entries.map((entry) => entry.name)])
+  if (collision) return why(collision)
+  for (const name of [WM_TEXT, WM_DRAWING]) {
+    const entry = entries.find((one) => one.name === name)
+    if (!entry) continue
+    try { strictDecoder.decode(entry.data) } catch {
+      return why(`${name} is not valid UTF-8, and saving it would change the bytes that are not`)
+    }
   }
+  return { readOnly: false }
 }
 
 /** A new, empty note's file (its text, no drawing). */
@@ -178,7 +200,7 @@ function rank(name: string): number {
  */
 export function entriesToWrite(file: WmFile, stamp: { now: Date | number; app: AppStamp; fileTime?: Date | number } | null):
   { entries: WmEntry[]; manifest: Manifest; manifestData: Uint8Array } {
-  if (file.readOnly) throw new WmError("a newer WriteMind wrote this note, so it is open read-only")
+  if (file.readOnly) throw new WmError(`${file.readOnlyWhy ?? "a newer WriteMind wrote this note"}, so it is open read-only`)
   const entries = [...file.entries]
   if (!entries.some((entry) => entry.name === WM_TEXT)) entries.push({ name: WM_TEXT, data: new Uint8Array(0) })
   const problem = writeNamesError([WM_MIMETYPE, WM_MANIFEST, ...entries.map((entry) => entry.name)])
