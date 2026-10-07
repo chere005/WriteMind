@@ -15,6 +15,17 @@ const NOW = new Date("2026-10-08T09:14:03Z")
 const scratch = () => mkdtempSync(path.join(os.tmpdir(), "wm-zip-"))
 const have = (tool: string, args: string[]): boolean => spawnSync(tool, args, { stdio: "ignore" }).status !== null
 
+/**
+ * A test that needs one of the system's own tools. Where the tool is not there it is SKIPPED on a person's machine, and FAILS
+ * when `CI` is set: a check that quietly does not run in the one place that is meant to run everything is no check (the
+ * cross-tool reads are the proof that the archive is a real ZIP, and a runner image that lost `unzip` must say so).
+ */
+const withTool = (available: boolean) => (name: string, body: () => void): void => {
+  if (available) it(name, body)
+  else if (process.env.CI) it(name, () => { throw new Error(`the tool this test needs is missing, and in CI that is a failure, not a skip: ${name}`) })
+  else it.skip(name, body)
+}
+
 const sample = (): ZipEntry[] => {
   let file = newWmFile(NOW, APP, "# Title\n\nSome words.\n".repeat(200))
   file = withEntry(file, "drawing.json", utf8(JSON.stringify({ items: [] })))
@@ -122,7 +133,7 @@ describe("the system's own tools read what this writes", () => {
     return target
   }
 
-  it.skipIf(!have("unzip", ["-v"]))("unzip -t finds nothing wrong, and unpacks the names as they are", () => {
+  withTool(have("unzip", ["-v"]))("unzip -t finds nothing wrong, and unpacks the names as they are", () => {
     const target = file()
     const test = spawnSync("unzip", ["-t", target], { encoding: "utf8" })
     expect(test.status, test.stdout + test.stderr).toBe(0)
@@ -131,7 +142,7 @@ describe("the system's own tools read what this writes", () => {
     expect(list.stdout.split("\n").filter(Boolean)[0]).toBe("mimetype")
   })
 
-  it.skipIf(!have("zipinfo", ["-h", "/dev/null"]) && !have("/usr/bin/zipinfo", ["-h", "/dev/null"]))("zipinfo lists the mimetype first, stored", () => {
+  withTool(have("zipinfo", ["-h", "/dev/null"]) || have("/usr/bin/zipinfo", ["-h", "/dev/null"]))("zipinfo lists the mimetype first, stored", () => {
     const target = file()
     const info = spawnSync(have("zipinfo", ["-h", "/dev/null"]) ? "zipinfo" : "/usr/bin/zipinfo", ["-v", target], { encoding: "utf8" })
     expect(info.status, info.stderr).toBe(0)
@@ -140,7 +151,7 @@ describe("the system's own tools read what this writes", () => {
     expect(info.stdout.slice(first, first + 600)).toMatch(/compression method:\s+none \(stored\)/)
   })
 
-  it.skipIf(!have("python3", ["-c", "import zipfile"]))("python3 -m zipfile -t is satisfied, and reads the mimetype first with its content", () => {
+  withTool(have("python3", ["-c", "import zipfile"]))("python3 -m zipfile -t is satisfied, and reads the mimetype first with its content", () => {
     const target = file()
     const test = spawnSync("python3", ["-m", "zipfile", "-t", target], { encoding: "utf8" })
     expect(test.status, test.stdout + test.stderr).toBe(0)
@@ -149,7 +160,7 @@ describe("the system's own tools read what this writes", () => {
     expect(read.stdout.split(/\r?\n/).slice(0, 3)).toEqual(["mimetype", WM_MIME, "8"])
   })
 
-  it.skipIf(!have("python3", ["-c", "import zipfile"]))("this reader reads an archive python wrote, ZIP64 records included", () => {
+  withTool(have("python3", ["-c", "import zipfile"]))("this reader reads an archive python wrote, ZIP64 records included", () => {
     const dir = scratch()
     const target = path.join(dir, "py.wm")
     const code = [

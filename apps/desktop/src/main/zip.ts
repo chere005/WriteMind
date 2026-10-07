@@ -9,13 +9,20 @@
  * extra field of an entry); this writer does not produce it and says so when a note is that big (4 GiB or 65 535
  * entries).
  *
+ * THE STRUCTURE IS VETTED BEFORE ANYTHING IS INFLATED (a hostile file must not cost memory to be refused): the end record
+ * must be the only one that fits the end of the file, the central directory must hold exactly the entries it is said to,
+ * every name must be valid and unique and every local header must say what the directory says, no two entries may share
+ * bytes and none may reach into the directory (a 20 KB file whose 64 entries all pointed at one block asked for 1.13 GiB),
+ * the declared sizes together may not pass a thousand times the file (and a little), and `mimetype` and `manifest.json`
+ * must be there. Only then is an entry inflated, never past what it declares.
+ *
  * WRITING never edits in place: `zipParts` returns the whole archive as a list of buffers and wmStore writes them to a
  * temporary file beside the note and renames it. An entry that was read and not changed carries its compressed bytes
  * (`packed`), which are copied as they are instead of being compressed again.
  */
 
 import { crc32, deflateRawSync, inflateRawSync } from "node:zlib"
-import { methodFor, type WmEntry } from "@writemind/core"
+import { MIMETYPE_BYTES, WM_MANIFEST, WM_MIMETYPE, WmError, methodFor, readNamesError, type WmEntry } from "@writemind/core"
 
 export class ZipError extends Error {
   constructor(message: string) { super(message); this.name = "ZipError" }
@@ -33,6 +40,8 @@ export const LIMITS = {
   total: 8 * 1024 * 1024 * 1024,
   ratio: 1000,
   ratioFrom: 16 * 1024 * 1024,
+  /** The declared sizes of all entries together may not pass `ratio` times the file, plus this (1.6). */
+  ratioSlack: 16 * 1024 * 1024,
 }
 const TEXT_ENTRIES = new Set(["note.mdwm", "drawing.json", "manifest.json"])
 
@@ -42,7 +51,8 @@ const SIG_END = 0x06054b50
 const SIG_END64 = 0x06064b50
 const SIG_LOC64 = 0x07064b50
 
-const utf8 = new TextDecoder("utf-8", { fatal: true })
+// (`ignoreBOM: true` is the spelling of "do NOT strip a byte-order mark": a name that starts with U+FEFF must keep it, to be refused.)
+const utf8 = new TextDecoder("utf-8", { fatal: true, ignoreBOM: true })
 const encoder = new TextEncoder()
 
 // MARK: - The directory
@@ -68,13 +78,21 @@ const readerOf = (view: Uint8Array): Reader => {
   }
 }
 
-/** Where the end-of-central-directory record is in the last bytes of an archive, or -1. */
+/**
+ * Where the end-of-central-directory record is in the last bytes of an archive, or -1. A record is the one that ends the
+ * file when its comment runs to the end; a SECOND such record before it (a fake one inside the real one's comment, or the
+ * other way round) makes the file ambiguous, and different tools would read different directories: refused.
+ */
 export function findEnd(tail: Uint8Array): number {
   const r = readerOf(tail)
+  let found = -1
   for (let at = tail.length - 22; at >= 0; at--) {
-    if (tail[at] === 0x50 && r.u32(at) === SIG_END && at + 22 + r.u16(at + 20) === tail.length) return at
+    if (tail[at] === 0x50 && r.u32(at) === SIG_END && at + 22 + r.u16(at + 20) === tail.length) {
+      if (found >= 0) throw new ZipError("this archive has two end records (one inside the other's comment), so it does not say which directory is meant")
+      found = at
+    }
   }
-  return -1
+  return found
 }
 
 /** The central directory's place and the entry count, from the end record (and the ZIP64 records it points to). */
@@ -106,8 +124,11 @@ export function directoryPlace(tail: Uint8Array, tailStart: number, readAt: (off
   return { offset, size, count }
 }
 
-/** The entries a central directory lists, in its order. */
-export function parseDirectory(directory: Uint8Array, count: number): CentralEntry[] {
+/**
+ * The entries a central directory lists, in its order. `exact`: the directory must hold exactly `count` entries and
+ * nothing after them (an end record that counts fewer entries than the directory holds is two readings of one file).
+ */
+export function parseDirectory(directory: Uint8Array, count: number, exact = false): CentralEntry[] {
   if (count > LIMITS.entries) throw new ZipError(`more than ${LIMITS.entries} entries (the limit)`)
   const r = readerOf(directory)
   const out: CentralEntry[] = []
@@ -141,6 +162,8 @@ export function parseDirectory(directory: Uint8Array, count: number): CentralEnt
         const length = r.u16(e + 2)
         if (id === 1) {
           let p = e + 4
+          const need = (size === 0xffffffff ? 8 : 0) + (compressedSize === 0xffffffff ? 8 : 0) + (offset === 0xffffffff ? 8 : 0)
+          if (length < need || e + 4 + length > stop) throw new ZipError(`“${name}” has a ZIP64 extra field that is too short`)
           if (size === 0xffffffff) { size = r.u64(p); p += 8 }
           if (compressedSize === 0xffffffff) { compressedSize = r.u64(p); p += 8 }
           if (offset === 0xffffffff) { offset = r.u64(p); p += 8 }
@@ -154,6 +177,7 @@ export function parseDirectory(directory: Uint8Array, count: number): CentralEnt
     out.push({ name, method: method as 0 | 8, crc, compressedSize, size, offset, flags })
     at = next
   }
+  if (exact && at !== directory.length) throw new ZipError("the central directory holds more than its end record counts")
   return out
 }
 
@@ -168,12 +192,24 @@ function overLimit(entry: CentralEntry, running: number): string | null {
   return null
 }
 
-/** Where an entry's compressed bytes start, from its local header. */
+/**
+ * Where an entry's compressed bytes start, from its local header — which must say what the central directory says: the
+ * same name (a different one is a file that shows one thing to a tool that lists the directory and another to one that
+ * unpacks as it goes) and the same method.
+ */
 function dataStart(file: Uint8Array, entry: CentralEntry): number {
   const r = readerOf(file)
   const at = entry.offset
   if (at + 30 > file.length || r.u32(at) !== SIG_LOCAL) throw new ZipError(`“${entry.name}” has a damaged header`)
-  const start = at + 30 + r.u16(at + 26) + r.u16(at + 28)
+  const nameLength = r.u16(at + 26)
+  const start = at + 30 + nameLength + r.u16(at + 28)
+  if (start > file.length) throw new ZipError(`“${entry.name}” has a damaged header`)
+  const local = file.subarray(at + 30, at + 30 + nameLength)
+  const wanted = encoder.encode(entry.name)
+  if (local.length !== wanted.length || local.some((byte, i) => byte !== wanted[i])) {
+    throw new ZipError(`“${entry.name}” is named differently in its own header than in the directory`)
+  }
+  if (r.u16(at + 8) !== entry.method) throw new ZipError(`“${entry.name}” has another method in its own header than in the directory`)
   if (start + entry.compressedSize > file.length) throw new ZipError(`“${entry.name}” is cut short`)
   return start
 }
@@ -200,20 +236,66 @@ export function entryBytes(file: Uint8Array, entry: CentralEntry): { data: Uint8
   return { data, packed: { method: entry.method, crc: entry.crc, compressed } }
 }
 
+/**
+ * Everything that can be known about the archive WITHOUT inflating a byte (see the top): the names, `mimetype` and
+ * `manifest.json`, the limits of 1.6 (each entry's, the sum's, the sum against the file's own size), every local header
+ * against the directory, and that no two entries share bytes and none reaches into the directory.
+ */
+function vet(file: Uint8Array, entries: readonly CentralEntry[], directoryAt: number): void {
+  const problem = readNamesError(entries.map((entry) => entry.name))
+  if (problem) throw new WmError(problem)
+  const real = entries.filter((entry) => !entry.name.endsWith("/"))
+  const mime = real.find((entry) => entry.name === WM_MIMETYPE)
+  if (!mime) throw new WmError("this is not a WriteMind note (it has no mimetype entry)")
+  if (mime.size !== MIMETYPE_BYTES.length) throw new WmError("this is not a WriteMind note (its mimetype is another type)")
+  if (!real.some((entry) => entry.name === WM_MANIFEST)) throw new WmError("this note has no manifest.json")
+  let running = 0
+  for (const entry of entries) {
+    const why = overLimit(entry, running)
+    if (why) throw new ZipError(why)
+    running += entry.size
+  }
+  if (running > LIMITS.ratio * file.length + LIMITS.ratioSlack) {
+    throw new ZipError(`the entries declare ${Math.round(running / 1048576)} MiB, more than a thousand times the file's own size: a bomb`)
+  }
+  const spans = entries.map((entry) => ({ entry, from: entry.offset, to: dataStart(file, entry) + entry.compressedSize }))
+    .sort((a, b) => a.from - b.from)
+  let end = 0
+  for (const span of spans) {
+    if (span.from < end) throw new ZipError(`“${span.entry.name}” shares bytes with another entry`)
+    end = span.to
+  }
+  if (end > directoryAt) throw new ZipError("an entry's data reaches into the central directory")
+}
+
 /** Every entry of an archive held in memory, unpacked and checked. A directory entry (a name ending `/`) is returned too. */
 export function readZip(file: Uint8Array): ZipEntry[] {
+  try {
+    return readChecked(file)
+  } catch (error) {
+    // (A record that runs past the end of the file: the DataView says so with a RangeError, and the person is owed a ZipError.)
+    if (error instanceof RangeError) throw new ZipError("this archive is damaged: a record runs past the end of the file")
+    throw error
+  }
+}
+
+function readChecked(file: Uint8Array): ZipEntry[] {
   const tailStart = Math.max(0, file.length - (65_535 + 22))
   const place = directoryPlace(file.subarray(tailStart), tailStart, (offset, length) => file.subarray(offset, offset + length))
   if (place.offset + place.size > file.length) throw new ZipError("a damaged central directory")
-  const entries = parseDirectory(file.subarray(place.offset, place.offset + place.size), place.count)
+  const entries = parseDirectory(file.subarray(place.offset, place.offset + place.size), place.count, true)
+  vet(file, entries, place.offset)
+  // The mimetype first and by itself: it is thirty-odd bytes, and a file whose first word is wrong is refused before the rest is unpacked.
+  const mime = entries.find((entry) => entry.name === WM_MIMETYPE)!
+  const first = entryBytes(file, mime)
+  const got = first.data
+  if (got.length !== MIMETYPE_BYTES.length || got.some((byte, at) => byte !== MIMETYPE_BYTES[at])) {
+    throw new WmError("this is not a WriteMind note (its mimetype is another type)")
+  }
   const out: ZipEntry[] = []
-  let running = 0
   for (const entry of entries) {
-    const problem = overLimit(entry, running)
-    if (problem) throw new ZipError(problem)
-    running += entry.size
     if (entry.name.endsWith("/")) { out.push({ name: entry.name, data: new Uint8Array(0) }); continue }
-    const { data, packed } = entryBytes(file, entry)
+    const { data, packed } = entry === mime ? first : entryBytes(file, entry)
     out.push({ name: entry.name, data, packed })
   }
   return out
