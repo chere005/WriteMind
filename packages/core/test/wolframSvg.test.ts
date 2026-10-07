@@ -69,6 +69,11 @@ describe("the drawing cell's svg, with the export's options", () => {
     expect(wide.svg).toContain(`width="640" height="320" viewBox="0 0 900 450"`)
   })
 
+  it("has no white page under the ink when it is a copy (transparent)", () => {
+    expect(wolframInkSvg(cell, 400, eachWord, true).svg).not.toContain(`fill="#FFFFFF"`)
+    expect(wolframInkSvg(cell, 400, eachWord).svg).toContain(`fill="#FFFFFF"`)
+  })
+
   // The engine's SVG importer sets a whole line in tofu for an astral code point and refuses the whole drawing for a
   // character XML 1.0 has no place for (checked against the engine: apps/desktop/scripts/check-wolfram.ts).
   describe("words the importer can take", () => {

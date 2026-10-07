@@ -44,11 +44,16 @@ export const asciiSvg = (svg: string): string =>
 
 export const shownAt = (width: number): number => Math.max(1, Math.round(Math.min(width, MAX_SHOWN)))
 
-/** A drawing cell `W` wide on screen, as the engine is handed it. */
-export function wolframInkSvg(cell: InkCell, W: number, words?: WordBreaker): WolframSvg {
+/**
+ * A drawing cell `W` wide on screen, as the engine is handed it. `transparent`: no white page under the ink (a COPY
+ * into Mathematica, Sean, 2026-10-06: it pastes as the ink alone, on whatever the notebook's background is).
+ */
+export function wolframInkSvg(cell: InkCell, W: number, words?: WordBreaker, transparent = false): WolframSvg {
   const width = Math.max(1, W)
   const shown = shownAt(width)
-  const svg = asciiSvg(inkCellSvg(cell, width, { mediaUrl: (file) => file, background: WHITE, shown, ...(words ? { words } : {}) }))
+  const svg = asciiSvg(inkCellSvg(cell, width, {
+    mediaUrl: (file) => file, shown, ...(transparent ? {} : { background: WHITE }), ...(words ? { words } : {}),
+  }))
   return { svg, shown }
 }
 

@@ -37,7 +37,8 @@ export function wolframMedia(view: EditorView | null, drawing: Drawing, pane: { 
   for (const id of ids) {
     if (only && !only.has(id)) continue
     const cell = inkCellOf(drawing, id)
-    if (cell) inks[id] = wolframInkSvg(cell, (view ? shownWidth(view, id) : null) ?? column, words)
+    // A copy (`only`) is the ink alone, with no white page under it; the exported notebook keeps its white.
+    if (cell) inks[id] = wolframInkSvg(cell, (view ? shownWidth(view, id) : null) ?? column, words, only !== undefined)
   }
   if (only || !view) return { inks, bands: [], column }
   // The cells' tops are measured in the text's own coordinates; the drawing layer's page starts where the scroller's

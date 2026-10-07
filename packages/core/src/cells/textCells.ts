@@ -253,6 +253,23 @@ export function keepingHalves(markdown: string, change: Edit): Edit {
 export function plainCells(markdown: string): string {
   let out = markdown
   for (const cell of [...positioned(markdown)].reverse()) {
+    if (cell.block.kind === "code") {
+      // A code or evaluation cell as another app gets it: the code, without its fences (Sean, 2026-10-06: pasted into a
+      // Wolfram notebook, the backticks came too). A fence line is a line of 3+ backticks (or tildes), an info string after the
+      // opener; the closer may be missing.
+      const source = substring(markdown, cell.range)
+      const lines = source.split("\n")
+      const fence = /^\s*(`{3,}|~{3,})/
+      if (lines.length > 0 && fence.test(lines[0]!)) {
+        let last = lines.length - 1
+        while (last > 0 && lines[last]!.trim() === "") last--
+        const closer = last > 0 && fence.test(lines[last]!) && lines[last]!.trim().replace(/[`~]/g, "") === ""
+        const trailing = lines.slice(last + 1)
+        const code = lines.slice(1, closer ? last : last + 1).join("\n")
+        out = out.slice(0, cell.range.location) + [code, ...trailing].join("\n") + out.slice(end(cell.range))
+      }
+      continue
+    }
     if (cell.block.kind !== "paragraph") continue
     const source = substring(markdown, cell.range)
     const head = markerLength(cell.block)
