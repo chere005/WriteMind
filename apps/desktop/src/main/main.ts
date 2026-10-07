@@ -19,13 +19,14 @@ import path from "node:path"
 import { fileURLToPath, pathToFileURL } from "node:url"
 import { capabilitiesFor, mediaFiles } from "@writemind/core"
 import {
-  createNote, createSection, duplicateNote, existing, findMedia, isProjectFolder, mediaPath, moveSection,
+  createNote, createSection, duplicateNote, existing, findMedia, isProjectFolder, mediaPath, moveSection, noteInfo,
   placeNote, projectTree, readDrawing, readNote, renameNote, renameSection, reorder, saveInkSnapshot, saveMedia,
-  fileChanged, forgetTrust, setExcluded, setProjectFolders, setWatched, wroteRecently, writeDrawing, writeNote,
+  fileChanged, forgetTrust, setExcluded, setProjectFolders, setWatched, sweepMediaCache, wroteRecently, writeDrawing, writeNote,
 } from "./notes"
+import { setAppVersion } from "./wmStore"
 import { pictureFiles } from "./macDrawing"
 import { rescueUnsaved } from "./rescue"
-import { findUnused, trashNoteAndDrawing, trashSectionAndDrawings, trashUnused } from "./housekeeping"
+import { findUnused, trashNote, trashSection, trashUnused } from "./housekeeping"
 import type { Held } from "../shared/housekeeping"
 import { ADD_JAPANESE_OCR, penHelper, readerFor, toolsScript, windowsOcr, winget } from "./helpers"
 import { createToolSetup } from "./toolSetup"
@@ -130,6 +131,8 @@ let pending: ReturnType<typeof setTimeout> | null = null
 
 /** The open project: its folders, and the file they are saved in (if any). */
 let project: ProjectStore
+/** The notes open in the window, in tab order, as the last session write said (Save Project keeps them in the project file). */
+let openTabs: string[] = []
 const projectStateFile = (): string => path.join(app.getPath("userData"), "project.json")
 let menuState: MenuState = initialMenuState
 let lastMenu = ""
@@ -142,6 +145,8 @@ let lastMenu = ""
  */
 const folderWatch = followFolders(nodePorts, {
   event: (root, name) => {
+    // A note being written is `Name.wm.tmp` for a moment (atomic.ts): it is not a note, and the rename that follows says the rest.
+    if (name && /\.tmp$/i.test(name)) return
     // (what the tree knows of a file is kept until the watcher says it moved: see "Trusting the watcher" in notes.ts)
     if (name) fileChanged(path.join(root, name)); else forgetTrust()
     if (name && wroteRecently(path.join(root, name))) return
@@ -209,7 +214,7 @@ async function runCommand(id: string): Promise<void> {
   if ((UPDATE_COMMAND_IDS as readonly string[]).includes(id)) { await updater?.command(id); return }
   await runProjectCommand(id, {
     project, window: () => window, home: notesRoot, documents: () => app.getPath("documents"),
-    askOpen, askSave, changed: projectChanged,
+    askOpen, askSave, changed: projectChanged, openFiles: () => openTabs,
   })
 }
 
@@ -359,6 +364,8 @@ if (!gotLock) {
 
 app.whenReady().then(async () => {
   if (!gotLock) return
+  setAppVersion(app.getVersion())
+  void sweepMediaCache()
   // THE NOTES FOLDER before anything reads it (notesFolderMove.ts): the old WriteMindCross folder is moved to
   // WriteMind on the first launch after the rename, and every remembered path with it.
   settledFolder = await settleNotesFolder({
@@ -434,12 +441,14 @@ app.whenReady().then(async () => {
   ipcMain.handle("notes:tree", () => projectTree(project.folders, notesRoot(), project.name))
   ipcMain.handle("note:duplicate", (_event, file: string) => duplicateNote(notesRoot(), file))
   ipcMain.handle("note:read", (_event, file: string) => readNote(file))
+  // Whether a note may be written (a note of a newer format is read-only: SPEC-WM 1.8).
+  ipcMain.handle("note:info", (_event, file: string) => noteInfo(file))
   ipcMain.handle("note:write", (_event, file: string, text: string) => writeNote(file, text))
   ipcMain.handle("note:create", (_event, folder: string) => createNote(folder))
   ipcMain.handle("note:rename", (_event, file: string, title: string) => renameNote(notesRoot(), file, title))
-  // The note to the bin, and its drawing after it (housekeeping.ts): never a permanent delete.
+  // The note to the bin, drawing and pictures inside it (housekeeping.ts): never a permanent delete.
   ipcMain.handle("note:trash", async (_event, file: string) => {
-    await trashNoteAndDrawing(notesRoot(), file, (one) => shell.trashItem(one))
+    await trashNote(file, (one: string) => shell.trashItem(one))
   })
   // File ▸ Clean Up Unused Files… (housekeeping.ts): what is unused in the project's folders; then the bin for the
   // files the person said yes to, each looked at again first. `held` is what the window has that the disk has not.
@@ -463,8 +472,8 @@ app.whenReady().then(async () => {
     const here = path.resolve(folder).toLowerCase()
     const inside = project.folders.some((one) => here.startsWith(path.resolve(one).toLowerCase() + path.sep))
     if (isProjectFolder(folder, notesRoot()) || !inside) return false
-    // The folder to the bin, and the drawings of its notes (kept in the project folder's `.drawings`) after it.
-    await trashSectionAndDrawings(notesRoot(), folder, (one) => shell.trashItem(one))
+    // The folder to the bin, and with it every note and everything inside every note.
+    await trashSection(folder, (one: string) => shell.trashItem(one))
     return true
   })
   ipcMain.handle("order:set", (_event, folder: string, names: string[]) =>
@@ -479,8 +488,16 @@ app.whenReady().then(async () => {
   // that has just been left still lands in that project's file.
   ipcMain.handle("session:read", (_event, projectFile: string | null) =>
     readProjectSession(app.getPath("userData"), projectFile ?? null, notesRoot()))
-  ipcMain.handle("session:write", (_event, projectFile: string | null, json: string) =>
-    writeProjectSession(app.getPath("userData"), projectFile ?? null, json))
+  ipcMain.handle("session:write", (_event, projectFile: string | null, json: string) => {
+    // The tabs of the project in front, in order: what Save Project writes as its `files` (SPEC-WM 4.1).
+    if ((projectFile ?? null) === project.file) {
+      try {
+        const open = (JSON.parse(json) as { open?: { path?: unknown }[] }).open
+        if (Array.isArray(open)) openTabs = open.map((one) => one?.path).filter((one): one is string => typeof one === "string")
+      } catch { /* not a session: the tabs stay as they were */ }
+    }
+    return writeProjectSession(app.getPath("userData"), projectFile ?? null, json)
+  })
   ipcMain.handle("project:info", () => projectInfo(project))
   ipcMain.handle("path:reveal", (_event, target: string) => { shell.showItemInFolder(target) })
   ipcMain.handle("files:existing", (_event, files: string[]) => existing(files))

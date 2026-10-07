@@ -12,6 +12,7 @@ import { blocks } from "@writemind/core"
 import { COMMANDS } from "../src/shared/commands"
 import { WELCOME_FEATURES, WELCOME_FILE, WELCOME_GROUPS, WELCOME_KEYS, chordFor, groupTitleCell, welcomeKeys, welcomeNote } from "../src/shared/welcome"
 import { welcomeMarker, welcomeOnce, welcomeWanted } from "../src/main/welcome"
+import { readWm, writeWm } from "./wmFiles"
 
 const ROOT = path.resolve(__dirname, "../../..")
 const row = (what: string) => WELCOME_KEYS.find((one) => one.what === what)!
@@ -123,11 +124,11 @@ describe("a new install, once (main/welcome.ts)", () => {
     const root = path.join(temp(), "WriteMind") // not made yet, as on a first launch
     const note = await welcomeOnce(root, [root])
     expect(note).toBe(path.join(root, WELCOME_FILE))
-    expect(await fs.readFile(note!, "utf8")).toBe(welcomeNote())
+    expect(readWm(note!).text).toBe(welcomeNote())
     expect((await fs.stat(welcomeMarker(root))).isFile()).toBe(true)
-    await fs.writeFile(note!, "# Mine now\n")
+    writeWm(note!, "# Mine now\n")
     expect(await welcomeOnce(root, [root])).toBeNull()
-    expect(await fs.readFile(note!, "utf8")).toBe("# Mine now\n")
+    expect(readWm(note!).text).toBe("# Mine now\n")
   })
 
   it("deleting it does not bring it back", async () => {

@@ -53,7 +53,7 @@ export interface ExportFileDeps {
 
 /** The project as a file: the folders and the excluded ones, and no note. */
 export async function writeProjectFile(file: string, project: Project): Promise<void> {
-  await writeFileAtomic(file, stringifyProject(project))
+  await writeFileAtomic(file, stringifyProject(project, file))
 }
 
 /**

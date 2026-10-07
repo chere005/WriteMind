@@ -22,15 +22,24 @@
 
 import { promises as fs } from "node:fs"
 import path from "node:path"
-import { sessionFileName } from "@writemind/core"
+import {
+  isWmName, parseProjectData, resolvePaths, sessionFileName, stringifyProjectData, writtenPath, type PathOps, type ProjectData,
+} from "@writemind/core"
 import { codeOf, within, writeFileAtomic } from "./atomic"
 
 export const PROJECT_EXTENSION = "writemind-project"
+
+/** The project file's version this build writes for a project of its own (a file that says more keeps what it said). */
+export const PROJECT_VERSION = 1
 
 export interface Project {
   version: number
   folders: string[]
   excluded: string[]
+  /** The `.wm` files open in the project, in tab order (docs/SPEC-WM.md 4.1). */
+  files: string[]
+  /** Keys of the file this build does not know, kept as they were (4.3). */
+  extra?: Record<string, unknown>
 }
 
 /**
@@ -52,20 +61,20 @@ const clean = (folder: string): string => cleanPath(folder)
 const same = (a: string, b: string): boolean =>
   process.platform === "win32" ? a.toLowerCase() === b.toLowerCase() : a === b
 
-/** A project file written before `excluded` existed still opens. */
+/** The path rules of this machine, as the pure project code asks for them. */
+const ops: PathOps = path
+
+/**
+ * A project file's text as a project: the paths as the file has them (a relative one is resolved against the file's
+ * folder by `ProjectStore`, which knows where the file is), the keys it does not know kept in `extra`. A project file
+ * written before `excluded` or `files` existed still opens.
+ */
 export function parseProject(text: string): Project | null {
-  try {
-    const given = JSON.parse(text) as Partial<Project>
-    if (given === null || typeof given !== "object" || Array.isArray(given)) return null
-    const strings = (value: unknown): string[] =>
-      Array.isArray(value) ? value.filter((one): one is string => typeof one === "string") : []
-    return {
-      version: typeof given.version === "number" ? given.version : 1,
-      folders: strings(given.folders),
-      excluded: strings(given.excluded),
-    }
-  } catch {
-    return null
+  const data = parseProjectData(text)
+  if (!data) return null
+  return {
+    version: data.version, folders: data.folders, excluded: data.excluded, files: data.files,
+    ...(Object.keys(data.extra).length > 0 ? { extra: data.extra } : {}),
   }
 }
 
@@ -73,14 +82,24 @@ export function parseProject(text: string): Project | null {
  * Foundation's `.prettyPrinted + .sortedKeys + .withoutEscapingSlashes`:
  * two-space indent, a space either side of the colon, and an empty array as
  * an open bracket, a blank line and a close bracket. The Mac reads any JSON;
- * this is so that a project shared through git does not change shape each
- * time the other machine saves it.
+ * this is so that a project shared through a repository does not change shape each
+ * time the other machine saves it. With `file`, a path under the file's folder is written relative to it
+ * (`/`-separated); everything else is written as it is (docs/SPEC-WM.md 4.2).
  */
-export function stringifyProject(project: Project): string {
-  const list = (items: string[]): string =>
-    items.length === 0 ? "[\n\n  ]" : `[\n${items.map((one) => `    ${JSON.stringify(one)}`).join(",\n")}\n  ]`
-  return `{\n  "excluded" : ${list(project.excluded)},\n  "folders" : ${list(project.folders)},\n`
-    + `  "version" : ${project.version}\n}`
+export function stringifyProject(project: Project, file: string | null = null): string {
+  const written = (list: string[]): string[] =>
+    list.map((one) => writtenPath(one, file, ops, isForeignPath, process.platform === "win32"))
+  const data: ProjectData = {
+    version: project.version, folders: written(project.folders), excluded: written(project.excluded),
+    files: written(project.files ?? []), extra: project.extra ?? {},
+  }
+  return stringifyProjectData(data)
+}
+
+/** The paths of a read project made absolute (relative ones against the project file's folder), each place once. */
+export function resolveProject(project: Project, file: string | null): Project {
+  const resolve = (list: string[]): string[] => resolvePaths(list, file, ops, isForeignPath, process.platform === "win32")
+  return { ...project, folders: resolve(project.folders), excluded: resolve(project.excluded), files: resolve(project.files) }
 }
 
 /** What the app remembers between launches: the file (if any) and the folders. */
@@ -100,6 +119,11 @@ export function projectSessionFile(userData: string, projectFile: string | null)
 export class ProjectStore {
   folders: string[]
   excluded: string[] = []
+  /** The `.wm` files open in the project, in tab order (4.1); entries that are not `.wm` files are kept and ignored. */
+  files: string[] = []
+  /** The version the file said (kept when it is saved over), and the keys it has that this build does not know (4.3). */
+  version = PROJECT_VERSION
+  extra: Record<string, unknown> = {}
   file: string | null = null
   /** The folders have changed since the file was written. (True for an untitled project too: the menu says "edited" either way.) */
   dirty = false
@@ -116,7 +140,24 @@ export class ProjectStore {
   }
 
   get project(): Project {
-    return { version: 1, folders: [...this.folders], excluded: [...this.excluded] }
+    return {
+      version: this.version, folders: [...this.folders], excluded: [...this.excluded], files: [...this.files],
+      ...(Object.keys(this.extra).length > 0 ? { extra: this.extra } : {}),
+    }
+  }
+
+  /** The file was written by a newer WriteMind: it is shown, and saved over only after the person agrees (4.3). */
+  get newer(): boolean { return this.version > PROJECT_VERSION }
+
+  /** The `.wm` files the project lists, in order (the ones that are notes). */
+  get notes(): string[] { return this.files.filter(isWmName) }
+
+  /** The files open now, in tab order: what a save writes as `files`. Marks the project edited when it changes. */
+  setFiles(files: string[]): void {
+    const next = files.map(clean)
+    if (next.length === this.files.length && next.every((one, at) => same(one, this.files[at]!))) return
+    this.files = next
+    this.dirty = true
   }
 
   addFolder(folder: string): boolean {
@@ -159,6 +200,9 @@ export class ProjectStore {
   newProject(startingAt: string = this.home): void {
     this.folders = [clean(startingAt)]
     this.excluded = []
+    this.files = []
+    this.version = PROJECT_VERSION
+    this.extra = {}
     this.file = null
     this.dirty = false
   }
@@ -169,10 +213,15 @@ export class ProjectStore {
    * default one, as the Mac does (`setFolders` falls back to its own folder).
    */
   async open(file: string, text?: string): Promise<boolean> {
-    const parsed = parseProject(text ?? await fs.readFile(file, "utf8").catch(() => ""))
-    if (!parsed) return false
-    this.folders = parsed.folders.length > 0 ? parsed.folders.map(clean) : [this.home]
-    this.excluded = parsed.excluded.map(clean)
+    const read = parseProject(text ?? await fs.readFile(file, "utf8").catch(() => ""))
+    if (!read) return false
+    // A relative path is relative to the project file's folder; the same place twice is one (SPEC-WM 4.2).
+    const parsed = resolveProject(read, file)
+    this.folders = parsed.folders.length > 0 ? parsed.folders : [this.home]
+    this.excluded = parsed.excluded
+    this.files = parsed.files
+    this.version = parsed.version
+    this.extra = parsed.extra ?? {}
     this.file = file
     this.dirty = false
     return true
@@ -197,7 +246,7 @@ export class ProjectStore {
    */
   private async write(file: string): Promise<void> {
     await fs.mkdir(path.dirname(file), { recursive: true })
-    await writeFileAtomic(file, stringifyProject(this.project))
+    await writeFileAtomic(file, stringifyProject(this.project, file))
     this.dirty = false
   }
 

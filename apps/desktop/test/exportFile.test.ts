@@ -85,7 +85,7 @@ describe("File ▸ Export…: one panel, the format chosen in it", () => {
     expect(await exportFile(note, d)).toEqual({ format: "project", file })
     expect(pdfs).toEqual([])
     expect(parseProject(readFileSync(file, "utf8"))).toEqual({
-      version: 1, folders: ["/a/notes", "/b/more"], excluded: ["/a/notes/old"],
+      version: 1, folders: ["/a/notes", "/b/more"], excluded: ["/a/notes/old"], files: [],
     })
   })
 

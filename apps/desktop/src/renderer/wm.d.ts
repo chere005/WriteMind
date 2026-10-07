@@ -28,6 +28,7 @@ declare global {
       capabilities(): Promise<Platform>
       tree(): Promise<Section>
       readNote(file: string): Promise<string>
+      noteInfo(file: string): Promise<{ readOnly: boolean; version: number; newer: boolean }>
       writeNote(file: string, text: string): Promise<{ written: boolean; onDisk: string | null }>
       createNote(folder: string): Promise<string>
       renameNote(file: string, title: string): Promise<string>

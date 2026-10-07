@@ -13,7 +13,7 @@ import { HEADING_LADDER, headingName } from "@writemind/core"
 import { HEADING_COMMANDS, acceleratorFor } from "./commands"
 
 /** The file it is written as, in the notes folder's top level. */
-export const WELCOME_FILE = "WriteMind Quick Reference.md"
+export const WELCOME_FILE = "WriteMind Quick Reference.wm"
 
 /** What the app has, in a line or two each: Sean's approved note, kept to what is built. */
 export const WELCOME_FEATURES: string[] = [

@@ -122,6 +122,10 @@ export function App() {
   const textRef = useMemo(() => lazyText(), [])
   const [saved, setSaved] = useState<Date | null>(null)
   const [stale, setStale] = useState(false)
+  // A note a NEWER WriteMind wrote (manifest.version above ours, SPEC-WM 1.8) is open read-only: nothing is saved or changed.
+  const [readOnly, setReadOnly] = useState(false)
+  const readOnlyRef = useRef(false)
+  readOnlyRef.current = readOnly
   const [view, setView] = useState<EditorView | null>(null)
   const viewRef = useRef<EditorView | null>(null)
   viewRef.current = view
@@ -430,6 +434,7 @@ export function App() {
     drawingDirty.current = false
     const contents = await window.wm.readNote(note.path)
     const sidecar = await window.wm.readDrawing(note.path)
+    const info = await window.wm.noteInfo(note.path).catch(() => ({ readOnly: false }))
     // The sidecar is decoded BEFORE the note is switched (the decode cannot throw, but whatever happens in it
     // must not leave the new note on screen with the old note's drawing, which the next stroke would save into
     // the new note's file). A sidecar that is not all readable is KEPT in Recovered and said so: the next edit
@@ -454,6 +459,11 @@ export function App() {
       say(`The drawing of ${leaf(note.path)} could not be read in full${left}. ${where}`, kept, `drawing-unreadable:${note.path}`)
     }
     setStale(false)
+    setReadOnly(info.readOnly === true)
+    readOnlyRef.current = info.readOnly === true
+    if (info.readOnly === true) {
+      say(`${leaf(note.path)} was written by a newer WriteMind, so it is open read-only here.`, null, `newer:${note.path}`)
+    }
   }, [flushNow, keepCopy, say, setDocument])
 
   // The autosave: debounced, and it never clobbers. `writeNote` asks the
@@ -462,7 +472,7 @@ export function App() {
   // an effect on the text, so typing does not render this component.
   const save = useCallback(() => {
     const file = openRef.current
-    if (!file || !dirty.current) return
+    if (!file || !dirty.current || readOnlyRef.current) return
     void (async () => {
       await writeText(file, false)
       void reload()
@@ -496,6 +506,7 @@ export function App() {
   }, [save])
 
   const changeDrawing = useCallback((next: Drawing) => {
+    if (readOnlyRef.current) return
     drawingDirty.current = true
     // At once, not at the next render: a dock writes the words and the drawing in one go, and what it wrote is
     // read back before React has drawn it (an ink cell's widget, its snapshot).
@@ -1332,7 +1343,7 @@ export function App() {
         const markdown = textRef.current
         void (async () => {
           await window.wm.exportFile(current ? {
-            noteFile: current, title: title.replace(/\.(md|markdown|txt)$/i, ""),
+            noteFile: current, title: title.replace(/\.(wm|md|markdown|txt)$/i, ""),
             markdown, drawing: writeDrawing(drawingRef.current),
             // The pane the ink was placed against: its last real size when the notes pane is put away.
             pane,
@@ -1526,6 +1537,7 @@ export function App() {
                         markers={markers} listStyle={listStyle}
                         onChange={change} onReady={setView}
                         onViewState={onViewState} onLink={onLink} onFollow={onFollow}
+                        readOnly={readOnly}
                         inkPainter={painter.current} onInsertInkCell={(offset) => insertInk(offset)}
                         onCellsCopied={onCellsCopied} onDrawingPasted={pasteSheetCell} />
               <Canvas key={current ?? ""} drawing={drawing} onChange={changeDrawing} mode={mode} history={history}

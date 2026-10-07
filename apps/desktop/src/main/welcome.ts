@@ -16,7 +16,8 @@
 import { promises as fs } from "node:fs"
 import path from "node:path"
 import { WELCOME_FILE, welcomeNote } from "../shared/welcome"
-import { NOTE_EXTENSIONS } from "./notes"
+import { LEGACY_EXTENSIONS } from "./legacyLayout"
+import { createFile, newNoteFile } from "./wmStore"
 
 /** The marker, in the notes root's own bookkeeping folder (beside `order.json`; the sidebar never shows it). */
 export const welcomeMarker = (root: string): string => path.join(root, ".writemind", "welcomed")
@@ -49,7 +50,7 @@ async function holdsNotes(folder: string, budget = { dirs: 400 }, depth = 0): Pr
   } catch (error) {
     return (error as NodeJS.ErrnoException).code === "ENOENT" ? "no" : "unknown"
   }
-  if (entries.some((one) => one.isFile() && NOTE_EXTENSIONS.includes(path.extname(one.name).toLowerCase()))) return "yes"
+  if (entries.some((one) => one.isFile() && [...LEGACY_EXTENSIONS, ".wm"].includes(path.extname(one.name).toLowerCase()))) return "yes"
   for (const one of entries) {
     if (!one.isDirectory() || one.name.startsWith(".")) continue
     const inner = await holdsNotes(path.join(folder, one.name), budget, depth + 1)
@@ -76,8 +77,8 @@ export async function welcomeOnce(root: string, folders: string[] = []): Promise
   const note = path.join(root, WELCOME_FILE)
   if (fresh) {
     await fs.mkdir(root, { recursive: true })
-    // `wx`: never over a file of that name (the folder was empty of notes a moment ago, but not of everything).
-    await fs.writeFile(note, welcomeNote(), { encoding: "utf8", flag: "wx" }).catch((error: NodeJS.ErrnoException) => {
+    // Never over a file of that name (the folder was empty of notes a moment ago, but not of everything): `createFile` links.
+    await createFile(note, newNoteFile(welcomeNote())).catch((error: NodeJS.ErrnoException) => {
       if (error.code !== "EEXIST") throw error
       fresh = false
     })

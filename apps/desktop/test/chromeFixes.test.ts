@@ -5,6 +5,7 @@ import { describe, expect, it } from "vitest"
 import { friendly, leaf } from "../src/renderer/errors"
 import { canTrashSection, newlySeen, sectionPaths } from "../src/renderer/sidebarTree"
 import { rescueUnsaved, stamp } from "../src/main/rescue"
+import { readWm } from "./wmFiles"
 import type { Section } from "../src/renderer/wm"
 
 const section = (name: string, depth: number, sections: Section[] = []): Section =>
@@ -72,10 +73,11 @@ describe("text that could not be saved is kept where it can be come back to", ()
     const noteFile = process.platform === "win32" ? "C:\\notes\\one.md" : "/notes/one.md"
     const first = await rescueUnsaved(data, noteFile, "first words", "note", when)
     const second = await rescueUnsaved(data, noteFile, "second words", "note", when)
-    expect(path.basename(first)).toBe("one (20261003-141502).md")
+    // The words are kept as a .wm of their own: a note WriteMind opens like any other.
+    expect(path.basename(first)).toBe("one (20261003-141502).wm")
     expect(second).not.toBe(first)
-    expect(readFileSync(first, "utf8")).toBe("first words")
-    expect(readFileSync(second, "utf8")).toBe("second words")
+    expect(readWm(first).text).toBe("first words")
+    expect(readWm(second).text).toBe("second words")
     expect(path.dirname(first)).toBe(path.join(data, "Recovered"))
   })
 

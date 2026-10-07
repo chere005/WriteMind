@@ -23,6 +23,8 @@ export interface ProjectInfo {
   folders: { path: string; name: string; exists: boolean }[]
   /** Folders kept out of the sidebar and left on disk. */
   excluded: { path: string; name: string; exists: boolean }[]
+  /** The file was written by a newer WriteMind (SPEC-WM 4.3): shown as it is, and saved over only after the person agrees. */
+  newer?: boolean
 }
 
 /** The ids this module answers: the page and the menu send them to the main process. */
@@ -44,6 +46,7 @@ export async function projectInfo(project: ProjectStore): Promise<ProjectInfo> {
     edited: project.dirty,
     folders: await Promise.all(project.folders.map(named)),
     excluded: await Promise.all(project.excluded.map(named)),
+    ...(project.newer ? { newer: true } : {}),
   }
 }
 
@@ -54,6 +57,10 @@ export interface ProjectDeps {
   home(): string
   /** Where the dialogs open when the project has no folder of its own to offer. */
   documents(): string
+  /** The `.wm` files open in the window now, in tab order: a save writes them as the project's `files` (SPEC-WM 4.1). */
+  openFiles?(): string[]
+  /** Whether to save over a project file a newer WriteMind wrote (it keeps the version it had). */
+  confirmNewer?(parent: BrowserWindow, file: string): Promise<boolean>
   /** The dialogs, which a test run answers ahead of time. */
   askOpen(parent: BrowserWindow, options: OpenDialogOptions): Promise<{ canceled: boolean; filePaths: string[] }>
   askSave(parent: BrowserWindow, options: SaveDialogOptions): Promise<{ canceled: boolean; filePath?: string }>
@@ -94,6 +101,9 @@ export async function runProjectCommand(id: string, deps: ProjectDeps): Promise<
   } else if (id.startsWith("includeFolder:")) {
     if (project.include(id.slice("includeFolder:".length))) await deps.changed("folders")
   } else if (id === "saveProject") {
+    if (deps.openFiles) project.setFiles(deps.openFiles())
+    // A project file a NEWER WriteMind wrote is saved over only after the person says so (SPEC-WM 4.3).
+    if (project.file && project.newer && parent && !(await (deps.confirmNewer ?? confirmNewer)(parent, project.file))) return true
     // A project file that is read-only, locked or gone says so, as Save As does: the project stays "edited".
     try {
       if (!(await project.save())) return runProjectCommand("saveProjectAs", deps)
@@ -109,6 +119,7 @@ export async function runProjectCommand(id: string, deps: ProjectDeps): Promise<
     await deps.changed("saved")
   } else if (id === "saveProjectAs") {
     if (!parent) return true
+    if (deps.openFiles) project.setFiles(deps.openFiles())
     const where = await deps.askSave(parent, {
       // Beside the project's file when it has one, else in Documents.
       defaultPath: path.join(project.file ? path.dirname(project.file) : deps.documents(),
@@ -147,4 +158,14 @@ export async function runProjectCommand(id: string, deps: ProjectDeps): Promise<
     await deps.changed("switch")
   }
   return true
+}
+
+/** The question before a newer WriteMind project file is saved over. */
+async function confirmNewer(parent: BrowserWindow, file: string): Promise<boolean> {
+  const answer = await dialog.showMessageBox(parent, {
+    type: "question", message: "This project was saved by a newer WriteMind.",
+    detail: `“${path.basename(file)}” may hold settings this version does not understand. Saving keeps them as they are, but this version may not show them.`,
+    buttons: ["Save", "Cancel"], defaultId: 1, cancelId: 1,
+  })
+  return answer.response === 0
 }

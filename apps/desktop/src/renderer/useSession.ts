@@ -77,7 +77,7 @@ async function applyBuffers(buffers: Session["unsavedBuffers"]): Promise<Map<str
         if (out.written) applied.set(decision.path, decision.text)
         else console.error("WriteMind: could not put the unsaved text back into", decision.path)
       } else if (decision.action === "keep-copy") {
-        const stemmed = decision.path.replace(/\.(md|markdown|txt)$/i, "")
+        const stemmed = decision.path.replace(/\.(wm|md|markdown|txt)$/i, "")
         const extension = decision.path.slice(stemmed.length)
         let copy = `${stemmed} (unsaved copy)${extension}`
         for (let n = 2; (await window.wm.existing([copy])).length > 0 && n < 50; n++) {

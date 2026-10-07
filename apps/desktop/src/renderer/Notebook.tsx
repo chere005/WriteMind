@@ -6,7 +6,7 @@
  */
 
 import { useEffect, useLayoutEffect, useRef, useState } from "react"
-import { EditorState, type Extension, type StateEffect } from "@codemirror/state"
+import { Compartment, EditorState, type Extension, type StateEffect } from "@codemirror/state"
 import { EditorView, drawSelection, rectangularSelection } from "@codemirror/view"
 import { history, historyKeymap, defaultKeymap, standardKeymap } from "@codemirror/commands"
 import { keymap } from "@codemirror/view"
@@ -24,6 +24,9 @@ import { evalHostOfApp } from "./evalHost"
 import "./editor.css"
 
 export interface NotebookHandle { view: EditorView | null }
+
+/** A note of a newer format is read-only here (SPEC-WM 1.8): the editor takes no edit, whatever state it is brought back with. */
+const readOnlySwitch = new Compartment()
 
 /** What the session remembers about a note's view of itself. */
 export interface ViewState {
@@ -43,6 +46,8 @@ interface Props {
   version: number
   /** Where the caret was and what was closed, when the note was last open. */
   restore?: ViewState | null
+  /** The note is read-only (a newer WriteMind wrote it): no edit is taken. */
+  readOnly?: boolean
   /** The rendered page: every block drawn but the one being written in (see `preview` in the editor package). */
   rendered?: boolean
   /** View ▸ Hide / Show Markdown Markers (default shown): put away on the markdown side, apart from the rendered page. */
@@ -68,7 +73,7 @@ interface Props {
   onDrawingPasted?(data: DataTransfer): boolean
 }
 
-export function Notebook({ file, text, version, restore, rendered: showRendered, markers: showMarkers, listStyle, onChange, onReady,
+export function Notebook({ file, text, version, restore, readOnly, rendered: showRendered, markers: showMarkers, listStyle, onChange, onReady,
   onViewState, onLink, onFollow, inkPainter, onInsertInkCell, onCellsCopied, onDrawingPasted }: Props) {
   const host = useRef<HTMLDivElement | null>(null)
   const view = useRef<EditorView | null>(null)
@@ -82,6 +87,8 @@ export function Notebook({ file, text, version, restore, rendered: showRendered,
   linkRef.current = onLink
   const restoreRef = useRef(restore)
   restoreRef.current = restore
+  const readOnlyRef = useRef(readOnly === true)
+  readOnlyRef.current = readOnly === true
   const renderedRef = useRef(showRendered)
   renderedRef.current = showRendered
   const markersRef = useRef(showMarkers)
@@ -113,6 +120,7 @@ export function Notebook({ file, text, version, restore, rendered: showRendered,
   useEffect(() => {
     if (!host.current) return
     const extensions: Extension[] = [
+      readOnlySwitch.of(EditorState.readOnly.of(readOnlyRef.current)),
       history(),
       // Every edit of the words is numbered on the note's clock, so one Undo
       // can take back the words and the drawing in the order they were made.
@@ -181,7 +189,7 @@ export function Notebook({ file, text, version, restore, rendered: showRendered,
     })
     // A note coming back where it was left: its closed sections, and its caret.
     const back = restoreRef.current
-    const effects: StateEffect<unknown>[] = [setRendered.of(renderedRef.current === true), setMarkers.of(markersRef.current !== false)]
+    const effects: StateEffect<unknown>[] = [setRendered.of(renderedRef.current === true), setMarkers.of(markersRef.current !== false), readOnlySwitch.reconfigure(EditorState.readOnly.of(readOnlyRef.current))]
     if (back && back.collapsed.length > 0) effects.push(setFolds.of(back.collapsed))
     editor.dispatch({ effects })
     // A link that lands in a closed section opens it first (before the caret goes in, or it would step out).
@@ -226,6 +234,12 @@ export function Notebook({ file, text, version, restore, rendered: showRendered,
     if (!editor) return
     if (editor.state.field(renderedField) !== (showRendered === true)) setPreview(editor, showRendered === true)
   }, [showRendered, file])
+
+  useEffect(() => {
+    const editor = view.current
+    if (!editor) return
+    if (editor.state.readOnly !== (readOnly === true)) editor.dispatch({ effects: readOnlySwitch.reconfigure(EditorState.readOnly.of(readOnly === true)) })
+  }, [readOnly, file])
 
   // View ▸ Hide / Show Markdown Markers: the marks on the lines the caret is not in.
   useEffect(() => {
