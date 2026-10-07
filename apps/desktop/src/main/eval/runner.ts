@@ -54,7 +54,7 @@ export interface ChildLike {
   stderr: Readable | null
   on(event: "error", listener: (error: Error) => void): unknown
   on(event: "exit", listener: (code: number | null) => void): unknown
-  on(event: "close", listener: (code: number | null) => void): unknown
+  on(event: "close", listener: (code: number | null, signal?: NodeJS.Signals | null) => void): unknown
   kill(signal?: NodeJS.Signals | number): boolean
 }
 
@@ -100,7 +100,9 @@ export const PIPE_GRACE_MS = 750
 interface Job { cancelled: boolean; children: Set<ChildLike> }
 
 /** One child's run, before the app has anything to say about it. */
-interface Ran { stdout: string; stderr: string; status: number | null; timedOut: boolean; truncated: boolean }
+interface Ran {
+  stdout: string; stderr: string; status: number | null; signal: string | null; timedOut: boolean; truncated: boolean
+}
 
 class Cancelled extends Error {}
 class CouldNotStart extends Error {}
@@ -201,7 +203,7 @@ export function createRunner(deps: RunnerDeps): Runner {
         job.children.delete(child)
         if (!settled) grace = setTimeout(closePipes, pipeGraceMs)
       })
-      child.on("close", (code) => finish(() => {
+      child.on("close", (code, signal) => finish(() => {
         if (job.cancelled) { reject(new Cancelled()); return }
         // Lenient on purpose: a child's bytes are arbitrary, and one bad byte must not lose the whole answer.
         const text = (parts: Buffer[]) => Buffer.concat(parts).subarray(0, limit).toString("utf8")
@@ -209,10 +211,23 @@ export function createRunner(deps: RunnerDeps): Runner {
           stdout: text(out), stderr: text(errors),
           // A run the app cut short never finished: no exit status to report.
           status: timedOut || truncated ? null : code,
+          // A program that crashed (a signal, not an exit) has no status either, and the signal is what to say.
+          signal: timedOut || truncated ? null : signal ?? null,
           timedOut, truncated,
         })
       }))
     })
+  }
+
+  /**
+   * THE SCRATCH FOLDER'S NAME OFF A DIAGNOSTIC: `/var/folders/9z/…/WriteMind-eval-6zE0Eb/cell.c:2:11: error` is the
+   * compiler (or Python's traceback) naming the file it was handed, and the note should say `cell.c:2:11: error`.
+   * Only the scratch folder's path goes, and only from a compiler's output and a program's stderr (where a tool or a
+   * runtime says which file it was reading) — never from stdout, which is what the program chose to print.
+   */
+  function withoutScratch(text: string, dir: string): string {
+    const sep = deps.platform === "win32" ? "\\" : "/"
+    return text.split(dir + sep).join("")
   }
 
   async function interpret(job: Job, evaluator: Evaluator, tool: string, source: string,
@@ -232,6 +247,8 @@ export function createRunner(deps: RunnerDeps): Runner {
       }
       const ran = await spawnOne(job, tool, args, dir, env)
       const result = evalResult(ran)
+      // (a traceback names the file it ran: Python's does, and says `cell.py` rather than a temp folder's path)
+      if (evaluator === "python") result.stderr = withoutScratch(result.stderr, dir)
       if (evaluator === "wolfram") result.stdout = withoutTrailingNull(result.stdout)
       result.note = wolframNote(result, evaluator, tool)
       return result
@@ -254,13 +271,18 @@ export function createRunner(deps: RunnerDeps): Runner {
       const build = await spawnOne(job, tool, compileArguments(evaluator, file, binary, flavorOf(tool)), dir, env)
       if (build.status !== 0 || build.timedOut) {
         // The build's own output is the answer (Microsoft's cl writes its diagnostics to stdout, the others to stderr).
-        return evalResult({ ...build, note: build.timedOut ? "the compiler timed out" : "it did not compile" })
+        return evalResult({
+          ...build, stdout: withoutScratch(build.stdout, dir), stderr: withoutScratch(build.stderr, dir),
+          note: build.timedOut ? "the compiler timed out" : "it did not compile",
+        })
       }
       const ran = await spawnOne(job, binary, [], dir, env)
       const result = evalResult(ran)
+      // A panic names the file it came from (`cell.rs:2:5`), and says so without the temp folder's path.
+      result.stderr = withoutScratch(result.stderr, dir)
       // The compiler's warnings belong to the run too — a clean compile with a warning in it is the commonest thing.
       if (build.stderr.replace(/[\r\n]+$/, "").length > 0) {
-        result.stderr = build.stderr + (result.stderr.length === 0 ? "" : "\n" + result.stderr)
+        result.stderr = withoutScratch(build.stderr, dir) + (result.stderr.length === 0 ? "" : "\n" + result.stderr)
       }
       return result
     } finally {

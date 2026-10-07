@@ -74,7 +74,10 @@ batch in flight on that day. After it, roughly in this order:
 - **Scanner tabs for real.** The camera's tab strip is a stub: keep several scanned pages as tabs.
 - **Reading pictures.** Aa reading a flow chart off a picture already in the note (Swift `flowChart(from:under:)`);
   Japanese OCR on a machine that has the engine.
-- **Runnable cells.** Language icons instead of WL / PY; C, C++ and Rust once a compiler is installed.
+- **Runnable cells.** ~~Language icons instead of WL / PY~~ done 2026-10-07 (`core/eval/icons.ts`; PARITY "Evaluation
+  cells"). C, C++ and Rust: RUN FOR REAL on this Mac 2026-10-07 (clang as `gcc` / `g++`, rustc from `~/.cargo/bin`;
+  `apps/desktop/scripts/check-compiled.ts`, e2e `cells/09`); **Windows still unproven** (see "Evaluation cells, what
+  is left" (1)).
 - **The Swift Mac app: a REFERENCE only, not ported to** (Sean, 2026-10-06: "we are probably going to abandon the
   mac app and only work on this one and keep it as a reference"). This Electron app, with its own Mac build, is the
   one WriteMind. Nothing new goes into the Swift app (its text-cell and separate-cells rules stay missing there: it
@@ -229,9 +232,10 @@ green, orange) are swapped for black in these images, as in the PDF (`readableIn
   ACTIVATED and not on the PATH — Sean runs
   `"C:\Program Files\Wolfram Research\Wolfram Engine\15.0\wolframscript.exe" -activate` with his own Wolfram ID; then
   `C:\CLAUDIO\agents\e2e\eval-marks\run.mjs` proves `1 + 1` gives `2` (it checks this whenever the tool is found).
-  (2) **Language icons instead of letters** (Sean's a608cc3 ask "use icons for WL, CPP, Python"): not built — the mark
-  still says `WL` / `PY` / `C` / `C++` / `RS` (now under `In[n]` too, Sean 2026-10-05); icons need drawn art,
-  monochrome so they follow the theme, and must fit the 43 px mark column.
+  (2) ~~**Language icons instead of letters**~~ (Sean's a608cc3 ask "use icons for WL, CPP, Python") DONE 2026-10-07:
+  the mark (before a run) and the language under `In[n]` are drawn icons of our own (`core/eval/icons.ts`, monochrome,
+  `currentColor`), the Runs As rows carry them too; the letters are the accessible name and tooltip, and a language
+  the app cannot run keeps its dash as text. The icons are plain drawings: Sean may want them redrawn.
   (3) ~~**The Mac's per-tool override**~~ done 2026-10-06 as **File ▸ Language Setup…** (port-first; PARITY
   "Language Setup"): a chosen program is the ONLY one its language uses (the Mac falls through; said in PARITY and in
   `main/eval/tools.ts`). Left there: (a) run the `installer-tools.ps1` changes under Windows PowerShell 5.1

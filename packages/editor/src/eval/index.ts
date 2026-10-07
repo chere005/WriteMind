@@ -23,7 +23,7 @@ import { Facet, Prec, StateEffect, StateField, type EditorState, type Extension 
 import { BlockType, EditorView, ViewPlugin, keymap, type Command, type ViewUpdate } from "@codemirror/view"
 import { isolateHistory } from "@codemirror/commands"
 import {
-  caretUnder, DEFAULT_EVALUATOR, end, EVALUATORS, evaluatorFrom, evaluatorTitle, fenced, fenceLanguage,
+  caretUnder, DEFAULT_EVALUATOR, end, EVALUATORS, evaluatorBadge, evaluatorFrom, evaluatorIcon, evaluatorTitle, fenced, fenceLanguage,
   firstCellFromBy, groupsOf, isAnswerCell, isEvaluation, isOut, landingFor, landingOf, makeEvaluation, markLanguage, markTitle,
   missingToolRefusal, openCell, outAfter, pairNumber, refusalMessage, resolveEvaluator, setEnvironment, substring, writeAnswer,
   type EvalGroup, type Evaluator, type MarkRole, type PositionedBlock, type RunOutcome, type RunRequest,
@@ -225,7 +225,48 @@ const MARK_GAP = 5
 const MARK_FONT_FAMILY = "ui-monospace, SFMono-Regular, Menlo, Consolas, monospace"
 /** The first row of a mark (`In[n]`, `Out[n]`, or the language of a cell that has not run) and the second (the language under `In[n]`). */
 const ROW = 14
-const SECOND_ROW = 12
+const SECOND_ROW = 14
+/** The side of a language's icon (Sean, a608cc3: "use icons for WL, CPP, Python"): a 16-unit drawing, a little under. */
+const ICON = 14
+const SVG_NS = "http://www.w3.org/2000/svg"
+
+/**
+ * A LANGUAGE'S ICON as an `<svg>` (the core's `evaluatorIcon` is the drawing: shapes on a 16 x 16 grid). Painted
+ * `currentColor`, so it is whatever colour the mark around it is — grey, the accent on hover, amber for a missing
+ * tool — in the light and the dark theme alike. It is hidden from assistive technology: what names it is the control
+ * it sits in (`languageName`), which keeps the language's name and its letters.
+ */
+function iconElement(evaluator: Evaluator, side = ICON): SVGSVGElement {
+  const icon = evaluatorIcon(evaluator)
+  const svg = document.createElementNS(SVG_NS, "svg")
+  svg.setAttribute("viewBox", `0 0 ${icon.size} ${icon.size}`)
+  svg.setAttribute("width", String(side))
+  svg.setAttribute("height", String(side))
+  svg.setAttribute("aria-hidden", "true")
+  svg.setAttribute("focusable", "false")
+  svg.setAttribute("class", "wm-eval-icon")
+  svg.dataset.evalIcon = evaluator
+  for (const shape of icon.shapes) {
+    const path = document.createElementNS(SVG_NS, "path")
+    path.setAttribute("d", shape.d)
+    if (shape.paint === "fill") {
+      path.setAttribute("fill", "currentColor")
+    } else {
+      path.setAttribute("fill", "none")
+      path.setAttribute("stroke", "currentColor")
+      path.setAttribute("stroke-width", String(shape.width ?? 1))
+      if (shape.round) {
+        path.setAttribute("stroke-linecap", "round")
+        path.setAttribute("stroke-linejoin", "round")
+      }
+    }
+    svg.appendChild(path)
+  }
+  return svg
+}
+
+/** What a control that shows an icon is called: the language and its letters, `Python (PY)`. */
+const languageName = (evaluator: Evaluator): string => `${evaluatorTitle(evaluator)} (${evaluatorBadge(evaluator)})`
 const STYLE_ID = "wm-eval-style"
 const CSS = `
 .wm-eval-marks { position: absolute; top: 0; left: 0; width: 0; height: 0; pointer-events: none; z-index: 3; }
@@ -241,6 +282,14 @@ const CSS = `
   background: color-mix(in srgb, currentColor 14%, transparent); }
 .wm-eval-badge:hover, .wm-eval-lang:hover { color: var(--wm-accent, #2563eb); }
 .wm-eval-badge .wm-eval-chev { font-size: 7px; line-height: ${ROW}px; }
+.wm-eval-icon { display: block; flex: none; width: ${ICON}px; height: ${ICON}px; }
+.wm-eval-badge.wm-eval-iconic { height: ${ICON + 4}px; padding: 0 3px 0 2px; gap: 1px; }
+.wm-eval-lang.wm-eval-iconic { display: inline-flex; align-items: center; opacity: 1; }
+/* A drawing wants more contrast than a letter does: the soft text colour, not the faint one the letters use. */
+.wm-eval-badge.wm-eval-iconic, .wm-eval-lang.wm-eval-iconic { color: var(--wm-soft, #6b6b75); }
+.wm-eval-badge.wm-eval-iconic:hover, .wm-eval-lang.wm-eval-iconic:hover { color: var(--wm-accent, #2563eb); }
+.wm-eval-badge.wm-eval-iconic.wm-eval-missing, .wm-eval-lang.wm-eval-iconic.wm-eval-missing { color: #d97706; }
+.wm-eval-menu .wm-eval-icon { width: 14px; height: 14px; align-self: center; color: var(--wm-faint, #8a8a94); }
 .wm-eval-lang { pointer-events: auto; cursor: pointer; border: 0; background: none; padding: 0; margin: 0;
   line-height: ${SECOND_ROW}px; height: ${SECOND_ROW}px; opacity: 0.8; }
 .wm-eval-missing { color: #d97706; border-style: dashed; }
@@ -582,16 +631,25 @@ class EvalPlugin {
         button.type = "button"
         button.className = "wm-eval-badge" + (missing ? " wm-eval-missing" : "")
         button.dataset.evalBadge = mark.evaluator ?? ""
-        const label = document.createElement("span")
-        label.textContent = title
         const chevron = document.createElement("span")
         chevron.className = "wm-eval-chev"
         chevron.textContent = "▾"
-        button.append(label, chevron)
         button.title = choiceTitle
         opensMenu(button)
         first.appendChild(button)
-        this.fit(label, column - 12)
+        if (mark.evaluator !== null) {
+          // THE LANGUAGE'S ICON, not its letters (Sean, a608cc3): the letters stay as the control's name and tooltip.
+          button.classList.add("wm-eval-iconic")
+          button.dataset.evalLetters = evaluatorBadge(mark.evaluator)
+          button.setAttribute("aria-label", languageName(mark.evaluator))
+          button.append(iconElement(mark.evaluator), chevron)
+        } else {
+          // A fence this app cannot run has no language to draw: its dash stays text.
+          const label = document.createElement("span")
+          label.textContent = title
+          button.append(label, chevron)
+          this.fit(label, column - 12)
+        }
       } else {
         // One that has: `In[n]` / `Out[n]`, a record of what ran, right-aligned on the column every mark shares.
         const label = document.createElement("span")
@@ -610,7 +668,15 @@ class EvalPlugin {
           language.type = "button"
           language.className = "wm-eval-lang" + (missing ? " wm-eval-missing" : "")
           language.dataset.evalLang = mark.evaluator ?? ""
-          language.textContent = mark.language
+          if (mark.evaluator !== null) {
+            // The icon here too; its name and letters are the button's, as on the badge of a cell not yet run.
+            language.classList.add("wm-eval-iconic")
+            language.dataset.evalLetters = evaluatorBadge(mark.evaluator)
+            language.setAttribute("aria-label", languageName(mark.evaluator))
+            language.appendChild(iconElement(mark.evaluator))
+          } else {
+            language.textContent = mark.language
+          }
           language.title = choiceTitle
           opensMenu(language)
           second.appendChild(language)
@@ -705,7 +771,8 @@ class EvalPlugin {
       tick.textContent = evaluator === current ? "✓" : ""
       const name = document.createElement("span")
       name.textContent = evaluatorTitle(evaluator)
-      item.append(tick, name)
+      // The icon before the name, so the menu says it the way the mark does; the name is still there in words.
+      item.append(tick, iconElement(evaluator), name)
       if (tools && tools[evaluator].path === null) {
         // SAID PLAINLY, where the choice is made: this one is not on this machine — or, when a program was chosen
         // for it in Language Setup, that program is not there any more.
