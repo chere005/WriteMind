@@ -44,6 +44,7 @@ import { runKernel } from "./wolfram/kernel"
 import type { MediaDeps } from "./wolfram/media"
 import { writeWolframNotebook } from "./wolfram/notebookFile"
 import { copyForWolfram, validWolframCopy } from "./wolfram/clipboard"
+import { saveCopiedSvg, sweepCopiedSvgs } from "./wolfram/copiedFile"
 import { rememberWindow, windowPlacement } from "./windowMemory"
 import { installPerfProbe } from "./perfProbe"
 import { registerEval } from "./eval/ipc"
@@ -630,11 +631,16 @@ app.whenReady().then(async () => {
   // A Copy or Cut of held cells with a drawing cell among them (renderer: `cellsCopied`): the clipboard written again
   // for Mathematica, in the background. A failure is a line in the log, never a dialog.
   const wolframClipboard = capabilitiesFor(process.platform).wolframClipboard
+  // A Copy Cell's SVG file (a folder of its own under one root in the temp folder): the next one sweeps the earlier away,
+  // and the start of the app the ones a day old.
+  const copiedRoot = path.join(app.getPath("temp"), "WriteMind-copied")
+  void sweepCopiedSvgs(copiedRoot, Date.now())
   ipcMain.on("wolfram:copy", (_event, value: unknown) => {
     const copy = validWolframCopy(value)
     if (!copy) return
     void copyForWolfram(copy, {
-      ...wolframFiles, removeTemp, runKernel: kernel, kinds: wolframClipboard,
+      ...wolframFiles, removeTemp, runKernel: kernel, kinds: wolframClipboard, platform: process.platform,
+      saveSvg: (svg) => saveCopiedSvg(copiedRoot, svg),
       clipboard: { readText: () => clipboard.readText(), read: () => clipboard.read(), write: (items) => clipboard.write(items as ClipboardItem[]) },
       item: (entries) => new ClipboardItem(entries),
       sleep: (ms) => new Promise((resolve) => setTimeout(resolve, ms)),

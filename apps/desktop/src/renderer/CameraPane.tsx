@@ -79,6 +79,11 @@ interface Props {
    * at the note's input cursor, one Undo step. False when the note could not take it.
    */
   onDockCell?(capture: Capture): boolean
+  /**
+   * The tablet box's "Copy Cell": the same capture, put on the system clipboard as a drawing cell and left out of the note
+   * (App.tsx `copySheetCell`). Needs no note. False when it could not be copied.
+   */
+  onCopyCell?(capture: Capture): boolean
   onHide(): void
   /**
    * The source picked from the Input Devices menu (or the sidebar's video menu): a camera's id, the
@@ -125,7 +130,7 @@ const hex = (colour: string): string => (/^#[0-9a-f]{6}$/i.test(colour) ? colour
 export type CameraAction = "turn-left" | "turn-right" | "original-size" | "resize-by-square"
 
 export function CameraPane({
-  platform, penColour, penWidth = 2, pane, onCapture, onDockCell, onHide, preferred,
+  platform, penColour, penWidth = 2, pane, onCapture, onDockCell, onCopyCell, onHide, preferred,
   cameras = [], onPickSource, onRefreshCameras, onActiveCamera, showEditor = true, onToggleEditor, onReadText, note = null,
   fullWindow = false, onFullWindow,
 }: Props) {
@@ -536,6 +541,17 @@ export function CameraPane({
     edited((was) => was + 1)
   }, [sheetBox, sheets.current, boxOn, onDockCell, pane, penColour, penWidth])
 
+  /** COPY CELL: the boxed writing as a drawing cell on the clipboard, the note and the sheet as they were (the box stays). */
+  const boxToClipboard = useCallback(async () => {
+    const out = await takeFromSheet("cell", {
+      box: sheetBox, shown: surface.current?.size() ?? { width: 0, height: 0 }, pane,
+      penColour, penWidth, paper: currentPaper(),
+    })
+    if ("trouble" in out) { setTrouble(out.trouble); return }
+    if (!onCopyCell?.(out.capture)) { setTrouble("the drawing cell could not be copied"); return }
+    setTrouble(null)
+  }, [sheetBox, onCopyCell, pane, penColour, penWidth])
+
   // Pen ▸ Next / Previous Sheet (Ctrl+Alt+PageDown / PageUp): the hand without the pen changes sheet while the sheet shows.
   useEffect(() => {
     if (!tablet) return
@@ -661,6 +677,7 @@ export function CameraPane({
                            erase: eraseBox,
                            bring: () => takeTablet("ink"),
                            cell: boxToCell,
+                           copy: boxToClipboard,
                            // As the header's Bring in: off on a drawing cell's own tab; and with no note to bring into.
                            bringOff: binding.bound ? "This sheet is a drawing cell of the note already"
                              : note === null ? "Open a note to bring the writing into" : null,

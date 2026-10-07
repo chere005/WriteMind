@@ -22,11 +22,18 @@
  *   the PNG, and — when every held cell is a drawing — the plain text becomes the front end's linear syntax for the
  *   images, which it pastes as the images.
  *
+ * COPY CELL (Sean, 2026-10-06: the tablet box's "Copy Cell", `WolframCopy.cell`): the same, for ONE drawing that is not in any
+ * note, and the clipboard also carries it to every other app as a real SVG FILE (a temp file the app sweeps up later:
+ * `CopyDeps.saveSvg`) — the file reference and the markup — and never as a PNG, which would win over the file. That is
+ * written at once, on every platform, with or without an engine; the kernel only adds Mathematica's own type (or, off
+ * a Mac, the linear syntax in the plain text).
+ *
  * A failure is a line in the log and never a dialog: the copy the page made is still there.
  */
 
+import { pathToFileURL } from "node:url"
 import {
-  clipboardCells, clipboardKeeps, drawingText, INK_ID, wolframPlan, type KernelJob, type Slot, type WolframBand, type WolframMedia,
+  clipboardCells, clipboardKeeps, drawingText, INK_ID, svgClipboardFor, wolframPlan, type KernelJob, type Slot, type WolframBand, type WolframMedia,
 } from "@writemind/core"
 import type { KernelAnswers, KernelOptions } from "./kernel"
 import { inlineMedia, resolvePictures, stampsFor, type MediaDeps } from "./media"
@@ -38,7 +45,11 @@ const LANDED_WITHIN_MS = 1000
 const POLL_MS = 50
 
 /** What the page sent (renderer/wolframMedia.ts: the held cells' drawings only). */
-export interface WolframCopy { plain: string; markdown: string; media: WolframMedia; noteFile?: string | null }
+export interface WolframCopy {
+  plain: string; markdown: string; media: WolframMedia; noteFile?: string | null
+  /** A COPY CELL: the one drawing in `media` is also an SVG file for the other apps (and no PNG goes). */
+  cell?: boolean
+}
 
 /** The most markdown a copy may carry across, and the most svg (all its drawings together). */
 const MAX_MARKDOWN = 2 * 1024 * 1024
@@ -76,7 +87,9 @@ export function validWolframCopy(value: unknown): WolframCopy | null {
   }
   if (svg > MAX_SVG) return null
   const noteFile = typeof copy.noteFile === "string" ? copy.noteFile : null
-  return { plain: copy.plain, markdown: copy.markdown, media: { inks, bands, column: media.column }, noteFile }
+  // A copied cell is exactly one drawing, and nothing floating beside it.
+  if (copy.cell === true && (Object.keys(inks).length !== 1 || bands.length > 0)) return null
+  return { plain: copy.plain, markdown: copy.markdown, media: { inks, bands, column: media.column }, noteFile, ...(copy.cell === true ? { cell: true } : {}) }
 }
 
 /** An entry of the clipboard as `clipboard.read()` gives it. */
@@ -92,6 +105,10 @@ export interface CopyDeps extends MediaDeps {
   item(entries: Record<string, Blob>): unknown
   /** The raw clipboard types (capabilities' `wolframClipboard`). */
   kinds: { cell: string | null; png: string | null }
+  /** Where the platform is (Copy Cell: the raw type an SVG goes under, `svgClipboardType`). */
+  platform?: string
+  /** A COPY CELL's svg written to a file of its own (the previous one swept away); the file's path. */
+  saveSvg?(svg: string): Promise<string>
   runKernel(jobs: readonly KernelJob[], options: KernelOptions): Promise<KernelAnswers>
   sleep(ms: number): Promise<void>
   removeTemp(file: string): Promise<void>
@@ -139,18 +156,29 @@ export async function copyForWolfram(copy: WolframCopy, deps: CopyDeps): Promise
     const plan = wolframPlan(copy.markdown, media, pictures, "clipboard")
     const cellType = deps.kinds.cell ? raw(deps.kinds.cell) : null
     const pngType = deps.kinds.png ? raw(deps.kinds.png) : "image/png"
+    // A COPY CELL's file and markup for the other apps: beside everything this copy writes, both times.
+    const svg = copy.cell ? Object.values(media.inks)[0]?.svg : undefined
+    const file = svg !== undefined && deps.saveSvg ? await deps.saveSvg(svg) : null
+    const types = svgClipboardFor(deps.platform ?? process.platform)
+    const forOthers: Record<string, Blob> = svg === undefined ? {} : {
+      ...(file ? { [types.file ? raw(types.file) : "text/uri-list"]: text(`${pathToFileURL(file).href}${types.end}`) } : {}),
+      [raw(types.svg)]: text(svg),
+    }
 
-    // 3. Where the front end's own type is known: its cells now, each drawing the cell that makes it.
-    if (cellType) {
+    // 3. Where the front end's own type is known (or for a copied cell, which is for the other apps too): its cells now,
+    // each drawing the cell that makes it.
+    if (cellType || svg !== undefined) {
       const entries = await keptEntries(deps)
-      entries[cellType] = text(clipboardCells(plan, new Map()))
+      if (cellType) entries[cellType] = text(clipboardCells(plan, new Map()))
+      Object.assign(entries, forOthers)
       if (!(await still())) return
       await deps.clipboard.write([deps.item(entries)])
     }
     if (plan.jobs.length === 0) return
 
     // 4. The kernel, once. A newer copy takes this run back (the id is the same).
-    const single = plan.cells.length === 1 && plan.cells[0]!.drawing
+    // (A copied cell asks for none: the file is its picture for the other apps.)
+    const single = plan.cells.length === 1 && plan.cells[0]!.drawing && !copy.cell
     const ran = await deps.runKernel(plan.jobs, { id: "wolfram:copy", png: single, timeoutMs: COPY_TIMEOUT_MS, stamps: stampsFor(plan, stamps) })
     if (ran.state.kind !== "answered" && ran.state.kind !== "timedOut") {
       if (ran.state.kind !== "cancelled") deps.log?.(`WriteMind: the copy for Mathematica has no images (${ran.state.kind})`)
@@ -161,6 +189,7 @@ export async function copyForWolfram(copy: WolframCopy, deps: CopyDeps): Promise
     // 5. The same cells with the images in them, the PNG beside them, and elsewhere the linear syntax.
     const entries = await keptEntries(deps)
     if (cellType) entries[cellType] = text(clipboardCells(plan, ran.answers))
+    Object.assign(entries, forOthers)
     const slot = single ? plan.cells[0]!.pieces.find((piece): piece is Slot => typeof piece !== "string" && piece.as === "image") : undefined
     const png = slot ? ran.pngs.get(slot.job) : undefined
     if (png) entries[pngType] = new Blob([png as BlobPart], { type: "image/png" })

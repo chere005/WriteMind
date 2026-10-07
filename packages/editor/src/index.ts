@@ -21,7 +21,7 @@ export { notebookTheme } from "./theme"
 export { textConventions } from "./conventions"
 export { find, findField, setFind, findCount, findNextMatch, replaceMatch, replaceEvery } from "./find"
 export { hiddenMarkerDeletion } from "./markerDeletion"
-export { pasteHtmlAsText, htmlToPlain, takesPastedPicture } from "./paste"
+export { pasteHtmlAsText, htmlToPlain, takesPastedPicture, DRAWING_MIME, drawingPasted, pasteDrawing } from "./paste"
 export {
   folding, foldField, foldSection, setFolds, foldedKeys, hiddenNow, toggleFold, foldAll, unfoldAll,
   sectionAtCaret, revealAt, foldsHiding,

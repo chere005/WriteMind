@@ -12,7 +12,7 @@ import { history, historyKeymap, defaultKeymap, standardKeymap } from "@codemirr
 import { keymap } from "@codemirror/view"
 import {
   cellBrackets, folding, foldField, foldedKeys, linkClicks, linkTrigger, mathRendering, notebookDecorations, notebookKeys,
-  notebookState, notebookTheme, textConventions, pasteHtmlAsText, hiddenMarkerDeletion, find, preview, rendered, renderedField, markersField, seamExtensions, openCellAt,
+  notebookState, notebookTheme, textConventions, pasteHtmlAsText, drawingPasted, pasteDrawing, hiddenMarkerDeletion, find, preview, rendered, renderedField, markersField, seamExtensions, openCellAt,
   setFolds, setPreview, setRendered, setMarkers, listStyleSource, revealAt,
 } from "@writemind/editor"
 import { ALL_KINDS, KIND_GROUPS, kindName, openCell, type CellKind, type ListStyle, type Seam } from "@writemind/core"
@@ -64,10 +64,12 @@ interface Props {
   onInsertInkCell?(offset: number): void
   /** Held cells were copied or cut (before the cut takes them out): the app copies their drawing cells for Mathematica. */
   onCellsCopied?(copy: { markdown: string; plain: string }): void
+  /** A paste of a drawing cell copied from the tablet box (Copy Cell; packages/editor paste.ts): true when it is one, and landed. */
+  onDrawingPasted?(data: DataTransfer): boolean
 }
 
 export function Notebook({ file, text, version, restore, rendered: showRendered, markers: showMarkers, listStyle, onChange, onReady,
-  onViewState, onLink, onFollow, inkPainter, onInsertInkCell, onCellsCopied }: Props) {
+  onViewState, onLink, onFollow, inkPainter, onInsertInkCell, onCellsCopied, onDrawingPasted }: Props) {
   const host = useRef<HTMLDivElement | null>(null)
   const view = useRef<EditorView | null>(null)
   const latest = useRef(onChange)
@@ -92,6 +94,8 @@ export function Notebook({ file, text, version, restore, rendered: showRendered,
   insertInkRef.current = onInsertInkCell
   const copiedRef = useRef(onCellsCopied)
   copiedRef.current = onCellsCopied
+  const pastedRef = useRef(onDrawingPasted)
+  pastedRef.current = onDrawingPasted
   // ONE painter object for the editor's whole life (the facet never changes); it asks whatever the app gives now.
   const painter = useRef<InkCellPainter>({
     aspect: (id) => painterRef.current?.aspect(id) ?? null,
@@ -148,6 +152,8 @@ export function Notebook({ file, text, version, restore, rendered: showRendered,
       pictureCells,
       inkCellPainter.of(painter),
       cellsCopied.of((copy) => copiedRef.current?.(copy)),
+      drawingPasted.of((data) => pastedRef.current?.(data) ?? false),
+      pasteDrawing,
       notebookKeys,
       textConventions,
       pasteHtmlAsText,

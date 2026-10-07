@@ -5,7 +5,7 @@ import type { EditorView } from "@codemirror/view"
 import { describe, expect, it } from "vitest"
 import { CELLS_MIME, cellClipboardHandlers, cellsCopied } from "../src/keys"
 import { notebookField } from "../src/notebook"
-import { takesPastedPicture } from "../src/paste"
+import { DRAWING_MIME, drawingPasted, takeDrawing, takesPastedPicture } from "../src/paste"
 import { holdingField } from "../src/preview/hold"
 
 type Told = { markdown: string; plain: string; doc: string }
@@ -69,9 +69,46 @@ describe("cellsCopied", () => {
   })
 })
 
+describe("a pasted drawing cell (Copy Cell, the tablet box's button)", () => {
+  const pasteOf = (data: Record<string, string>) => {
+    const event = { prevented: false, clipboardData: { getData: (type: string) => data[type] ?? "" }, preventDefault() { event.prevented = true } }
+    return event as unknown as ClipboardEvent & { prevented: boolean }
+  }
+  /** A view whose app claims a paste carrying DRAWING_MIME (as the app does), and lands it (`landed`) unless it will not. */
+  const viewTold = (landed: DataTransfer[], claim = (data: DataTransfer) => data.getData(DRAWING_MIME) !== ""): EditorView =>
+    ({ state: EditorState.create({ doc: "", extensions: [drawingPasted.of((data) => { if (!claim(data)) return false; landed.push(data); return true })] }) }) as unknown as EditorView
+
+  it("hands the paste to the app and keeps the editor from pasting the words beside it", () => {
+    const landed: DataTransfer[] = []
+    const event = pasteOf({ "text/plain": "<svg/>", [DRAWING_MIME]: `{"a":1}` })
+    expect(takeDrawing(event, viewTold(landed))).toBe(true)
+    expect(landed).toHaveLength(1)
+    expect(landed[0]!.getData(DRAWING_MIME)).toBe(`{"a":1}`)
+    expect(event.prevented).toBe(true)
+  })
+
+  it("is the editor's own paste when the app does not claim it, and nothing is landed", () => {
+    const landed: DataTransfer[] = []
+    const event = pasteOf({ "text/plain": "words", [CELLS_MIME]: "# cells" })
+    expect(takeDrawing(event, viewTold(landed))).toBe(false)
+    expect(landed).toEqual([])
+    expect(event.prevented).toBe(false)
+  })
+
+  it("is the editor's own paste when no app is listening, or there is no clipboard data", () => {
+    const bare = { state: EditorState.create({ doc: "" }) } as unknown as EditorView
+    expect(takeDrawing(pasteOf({ [DRAWING_MIME]: "{}" }), bare)).toBe(false)
+    const event = { clipboardData: null, preventDefault() { throw new Error("no") } } as unknown as ClipboardEvent
+    expect(takeDrawing(event, viewTold([]))).toBe(false)
+  })
+})
+
 describe("takesPastedPicture", () => {
   it("takes a picture nothing else took", () => {
     expect(takesPastedPicture(["Files", "image/png"])).toBe(true)
+  })
+  it("never takes one beside a copied drawing cell (its SVG file may arrive as a picture too)", () => {
+    expect(takesPastedPicture(["text/plain", DRAWING_MIME, "Files", "image/svg+xml"])).toBe(false)
   })
   it("never takes one beside WriteMind's own cells", () => {
     expect(takesPastedPicture(["text/plain", CELLS_MIME, "image/png"])).toBe(false)

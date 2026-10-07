@@ -192,6 +192,10 @@ cannot be tried where the Engine app is all there is. **What to try on a machine
    null and Windows uses the linear syntax in the plain text. On Windows, copy an image cell in Mathematica and run
    `Add-Type -A System.Windows.Forms; [Windows.Forms.Clipboard]::GetDataObject().GetFormats()`; the name goes in
    `packages/core/src/export/wolfram/clipboard.ts`. The same goes for Mathematica before 12 (untried).
+5b. **Copy Cell's file on Windows and Linux** is written as `text/uri-list` (the file) and the registered `image/svg+xml` format (the
+   markup) through Electron's clipboard, as on a Mac it is `public.file-url` and `public.svg-image`; the Mac's pasteboard was read back
+   (`e2e/suites/tablet/04`), the others were not. On Windows, copy a cell with the box's Copy Cell and paste into Explorer (it should
+   make `Drawing.svg`), Outlook and Figma. If Explorer does not take it, write CF_HDROP with koffi in `main/wolfram/clipboard.ts`.
 6. Paste a copied drawing into Pages or Word (the picture at its on-screen size), and into a plain-text editor (the markdown line
    on a Mac, the linear syntax on Windows).
 

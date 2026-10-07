@@ -8,15 +8,16 @@
 
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react"
 import { EditorView } from "@codemirror/view"
-import { columnBox, cursorSeam, findNextMatch, revealAt, takesPastedPicture, type InkCellPainter } from "@writemind/editor"
+import { columnBox, cursorSeam, DRAWING_MIME, findNextMatch, revealAt, takesPastedPicture, type InkCellPainter } from "@writemind/editor"
 import {
-  anchorOffset, bounds as itemBounds, capturePlacedCentre, decodeDrawing, emptyDrawing, insertBlock, insertionPointBelow,
+  anchorOffset, bounds as itemBounds, capturePlacedCentre, columnWidth, decodeDrawing, emptyDrawing, insertBlock, insertionPointBelow,
   languageTitle, listTitle, makeNote, newID, noTransform, parseCameraAspect, parseLink, placedCentre, PRESET_COLOURS, readDrawing,
   resolveLinkTarget, shifted, textFingerprint, writeDrawing, inkCellOf, inkFileName, inkIdsIn, visibleItems, withInkCell,
-  type CanvasItem, type CodeLanguage, type Drawing, type Evaluator, type ListStyle, type Note, type Placement,
+  type CanvasItem, type CodeLanguage, type Drawing, type Evaluator, type ListStyle, type Note, type Placement, type Rect,
 } from "@writemind/core"
 import { Canvas, clipboardDrawing, type CanvasMode } from "./Canvas"
 import { depthOf, dockNewInk, insertInkCell } from "./dock"
+import { cellOfCopied, copiedCellForShell, copiedCellOf, encodeCopiedCell, readCopiedCell, rememberCopiedCell } from "./copiedCell"
 import { scopePenTo } from "./inkScope"
 import { withSnapshots, wolframMedia } from "./wolframMedia"
 import { dockHostFor, inkPainter, shownWidth, snapshotNow, snapshotsAfterSave, snapshotsOnOpen, syncInkCells } from "./inkCells"
@@ -797,6 +798,9 @@ export function App() {
       // A paste carrying WriteMind's own cells is the cells and nothing else (a drawing cell copied for Mathematica has
       // a PNG beside them, which would otherwise land as a floating picture too).
       if (!takesPastedPicture([...(event.clipboardData?.types ?? [])])) return
+      // (nor WriteMind's own copied drawing cell, which a system that shows a pasted file as only that file gives as its
+      // SVG file: `pasteSheetCell` lands it)
+      if (event.clipboardData && copiedCellOf(event.clipboardData) !== null) return
       const file = [...(event.clipboardData?.items ?? [])]
         .find((item) => item.kind === "file" && item.type.startsWith("image/"))
         ?.getAsFile()
@@ -941,21 +945,72 @@ export function App() {
   // The tablet box's "Bring in as Drawing Cell" (BoxActions.tsx): the boxed writing, landed in the pane as Bring in
   // Writing lands it, docked as a NEW drawing cell at the input cursor (the armed bar, else after the caret's cell),
   // its snapshot written at once. One Undo step in the note.
-  const dockSheetCell = useCallback((capture: Capture): boolean => {
+  const dockCapturedInk = useCallback((strokes: CanvasItem[], pane: PaneSize, frame?: Rect): boolean => {
     const editor = viewRef.current
     const file = openRef.current
-    if (!editor || !file || !dockHost || !capture.strokes || capture.strokes.length === 0) return false
+    if (!editor || !file || !dockHost || strokes.length === 0) return false
     const column = columnBox(editor)
     const left = editor.scrollDOM.getBoundingClientRect().left
     const id = dockNewInk({
       history, drawing: () => drawingRef.current, apply: changeDrawing, words: dockHost.words, depth,
       ahead: dockHost.ahead,
-    }, capture.strokes, currentPane(editor, lastPane), { left: column.left - left, width: column.width }, cursorSeam(editor.state),
-      capture.frame)
+    }, strokes, pane, { left: column.left - left, width: column.width }, cursorSeam(editor.state), frame)
     const cell = id ? inkCellOf(drawingRef.current, id) : null
     if (cell) snapshotNow(file, cell, column.width)
     return id !== null
   }, [changeDrawing, depth, dockHost, history])
+  const dockSheetCell = useCallback((capture: Capture): boolean => {
+    const editor = viewRef.current
+    if (!editor || !capture.strokes || capture.strokes.length === 0) return false
+    return dockCapturedInk(capture.strokes, currentPane(editor, lastPane), capture.frame)
+  }, [dockCapturedInk])
+  // The tablet box's "Copy Cell" (BoxActions.tsx): the same capture as Bring in as Drawing Cell, put on the clipboard as a
+  // drawing cell and left out of the note. The page's own copy event writes WriteMind's words and its custom type (the
+  // strokes, the box and the pane: `DRAWING_MIME`, which a paste in a note takes as a NEW drawing cell); the shell then
+  // adds the rest (main/wolfram/clipboard.ts `cell`: the SVG file for the other apps and Mathematica's own type). Needs no
+  // note: the cell's width is the column's, else the pane's. False when the page could not copy.
+  const copySheetCell = useCallback((capture: Capture): boolean => {
+    if (!window.wm.wolframCopy || !capture.strokes || capture.strokes.length === 0) return false
+    const editor = viewRef.current
+    const pane = currentPane(editor, lastPane)
+    const width = editor ? columnBox(editor).width : columnWidth(pane)
+    const cell = cellOfCopied({ strokes: capture.strokes, frame: capture.frame ?? null, pane }, width)
+    if (!cell) return false
+    const shell = copiedCellForShell(cell, width, depth, openRef.current)
+    const json = encodeCopiedCell({ strokes: capture.strokes, frame: capture.frame ?? null, pane })
+    let wrote = false
+    const onCopy = (event: ClipboardEvent) => {
+      if (!event.clipboardData) return
+      event.clipboardData.setData("text/plain", shell.plain)
+      event.clipboardData.setData(DRAWING_MIME, json)
+      event.preventDefault()
+      wrote = true
+    }
+    document.addEventListener("copy", onCopy, true)
+    try { document.execCommand("copy") } catch { /* no copy */ } finally { document.removeEventListener("copy", onCopy, true) }
+    if (!wrote) return false
+    rememberCopiedCell(json, shell.plain)
+    window.wm.wolframCopy(shell)
+    return true
+  }, [depth])
+  // A PASTE carrying a drawing cell copied from the tablet box: a NEW drawing cell at the caret or the armed bar, exactly as
+  // Bring in as Drawing Cell lands it (one Undo step). The editor takes it when it has the focus (packages/editor
+  // `pasteDrawing`); this window listener when it does not. The paste is never also a picture (`takesPastedPicture`).
+  const pasteSheetCell = useCallback((data: DataTransfer): boolean => {
+    const json = copiedCellOf(data)
+    if (json === null) return false
+    const copied = readCopiedCell(json)
+    if (copied) dockCapturedInk(copied.strokes, copied.pane, copied.frame ?? undefined)
+    return true
+  }, [dockCapturedInk])
+  useEffect(() => {
+    const paste = (event: ClipboardEvent) => {
+      if (!event.clipboardData || event.defaultPrevented) return
+      if (pasteSheetCell(event.clipboardData)) event.preventDefault()
+    }
+    window.addEventListener("paste", paste)
+    return () => window.removeEventListener("paste", paste)
+  }, [pasteSheetCell])
   // "None of the project's folders is there" is taken back when one is (a drive plugged in, a share back).
   useEffect(() => {
     if (problemText.current === NO_FOLDER_TEXT && project?.folders.some((one) => one.exists)) clearProblem()
@@ -1468,7 +1523,7 @@ export function App() {
                         onChange={change} onReady={setView}
                         onViewState={onViewState} onLink={onLink} onFollow={onFollow}
                         inkPainter={painter.current} onInsertInkCell={(offset) => insertInk(offset)}
-                        onCellsCopied={onCellsCopied} />
+                        onCellsCopied={onCellsCopied} onDrawingPasted={pasteSheetCell} />
               <Canvas key={current ?? ""} drawing={drawing} onChange={changeDrawing} mode={mode} history={history}
                       colorHex={penColour} penWidth={penWidth}
                       placing={placing} onPlaced={placed}
@@ -1524,6 +1579,7 @@ export function App() {
           pane={currentPane(view, lastPane)}
           onCapture={(capture) => { void addCapture(capture) }}
           onDockCell={dockSheetCell}
+          onCopyCell={copySheetCell}
           // The Mac's toggleCameraPane: the notes come back and full-window is left behind with the video.
           onHide={toggleCameraPane}
           preferred={cameraPick}

@@ -78,6 +78,8 @@ declare global {
       /** Held cells with a drawing cell among them were copied (main/wolfram/clipboard.ts); absent in an old preload. */
       wolframCopy?(copy: {
         plain: string; markdown: string; media: import("@writemind/core").WolframMedia; noteFile: string | null
+        /** Copy Cell: the one drawing is also an SVG file for the other apps (and no PNG). */
+        cell?: boolean
       }): void
       duplicateNote(file: string): Promise<string>
       setMenuState(state: import("../shared/commands").MenuState): Promise<void>

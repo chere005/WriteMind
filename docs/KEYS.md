@@ -316,6 +316,10 @@ source under the menu; Ctrl/Cmd-click is the drawing layer's, as on words.
   use the box row's Erase, or the Erase Tool toggle below. Nothing done in the
   notebook turns them off, and they never light the toolbar's ⌫ / ⬚. Select
   makes the pen pull the dashed box, as the mouse does.
+- **The box's row** (under the dashed box; the pen's tap clicks it): **Erase** | **Bring in Writing** | **Bring in as Drawing Cell** |
+  **Copy Cell** ("Copy" when the row is wider than the sheet). Copy Cell puts the boxed writing on the system clipboard as a drawing
+  cell and leaves the note alone: Ctrl+V in a note lands it as a new drawing cell at the caret (or the armed bar), in Mathematica it
+  pastes as the image, in every other app as an SVG file.
 - **Erase Tool / Select Tool** by the pen (a double tap set to "Erase tool
   on/off" / "Select tool on/off", or the ExpressKey Ctrl+Alt+2 / Ctrl+Alt+3, or
   the Pen menu) toggle the tools of the surface the pen is over, or was last

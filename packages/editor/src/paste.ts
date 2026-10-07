@@ -8,18 +8,49 @@
  * text), and an armed bar's paste is the seams'.
  */
 
-import type { Extension } from "@codemirror/state"
+import { Facet, Prec, type Extension } from "@codemirror/state"
 import { EditorView } from "@codemirror/view"
 import { CELLS_MIME } from "./keys"
 
 /**
+ * COPY CELL (the tablet box's button): a drawing that is in no note, as the JSON of its strokes and the box round them. A paste
+ * carrying it lands as a NEW drawing cell at the caret or the armed bar (the app's `drawingPasted`), never as text or a picture.
+ */
+export const DRAWING_MIME = "application/x-writemind-drawing"
+
+/**
+ * Asked of every paste: is this WriteMind's own copied drawing cell (the app knows it by `DRAWING_MIME`, or, where the system
+ * shows a paste carrying a file as only that file, by the file it wrote)? When it is, the app lands it and says true; false: an
+ * ordinary paste. The first one given; none: never.
+ */
+export const drawingPasted = Facet.define<((data: DataTransfer) => boolean) | null, ((data: DataTransfer) => boolean) | null>({
+  combine: (values) => values.find((value) => value !== null) ?? null,
+})
+
+/**
+ * A paste with a copied drawing cell on the clipboard is that cell and nothing else: before the bar's paste (which would
+ * write the SVG words the copy also carries) and the editor's own. The words and the file beside it are for other apps.
+ */
+export const pasteDrawing: Extension = Prec.highest(EditorView.domEventHandlers({ paste: (event, view) => takeDrawing(event, view) }))
+
+/** (The handler alone: for the tests.) */
+export function takeDrawing(event: ClipboardEvent, view: EditorView): boolean {
+  const data = event.clipboardData
+  const take = view.state.facet(drawingPasted)
+  if (!data || !take || !take(data)) return false
+  event.preventDefault()
+  return true
+}
+
+/**
  * Whether a paste is the app's picture to place on the drawing layer: never when WriteMind's own cells are on the
  * clipboard — a drawing cell copied for Mathematica carries a PNG beside its cells, and pasting it back here is the
- * cells and nothing else. (Not "unless something before it took the paste": the listener is on the window, after
- * CodeMirror's own paste handler, which prevents the default of EVERY paste that reaches the focused editor, an
- * image-only one too, so `defaultPrevented` says nothing about whether the notebook took it.)
+ * cells and nothing else (nor a copied drawing cell, `DRAWING_MIME`: its SVG file may come as a picture too). (Not
+ * "unless something before it took the paste": the listener is on the window, after CodeMirror's own paste handler,
+ * which prevents the default of EVERY paste that reaches the focused editor, an image-only one too, so
+ * `defaultPrevented` says nothing about whether the notebook took it.)
  */
-export const takesPastedPicture = (types: readonly string[]): boolean => !types.includes(CELLS_MIME)
+export const takesPastedPicture = (types: readonly string[]): boolean => !types.includes(CELLS_MIME) && !types.includes(DRAWING_MIME)
 
 const BLOCKS = new Set([
   "ADDRESS", "ARTICLE", "ASIDE", "BLOCKQUOTE", "DIV", "DL", "DT", "DD", "FIELDSET", "FIGURE", "FOOTER", "FORM",
