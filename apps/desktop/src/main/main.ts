@@ -19,7 +19,7 @@ import path from "node:path"
 import { fileURLToPath, pathToFileURL } from "node:url"
 import { capabilitiesFor, mediaFiles } from "@writemind/core"
 import {
-  createNote, createSection, duplicateNote, existing, findMedia, isProjectFolder, mediaPath, moveSection, noteInfo,
+  adoptNoteFile, createNote, createSection, duplicateNote, existing, findMedia, peekNoteFile, isProjectFolder, mediaPath, moveSection, noteInfo,
   placeNote, projectTree, readDrawing, readNote, renameNote, renameSection, reorder, saveInkSnapshot, saveMedia,
   fileChanged, forgetTrust, setExcluded, setProjectFolders, setWatched, sweepMediaCache, wroteRecently, writeDrawing, writeNote,
 } from "./notes"
@@ -536,6 +536,8 @@ app.whenReady().then(async () => {
   ipcMain.handle("notes:tree", () => projectTree(project.folders, notesRoot(), project.name))
   ipcMain.handle("note:duplicate", (_event, file: string) => duplicateNote(notesRoot(), file))
   ipcMain.handle("note:read", (_event, file: string) => readNote(file))
+  ipcMain.handle("note:peek", (_event, file: string) => peekNoteFile(String(file)))
+  ipcMain.handle("note:adopt", (_event, file: string, token: string) => adoptNoteFile(String(file), String(token)))
   // Whether a note may be written (a note of a newer format is read-only: SPEC-WM 1.8).
   ipcMain.handle("note:info", (_event, file: string) => noteInfo(file))
   ipcMain.handle("note:write", (_event, file: string, text: string) => writeNote(file, text))

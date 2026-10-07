@@ -262,6 +262,8 @@ export function App() {
   const openRef = useRef<string | null>(null)
   openRef.current = current
 
+  /** The tree and the open note read again (the folder watcher said something moved; a save that was refused asks it too). */
+  const reloadOpenRef = useRef<() => Promise<void>>(async () => undefined)
   useEffect(() => {
     // The notes list does not wait for the reader's probe (a PowerShell that is slow to start would hold the
     // whole sidebar for up to 20 s): what the machine can do arrives when it arrives.
@@ -271,27 +273,37 @@ export function App() {
     // something moved, and the open note is read again unless there is an
     // edit in hand that has not reached disk yet — that one is ours, and
     // the save will answer for it. (Asked again after each read: diskReload.ts.)
-    return window.wm.onNotesChanged(() => {
-      void (async () => {
-        await reload()
-        await reloadFromDisk({
-          open: () => openRef.current,
-          text: () => textRef.current,
-          wordsDirty: () => dirty.current,
-          drawingDirty: () => drawingDirty.current,
-          readNote: (file) => window.wm.readNote(file).catch(() => null),
-          readDrawing: (file) => window.wm.readDrawing(file).catch(() => null),
-          setDocument,
-          setDrawing: (sidecar) => {
-            // (A file caught half written, or one that is not a sidecar, is not the drawing: the one in hand stays.)
-            const read = decodeDrawing(sidecar)
-            if (read.damaged) return
-            const next = read.drawing
-            setDrawing((was) => (writeDrawing(was) === writeDrawing(next) ? was : next))
-          },
-        })
-      })()
-    })
+    reloadOpenRef.current = async () => {
+      await reload()
+      // The file is LOOKED at (one read of it, words and drawing together) and taken as the app's own only once it is on the page.
+      let peeked: { file: string; drawing: string | null; token: string } | null = null
+      await reloadFromDisk({
+        open: () => openRef.current,
+        text: () => textRef.current,
+        wordsDirty: () => dirty.current,
+        drawingDirty: () => drawingDirty.current,
+        readNote: async (file) => {
+          peeked = null
+          const got = await window.wm.peekNote(file).catch(() => null)
+          if (!got) return null
+          peeked = { file, drawing: got.drawing, token: got.token }
+          return got.text
+        },
+        readDrawing: async (file) => (peeked !== null && peeked.file === file ? peeked.drawing : null),
+        adopt: async (file) => {
+          if (peeked !== null && peeked.file === file) await window.wm.adoptNote(file, peeked.token).catch(() => false)
+        },
+        setDocument,
+        setDrawing: (sidecar) => {
+          // (A file caught half written, or one that is not a sidecar, is not the drawing: the one in hand stays.)
+          const read = decodeDrawing(sidecar)
+          if (read.damaged) return
+          const next = read.drawing
+          setDrawing((was) => (writeDrawing(was) === writeDrawing(next) ? was : next))
+        },
+      })
+    }
+    return window.wm.onNotesChanged(() => { void reloadOpenRef.current() })
   }, [reload, setDocument])
 
   // The text that is not in its file yet is carried by the session (hot exit): see useSession. `baseText` is the
@@ -365,6 +377,8 @@ export function App() {
     if (copy) {
       if (openRef.current === file && textRef.current === text) dirty.current = false
       say(`Could not save ${leaf(file)}: ${why}. Your text is kept in Recovered\\${leaf(copy)}`, copy, key)
+      // The text is safe in Recovered: the newer file can come in now (nothing is in hand for it to replace).
+      if (outcome === "refused" && !leaving) window.setTimeout(() => { void reloadOpenRef.current() }, 0)
     } else if (leaving) {
       say(`Could not save ${leaf(file)}: ${why}. The text could not be kept either.`, null, key)
     } else {
@@ -1601,7 +1615,7 @@ export function App() {
                         onCellsCopied={onCellsCopied} onDrawingPasted={pasteSheetCell} />
               {/* The page drawing layer belongs to the rendered notebook: unmount it in source mode so its marks
                   are hidden and none of its pointer or keyboard handlers can take input from the Markdown editor. */}
-              {rendered && <Canvas key={current ?? ""} drawing={drawing} onChange={changeDrawing} mode={mode} history={history}
+              {rendered && <Canvas key={current ?? ""} note={current} drawing={drawing} onChange={changeDrawing} mode={mode} history={history}
                                    colorHex={penColour} penWidth={penWidth}
                                    placing={placing} onPlaced={placed}
                                    scroller={view ? view.scrollDOM : null}

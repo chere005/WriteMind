@@ -52,6 +52,8 @@ const api = {
   capabilities: () => ipcRenderer.invoke("app:capabilities"),
   tree: () => ipcRenderer.invoke("notes:tree"),
   readNote: (file: string) => ipcRenderer.invoke("note:read", file),
+  peekNote: (file: string) => ipcRenderer.invoke("note:peek", file),
+  adoptNote: (file: string, token: string) => ipcRenderer.invoke("note:adopt", file, token),
   /** Whether the note may be written: false for a note of a newer format, which is open read-only (SPEC-WM 1.8). */
   noteInfo: (file: string) => ipcRenderer.invoke("note:info", file),
   writeNote: (file: string, text: string) => ipcRenderer.invoke("note:write", file, text),

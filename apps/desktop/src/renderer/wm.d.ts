@@ -28,6 +28,9 @@ declare global {
       capabilities(): Promise<Platform>
       tree(): Promise<Section>
       readNote(file: string): Promise<string>
+      /** The file's words and drawing as they are now, WITHOUT the app taking that state as its own (the watcher's look); `adoptNote` takes it. */
+      peekNote(file: string): Promise<{ text: string; drawing: string | null; token: string }>
+      adoptNote(file: string, token: string): Promise<boolean>
       noteInfo(file: string): Promise<{ readOnly: boolean; version: number; newer: boolean }>
       writeNote(file: string, text: string): Promise<{ written: boolean; onDisk: string | null }>
       createNote(folder: string): Promise<string>

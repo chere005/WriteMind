@@ -68,6 +68,8 @@ interface Props {
    * what the other one cannot do.
    */
   onReadPicture?(file: string, id: string): void
+  /** The note this layer is the drawing of: a picture made here (a crop) is an entry of THIS note, not of whichever is in front. */
+  note?: string | null
   /** The app's undo for the drawing: shared, so a paste or a capture can be taken back too. */
   history: DrawingHistory
   /** The editor's side of docking (inkCells.ts `dockHostFor`): no dock handle without it. */
@@ -235,8 +237,9 @@ function picture(file: string, onLoad: () => void): HTMLImageElement | null {
 // What is copied is held here (the copies are whole items, with their own ids
 // already) and a line of text with a token in it goes on the system clipboard.
 // A paste that finds ITS token on the clipboard puts the objects back; any
-// other paste is the notebook's. Pictures are files in one media folder shared
-// by every note, so they come across by name.
+// other paste is the notebook's. A picture is an entry of the archive of the note that holds it, and it
+// comes across BY NAME: the note it is pasted into gets its own copy of the entry when it is saved
+// (main/wmStore.ts `withNamedMedia`), from whichever note the app has read that holds it.
 
 /** `from` is the surface the objects were copied on (an ink cell's id, or null for the page): they paste back onto it. */
 interface ObjectClip { token: string; items: CanvasItem[]; pastes: number; from: string | null }
@@ -279,7 +282,7 @@ let typingInCell: string | null = null
 
 export function Canvas({
   drawing, onChange, mode, colorHex, penWidth, placing, onPlaced, scroller, onSelectionChanged,
-  onReadPicture, history, dock,
+  onReadPicture, history, dock, note,
 }: Props) {
   const host = useRef<HTMLDivElement | null>(null)
   const canvas = useRef<HTMLCanvasElement | null>(null)
@@ -2291,7 +2294,7 @@ export function Canvas({
     const blob = await new Promise<Blob | null>((resolve) =>
       cut.toBlob(resolve, png ? "image/png" : "image/jpeg", 0.92))
     if (!blob) return
-    const saved = await window.wm.saveMedia(new Uint8Array(await blob.arrayBuffer()), png ? ".png" : ".jpg")
+    const saved = await window.wm.saveMedia(new Uint8Array(await blob.arrayBuffer()), png ? ".png" : ".jpg", note ?? null)
     const held = latest.current.drawing
     const now = latest.current.size
     // The kept part's proportions on the page: the picture's own, cut down.

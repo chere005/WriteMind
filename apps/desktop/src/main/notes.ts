@@ -30,8 +30,8 @@ import { dirtyFiles, fold, keyOf, remember, wroteRecently } from "./echo"
 import { safeName } from "./fileNames"
 import { isForeignPath } from "./project"
 import {
-  copyOf, createFile, frontNote, held, loadNote, mediaBytes, movedNote, newNoteFile, noteState,
-  readDrawingText, readText, writeDrawingText, writeMedia, writeSnapshot, writeText, type NoteState,
+  adoptNote, copyOf, createFile, freshNote, frontNote, mediaBytes, movedNote, newNoteFile, noteState, peekNote,
+  readDrawingText, readText, writeDrawingText, writeMedia, writeSnapshot, writeText, type NoteState, type Peek,
 } from "./wmStore"
 import { readEntryHead } from "./zipHead"
 
@@ -311,7 +311,8 @@ export async function duplicateNote(root: string, file: string): Promise<string>
   const folder = path.dirname(file)
   const extension = path.extname(file) || ".wm"
   const base = path.basename(file, extension)
-  const wm = copyOf(held(file) ?? await loadNote(file))
+  // (From the file as it is now, never from what the app happens to hold: an external replace would be copied stale.)
+  const wm = copyOf(await freshNote(file))
   let copy = ""
   for (let attempt = 0; attempt < 50; attempt++) {
     copy = await uniquePath(folder, `${base} copy`, extension)
@@ -335,6 +336,12 @@ export async function duplicateNote(root: string, file: string): Promise<string>
 
 /** The note's text, read afresh from its file (and now the one in front). */
 export const readNote = (file: string): Promise<string> => readText(file)
+
+/** The note's words and drawing as the file has them NOW, without the app taking that state as its own (the watcher's look). */
+export const peekNoteFile = (file: string): Promise<Peek> => peekNote(file)
+
+/** The page applied what `peekNoteFile` returned: the app owns that state of the file now (only if it is still the file's). */
+export const adoptNoteFile = (file: string, token: string): Promise<boolean> => adoptNote(file, token)
 
 /** Whether the app may write this note: false for a file of a newer format (it is open read-only). */
 export const noteInfo = (file: string): Promise<NoteState> => noteState(file)

@@ -22,9 +22,9 @@ import { createHash } from "node:crypto"
 import { promises as fs } from "node:fs"
 import path from "node:path"
 import {
-  WM_SNAPSHOTS, WM_MEDIA, WM_TEXT, WmError, drawingOfFile, entriesToWrite, entryNameOf,
-  inkFileName, isInkId, keepUnknown, mayWrite, newWmFile, openWm, textOfFile, withDrawing, withEntry, withText,
-  utf8, type AppStamp, type WmFile,
+  WM_SNAPSHOTS, WM_MEDIA, WM_MANIFEST, WM_MIMETYPE, WM_TEXT, WmError, decodeDrawing, drawingMediaFiles, drawingOfFile, entriesToWrite,
+  entryNameOf, foldedName, inkFileName, isInkId, keepUnknown, mayWrite, mediaFiles, newWmFile, openWm, textOfFile, withDrawing,
+  withEntry, withText, writeNamesError, utf8, type AppStamp, type WmFile,
 } from "@writemind/core"
 import { codeOf, createNow, inTurn, partialOf, writeNow } from "./atomic"
 import { keyOf, remember } from "./echo"
@@ -59,7 +59,12 @@ function remembered(key: string, wm: WmFile | null): void {
   while (loaded.size > KEEP) loaded.delete(loaded.keys().next().value as string)
 }
 
-/** The note whose container is in front: where a picture goes when the page does not say. */
+/**
+ * The note whose container is in front: where a picture goes when the page does not say. Only OPENING a note makes it the
+ * one in front (`readDrawingText`, which the page asks for when it opens one): a read of another note (a tablet sheet
+ * checking its bound note every few seconds, a link's target) is no opening, and a crop or a paste made in note A
+ * once landed in the note a sheet was bound to.
+ */
 let front: string | null = null
 export const frontNote = (): string | null => front
 export function setFront(file: string | null): void { front = file }
@@ -83,7 +88,14 @@ export function forgetNote(file: string): void {
   if (at >= 0) recent.splice(at, 1)
 }
 
-/** A note renamed or moved keeps what the app knows of it: the bytes did not change, so the digest is still true. */
+/** What the digest of a name a note was moved away from is: no file's, so nothing is ever written there (a tombstone). */
+const MOVED_AWAY = "moved-away"
+
+/**
+ * A note renamed or moved keeps what the app knows of it: the bytes did not change, so the digest is still true. The
+ * name it left is a TOMBSTONE: a save the page still has in flight for the old name is refused as "gone", not written as
+ * a new, half-empty note there. (Cleared by `createFile`, or by reading a file that is there.)
+ */
 export function movedNote(from: string, to: string): void {
   const a = keyOf(from)
   const b = keyOf(to)
@@ -91,7 +103,8 @@ export function movedNote(from: string, to: string): void {
   const wm = loaded.get(a)
   const time = fileTimes.get(a)
   forgetNote(from)
-  if (digest !== undefined) digests.set(b, digest)
+  digests.set(a, MOVED_AWAY)
+  if (digest !== undefined && digest !== MOVED_AWAY) digests.set(b, digest)
   if (wm !== undefined) remembered(b, wm)
   if (time !== undefined) fileTimes.set(b, time)
   recent.unshift(to)
@@ -130,7 +143,8 @@ export function loadNote(file: string): Promise<WmFile> {
     const key = keyOf(file)
     const there = await disk(file)
     if (there === null) {
-      forgetNote(file)
+      // (What is known stays: a note that WAS there and is gone is a tombstone, and a write to it is refused as "gone"
+      // instead of making a new note at the old name out of whatever the page still holds. `createFile` clears it.)
       throw Object.assign(new Error(`ENOENT: no such file or directory, open '${file}'`), { code: "ENOENT" })
     }
     let wm: WmFile
@@ -153,14 +167,63 @@ export function held(file: string): WmFile | null {
 
 /** The note's text, read afresh from its file. */
 export async function readText(file: string): Promise<string> {
-  front = file
   return textOfFile(await loadNote(file))
 }
 
-/** What the page needs to know about a note it has open: whether it may be written. */
+/**
+ * The container the FILE holds now, read and parsed and nothing else: the app's knowledge of the note (its digest, what it
+ * holds) is not touched. For the things that only look (a copy, a note's state, the watcher's peek).
+ */
+export function freshNote(file: string): Promise<WmFile> {
+  return inTurn(`${file}`, async () => {
+    const there = await disk(file)
+    if (there === null) throw Object.assign(new Error(`ENOENT: no such file or directory, open '${file}'`), { code: "ENOENT" })
+    try { return parseNote(there.bytes) } catch (error) { throw refusal(file, error) }
+  })
+}
+
+/** What a look at the file's present state found: the words, the drawing, and the token that names exactly these bytes. */
+export interface Peek { text: string; drawing: string | null; token: string }
+
+/**
+ * The folder watcher says a note moved: LOOK at it, without taking it as the app's own. Reading it with `loadNote` made
+ * the file's new bytes the ones the app "last read", so if the person typed while the page was still deciding whether to
+ * put the new words on screen, the next autosave was an edit of the OLD words and overwrote the other program's. The page
+ * adopts the state (`adoptNote`) only once it has applied it.
+ */
+export function peekNote(file: string): Promise<Peek> {
+  return inTurn(`${file}`, async () => {
+    const there = await disk(file)
+    if (there === null) throw Object.assign(new Error(`ENOENT: no such file or directory, open '${file}'`), { code: "ENOENT" })
+    let wm: WmFile
+    try { wm = parseNote(there.bytes) } catch (error) { throw refusal(file, error) }
+    return { text: textOfFile(wm), drawing: drawingOfFile(wm), token: there.digest }
+  })
+}
+
+/**
+ * The page has put what `peekNote` returned (`token`) on screen: the app now owns that state of the file. Only if the file
+ * still has exactly those bytes (else it moved again, the watcher will say so, and nothing is taken); true when it did.
+ */
+export function adoptNote(file: string, token: string): Promise<boolean> {
+  return inTurn(`${file}`, async () => {
+    const there = await disk(file)
+    if (there === null || there.digest !== token) return false
+    let wm: WmFile
+    try { wm = parseNote(there.bytes) } catch { return false }
+    const key = keyOf(file)
+    digests.set(key, there.digest)
+    remembered(key, wm)
+    fileTimes.set(key, (await fs.stat(file).catch(() => null))?.mtimeMs ?? Date.now())
+    touched(file)
+    return true
+  })
+}
+
+/** What the page needs to know about a note it has open: whether it may be written. Read from the file, not from what was cached. */
 export interface NoteState { readOnly: boolean; version: number; newer: boolean }
 export async function noteState(file: string): Promise<NoteState> {
-  const wm = held(file) ?? await loadNote(file)
+  const wm = await freshNote(file)
   return { readOnly: wm.readOnly, version: wm.version, newer: wm.readOnly }
 }
 
@@ -232,7 +295,15 @@ async function drain(key: string): Promise<void> {
     let wm = base
     const taken: Op[] = []
     for (const op of ops) {
-      try { wm = op.mutate(wm); taken.push(op) } catch (error) { op.fail(error) }
+      try {
+        const next = op.mutate(wm)
+        // A write whose result the file format would refuse (two names that differ only by case) fails ALONE: it is
+        // not allowed to take the text save and every other queued change down with it.
+        const problem = next === wm ? null : writeNamesError([WM_MIMETYPE, WM_MANIFEST, ...next.entries.map((entry) => entry.name)])
+        if (problem) throw new WmError(problem)
+        wm = next
+        taken.push(op)
+      } catch (error) { op.fail(error) }
     }
     if (taken.length === 0) return
     if (!created && wm === base) {
@@ -276,7 +347,8 @@ const same = (a: string, b: string): boolean => a.replace(/\r\n?/g, "\n") === b.
  * file against a page that has `\n`) change nothing.
  */
 export async function writeText(file: string, text: string): Promise<{ written: boolean; onDisk: string | null; refused: Refused | null }> {
-  const out = await commit(file, (wm) => (same(textOfFile(wm), text) && wm.entries.some((entry) => entry.name === WM_TEXT) ? wm : withText(wm, text)))
+  const out = await commit(file, (wm) => withNamedMedia(
+    same(textOfFile(wm), text) && wm.entries.some((entry) => entry.name === WM_TEXT) ? wm : withText(wm, text), mediaFiles(text), file))
   if (out.written) return { written: true, onDisk: text, refused: null }
   const now = await disk(file)
   let onDisk: string | null = null
@@ -307,22 +379,31 @@ const hasItems = (json: string): boolean => {
  * that never had a drawing and is given an empty one still has none (`drawing.json` is optional).
  */
 export async function writeDrawingText(file: string, json: string): Promise<void> {
-  front = file
   const out = await commit(file, (wm) => {
     const before = drawingOfFile(wm)
     if (before === null && !hasItems(json)) return wm
-    return withDrawing(wm, keepUnknown(before, json))
+    // (Pictures and snapshots the drawing names that this note does not hold yet — a copy pasted from another note — come with it.)
+    return withNamedMedia(withDrawing(wm, keepUnknown(before, json)), drawingMediaFiles(decodeDrawing(json).drawing), file)
   })
   if (!out.written) throw new Error(refusedMessage(file, out.refused))
 }
 
-/** An ink cell's snapshot, `snapshots/ink-<id>.svg` (written over, or left alone when `onlyIfMissing` and it is there). */
+/**
+ * An ink cell's snapshot, `snapshots/ink-<id>.svg` (written over, or left alone when `onlyIfMissing` and it is there). A new one is named with the
+ * id in lower case, but a snapshot the note already holds under another SPELLING of it (a converted note's
+ * `ink-<UPPER>.svg`) is that snapshot: it is written over or left alone, never given a twin that differs only by case (which
+ * the file format refuses, and which once failed every change queued with it).
+ */
 export async function writeSnapshot(file: string, id: string, svg: string, onlyIfMissing = false): Promise<{ file: string }> {
   if (!isInkId(id)) throw new Error(`not an ink cell id: ${id}`)
   if (!/^<svg[\s>]/.test(svg)) throw new Error("not an svg")
-  const name = inkFileName(id.toLowerCase())
-  const entry = `${WM_SNAPSHOTS}${name}`
-  const out = await commit(file, (wm) => (onlyIfMissing && wm.entries.some((one) => one.name === entry) ? wm : withEntry(wm, entry, utf8(svg))))
+  let name = inkFileName(id.toLowerCase())
+  const out = await commit(file, (wm) => {
+    const same = wm.entries.find((one) => foldedName(one.name) === foldedName(`${WM_SNAPSHOTS}${name}`))
+    if (same) name = same.name.slice(WM_SNAPSHOTS.length)
+    const entry = `${WM_SNAPSHOTS}${name}`
+    return onlyIfMissing && same ? wm : withEntry(wm, entry, utf8(svg))
+  })
   if (!out.written) throw new Error(refusedMessage(file, out.refused))
   return { file: name }
 }
@@ -373,10 +454,13 @@ export const copyOf = (wm: WmFile): WmFile => {
 /**
  * A picture or snapshot of the open notes by its NAME (the name is the picture's hash, or an ink cell's id: the same
  * wherever it is): the note's own container first (`note`, else the one in front), then every other the app has read,
- * the most recent first.
+ * the most recent first. The name is looked for as written and, failing that, as the same name in another case (a
+ * snapshot the text spells `ink-<UPPER>.svg` is the entry a writer made `ink-<lower>.svg`): a container holds no two
+ * names that differ only by case, so there is one answer.
  */
 export function mediaBytes(name: string, note?: string | null): Uint8Array | null {
   const entry = entryNameOf(name)
+  const folded = foldedName(entry)
   const order = [note ?? front, ...recent].filter((one): one is string => !!one)
   const seen = new Set<string>()
   for (const file of order) {
@@ -384,10 +468,27 @@ export function mediaBytes(name: string, note?: string | null): Uint8Array | nul
     if (seen.has(key)) continue
     seen.add(key)
     const wm = loaded.get(key)
-    const found = wm?.entries.find((one) => one.name === entry)
+    const found = wm?.entries.find((one) => one.name === entry) ?? wm?.entries.find((one) => foldedName(one.name) === folded)
     if (found) return found.data
   }
   return null
+}
+
+/**
+ * `wm` with the `media/` and `snapshots/` entries `names` call for that it does not hold, copied from the other notes the
+ * app has read (`mediaBytes`: the note's own first, then the most recently used). A picture copied from note A and pasted
+ * into B is an entry of B's own archive from the first save, not a thing B shows only while A is loaded.
+ */
+function withNamedMedia(wm: WmFile, names: readonly string[], own: string): WmFile {
+  let out = wm
+  for (const name of names) {
+    const entry = entryNameOf(name)
+    const folded = foldedName(entry)
+    if (out.entries.some((one) => foldedName(one.name) === folded)) continue
+    const bytes = mediaBytes(name, own)
+    if (bytes) out = withEntry(out, entry, new Uint8Array(bytes))
+  }
+  return out
 }
 
 export const _forTests = { digests, loaded }
