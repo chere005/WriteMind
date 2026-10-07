@@ -15,8 +15,9 @@
 
 import { useCallback, useEffect, useRef, useState, type MutableRefObject } from "react"
 import {
-  bufferDecisions, makeNote, readSession, stem, surviving, writeSession, type Note, type Session,
+  makeNote, readSession, stem, surviving, writeSession, type Note, type Session,
 } from "@writemind/core"
+import { applyBuffers, keepDropped } from "./hotExit"
 import type { ViewState } from "./Notebook"
 import type { Section } from "./wm"
 
@@ -56,40 +57,6 @@ interface Options {
   openNote(note: Note): Promise<void>
   /** Let go of every open note (the one in front is written first). */
   closeAll(): Promise<void>
-}
-
-/**
- * The Mac's hot exit (`restoreSession`): text that was typed and never written is put back into its file BEFORE
- * the tabs are restored, so the tab opens on it. Reading each file first (the shell remembers what it read) is
- * what lets the write guard accept the write. A file somebody else changed since is NOT overwritten: the text
- * is kept beside it as "name (unsaved copy).md".
- */
-async function applyBuffers(buffers: Session["unsavedBuffers"]): Promise<Map<string, string>> {
-  const applied = new Map<string, string>()
-  const paths = Object.keys(buffers)
-  if (paths.length === 0) return applied
-  const disk = new Map<string, string | null>()
-  for (const path of paths) disk.set(path, await window.wm.readNote(path).catch(() => null))
-  for (const decision of bufferDecisions(buffers, (path) => disk.get(path) ?? null)) {
-    try {
-      if (decision.action === "apply") {
-        const out = await window.wm.writeNote(decision.path, decision.text)
-        if (out.written) applied.set(decision.path, decision.text)
-        else console.error("WriteMind: could not put the unsaved text back into", decision.path)
-      } else if (decision.action === "keep-copy") {
-        const stemmed = decision.path.replace(/\.(wm|md|markdown|txt)$/i, "")
-        const extension = decision.path.slice(stemmed.length)
-        let copy = `${stemmed} (unsaved copy)${extension}`
-        for (let n = 2; (await window.wm.existing([copy])).length > 0 && n < 50; n++) {
-          copy = `${stemmed} (unsaved copy ${n})${extension}`
-        }
-        await window.wm.writeNote(copy, decision.text)
-      }
-    } catch (error) {
-      console.error("WriteMind: could not bring back unsaved text", error)
-    }
-  }
-  return applied
 }
 
 export function useSession({
@@ -163,8 +130,12 @@ export function useSession({
       // A note opened from Finder or Explorer lives outside the project's folders: it comes back too, while its file is there.
       const outside = session.open.map((note) => note.path).filter((path) => !known.has(path) && /\.wm$/i.test(path))
       const there = new Set(outside.length > 0 ? await window.wm.existing(outside).catch(() => [] as string[]) : [])
-      const kept = surviving(session, (path) => known.has(path) || there.has(path))
-      const applied = await applyBuffers(kept.unsavedBuffers)
+      const exists = (path: string): boolean => known.has(path) || there.has(path)
+      // Text typed in a note that is not a note of the project any more (a .md that could not be converted, a deleted
+      // file) has nowhere to go and `surviving` would drop it: it is kept as a Recovered copy first.
+      await keepDropped(session.unsavedBuffers, exists, window.wm)
+      const kept = surviving(session, exists)
+      const applied = await applyBuffers(kept.unsavedBuffers, window.wm)
       if (kept.open.length > 0) {
         for (const note of kept.open) {
           states.current.set(note.path, { caret: note.caret, collapsed: note.collapsed })
