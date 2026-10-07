@@ -317,6 +317,16 @@ describe("the key table", () => {
     expect(matches(event("ArrowLeft", { ctrlKey: true, altKey: true }), "CmdOrCtrl+Alt+Left", "win32")).toBe(true)
   })
 
+  it("treats Cmd in Mac accelerators as a required Meta modifier", () => {
+    expect(commandForKey(event("g"), "darwin")).toBeNull()
+    expect(commandForKey(event("y"), "darwin")).toBeNull()
+    expect(commandForKey(event("g", { metaKey: true }), "darwin")?.id).toBe("findNext")
+    expect(commandForKey(event("y", { metaKey: true }), "darwin")?.id).toBe("toggleCamera")
+    expect(commandForKey(event("g", { metaKey: true, shiftKey: true }), "darwin")?.id).toBe("findPrevious")
+    expect(commandForKey(event("f", { metaKey: true, altKey: true }), "darwin")?.id).toBe("findReplace")
+    expect(commandForKey(event("g", { ctrlKey: true }), "darwin")).toBeNull()
+  })
+
   it("finds the page's commands by key and leaves the editor's alone", () => {
     expect(commandForKey(event("k", { ctrlKey: true }), "win32")?.id).toBe("toggleSidebar")
     expect(commandForKey(event("t", { ctrlKey: true }), "win32")?.id).toBe("toggleMode")

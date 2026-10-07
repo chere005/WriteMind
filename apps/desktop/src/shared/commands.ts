@@ -194,7 +194,7 @@ export interface KeyLike {
   shiftKey: boolean
 }
 
-interface Chord { mod: boolean; ctrl: boolean; alt: boolean; shift: boolean; key: string }
+interface Chord { mod: boolean; cmd: boolean; ctrl: boolean; alt: boolean; shift: boolean; key: string }
 
 const NAMED: Record<string, string> = {
   left: "arrowleft", right: "arrowright", up: "arrowup", down: "arrowdown",
@@ -206,6 +206,7 @@ function parse(accelerator: string): Chord {
   const has = (name: string) => parts.some((part) => part.toLowerCase() === name)
   return {
     mod: has("cmdorctrl") || has("commandorcontrol"),
+    cmd: has("cmd") || has("command") || has("meta"),
     ctrl: has("ctrl") || has("control"),
     alt: has("alt"),
     shift: has("shift"),
@@ -221,7 +222,7 @@ export function matches(event: KeyLike, accelerator: string, platform: string): 
   const chord = parse(accelerator)
   const mac = platform === "darwin"
   const wantCtrl = chord.ctrl || (chord.mod && !mac)
-  const wantMeta = chord.mod && mac
+  const wantMeta = chord.cmd || (chord.mod && mac)
   if (event.ctrlKey !== wantCtrl || event.metaKey !== wantMeta) return false
   if (event.altKey !== chord.alt || event.shiftKey !== chord.shift) return false
   const typed = event.key.toLowerCase()
