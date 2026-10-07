@@ -53,6 +53,7 @@ import { createProcessRunner } from "./eval/runner"
 import { placesFromProcess } from "./eval/tools"
 import { LANGUAGE_CHANNELS, LANGUAGES_FILE } from "../shared/languages"
 import { registerSheets } from "./sheets"
+import { registerScans } from "./scans"
 import { startUpdater, type Updater } from "./updater"
 import { UPDATE_COMMAND_IDS } from "../shared/update"
 import { takeWelcomed, welcomeOnce, welcomeWanted } from "./welcome"
@@ -537,6 +538,8 @@ app.whenReady().then(async () => {
   })
   // The tablet's sheets (tabs) and their ink: userData/sheets.json.
   registerSheets(ipcMain)
+  // The document camera's scanned pages (tabs): userData/scans.json and userData/scans/<id>.jpg.
+  registerScans(ipcMain)
   /** What the reader is, what it can read, and how to add Japanese - for the diagnostics. */
   ipcMain.handle("ocr:status", async () => ({
     ...(await readerFor(here)), probe: await windowsOcr(here), addJapanese: ADD_JAPANESE_OCR, busy: ocr.busy, reads: ocr.started,

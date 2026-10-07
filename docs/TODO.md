@@ -71,7 +71,6 @@ batch in flight on that day. After it, roughly in this order:
   notes that are symbolic links; the object clipboard's pictures are held; a problem after some files went now says
   which went.
 - **Tables, part two.** A table button and key, grid editing on the rendered page.
-- **Scanner tabs for real.** The camera's tab strip is a stub: keep several scanned pages as tabs.
 - **Reading pictures.** Aa reading a flow chart off a picture already in the note (Swift `flowChart(from:under:)`);
   Japanese OCR on a machine that has the engine.
 - **Runnable cells.** ~~Language icons instead of WL / PY~~ done 2026-10-07 (`core/eval/icons.ts`; PARITY "Evaluation
@@ -353,13 +352,15 @@ green, orange) are swapped for black in these images, as in the PDF (`readableIn
   (6) FEATURES.md still describes a chevron beside the capture button that the
   Mac's code no longer has (the three modes are the box's choices; the port also
   has Writing / Page / Raw buttons).
-- **Scanned pages as tabs: a STUB** (sheet-tabs lane, 2026-10-05; Sean: "stub it in for future pending features in
-  document scanner mode"). The video pane's tab row is real on the tablet (each tab a sheet, PARITY "Sheets as
-  tabs") but in camera mode it shows one "Camera" tab and a disabled "+" (`SheetStrip.tsx` `CameraTabs`). What it is
-  for: each page scanned under the document camera kept as its own tab (the picture, its box, its learned page shape,
-  what was read off it), so a stack of pages can be scanned first and brought in later, or brought in again. Not built:
-  the pages' store (it could share `main/sheets.ts` / `sheetSet.ts`, with pictures as files beside it), "+" taking a
-  scan into a new tab, and what Writing / Page / Raw do on a stored page rather than the live picture.
+- **Scanned pages as tabs: DONE** (scanner-tabs lane, 2026-10-07; Sean: "work on scanner tabs"; was a stub from the
+  sheet-tabs lane). Each page scanned under the document camera is a tab beside the live Camera tab: "+" keeps the
+  camera's picture (the held one) with its box, corners, learned page shape and, once Text has read it, the words; a tab
+  opens it in the video's place, where the box, Straighten, Zoom, the turn and Image / Writing / Text / Page / Raw work on
+  it; x closes (asks first); all of it kept across restarts in userData (`scans.json`, `scans/<id>.jpg`). PARITY
+  "Scanned pages as tabs"; `renderer/scanSet.ts`, `scanTabs.ts`, `main/scans.ts`; e2e `camera/04-scanned-pages-as-tabs`.
+  LEFT: (1) "+" opens the new page (as the tablet's does); a scan-a-stack flow that stays on the camera is a one-line
+  change if wanted; (2) Text is read when pressed, not at "+" time (the kept words come in again only for the same box,
+  corners and turn); (3) no moving a page between tabs, no thumbnails; (4) not tried with a real camera or a real stack.
 - **The rendered page: DONE** (e1-preview, 2026-10-03; "Write in the preview").
   The toggle (◧ on the bar, Ctrl+T) draws every block — headings as
   headings, real bullets, to-do boxes that tick, quotes, coloured code, maths,

@@ -101,6 +101,12 @@ declare global {
       notesFolderNotice?(): Promise<string | null>
       /** The tablet's sheets (tabs), as text (renderer/sheetSet.ts), kept in userData/sheets.json; absent in an old preload. */
       sheets?: { load(): Promise<string | null>; save(text: string): void }
+      /** The document camera's scanned pages (renderer/scanSet.ts), kept in userData/scans.json and scans/<id>.jpg; absent in an old preload. */
+      scans?: {
+        load(): Promise<string | null>; save(text: string): void
+        put(id: string, bytes: Uint8Array): Promise<boolean>; get(id: string): Promise<Uint8Array | null>
+        drop(id: string): void; sweep(keep: string[]): void
+      }
       /** Evaluation cells (shared/eval.ts): run one cell on Shift+Enter, take a run back, where the tools are. */
       evaluate: import("../shared/eval").EvalApi
       /** Updates (shared/update.ts): the "Updates available" dialog (UpdateDialog.tsx); absent in an old preload. */

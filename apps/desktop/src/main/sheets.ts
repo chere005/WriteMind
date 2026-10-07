@@ -26,6 +26,9 @@ export interface SheetsFile {
 }
 
 export function sheetsFile(file: string, options: { debounceMs?: number; log?: (line: string) => void } = {}): SheetsFile {
+  // The same writer keeps the camera's scanned pages (main/scans.ts: scans.json): messages and the copy aside name the file.
+  const name = path.basename(file)
+  const stem = name.replace(/\.[^.]*$/, "")
   let pending: string | null = null
   let timer: ReturnType<typeof setTimeout> | null = null
   /**
@@ -43,7 +46,7 @@ export function sheetsFile(file: string, options: { debounceMs?: number; log?: (
       if (keepAside) {
         keepAside = false
         try {
-          fs.copyFileSync(file, path.join(path.dirname(file), `sheets.unreadable-${Date.now()}.json`))
+          fs.copyFileSync(file, path.join(path.dirname(file), `${stem}.unreadable-${Date.now()}.json`))
         } catch (error) {
           if ((error as NodeJS.ErrnoException)?.code !== "ENOENT") { keepAside = true; throw error }
         }
@@ -60,7 +63,7 @@ export function sheetsFile(file: string, options: { debounceMs?: number; log?: (
       }
     } catch (error) {
       if (pending === null) pending = text
-      options.log?.(`could not write sheets.json: ${(error as Error)?.message}`)
+      options.log?.(`could not write ${name}: ${(error as Error)?.message}`)
     }
   }
   return {
@@ -77,7 +80,7 @@ export function sheetsFile(file: string, options: { debounceMs?: number; log?: (
           // Held for a moment by a scanner or a sync client: a few tries, then the page starts empty (the file is kept).
           if (attempt >= 3) {
             keepAside = true
-            options.log?.(`could not read sheets.json: ${(error as Error)?.message}`)
+            options.log?.(`could not read ${name}: ${(error as Error)?.message}`)
             return null
           }
           Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 40)
@@ -86,7 +89,7 @@ export function sheetsFile(file: string, options: { debounceMs?: number; log?: (
     },
     hold(text) {
       if (typeof text !== "string") return
-      if (text.length > MAX_BYTES) { options.log?.(`sheets.json not written: ${text.length} characters is too much`); return }
+      if (text.length > MAX_BYTES) { options.log?.(`${name} not written: ${text.length} characters is too much`); return }
       pending = text
       if (timer) clearTimeout(timer)
       timer = setTimeout(write, options.debounceMs ?? 300)

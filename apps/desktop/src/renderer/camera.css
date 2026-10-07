@@ -26,7 +26,7 @@
 }
 .camera.zooming { cursor: crosshair; }
 /* Hold image: the still in the video's place (sized and turned like it in CameraPane), the video playing on under it. */
-.camera .stage canvas.still { position: absolute; left: 50%; top: 50%; transform-origin: 50% 50%; }
+.camera .stage canvas.still, .camera .stage canvas.page-still { position: absolute; left: 50%; top: 50%; transform-origin: 50% 50%; }
 /* The pane takes the keyboard when its picture is clicked (Esc lets go of a held picture); no ring round the picture. */
 .camera:focus { outline: none; }
 /* Held reads as pressed (sunk in); a pointer still resting on it after letting go must not look held, so its hover is quieter. */

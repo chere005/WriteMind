@@ -21,6 +21,13 @@
  * the placement, the flow-chart reader and the one-step undo are all this
  * file's, shared; only where the picture comes from differs (`takeTablet`).
  *
+ * SCANNED PAGES ARE TABS (scanTabs.ts, scanSet.ts; the strip is SheetStrip.tsx): "+" keeps the camera's picture (the held
+ * one with Hold image) as a page of its own, with its box, corners, learned page shape and what was read off it, and
+ * opens it. A stored page stands in the video's place (`page-still`) and EVERYTHING below works on it as on the held
+ * frame: the box, Straighten, Zoom, the quarter turns (each page has its own), Image / Writing / Text and the header's
+ * Writing / Page / Raw. What the person did to a page (box, corners, turn) is the page's and is kept with it; the
+ * camera tab keeps its own. Only Hold image is the camera's.
+ *
  * THE STREAM is `useCameraStream`: opened when the pane is on screen, every
  * track stopped when it is put away, the source changes or the camera is
  * unplugged. The pane draws the Mac's four stand-ins when there is no picture
@@ -29,10 +36,10 @@
 
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react"
 import {
-  boxAction, composeZoom, displayedFrame, fitAspect, isBoxDrag, placement, regionOf, unzoomedPoint, unzoomedRect,
+  boxAction, composeZoom, displayedFrame, fitAspect, isBoxDrag, placement, regionOf, resolveShape, unzoomedPoint, unzoomedRect,
   zoomedPoint, zoomedRect, zoomOffset, zoomScale, type Rect, type Size,
 } from "@writemind/core"
-import { bandUnder, chartFromLabelled, chartSummary, type Corners } from "./capturePipeline"
+import { bandUnder, chartFromLabelled, chartSummary, measuredPage, type Corners } from "./capturePipeline"
 import { detectPage, takePicture, uprightPicture, uprightSize } from "./cameraTake"
 import {
   normalRotation, rememberBringTo, rememberedBringTo, rememberedRotation, rememberedShape, rememberedZoom, rememberRotation,
@@ -47,6 +54,8 @@ import { TabletSurface, type SurfaceHandle } from "./TabletSurface"
 import { eraseFromSheet, takeFromSheet, type Capture } from "./tabletCapture"
 import { currentSheet, stepSheet, useSheetTabs } from "./tabletSheets"
 import { SheetStrip } from "./SheetStrip"
+import { boxOnPane, MAX_PAGES, readKey } from "./scanSet"
+import { changeScan, keepPage, pageBytes, useScans } from "./scanTabs"
 import { stepNote, useCellSheet } from "./cellSheets"
 import { registerPenHandlers } from "./penActions"
 import { OrientationSelect } from "./OrientationSelect"
@@ -122,6 +131,8 @@ const inset = (by: number): Quad01 => ({
   bottomRight: { x: 1 - by, y: 1 - by }, bottomLeft: { x: by, y: 1 - by },
 })
 
+const DEFAULT_QUAD: Quad01 = inset(0.08)
+
 const SWITCHED = "You opened another note while that was being read, so it was not added - take it again."
 
 const hex = (colour: string): string => (/^#[0-9a-f]{6}$/i.test(colour) ? colour : "#2D7DD2")
@@ -171,8 +182,8 @@ export function CameraPane({
   const [read, setRead] = useState<string | null>(null)
   /** Where the header's Writing puts the writing (BringInMenu.tsx): the note's page, or a new docked drawing cell. */
   const [bringTo, setBringTo] = useState<BringTo>(rememberedBringTo)
-  /** The box dragged on the picture, in the pane's own points as the person sees it. */
-  const [box, setBox] = useState<Rect | null>(null)
+  /** The box dragged on the live picture, in the pane's own points as the person sees it (a page's box is kept with it). */
+  const [liveBox, setLiveBox] = useState<Rect | null>(null)
   /** The tablet's sheets (one per tab, tabletSheets.ts) and the open one, which everything below acts on. */
   const sheets = useSheetTabs()
   const sheet = currentSheet()
@@ -188,15 +199,32 @@ export function CameraPane({
   const [dragging, setDragging] = useState(false)
   const lastClick = useRef<{ time: number; x: number; y: number } | null>(null)
   /** "Straighten" is on: the page's four corners are showing, and a capture is warped through them. */
-  const [straighten, setStraighten] = useState(false)
-  const [quad, setQuad] = useState<Quad01>(inset(0.08))
+  const [liveStraighten, setLiveStraighten] = useState(false)
+  const [liveQuad, setLiveQuad] = useState<Quad01>(DEFAULT_QUAD)
   const [, redraw] = useState(0)
   /** The page's shape, learned from the first page that was found and kept (across launches). */
   const shape = useRef<number | null>(rememberedShape())
   /** So two captures in a row do not land exactly on top of each other. */
   const nudge = useRef(0)
   const [busy, setBusy] = useState(false)
-  const [rotation, setRotation] = useState<Rotation>(rememberedRotation)
+  const [liveRotation, setLiveRotation] = useState<Rotation>(rememberedRotation)
+  /** THE SCANNED PAGES (scanTabs.ts): the open one, when a page and not the camera is open. */
+  const kept = useScans()
+  const page = !tablet ? (kept.pages.find((one) => one.id === kept.current) ?? null) : null
+  /** The page whose picture is on the page canvas (decoded from its file), and the one whose file could not be read. */
+  const [shownPage, setShownPage] = useState<string | null>(null)
+  const [lostPage, setLostPage] = useState<string | null>(null)
+  const pageCanvas = useRef<HTMLCanvasElement | null>(null)
+  /** `shownPage`, for callbacks made in an earlier render (a capture is memoised; the picture arrives later). */
+  const shownRef = useRef<string | null>(null)
+  shownRef.current = shownPage
+  /** What the setters below read, so they stay the same functions render after render (callbacks made earlier use them). */
+  const latest = useRef<{ page: typeof page; size: Size; frame: Size; zoom: ZoomBox | null; zooming: boolean }>({
+    page: null, size: { width: 0, height: 0 }, frame: { width: 0, height: 0 }, zoom: null, zooming: false,
+  })
+  const rotation: Rotation = page ? page.rotation : liveRotation
+  const straighten = page ? page.straighten : liveStraighten
+  const quad: Quad01 = page ? (page.quad ?? DEFAULT_QUAD) : liveQuad
   const [zoom, setZoom] = useState<ZoomBox | null>(rememberedZoom)
   /** Armed to drag the box the pane zooms into. */
   const [zooming, setZooming] = useState(false)
@@ -247,12 +275,74 @@ export function CameraPane({
   const turned = rotation === 90 || rotation === 270
   /** The picture as the person sees it: upright, after the quarter turns. */
   /** The picture as the camera gives it (the held still's while one is held), not turned. */
-  const rawSize = (): Size => frozen.heldSize() ?? { width: video.current?.videoWidth ?? 0, height: video.current?.videoHeight ?? 0 }
+  const rawSize = (): Size => page
+    ? { width: page.width, height: page.height }
+    : frozen.heldSize() ?? { width: video.current?.videoWidth ?? 0, height: video.current?.videoHeight ?? 0 }
   const frameSize = (): Size => uprightSize(rawSize(), rotation)
   const paneSize = (): Size => size
   const frame = frameSize()
   const shown = displayedFrame(frame, size)
   const running = !tablet && stream.status === "running" && shown.width > 0
+  /** There is a picture to work on: the camera's, or the open page's once it is decoded. */
+  const pictured = page ? shownPage === page.id : running
+  /** Hold image is the camera's: while a page is open the pane is not holding anything. */
+  const holding = held && !page
+  latest.current = { page, size, frame, zoom, zooming }
+
+  // The open page's picture is read from its file and drawn on the page canvas (at the camera's own size, not turned).
+  useEffect(() => {
+    setShownPage(null)
+    setLostPage(null)
+    const id = page?.id
+    const canvas = pageCanvas.current
+    if (!id) { if (canvas && canvas.width > 0) { canvas.width = 0; canvas.height = 0 } return }
+    let cancelled = false
+    void (async () => {
+      const bytes = await pageBytes(id)
+      if (cancelled) return
+      if (!bytes) { setLostPage(id); return }
+      try {
+        const bitmap = await createImageBitmap(new Blob([bytes as BlobPart], { type: "image/jpeg" }))
+        const target = pageCanvas.current
+        if (cancelled || !target) { bitmap.close(); return }
+        target.width = bitmap.width
+        target.height = bitmap.height
+        target.getContext("2d")?.drawImage(bitmap, 0, 0)
+        bitmap.close()
+        setShownPage(id)
+      } catch {
+        if (!cancelled) setLostPage(id)
+      }
+    })()
+    return () => { cancelled = true }
+  }, [page?.id])
+
+  // What the person does to the open tab's picture goes to the tab: the camera's own state, or the page, kept with it.
+  const setBox = useCallback((next: Rect | null) => {
+    const now = latest.current
+    // A page's box is kept as fractions of its upright picture; the zoom's own box (armed) is only ever drawn.
+    if (!now.page || now.zooming) { setLiveBox(next); return }
+    const drawn = next && now.zoom ? unzoomedRect(next, now.zoom, now.size) : next
+    changeScan(now.page.id, { box: drawn ? regionOf(drawn, now.frame, now.size) : null })
+  }, [])
+  const setStraighten = useCallback((next: boolean) => {
+    const now = latest.current.page
+    if (now) changeScan(now.id, { straighten: next }); else setLiveStraighten(next)
+  }, [])
+  const setQuad = useCallback((next: Quad01 | ((was: Quad01) => Quad01)) => {
+    const now = latest.current.page
+    if (!now) { setLiveQuad(next); return }
+    const was = now.quad ?? DEFAULT_QUAD
+    changeScan(now.id, { quad: typeof next === "function" ? next(was) : next })
+  }, [])
+  /** The box on screen: the camera's as dragged (or the zoom's, while it is armed), a page's as it was kept. */
+  // (Memoised: a new object every render would count as a new box to everything that watches it.)
+  const keptBox = useMemo(
+    () => (page?.box ? boxOnPane(page.box, { width: frame.width, height: frame.height }, size, zoom) : null),
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- the frame's and the pane's sizes, by value
+    [page?.box, frame.width, frame.height, size.width, size.height, zoom],
+  )
+  const box: Rect | null = page && !zooming ? keptBox : liveBox
 
   // MARK: the zoom, and the way from a point on screen to a point on the picture
 
@@ -277,14 +367,16 @@ export function CameraPane({
   // MARK: turning the picture
 
   const turn = useCallback((by: number) => {
-    setRotation((was) => {
+    const now = latest.current.page
+    // A box drawn on the picture is not on it any more.
+    if (now) { changeScan(now.id, { rotation: normalRotation(now.rotation + by), box: null }); return }
+    setLiveRotation((was) => {
       const next = normalRotation(was + by)
       rememberRotation(next)
       return next
     })
-    // A box drawn on the picture is not on it any more.
     setBox(null)
-  }, [])
+  }, [setBox])
 
   // The video menu (and the corner) ask by event, so the pane owns the picture's state.
   useEffect(() => {
@@ -299,14 +391,14 @@ export function CameraPane({
     return () => window.removeEventListener("wm:camera-action", act)
   }, [turn])
 
-  useEffect(() => { if (stream.status !== "running") { setBox(null); setZooming(false) } }, [stream.status])
-  // A box drawn in a viewfinder of another shape is somewhere else in this one.
-  useEffect(() => { setBox(null) }, [aspect])
+  useEffect(() => { if (stream.status !== "running" && !latest.current.page) { setLiveBox(null); setZooming(false) } }, [stream.status])
+  // A box drawn in a viewfinder of another shape is somewhere else in this one (a page's box is kept as fractions: it is not).
+  useEffect(() => { setLiveBox(null) }, [aspect])
   // Escape lets go of a zoom that was armed (and of a box that was drawn). Then, with the pane focused (a click on the
   // picture or on one of its buttons), it lets go of a held picture: one thing per press, the box first.
   const letGo = frozen.letGo
   useEffect(() => {
-    if (!zooming && !box && !held) return
+    if (!zooming && !box && !holding) return
     const key = (event: KeyboardEvent) => {
       if (event.key !== "Escape") return
       if (zooming || box) { setZooming(false); setBox(null); return }
@@ -316,16 +408,24 @@ export function CameraPane({
     }
     window.addEventListener("keydown", key)
     return () => window.removeEventListener("keydown", key)
-  }, [zooming, box, held, letGo])
+  }, [zooming, box, holding, letGo, setBox])
 
   // MARK: the frame, upright, as one snapshot
 
+  /** The picture being worked on: the open page's (once decoded), else the held still, else the video's current frame. */
+  const pictureNow = (): { image: CanvasImageSource; size: Size } | null => {
+    const open = latest.current.page
+    if (!open) return frozen.picture()
+    const canvas = pageCanvas.current
+    return canvas && canvas.width > 0 && shownRef.current === open.id ? { image: canvas, size: { width: canvas.width, height: canvas.height } } : null
+  }
+
   /**
-   * The frame on screen right now (the held still while one is held), turned upright, as a canvas of its own (one
-   * frame for the whole capture).
+   * The frame on screen right now (the page's, or the held still while one is held), turned upright, as a canvas of its
+   * own (one frame for the whole capture).
    */
   const snapshot = (): { picture: HTMLCanvasElement; frame: Size } | null => {
-    const source = frozen.picture()
+    const source = pictureNow()
     if (!source) return null
     const canvas = uprightPicture(source.image, source.size, rotation)
     return { picture: canvas, frame: { width: canvas.width, height: canvas.height } }
@@ -357,25 +457,31 @@ export function CameraPane({
     })
     setRead("Found the page - drag a corner if it is off.")
     // eslint-disable-next-line react-hooks/exhaustive-deps -- reads the current frame
-  }, [rotation])
+  }, [rotation, shownPage, setQuad])
 
   const toggleStraighten = () => {
     const next = !straighten
     setStraighten(next)
-    if (next) findNow()
+    // A page found on the page when it was kept is where its corners start; the camera looks now.
+    if (next && !page?.quad) findNow()
   }
-  // The picture turned under the corners: look again.
-  const firstTurn = useRef(true)
+  // The picture turned under the corners: look again (a tab switch is not a turn).
+  const turnedFrom = useRef({ tab: page?.id ?? "", rotation })
   useEffect(() => {
-    if (firstTurn.current) { firstTurn.current = false; return }
+    const before = turnedFrom.current
+    turnedFrom.current = { tab: page?.id ?? "", rotation }
+    if (before.tab !== (page?.id ?? "") || before.rotation === rotation) return
     if (straighten) findNow()
     // eslint-disable-next-line react-hooks/exhaustive-deps -- only a turn asks again
-  }, [rotation])
+  }, [rotation, page?.id])
 
   // MARK: the box, and taking what is in it
 
   /** The box as a fraction of the upright picture (top-left origin), clipped to it; null without a box. */
   const regionOfBox = (): { region: Rect | null; offPicture: boolean } => {
+    // A page's box is kept as exactly this.
+    const open = latest.current.page
+    if (open && !latest.current.zooming) return { region: open.box, offPicture: false }
     if (!box) return { region: null, offPicture: false }
     // A box drawn on a zoomed picture is somewhere else on the real one.
     const drawn = zoom ? unzoomedRect(box, zoom, size) : box
@@ -401,6 +507,7 @@ export function CameraPane({
   const take = useCallback(async (mode: CaptureMode) => {
     if (busy) return
     const startedIn = noteRef.current
+    const startedOn = latest.current.page?.id ?? null
     const taken = snapshot()
     if (!taken) { setTrouble("There is no camera picture to take."); return }
     const { region, offPicture } = regionOfBox()
@@ -410,13 +517,14 @@ export function CameraPane({
       const result = await takePicture({
         mode, picture: taken.picture, frame: taken.frame, region,
         corners: straighten && mode !== "raw" ? cornersPx(taken.frame) : null,
-        rememberedShape: rememberedShape() ?? shape.current, colour: hex(penColour),
+        rememberedShape: latest.current.page?.shape ?? rememberedShape() ?? shape.current, colour: hex(penColour),
       })
       if ("trouble" in result) { setTrouble(result.trouble); setRead(null); return }
-      // Only a page that was actually found sets the notebook's shape.
+      // Only a page that was actually found sets the notebook's shape (and a kept page's own).
       if (result.pageFound && result.learnedShape !== null) {
         shape.current = result.learnedShape
         rememberShape(result.learnedShape)
+        if (startedOn) changeScan(startedOn, { shape: result.learnedShape })
       }
       const where = placement({ frame: result.frameOnPage, pageSize: result.pageSize, pane, nudge: nudge.current })
       nudge.current = (nudge.current + 0.02) % 0.1
@@ -454,27 +562,41 @@ export function CameraPane({
       setBusy(false)
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps -- reads the current frame, box and corners
-  }, [box, busy, onCapture, pane, penColour, penWidth, quad, rotation, straighten, size, zoom])
+  }, [box, busy, onCapture, pane, penColour, penWidth, quad, rotation, straighten, size, zoom, setBox])
 
   /** The box read into the note as words. */
   const takeText = useCallback(async () => {
     if (busy) return
     const startedIn = noteRef.current
+    const startedOn = latest.current.page?.id ?? null
     const taken = snapshot()
     if (!taken) { setTrouble("There is no camera picture to read."); return }
     const { region, offPicture } = regionOfBox()
     if (offPicture) { setTrouble("That box is not on the picture."); return }
+    // A page that was read through this very box, corners and turn already has the words: they come in again, unread.
+    const key = readKey(region, straighten ? quad : null, rotation)
+    const before = latest.current.page?.read
+    if (before && before.key === key && before.lines.length > 0) {
+      setTrouble(null)
+      setRead(before.lines.length === 1 ? "Brought in the 1 line read off this page before." : `Brought in the ${before.lines.length} lines read off this page before.`)
+      setBox(null)
+      onReadText?.(before.lines)
+      return
+    }
     setBusy(true)
     try {
       const result = await takePicture({
         mode: "page", picture: taken.picture, frame: taken.frame, region,
-        corners: straighten ? cornersPx(taken.frame) : null, rememberedShape: rememberedShape() ?? shape.current, colour: hex(penColour),
+        corners: straighten ? cornersPx(taken.frame) : null,
+        rememberedShape: latest.current.page?.shape ?? rememberedShape() ?? shape.current, colour: hex(penColour),
       })
       if ("trouble" in result) { setTrouble(result.trouble); return }
       setRead("Reading...")
       const lines = await readCanvasLines(result.cut)
       if (noteRef.current !== startedIn) { setTrouble(SWITCHED); setRead(null); return }
       if (lines === null || lines.length === 0) { setTrouble("No text could be read in that box."); setRead(null); return }
+      // What was read is kept with the page it was read off.
+      if (startedOn) changeScan(startedOn, { read: { key, lines } })
       setTrouble(null)
       setRead(lines.length === 1 ? "Read 1 line into the note." : `Read ${lines.length} lines into the note.`)
       setBox(null)
@@ -486,7 +608,63 @@ export function CameraPane({
       setBusy(false)
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps -- reads the current frame, box and corners
-  }, [box, busy, onReadText, penColour, quad, rotation, straighten, size, zoom])
+  }, [box, busy, onReadText, penColour, quad, rotation, straighten, size, zoom, setBox])
+
+  /**
+   * "+" on the tab row: the camera's picture (the held still with Hold image, else the live frame) kept as a page of
+   * its own, and opened. It is kept as the camera gave it, with the turn it is shown with; from the Camera tab the box
+   * and the corners go with it (the camera's box is spent, as after a capture), from another tab it is the plain
+   * picture. The page it holds is looked for now, so Straighten starts on it and its shape is the learned one.
+   */
+  const keepNow = useCallback(async () => {
+    if (busy) return
+    const source = frozen.picture()
+    if (!source) { setTrouble("There is no camera picture to keep."); return }
+    const onCamera = latest.current.page === null
+    setBusy(true)
+    try {
+      const raw = document.createElement("canvas")
+      raw.width = source.size.width
+      raw.height = source.size.height
+      raw.getContext("2d")?.drawImage(source.image, 0, 0, raw.width, raw.height)
+      const blob = await new Promise<Blob | null>((resolve) => raw.toBlob(resolve, "image/jpeg", 0.92))
+      if (!blob) { setTrouble("That could not be kept - try again."); return }
+      const upright = uprightPicture(raw, source.size, liveRotation)
+      const f = { width: upright.width, height: upright.height }
+      const found = detectPage(upright, f)
+      const fractions = (c: Corners): Quad01 => {
+        const to = (p: { x: number; y: number }) => ({ x: p.x / f.width, y: p.y / f.height })
+        return { topLeft: to(c.topLeft), topRight: to(c.topRight), bottomRight: to(c.bottomRight), bottomLeft: to(c.bottomLeft) }
+      }
+      // The page's learned shape: what was measured, snapped to the notebook's shape when it is near it (so a stack of
+      // pages of one notebook comes in one size); only a page that was found teaches the notebook its shape.
+      const learned = found ? resolveShape(measuredPage(found.corners, f).ratio, rememberedShape() ?? shape.current).ratio : null
+      if (learned !== null && rememberedShape() === null) { shape.current = learned; rememberShape(learned) }
+      const region = onCamera ? regionOfBox().region : null
+      const straight = onCamera && liveStraighten
+      const id = await keepPage(new Uint8Array(await blob.arrayBuffer()), {
+        width: source.size.width, height: source.size.height, rotation: liveRotation,
+        box: region, straighten: straight,
+        quad: straight ? liveQuad : found ? fractions(found.corners) : null,
+        shape: learned, read: null,
+      })
+      if (!id) { setTrouble("That page could not be kept - too many pages, or the disk would not take it."); return }
+      if (onCamera) setLiveBox(null)
+      setTrouble(null)
+      setRead(found ? "Kept the page and found it: its corners are on it." : "Kept the picture: no page was found in it.")
+    } catch (error) {
+      console.warn("WriteMind: keeping the page failed:", error)
+      setTrouble("That could not be kept - try again.")
+    } finally {
+      setBusy(false)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- reads the current frame, box and corners
+  }, [busy, liveRotation, liveStraighten, liveQuad, box, size, zoom])
+  /** Why "+" cannot keep a page now, or null. */
+  const keepOff = busy ? "Busy: one moment"
+    : !running ? "There is no camera picture to keep"
+    : kept.pages.length >= MAX_PAGES ? "There are as many pages as can be kept: close one first"
+    : null
 
   /**
    * Take what is on the tablet's sheet (tabletCapture.ts): WRITING brings
@@ -568,7 +746,7 @@ export function CameraPane({
   // MARK: gestures on the picture
 
   const pictureDown = (event: React.PointerEvent) => {
-    if (tablet || event.button !== 0 || !running) return
+    if (tablet || event.button !== 0 || !pictured) return
     const point = at(event)
     drag.current = { ...point, id: event.pointerId }
     setDragging(true)
@@ -647,20 +825,22 @@ export function CameraPane({
   // MARK: what the pane says when there is no picture
 
   const problem = stream.problem ?? (off ? idleProblem() : null)
-  const showPlaceholder = !tablet && (off || stream.status === "failed")
-  const starting = !tablet && !off && stream.status === "starting"
+  const showPlaceholder = !tablet && !page && (off || stream.status === "failed")
+  const starting = !tablet && !page && !off && stream.status === "starting"
 
   const choose = (id: string) => { onPickSource?.(id); setAttempt((was) => was + 1) }
 
   const shaped = !tablet && aspect !== "free"
   const videoBox = turned ? { width: size.height, height: size.width } : { width: size.width, height: size.height }
   /** The held still in the video's place: fitted in the video's box the way the video fits its frame, turned the same. */
-  const stillStyle = ((): React.CSSProperties => {
-    const raw = frozen.heldSize()
+  const stillOf = (raw: Size | null): React.CSSProperties => {
     if (!raw) return { display: "none" }
     const scale = Math.min(videoBox.width / raw.width, videoBox.height / raw.height)
     return { width: raw.width * scale, height: raw.height * scale, transform: `translate(-50%, -50%) rotate(${rotation}deg)` }
-  })()
+  }
+  const stillStyle = stillOf(page ? null : frozen.heldSize())
+  /** An open page stands in the same place, turned with ITS turn. */
+  const pageStyle = stillOf(page && shownPage === page.id ? { width: page.width, height: page.height } : null)
   return (
     <div className={`camera${zooming ? " zooming" : ""}${shaped ? " shaped" : ""}${fullWindow ? " full-window" : ""}`} ref={host}
          data-aspect={tablet ? undefined : aspect}
@@ -688,22 +868,24 @@ export function CameraPane({
           // all laid out in it and measured against it.
           <div className="viewfinder" style={{ left: finder.x, top: finder.y, width: size.width, height: size.height }}>
           {/* The video element is always here (so the stream can be let go of cleanly); it is only SEEN once it is running. */}
-          <div className="stage" style={{ visibility: running ? "visible" : "hidden" }}>
+          <div className="stage" style={{ visibility: pictured ? "visible" : "hidden" }}>
             <div className="zoomer" style={stageStyle}>
-              <video ref={video} muted playsInline data-turn={rotation}
-                     style={{ ...videoBox, transform: `translate(-50%, -50%) rotate(${rotation}deg)`, visibility: held ? "hidden" : undefined }} />
+              <video ref={video} muted playsInline data-turn={liveRotation}
+                     style={{ ...videoBox, transform: `translate(-50%, -50%) rotate(${rotation}deg)`, visibility: held || page ? "hidden" : undefined }} />
               {/* Hold image: the still stands in for the video, which plays on under it. */}
-              <canvas ref={frozen.still} className="still" data-held={held ? "1" : "0"} aria-hidden style={stillStyle} />
+              <canvas ref={frozen.still} className="still" data-held={holding ? "1" : "0"} aria-hidden style={stillStyle} />
+              {/* A kept page (the tab row): its picture in the same place, under the same box, corners and zoom. */}
+              <canvas ref={pageCanvas} className="page-still" data-page={page?.id ?? ""} aria-hidden style={pageStyle} />
             </div>
           </div>
-      {box && running && (
+      {box && pictured && (
         <div className="box-clip">
           <div className={`box${zooming ? " zoom" : ""}`} style={{
             left: box.x, top: box.y, width: box.width, height: box.height,
           }} />
         </div>
       )}
-      {box && running && !zooming && !dragging && box.width > 8 && box.height > 8 && (
+      {box && pictured && !zooming && !dragging && box.width > 8 && box.height > 8 && (
         <div className="box-choices" data-busy={busy ? "1" : "0"}
              style={{
                left: Math.min(Math.max(box.x + box.width / 2, 150), Math.max(size.width - 150, 150)),
@@ -720,7 +902,7 @@ export function CameraPane({
           )}
         </div>
       )}
-      {straighten && running && (
+      {straighten && pictured && (
         <>
           <svg className="quad" width="100%" height="100%">
             <polygon points={CORNER_NAMES.map((name) => `${corner(name).x},${corner(name).y}`).join(" ")} />
@@ -750,7 +932,7 @@ export function CameraPane({
       )}
           </div>
         )}
-      {zooming && running && <div className="zoom-hint">Drag a box - the pane shows that much</div>}
+      {zooming && pictured && <div className="zoom-hint">Drag a box - the pane shows that much</div>}
       {fullWindow && (
         // The way out he asked for, drawn ON the picture: the window is the picture, so there is no bar to put it on.
         <button className="full-window-exit" data-camera="leave-full-window" aria-label="Leave Full-Window Video"
@@ -774,21 +956,23 @@ export function CameraPane({
         </div>
       )}
       {starting && <div className="starting" aria-label="Starting the camera"><span className="spinner" /></div>}
-      {trouble && <div className="trouble">{trouble}</div>}
+      {(trouble || (page && lostPage === page.id)) && (
+        <div className="trouble">{trouble ?? "This page's picture is gone (its file was removed). Close the tab."}</div>
+      )}
       {/* The corner (turn, zoom, back to the notes) and the bar (take, straighten) share one row, and wrap under each other in a narrow pane. */}
       <div className="camera-top" ref={top}>
       <div className="camera-corner" onPointerDown={(event) => event.stopPropagation()}>
         {!tablet && (
           <>
             <button className="icon-button" data-camera-turn="left" title="Turn the picture a quarter turn anticlockwise"
-                    disabled={!running} onClick={() => turn(-90)}
+                    disabled={!pictured} onClick={() => turn(-90)}
                     style={{ width: "auto", padding: "0 8px", fontSize: 13 }}>{"↶"}</button>
             <button className="icon-button" data-camera-turn="right" title="Turn the picture a quarter turn clockwise"
-                    disabled={!running} onClick={() => turn(90)}
+                    disabled={!pictured} onClick={() => turn(90)}
                     style={{ width: "auto", padding: "0 8px", fontSize: 13 }}>{"↷"}</button>
             <button className={`icon-button${zooming ? " on" : ""}`} data-camera-zoom="square"
                     title="Resize by Square: drag a box on the picture and the pane shows just that much"
-                    disabled={!running} onClick={() => setZooming((was) => !was)}
+                    disabled={!pictured} onClick={() => setZooming((was) => !was)}
                     style={{ width: "auto", padding: "0 8px", fontSize: 11 }}>Zoom</button>
             {zoomed && (
               <button className="icon-button" data-camera-zoom="original"
@@ -796,11 +980,12 @@ export function CameraPane({
                       onClick={() => { setZoom(null); rememberZoom(null) }}
                       style={{ width: "auto", padding: "0 8px", fontSize: 11 }}>Original size</button>
             )}
-            <button className={`icon-button${held ? " on" : ""}`} data-camera="hold" aria-pressed={held}
-                    title={held
+            <button className={`icon-button${holding ? " on" : ""}`} data-camera="hold" aria-pressed={holding}
+                    title={page ? "A kept page is already still: open the Camera tab to hold the live picture"
+                      : held
                       ? "Back to the live picture (Esc does it too)"
                       : "Hold image: keep this picture still - the box, Straighten and every capture use it"}
-                    disabled={!running} onClick={() => { if (held) letGo(); else frozen.hold() }}
+                    disabled={!running || !!page} onClick={() => { if (held) letGo(); else frozen.hold() }}
                     style={{ width: "auto", padding: "0 8px", fontSize: 11 }}>Hold image</button>
           </>
         )}
@@ -853,7 +1038,7 @@ export function CameraPane({
                     onClick={toggleStraighten}
                     style={{ width: "auto", padding: "0 8px", fontSize: 11 }}>Straighten</button>
             {straighten && (
-              <button className="icon-button" data-camera="find-page" disabled={!running}
+              <button className="icon-button" data-camera="find-page" disabled={!pictured}
                       title="Look for the page again and put the four corners on it"
                       onClick={findNow}
                       style={{ width: "auto", padding: "0 8px", fontSize: 11 }}>Find page</button>
@@ -862,18 +1047,18 @@ export function CameraPane({
         )}
         {!tablet && (
           <>
-            <button className="icon-button" data-capture="ink" disabled={!running || busy}
+            <button className="icon-button" data-capture="ink" disabled={!pictured || busy}
                     title="Take the writing off the page"
                     onClick={() => { void take("ink") }}
                     style={{ width: "auto", padding: "0 8px", fontSize: 11 }}>Writing</button>
-            <button className="icon-button" data-capture="page" disabled={!running || busy}
+            <button className="icon-button" data-capture="page" disabled={!pictured || busy}
                     title="Take the page as a photograph"
                     onClick={() => { void take("page") }}
                     style={{ width: "auto", padding: "0 8px", fontSize: 11 }}>Page</button>
           </>
         )}
         {!tablet && (
-          <button className="icon-button" data-capture="raw" disabled={!running || busy}
+          <button className="icon-button" data-capture="raw" disabled={!pictured || busy}
                   title="Take the raw picture, exactly as the camera sees it: no page found, nothing squared"
                   onClick={() => { void take("raw") }}
                   style={{ width: "auto", padding: "0 8px", fontSize: 11 }}>Raw</button>
@@ -881,10 +1066,11 @@ export function CameraPane({
         <button className="icon-button" title="Put the camera away" onClick={onHide}>{"✕"}</button>
       </div>
       {/* The tabs: one slim row, the header's last, so the sheet (below --camera-top) is never under it. */}
-      <SheetStrip mode={tablet ? "tablet" : "camera"} />
+      <SheetStrip mode={tablet ? "tablet" : "camera"} scan={{ onAdd: () => { void keepNow() }, addOff: keepOff }} />
       </div>
       <div className="note">
-        {running && (stream.label || held) && (
+        {page && <span className="camera-name" title="A page kept from the camera"><span className="held-word" data-camera="page">{page.name}</span></span>}
+        {!page && running && (stream.label || held) && (
           <span className="camera-name" title={held ? "The picture is held still (Hold image)" : "The camera in use"}>
             {held && <span className="held-word" data-camera="held">Held</span>}{stream.label}
           </span>
@@ -904,12 +1090,16 @@ export function CameraPane({
               + (pen.eraser ? SHEET_ERASING
                 : pen.selectTool ? "Selecting: the pen or the mouse boxes a part, then Bring in."
                 : `The pen writes${rubButton ? ` (hold its ${rubButton} button to rub out)` : ""}. Drag the mouse to box a part, then Bring in.`))
+          : page && straighten
+            ? `${page.name}, kept from the camera. Drag the four corners onto the page's corners, then take it.`
+          : page
+            ? `${page.name}, kept from the camera: drag a box to take just a part, or take all of it. It stays here to bring in again.`
           : straighten
             ? "Drag the four corners onto the page's corners, then take it."
             : platform && !platform.findsThePage
               ? "Drag a box over the writing, then take it."
               : "Point it at a page: it finds the page itself. Drag a box to take just a part."}
-        {tablet || shown.width > 0 || showPlaceholder || starting ? "" : " No picture yet."}
+        {tablet || page || shown.width > 0 || showPlaceholder || starting ? "" : " No picture yet."}
         {read ? ` ${read}` : ""}
       </div>
     </div>
