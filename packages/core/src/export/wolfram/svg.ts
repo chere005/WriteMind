@@ -33,13 +33,22 @@ const BAND_PAD = 8
 const n = (value: number): string => String(Math.round(value * 100) / 100)
 
 /** The width something `width` wide on screen is shown at: whole points, at most `MAX_SHOWN`. */
+/**
+ * The SVG as pure ASCII: every other character as a numeric reference (`&#233;`). `ImportString` takes a string whose
+ * characters are all at or below U+00FF for raw BYTES and fails on a label like "café"; ASCII is the same in both
+ * readings, and the importer reads the references as the characters (the fallback cell's `ImportString[svg, ...]` and
+ * the engine's byte route then agree).
+ */
+export const asciiSvg = (svg: string): string =>
+  svg.replace(/[^\x00-\x7f]/gu, (char) => `&#${char.codePointAt(0)};`)
+
 export const shownAt = (width: number): number => Math.max(1, Math.round(Math.min(width, MAX_SHOWN)))
 
 /** A drawing cell `W` wide on screen, as the engine is handed it. */
 export function wolframInkSvg(cell: InkCell, W: number, words?: WordBreaker): WolframSvg {
   const width = Math.max(1, W)
   const shown = shownAt(width)
-  const svg = inkCellSvg(cell, width, { mediaUrl: (file) => file, background: WHITE, shown, ...(words ? { words } : {}) })
+  const svg = asciiSvg(inkCellSvg(cell, width, { mediaUrl: (file) => file, background: WHITE, shown, ...(words ? { words } : {}) }))
   return { svg, shown }
 }
 
@@ -89,7 +98,7 @@ export function floatingBands(drawing: Drawing, pane: Size, cells: readonly { to
     const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${n(shown)}" height="${n(shown * h / w)}" `
       + `viewBox="${n(x)} ${n(y)} ${n(w)} ${n(h)}"><rect x="${n(x)}" y="${n(y)}" width="${n(w)}" height="${n(h)}" fill="${WHITE}"/>`
       + `${body}</svg>`
-    return { svg, shown, after: after ? after.offset : null }
+    return { svg: asciiSvg(svg), shown, after: after ? after.offset : null }
   })
 }
 

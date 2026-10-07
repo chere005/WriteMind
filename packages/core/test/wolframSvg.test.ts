@@ -167,3 +167,11 @@ describe("pictures inside a drawing", () => {
     expect(pictureSvg("data:x", 2000, 1000, 1000)).toContain(`width="640" height="320"`)
   })
 })
+
+describe("the SVG handed to the kernel is pure ASCII", () => {
+  it("writes every other character as a numeric reference, so a Latin-1-only label is not read as bytes", async () => {
+    const { asciiSvg } = await import("../src/export/wolfram/svg")
+    expect(asciiSvg("<text>café α 😀</text>")).toBe("<text>caf&#233; &#945; &#128512;</text>")
+    expect(asciiSvg("<svg/>")).toBe("<svg/>")
+  })
+})
