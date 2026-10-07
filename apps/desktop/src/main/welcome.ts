@@ -67,7 +67,10 @@ async function holdsNotes(folder: string, budget = { dirs: 400 }, depth = 0): Pr
 /**
  * Write the quick reference into `root` if this is a new install: no marker and no note in `root` or in any of the
  * project's `folders`. Returns the note's path when it was written now, else null. The marker is written either
- * way, so the question is asked once per notes folder.
+ * way, so the question is asked once per notes folder. WHAT IT SAYS MATTERS: a new install's marker names the quick
+ * reference that was written (`<date> WriteMind Quick Reference.wm`), a folder that already held notes gets the date
+ * alone — and `convertGuard.ts` takes ONLY the named one as proof that this app made the folder (the Swift app's folder
+ * got the date alone at the first launch and was converted at the second, when any marker counted).
  */
 export async function welcomeOnce(root: string, folders: string[] = []): Promise<string | null> {
   const marker = welcomeMarker(root)

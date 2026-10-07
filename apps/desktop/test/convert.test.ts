@@ -445,7 +445,7 @@ describe("the guards: what the conversion never touches", () => {
     expect(await conversionRefusal(swift, { documents, env, platform: "darwin", settled: { root: swift, outcome: "moved", notice: null, takeNotice: async () => null } })).toBeNull()
   })
 
-  it("a Mac folder that holds this app's own marks (its welcome marker, its hashed drawings) is this app's", async () => {
+  it("a Mac folder that holds this app's own marks (its hashed drawings; its NAMED welcome marker, see convertSafety.test.ts) is this app's", async () => {
     const home = scratch()
     const documentsHere = path.join(home, "Documents")
     const swift = path.join(documentsHere, "WriteMind")

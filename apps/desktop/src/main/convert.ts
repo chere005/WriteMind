@@ -13,10 +13,19 @@
  *   converted already: it is not made again, and an interrupted run is finished by moving what was left.
  * - `.txt` IS LEFT ALONE (decided 2026-10-07): it was a note in 2.15.0; it is not converted and not listed.
  * - THE FOLDERS: a folder that is the Swift Mac app's own notes (`~/Documents/WriteMind` on a Mac, with nothing to say this
- *   app uses it) is never touched, and a test instance never touches anything but its own scratch folders.
+ *   app uses it) is never touched — nor any folder UNDER it, wherever the run came in from (a project folder that is its
+ *   parent, a symlink, a spelling in another case): the guard is asked of every folder the walk enters. A test instance
+ *   never touches anything but its own scratch folders. A git working tree (a folder holding `.git`) and `node_modules`
+ *   are not walked: their `.md` files are not this app's notes and moving them would break a repository.
+ * - A FOLDER THAT IS NOT THE APP'S OWN NOTES (not the notes root or under it) is converted only after the person has
+ *   said yes to it once (`confirm`, remembered by the caller): a project folder somebody added is not ours to rearrange.
+ * - ONLY "NOT THERE" MEANS "NOT THERE". A drawing, a picture or a folder that cannot be READ (busy, no permission, a
+ *   failing disk) is not an absent one: the note it belongs to is left alone and tried again at the next launch, and a
+ *   folder that cannot be listed keeps its `.drawings` where it is.
  *
  * Two passes over every folder of the run: the names (links cross folders), then the notes; and only then the moves into
- * the backups (a picture one folder's note uses may be kept in another folder's `.drawings`).
+ * the backups (a picture one folder's note uses may be kept in another folder's `.drawings`). The sessions follow the
+ * notes BEFORE the originals move, so that a run cut short between the two leaves sessions that name notes that exist.
  */
 
 import { createHash } from "node:crypto"
@@ -29,6 +38,7 @@ import {
   type NoteOrder, type WmFile,
 } from "@writemind/core"
 import { codeOf, writeFileAtomic } from "./atomic"
+import { isWithin } from "./convertGuard"
 import { drawingPath, macDrawingPath, olderDrawingPath } from "./legacyLayout"
 import { fromMacDrawing, pictureFiles } from "./macDrawing"
 import { createFile } from "./wmStore"
@@ -75,8 +85,19 @@ export interface ConvertOptions {
   appVersion: string
   now?: Date
   log?: (line: string) => void
-  /** Why a folder may NOT be converted (the Swift app's folder, a test instance's real notes), or null when it may (convertGuard.ts). */
+  /**
+   * Why a folder may NOT be converted (the Swift app's folder, a test instance's real notes), or null when it may
+   * (convertGuard.ts). Asked of every folder given AND of every folder the walk enters.
+   */
   refuse?: (folder: string) => Promise<string | null>
+  /**
+   * Whether the person says yes to converting `count` notes in `folder` (which is not the app's own notes root), their
+   * originals going to `backup`. The caller remembers the answer per folder; a no leaves the folder alone and says
+   * nothing of it. Absent: no question is asked (library use, tests).
+   */
+  confirm?: (folder: string, count: number, backup: string) => Promise<boolean>
+  /** Called as the notes are converted: how many are done of how many. */
+  progress?: (done: number, total: number) => void
   /** Replaceable for a test: the move of one file or folder (`fs.rename`), which a test makes fail with EXDEV. */
   rename?: (from: string, to: string) => Promise<void>
 }
@@ -101,9 +122,12 @@ export interface ConvertReport {
   backups: string[]
   /** Folders not looked at, and why. */
   refused: { folder: string; reason: string }[]
+  /** Unsaved text a remembered session held over a note that had changed since: kept in the backup, not in the note. */
+  setAside: { note: string; file: string }[]
 }
 
-export const emptyReport = (): ConvertReport => ({ converted: [], skipped: [], failed: [], already: 0, txt: 0, backups: [], refused: [] })
+export const emptyReport = (): ConvertReport =>
+  ({ converted: [], skipped: [], failed: [], already: 0, txt: 0, backups: [], refused: [], setAside: [] })
 
 // MARK: - Finding the notes
 
@@ -114,14 +138,59 @@ interface Legacy {
   folder: string
 }
 
-async function walk(folder: string, excluded: readonly string[], found: { notes: string[]; txt: number }): Promise<void> {
-  const entries = await fs.readdir(folder, { withFileTypes: true }).catch(() => [])
+/** What a walk found under a project folder. */
+interface Found {
+  notes: string[]
+  txt: number
+  /** Folders that could not be listed (anything but "not there"): what is in them is unknown. */
+  unlisted: string[]
+  /** Folders not entered, and why (the guard's answer, a git working tree). */
+  kept: { folder: string; reason: string }[]
+}
+
+const newFound = (): Found => ({ notes: [], txt: 0, unlisted: [], kept: [] })
+
+/** Why a git working tree is not walked. */
+const GIT_REASON = "it is a git working tree: its notes are tracked files, and converting them would take them out of the repository"
+
+/** Only these mean "there is nothing there"; a busy file, a refused folder, a failing disk are not that. */
+const absent = (error: unknown): boolean => ["ENOENT", "ENOTDIR"].includes(codeOf(error))
+
+/** A file's bytes, or null when it is NOT THERE; any other trouble throws (the caller leaves that note alone). */
+async function readOrAbsent(file: string): Promise<Buffer | null> {
+  try { return await fs.readFile(file) } catch (error) {
+    if (absent(error)) return null
+    throw error
+  }
+}
+
+interface Rules {
+  excluded: readonly string[]
+  /** The conversion's own rules: no git working trees, no `node_modules`, and the guard asked of every folder entered. */
+  refuse?: (folder: string) => Promise<string | null>
+  everything?: boolean
+  /** Look in git working trees too (to say whether one holds notes), without converting anything. */
+  countGit?: boolean
+}
+
+async function walk(folder: string, rules: Rules, found: Found): Promise<void> {
+  if (!rules.everything && !rules.countGit && await exists(path.join(folder, ".git"))) { found.kept.push({ folder, reason: GIT_REASON }); return }
+  let entries: import("node:fs").Dirent[]
+  try { entries = await fs.readdir(folder, { withFileTypes: true }) } catch (error) {
+    if (!absent(error)) found.unlisted.push(folder)
+    return
+  }
   for (const entry of entries) {
     if (entry.name.startsWith(".")) continue
     const full = path.join(folder, entry.name)
     if (entry.isDirectory()) {
-      if (excluded.some((one) => same(one, full))) continue
-      await walk(full, excluded, found)
+      if (!rules.everything) {
+        if (rules.excluded.some((one) => same(one, full))) continue
+        if (entry.name === "node_modules") continue
+        const why = rules.refuse ? await rules.refuse(full) : null
+        if (why !== null) { found.kept.push({ folder: full, reason: why }); continue }
+      }
+      await walk(full, rules, found)
     } else if (entry.isFile()) {
       if (legacyOrder(entry.name) >= 0) found.notes.push(full)
       else if (path.extname(entry.name).toLowerCase() === ".txt") found.txt++
@@ -157,6 +226,8 @@ interface Done {
   /** The sidecar this note read its drawing from, for the backup. */
   sidecar: string | null
   bytes: Buffer
+  /** The SHA-256 of `bytes`: the original is looked at again before it is moved. */
+  digest: string
 }
 
 /** The first of the three places a note's drawing was kept that has one. */
@@ -165,21 +236,40 @@ async function sidecarOf(folder: string, root: string, note: string):
   const places: [string, boolean][] = [
     [drawingPath(folder, note), false], [olderDrawingPath(root, note), false], [macDrawingPath(folder, note), true],
   ]
+  // (A place that is NOT THERE is the next place; one that cannot be read throws, and the note is left as it is.)
   for (const [file, mac] of places) {
-    try {
-      const bytes = await fs.readFile(file)
-      return { file, text: bytes.toString("utf8"), bytes, mac }
-    } catch { /* the next place */ }
+    const bytes = await readOrAbsent(file)
+    if (bytes) return { file, text: bytes.toString("utf8"), bytes, mac }
   }
   return null
 }
 
-/** A picture or snapshot of the note by name: this folder's `.drawings/media`, then the other folders', then the root's. */
-async function legacyMedia(name: string, folder: string, others: readonly string[], root: string): Promise<Buffer | null> {
-  for (const one of [folder, ...others, root]) {
-    try { return await fs.readFile(path.join(one, ".drawings", "media", name)) } catch { /* the next */ }
+/**
+ * A picture or snapshot of the note by name: this folder's `.drawings/media`, then the other folders', then the root's,
+ * then the media of the backups an earlier run made of the project's folders (a folder added to a project later may use
+ * a picture that another folder's `.drawings` took away with it).
+ */
+async function legacyMedia(name: string, folder: string, others: readonly string[], root: string, backups: readonly string[]):
+  Promise<Buffer | null> {
+  const places = [...[folder, ...others, root].map((one) => path.join(one, ".drawings", "media")), ...backups]
+  for (const place of places) {
+    const bytes = await readOrAbsent(path.join(place, name))
+    if (bytes) return bytes
   }
   return null
+}
+
+/** The `.drawings/media` of the backups the project's folders have (newest first): beside the folder, or inside it. */
+async function backupMediaOf(folders: readonly string[]): Promise<string[]> {
+  const out: string[] = []
+  for (const folder of folders) {
+    const beside = (await fs.readdir(path.dirname(folder)).catch(() => [] as string[]))
+      .filter((name) => name.startsWith(`${path.basename(folder)} legacy backup `)).sort().reverse()
+    for (const name of beside) out.push(path.join(path.dirname(folder), name, ".drawings", "media"))
+    const inside = path.join(folder, ".writemind", "legacy")
+    for (const name of (await fs.readdir(inside).catch(() => [] as string[])).sort().reverse()) out.push(path.join(inside, name, ".drawings", "media"))
+  }
+  return out
 }
 
 const withFiles = (drawing: Drawing, map: ReadonlyMap<string, string>): Drawing => {
@@ -197,6 +287,8 @@ interface Context {
   /** The new file name of a note of the run. */
   nameOf(note: Legacy): string
   folders: string[]
+  /** `.drawings/media` of the backups earlier runs made (searched last for a picture). */
+  backupMedia: string[]
   now: Date
   app: AppStamp
 }
@@ -231,7 +323,7 @@ async function convertNote(note: Legacy, context: Context): Promise<Done> {
   const missing: string[] = []
   const found = new Map<string, Buffer>()
   for (const name of wanted) {
-    const data = await legacyMedia(name, note.folder, context.folders.filter((one) => !same(one, note.folder)), options.root)
+    const data = await legacyMedia(name, note.folder, context.folders.filter((one) => !same(one, note.folder)), options.root, context.backupMedia)
     if (data) found.set(name, data)
   }
 
@@ -320,7 +412,9 @@ async function convertNote(note: Legacy, context: Context): Promise<Done> {
     await fs.rm(target, { force: true }).catch(() => undefined)
     throw new Failure(`the new note did not read back the same (${error instanceof Error ? error.message : String(error)}); it was taken away`)
   }
-  return { note, newFile: target, sidecar: sidecar?.file ?? null, bytes }
+  // The note keeps its own time: "newest first" and a sync client see no change in what was only converted.
+  await fs.utimes(target, stat.atime, stat.mtime).catch(() => undefined)
+  return { note, newFile: target, sidecar: sidecar?.file ?? null, bytes, digest }
 }
 
 class SkipNote extends Error {}
@@ -357,10 +451,14 @@ async function copyVerified(from: string, to: string): Promise<void> {
   if (a !== b) throw new Error(`the copy of ${from} is not the same bytes`)
 }
 
+/** Where a folder's backup goes first: beside it. (Inside it, when the parent cannot be written: `backupFolder`.) */
+export const plannedBackup = (folder: string, now: Date): string =>
+  path.join(path.dirname(folder), `${path.basename(folder)} legacy backup ${stampOf(now)}`)
+
 /** A backup folder beside the project folder, else inside it. Made when first asked for. */
 async function backupFolder(folder: string, now: Date): Promise<string> {
   const stamp = stampOf(now)
-  const beside = path.join(path.dirname(folder), `${path.basename(folder)} legacy backup ${stamp}`)
+  const beside = plannedBackup(folder, now)
   try {
     await fs.mkdir(beside, { recursive: false })
     return beside
@@ -398,9 +496,11 @@ export function rewriteExactPaths(text: string, mapping: ReadonlyMap<string, str
  * `unsaved/` and taken out of the session (never discarded).
  */
 async function followSessions(userData: string, converted: readonly { from: string; to: string; text: string; relative: string }[],
-  backup: (note: string) => Promise<string>, rewrite: (text: string, note: string) => string): Promise<void> {
+  backup: (note: string) => Promise<string>, rewrite: (text: string, note: string) => string):
+  Promise<{ note: string; file: string }[]> {
   const mapping = new Map(converted.map((one) => [fold(one.from), one.to] as const))
   const facts = new Map(converted.map((one) => [fold(one.from), one] as const))
+  const aside: { note: string; file: string }[] = []
   const folders = [userData, ...(await fs.readdir(userData, { withFileTypes: true }).catch(() => []))
     .filter((entry) => entry.isDirectory() && entry.name.toLowerCase() === "sessions").map((entry) => path.join(userData, entry.name))]
   for (const folder of folders) {
@@ -421,11 +521,21 @@ async function followSessions(userData: string, converted: readonly { from: stri
             const fact = facts.get(fold(key))
             if (!fact || typeof buffer?.text !== "string") continue
             touched = true
-            const still = buffer.base === null || buffer.base === undefined || buffer.base === textFingerprint(fact.text)
+            // The page's own copy of a CRLF note has "\n" lines: the base it recorded is of either spelling of the file's text.
+            const still = buffer.base === null || buffer.base === undefined
+              || buffer.base === textFingerprint(fact.text) || buffer.base === textFingerprint(fact.text.replace(/\r\n?/g, "\n"))
             if (!still) {
-              const where = path.join(await backup(fact.from), "unsaved", `${path.basename(fact.from)}.unsaved.txt`)
-              await fs.mkdir(path.dirname(where), { recursive: true })
-              await fs.writeFile(where, buffer.text)
+              const folderOf = path.join(await backup(fact.from), "unsaved")
+              await fs.mkdir(folderOf, { recursive: true })
+              // (Never over an earlier one: two notes of one name, or two sessions holding the same note.)
+              let where = path.join(folderOf, `${path.basename(fact.from)}.unsaved.txt`)
+              for (let n = 2; ; n++) {
+                try { await fs.writeFile(where, buffer.text, { flag: "wx" }); break } catch (error) {
+                  if (codeOf(error) !== "EEXIST") throw error
+                  where = path.join(folderOf, `${path.basename(fact.from)}.unsaved ${n}.txt`)
+                }
+              }
+              aside.push({ note: fact.from, file: where })
               delete buffers[key]
             } else {
               const rewritten = rewrite(buffer.text, fact.from)
@@ -442,13 +552,14 @@ async function followSessions(userData: string, converted: readonly { from: stri
       }
     }
   }
+  return aside
 }
 
 // MARK: - The whole run
 
 /**
  * Convert the notes under `folders`. Never throws for one note's trouble; returns what was done. `folders` that are not
- * there, or are refused by `options.allow`, are listed in `refused` and left alone.
+ * there, or are refused by `options.refuse`, are listed in `refused` and left alone.
  */
 export async function convertFolders(folders: readonly string[], options: ConvertOptions): Promise<ConvertReport> {
   const report = emptyReport()
@@ -458,8 +569,9 @@ export async function convertFolders(folders: readonly string[], options: Conver
   const rename = options.rename ?? ((a: string, b: string) => fs.rename(a, b))
   const excluded = options.excluded ?? []
 
-  // The folders, each once.
+  // The folders, each once, and what is under each (the guard is asked of every folder the walk enters).
   const mine: string[] = []
+  const walked = new Map<string, Found>()
   for (const folder of folders) {
     const full = path.resolve(folder)
     if (mine.some((one) => same(one, full))) continue
@@ -467,16 +579,36 @@ export async function convertFolders(folders: readonly string[], options: Conver
     if (!stat?.isDirectory()) continue
     const why = options.refuse ? await options.refuse(full) : null
     if (why !== null) { report.refused.push({ folder: full, reason: why }); log(`${full} is not converted: ${why}`); continue }
+    const found = newFound()
+    await walk(full, { excluded, ...(options.refuse ? { refuse: options.refuse } : {}) }, found)
+    for (const one of found.kept) {
+      // A git working tree is only worth a word when it holds notes that would have been converted.
+      if (one.reason === GIT_REASON) {
+        const probe = newFound()
+        await walk(one.folder, { excluded, countGit: true, ...(options.refuse ? { refuse: options.refuse } : {}) }, probe)
+        if (probe.notes.length === 0) continue
+      }
+      report.refused.push(one)
+      log(`${one.folder} is not converted: ${one.reason}`)
+    }
+    // A folder that is not the app's own notes is converted only when the person has said yes to it (once, remembered by the caller).
+    if (found.notes.length > 0 && options.confirm && !(await isWithin(full, options.root, process.platform))) {
+      if (!(await options.confirm(full, found.notes.length, plannedBackup(full, now)))) { log(`${full} is left alone: not confirmed`); continue }
+    }
     mine.push(full)
+    walked.set(fold(full), found)
   }
 
   // Pass 0 and 1: every legacy note, what an earlier run made of it, and every note's new name.
   const notes: Legacy[] = []
   const owned = new Map<string, { name: string; sha256: string }[]>()
   for (const folder of mine) {
-    const found = { notes: [] as string[], txt: 0 }
-    await walk(folder, excluded, found)
+    const found = walked.get(fold(folder))!
     report.txt += found.txt
+    for (const directory of found.unlisted) {
+      report.failed.push({ note: directory, reason: "this folder could not be read, so the notes in it were not looked at; it is looked at again at the next launch" })
+      log(`${directory} could not be listed`)
+    }
     for (const file of found.notes) {
       if (notes.some((one) => same(one.file, file))) continue
       notes.push({ file, folder, relative: slashes(path.relative(folder, file)) })
@@ -488,6 +620,9 @@ export async function convertFolders(folders: readonly string[], options: Conver
     const made = await earlier(directory)
     for (const [source, list] of made) owned.set(`${fold(directory)}\u0000${source}`, list)
   }
+  // (Names are kept per note path relative to its own folder, and a folder is its ABSOLUTE place: two project folders may
+  // hold the same relative path.)
+  const key = (note: Legacy): string => `${fold(note.folder)}\u0000${note.relative}`
   const ownNames = new Map<string, string>()
   const bytesOf = new Map<string, Buffer>()
   const alreadyDone = new Set<string>()
@@ -498,42 +633,43 @@ export async function convertFolders(folders: readonly string[], options: Conver
     const list = owned.get(`${fold(path.dirname(note.file))}\u0000${note.relative}`)
     const digest = sha256(bytes)
     const hit = list?.find((one) => one.sha256 === digest)
-    if (hit) { ownNames.set(note.relative, hit.name); alreadyDone.add(note.file) }
+    if (hit) { ownNames.set(key(note), hit.name); alreadyDone.add(note.file) }
   }
-  // (The names are kept per note path relative to its own folder; two folders may hold the same relative path.)
   const names = new Map<string, string>()
-  const key = (note: Legacy): string => `${fold(note.folder)}\u0000${note.relative}`
   for (const folder of mine) {
     const here = notes.filter((one) => same(one.folder, folder))
-    const own = new Map(here.filter((one) => alreadyDone.has(one.file)).map((one) => [one.relative, ownNames.get(one.relative)!] as const))
+    const own = new Map(here.filter((one) => alreadyDone.has(one.file)).map((one) => [one.relative, ownNames.get(key(one))!] as const))
     const given = newNames(here.map((one) => ({ relative: one.relative })),
       (directory) => taken.get(fold(directory === "" ? folder : path.join(folder, directory))) ?? new Set(), own)
     for (const [relative, name] of given) names.set(`${fold(folder)}\u0000${relative}`, name)
   }
   const nameOf = (note: Legacy): string => names.get(key(note))!
-  const context: Context = { options, notes, nameOf, folders: mine, now, app }
+  const context: Context = { options, notes, nameOf, folders: mine, backupMedia: await backupMediaOf(mine), now, app }
 
   // Pass 2: the notes. A link may name a note of another folder of the run, so notes are found by absolute path.
   const done: Done[] = []
+  let finished = 0
+  options.progress?.(0, notes.length)
   for (const note of notes) {
     if (alreadyDone.has(note.file)) {
       report.already++
-      done.push({ note, newFile: path.join(path.dirname(note.file), nameOf(note)), bytes: bytesOf.get(note.file)!,
-        sidecar: (await sidecarOf(note.folder, options.root, note.file))?.file ?? null })
-      continue
+      const bytes = bytesOf.get(note.file)!
+      done.push({ note, newFile: path.join(path.dirname(note.file), nameOf(note)), bytes, digest: sha256(bytes),
+        sidecar: (await sidecarOf(note.folder, options.root, note.file).catch(() => null))?.file ?? null })
+    } else {
+      try {
+        done.push(await convertNote(note, context))
+        log(`converted ${note.file}`)
+      } catch (error) {
+        const reason = error instanceof Error ? error.message : String(error)
+        if (error instanceof SkipNote) report.skipped.push({ note: note.file, reason })
+        else report.failed.push({ note: note.file, reason })
+        log(`${note.file} was left as it is: ${reason}`)
+      }
     }
-    try {
-      done.push(await convertNote(note, context))
-      log(`converted ${note.file}`)
-    } catch (error) {
-      const reason = error instanceof Error ? error.message : String(error)
-      if (error instanceof SkipNote) report.skipped.push({ note: note.file, reason })
-      else report.failed.push({ note: note.file, reason })
-      log(`${note.file} was left as it is: ${reason}`)
-    }
+    options.progress?.(++finished, notes.length)
   }
 
-  // Pass 3: the originals, and what they used, into the backups (only now: every note has had its look at the pictures).
   const backups = new Map<string, string>()
   const backupOf = async (folder: string): Promise<string> => {
     const k = fold(folder)
@@ -542,11 +678,36 @@ export async function convertFolders(folders: readonly string[], options: Conver
     return got
   }
   const folderOfNote = (file: string): string => notes.find((one) => one.file === file)!.folder
+
+  // The sessions follow BEFORE anything is moved: a run cut short after this leaves sessions that name notes that exist
+  // (the `.wm` is made and verified), where the other order left them naming files that were gone.
+  if (options.userData && done.length > 0) {
+    const facts = done.map((one) => ({
+      from: one.note.file, to: one.newFile, relative: one.note.relative, text: textOf(new Uint8Array(one.bytes)),
+    }))
+    try {
+      report.setAside.push(...await followSessions(options.userData, facts, (note) => backupOf(folderOfNote(note)),
+        (text, note) => rewriteLegacyText(text, {
+          link: (file) => {
+            const hit = linkedNote(notes.map((one) => one.file), note, file)
+            const target = hit === null ? undefined : notes.find((one) => one.file === hit)
+            return target ? nameOf(target) : null
+          },
+        })))
+    } catch (error) { log(`the sessions could not follow the notes: ${String(error)}`) }
+  }
+
+  // Pass 3: the originals, and what they used, into the backups (only now: every note has had its look at the pictures).
   for (const folder of mine) {
     const mineDone = done.filter((one) => same(one.note.folder, folder))
     if (mineDone.length === 0) continue
     const backup = await backupOf(folder)
-    const allConverted = mineDone.length === notes.filter((one) => same(one.folder, folder)).length && report.txt === 0
+    // Every legacy note under the folder, the ones left out of the project and the ones not walked included: `.drawings` is
+    // the folder's, and any note that was not converted may still be using it.
+    const everything = newFound()
+    await walk(folder, { excluded: [], everything: true }, everything)
+    const allConverted = everything.notes.length === mineDone.length && everything.txt === 0 && everything.unlisted.length === 0
+      && walked.get(fold(folder))!.unlisted.length === 0
     const order = await fs.readFile(path.join(folder, ".writemind", "order.json"), "utf8").catch(() => null)
     if (order !== null) {
       await fs.mkdir(path.join(backup, ".writemind"), { recursive: true })
@@ -555,10 +716,22 @@ export async function convertFolders(folders: readonly string[], options: Conver
     // The notes, each to its place in the mirror; the sidecars they used.
     const moved: Done[] = []
     for (const one of mineDone) {
+      const to = path.join(backup, ...one.note.relative.split("/"))
       try {
-        await move(one.note.file, path.join(backup, ...one.note.relative.split("/")), rename)
+        // The original is looked at again: one changed since it was read has words the new note does not have, and it is not
+        // ours to archive as "exactly as it was". It stays; the next launch converts it as a note of its own.
+        const current = await readOrAbsent(one.note.file)
+        if (current === null) {
+          report.failed.push({ note: one.note.file, reason: "it was moved or removed while it was being converted, so there is no original to put in the backup" })
+          continue
+        }
+        if (sha256(current) !== one.digest) {
+          report.failed.push({ note: one.note.file, reason: "it was changed while it was being converted, so it was left where it is; the next launch converts it again, as a note of its own" })
+          continue
+        }
+        await move(one.note.file, to, rename)
         moved.push(one)
-        if (!alreadyDone.has(one.note.file)) report.converted.push({ from: one.note.file, to: one.newFile, backup: path.join(backup, ...one.note.relative.split("/")) })
+        if (!alreadyDone.has(one.note.file)) report.converted.push({ from: one.note.file, to: one.newFile, backup: to })
       } catch (error) {
         report.failed.push({ note: one.note.file, reason: `the new note is made, but the original could not be moved to the backup (${codeOf(error) || String(error)}); it will be moved on the next launch` })
       }
@@ -606,21 +779,6 @@ export async function convertFolders(folders: readonly string[], options: Conver
     }
   }
 
-  // The sessions follow.
-  if (options.userData && done.length > 0) {
-    const facts = done.map((one) => ({
-      from: one.note.file, to: one.newFile, relative: one.note.relative, text: textOf(new Uint8Array(one.bytes)),
-    }))
-    await followSessions(options.userData, facts, (note) => backupOf(folderOfNote(note)),
-      (text, note) => rewriteLegacyText(text, {
-        link: (file) => {
-          const hit = linkedNote(notes.map((one) => one.file), note, file)
-          const target = hit === null ? undefined : notes.find((one) => one.file === hit)
-          return target ? nameOf(target) : null
-        },
-      })).catch((error) => log(`the sessions could not follow the notes: ${String(error)}`))
-  }
-
   // The receipt, in each backup.
   for (const backup of report.backups) {
     const lines = [
@@ -630,6 +788,8 @@ export async function convertFolders(folders: readonly string[], options: Conver
     ]
     if (report.skipped.length > 0) lines.push("", "Left as they were:", ...report.skipped.map((one) => `${one.note}: ${one.reason}`))
     if (report.failed.length > 0) lines.push("", "Not finished:", ...report.failed.map((one) => `${one.note}: ${one.reason}`))
+    const aside = report.setAside.filter((one) => one.file.startsWith(backup))
+    if (aside.length > 0) lines.push("", "Unsaved text that was kept apart (the note had changed since it was typed):", ...aside.map((one) => `${one.note}: ${one.file}`))
     await fs.writeFile(path.join(backup, "WriteMind conversion.txt"), `${lines.join("\n")}\n`).catch(() => undefined)
   }
   return report
@@ -643,8 +803,11 @@ export async function convertFolders(folders: readonly string[], options: Conver
  * way), and the original is NOT touched, not moved and not rewritten. Opening the same unchanged file again opens the
  * note made the first time. Returns the `.wm`'s path; throws with the reason when the file is not UTF-8 text.
  */
-export async function importMarkdownNote(file: string, options: Pick<ConvertOptions, "appVersion" | "now" | "log">): Promise<string> {
+export async function importMarkdownNote(file: string, options: Pick<ConvertOptions, "appVersion" | "now" | "log" | "refuse">): Promise<string> {
   const folder = path.dirname(file)
+  // (A `.md` in the Swift app's folder gets no `.wm` beside it: that folder is not this app's to add files to.)
+  const why = options.refuse ? await options.refuse(folder) : null
+  if (why !== null) throw new Error(why)
   const note: Legacy = { file, folder, relative: path.basename(file) }
   const bytes = await fs.readFile(file)
   const digest = sha256(bytes)
@@ -654,7 +817,7 @@ export async function importMarkdownNote(file: string, options: Pick<ConvertOpti
   const name = newNames([{ relative: note.relative }], () => taken).get(note.relative)!
   const context: Context = {
     options: { root: folder, appVersion: options.appVersion, ...(options.now ? { now: options.now } : {}), ...(options.log ? { log: options.log } : {}) },
-    notes: [note], nameOf: () => name, folders: [folder], now: options.now ?? new Date(), app: { name: "WriteMind", version: options.appVersion },
+    notes: [note], nameOf: () => name, folders: [folder], backupMedia: [], now: options.now ?? new Date(), app: { name: "WriteMind", version: options.appVersion },
   }
   try {
     return (await convertNote(note, context)).newFile
@@ -668,8 +831,10 @@ export async function importMarkdownNote(file: string, options: Pick<ConvertOpti
  * A MarkdownNote (`.mdwm`: the words of a note as a file of its own) opened from outside: a NEW `.wm` beside it holding those
  * words, the original untouched. Throws with the reason when the file is not UTF-8 text.
  */
-export async function importMdwmNote(file: string, options: Pick<ConvertOptions, "appVersion" | "now">): Promise<string> {
+export async function importMdwmNote(file: string, options: Pick<ConvertOptions, "appVersion" | "now" | "refuse">): Promise<string> {
   const folder = path.dirname(file)
+  const why = options.refuse ? await options.refuse(folder) : null
+  if (why !== null) throw new Error(why)
   const bytes = await fs.readFile(file)
   let text: string
   try { text = strict.decode(bytes) } catch { throw new Error("it is not UTF-8 text") }
@@ -686,7 +851,12 @@ export async function importMdwmNote(file: string, options: Pick<ConvertOptions,
 
 // MARK: - What the person is told
 
-/** The notice: what was converted and where the backup is. Null when there is nothing to say. */
+/**
+ * The notice: what was converted and where the backup is, what was left and why (folders that were not looked at, notes
+ * that could not be converted, text that was kept apart, `.txt` files that are not shown). Null when there is nothing to say.
+ * A test instance's refusals and a switched-off conversion are not the person's business and are not said; `.txt` files
+ * are counted whenever something else is said (and alone they are not worth a notice at every launch).
+ */
 export function conversionNotice(report: ConvertReport): string | null {
   const count = report.converted.length
   const parts: string[] = []
@@ -701,7 +871,16 @@ export function conversionNotice(report: ConvertReport): string | null {
   if (report.failed.length > 0) {
     parts.push(`${report.failed.length} ${report.failed.length === 1 ? "was" : "were"} not finished: ${report.failed.map((one) => `${path.basename(one.note)} (${one.reason})`).join("; ")}.`)
   }
-  if (count > 0 && report.txt > 0) {
+  if (report.setAside.length > 0) {
+    parts.push(`Text that had been typed and not saved in ${report.setAside.map((one) => path.basename(one.note)).join(", ")} `
+      + `had no unchanged note to go back into, so it was kept apart, in ${[...new Set(report.setAside.map((one) => path.dirname(one.file)))].join(" and ")}.`)
+  }
+  const refused = report.refused.filter((one) => !/^(conversion is turned off|a test instance)/.test(one.reason))
+  if (refused.length > 0) {
+    parts.push(`${refused.length === 1 ? "A folder was" : `${refused.length} folders were`} not converted: `
+      + `${refused.map((one) => `${path.basename(one.folder) || one.folder} (${one.reason})`).join("; ")}.`)
+  }
+  if (report.txt > 0 && parts.length > 0) {
     parts.push(`${report.txt} plain .txt ${report.txt === 1 ? "file was" : "files were"} left alone and ${report.txt === 1 ? "is" : "are"} not shown.`)
   }
   return parts.length > 0 ? parts.join(" ") : null

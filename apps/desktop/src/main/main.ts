@@ -61,6 +61,8 @@ import { UPDATE_COMMAND_IDS } from "../shared/update"
 import { ensureQuickReference, quickReferencePath, welcomeOnce, welcomeWanted } from "./welcome"
 import { MOVE_STATE_FILE, NOTES_FOLDER, settleNotesFolder, type Settled } from "./notesFolderMove"
 import { conversionNotice, convertFolders, importMarkdownNote, importMdwmNote } from "./convert"
+import { consentFor } from "./convertConsent"
+import { closingByRun, conversionProgress } from "./convertProgress"
 import { OpenQueue, admit, candidates } from "./openFiles"
 import { conversionRefusal } from "./convertGuard"
 import type { Runner as EvalRunner } from "./eval/runner"
@@ -173,17 +175,39 @@ function watchNotes(folders: string[]): void {
 // THE CONVERSION of 2.15.0's notes (.md and their .drawings) to .wm, at launch and when a folder is added to the project
 // (convert.ts): what it did is said once, in the quiet bar (renderer/FolderNotice.tsx), and in the receipt it leaves in the backup.
 const conversionNotices: string[] = []
+
+/** What the conversion's guard needs (convertGuard.ts): asked fresh each time, the move state is a file. */
+async function guardContext() {
+  const userData = app.getPath("userData")
+  const moved = await fs.readFile(path.join(userData, MOVE_STATE_FILE), "utf8")
+    .then((text) => (JSON.parse(text) as { moved?: { to?: unknown } }).moved?.to).catch(() => null)
+  return {
+    documents: app.getPath("documents"), env: process.env, settled: settledFolder, movedTo: typeof moved === "string" ? moved : null,
+  }
+}
+const refuseFolder = async (folder: string): Promise<string | null> => conversionRefusal(folder, await guardContext())
+
+/** The question for a project folder that is not the notes root (convert.ts `confirm`); a test instance's scratch folders say yes. */
+async function askToConvert(folder: string, count: number, backup: string): Promise<boolean> {
+  if (process.env.WRITEMIND_E2E) return true
+  const options: Electron.MessageBoxOptions = {
+    type: "question", buttons: ["Convert", "Leave Alone"], defaultId: 1, cancelId: 1,
+    message: `Convert ${count} ${count === 1 ? "note" : "notes"} in "${folder}" to WriteMind notes?`,
+    detail: `The originals are kept, unchanged, in ${backup}. Choosing Leave Alone leaves every file in that folder exactly as it is, and the question is not asked again.`,
+  }
+  const answer = window && !window.isDestroyed() ? await dialog.showMessageBox(window, options) : await dialog.showMessageBox(options)
+  return answer.response === 0
+}
+
 async function runConversion(): Promise<void> {
+  const progress = conversionProgress()
   try {
     const userData = app.getPath("userData")
-    const moved = await fs.readFile(path.join(userData, MOVE_STATE_FILE), "utf8")
-      .then((text) => (JSON.parse(text) as { moved?: { to?: unknown } }).moved?.to).catch(() => null)
-    const context = {
-      documents: app.getPath("documents"), env: process.env, settled: settledFolder, movedTo: typeof moved === "string" ? moved : null,
-    }
     const report = await convertFolders(project.folders.filter((one) => !isForeignPath(one)), {
       root: notesRoot(), excluded: project.excluded, userData, appVersion: app.getVersion(),
-      refuse: (folder) => conversionRefusal(folder, context), log: (line) => console.log(`WriteMind: ${line}`),
+      refuse: refuseFolder, log: (line) => console.log(`WriteMind: ${line}`),
+      confirm: (folder, count, backup) => consentFor(userData, folder, () => askToConvert(folder, count, backup)),
+      progress: (done, total) => progress.update(done, total),
     })
     const said = conversionNotice(report)
     if (said) {
@@ -193,7 +217,7 @@ async function runConversion(): Promise<void> {
   } catch (error) {
     // Whatever went wrong, nothing was deleted (convert.ts moves only what was written and read back): the app goes on.
     console.error("WriteMind: the conversion of the old notes stopped", error)
-  }
+  } finally { progress.close() }
 }
 
 /** The project's folders changed under the app: tell the page what is there now, and have it read the tree. */
@@ -383,8 +407,8 @@ let appReady = false
 async function openFromOutside(files: string[]): Promise<void> {
   let any = false
   for (const file of files) {
-    const out = await admit(file, (markdown) => importMarkdownNote(markdown, { appVersion: app.getVersion(), log: (line) => console.log(`WriteMind: ${line}`) }),
-      (mdwm) => importMdwmNote(mdwm, { appVersion: app.getVersion() }))
+    const out = await admit(file, (markdown) => importMarkdownNote(markdown, { appVersion: app.getVersion(), log: (line) => console.log(`WriteMind: ${line}`), refuse: refuseFolder }),
+      (mdwm) => importMdwmNote(mdwm, { appVersion: app.getVersion(), refuse: refuseFolder }))
     if ("error" in out) {
       console.warn(`WriteMind: ${out.error}`)
       if (!process.env.WRITEMIND_E2E && window) await dialog.showMessageBox(window, { type: "warning", message: "WriteMind could not open that file.", detail: out.error })
@@ -856,8 +880,8 @@ app.whenReady().then(async () => {
   appReady = true
   // What was double-clicked to start the app (the command line on Windows and Linux, `open-file` on a Mac).
   for (const file of [...candidates(process.argv, process.cwd(), app.isPackaged), ...askedEarly.splice(0)]) {
-    const out = await admit(file, (markdown) => importMarkdownNote(markdown, { appVersion: app.getVersion() }),
-      (mdwm) => importMdwmNote(mdwm, { appVersion: app.getVersion() })).catch(() => null)
+    const out = await admit(file, (markdown) => importMarkdownNote(markdown, { appVersion: app.getVersion(), refuse: refuseFolder }),
+      (mdwm) => importMdwmNote(mdwm, { appVersion: app.getVersion(), refuse: refuseFolder })).catch(() => null)
     if (out && !("error" in out)) openQueue.push(out.file)
   }
 
@@ -872,6 +896,8 @@ app.on("before-quit", () => { quitting = true; pen?.dispose(); evalRunner?.cance
 app.on("will-quit", () => { pen?.dispose(); evalRunner?.cancelAll() })
 
 app.on("window-all-closed", () => {
+  // (the progress window of the conversion closing itself, before the main window is made, is not the end)
+  if (closingByRun()) return
   folderWatch.stop()
   evalRunner?.cancelAll()
   if (process.platform !== "darwin") app.quit()
