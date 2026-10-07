@@ -47,11 +47,11 @@ export function exportPane(pane: { width: number; height: number }): { width: nu
   return pane.width > 40 && pane.height > 40 ? { width: pane.width, height: pane.height } : { ...FALLBACK_PANE }
 }
 
-/** What the save panel should offer: the note's own name, as a PDF. */
-export function suggestedName(noteFile: string): string {
+/** What the save panel should offer: the note's own name, as a PDF (or with the extension of the format it opens on). */
+export function suggestedName(noteFile: string, extension = "pdf"): string {
   const name = noteFile.split(/[\\/]/).pop() ?? noteFile
   const dot = name.lastIndexOf(".")
-  return (dot > 0 ? name.slice(0, dot) : name) + ".pdf"
+  return (dot > 0 ? name.slice(0, dot) : name) + "." + extension
 }
 
 const FONT = `"Segoe UI", -apple-system, "Helvetica Neue", Cantarell, "Noto Sans", Arial, sans-serif`

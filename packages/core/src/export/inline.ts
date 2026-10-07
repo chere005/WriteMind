@@ -46,12 +46,19 @@ interface Style { underline: boolean; family?: string; size?: number; color?: st
 
 const SAFE_FAMILY = /^[\w\s,'"-]+$/
 
-/** `font-family: Georgia; font-size: 18px; color: #2D7DD2` read back; only what was recognised. */
+/** `font-family: Georgia; font-size: 18px; color: #2D7DD2` read back from a tag; only what was recognised. */
 function styleFromTag(tag: string): Style {
-  const style: Style = { underline: false }
   const found = /style="([^"]*)"/.exec(tag)
-  if (!found) return style
-  for (const part of found[1]!.split(";")) {
+  return { underline: false, ...(found ? spanDeclarations(found[1]!) : {}) }
+}
+
+/**
+ * The declarations of a `<span style="…">` read back — the font, the size and the colour the toolbar writes, and
+ * only what was recognised (the PDF here, the Wolfram export's runs in export/wolfram/plan.ts).
+ */
+export function spanDeclarations(css: string): { family?: string; size?: number; color?: string } {
+  const style: { family?: string; size?: number; color?: string } = {}
+  for (const part of css.split(";")) {
     const colon = part.indexOf(":")
     if (colon < 0) continue
     const name = part.slice(0, colon).trim().toLowerCase()

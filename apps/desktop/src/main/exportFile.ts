@@ -6,7 +6,10 @@
  *
  * The panel's "Save as type" list is the Mac's Format popup
  * (`@writemind/core`'s `export/formats.ts` says how the answer is read back).
- * A PDF is the note as it reads (`exportPdf.ts`); a project is the FOLDERS
+ * A PDF is the note as it reads (`exportPdf.ts`); a Wolfram notebook is the
+ * note as cells of Mathematica's, its drawings Images (`wolfram/notebookFile.ts`,
+ * port-only), and what the export has to say about its drawings is said once
+ * the file is written (`tell`); a project is the FOLDERS
  * and nothing else — the folders in it and the ones kept out of it, no note
  * copied, because the notes are already files and a project is only the shape
  * they sit in. An exported project is a copy: the open project keeps its own
@@ -37,8 +40,15 @@ export interface ExportFileDeps {
   project(): { name: string; project: Project }
   /** The note on paper, written to `file`; throws when it cannot be. */
   writePdf(file: string, request: ExportRequest): Promise<void>
+  /**
+   * The note as a Wolfram notebook, written to `file`; throws when it cannot be. Resolves what to tell the person
+   * about its drawings (some could not be made: they appear when its cells are evaluated), or null.
+   */
+  writeNotebook(file: string, request: ExportRequest): Promise<{ message: string; detail: string } | null>
   /** A failed export is worth a word: a file that silently did not appear is the worst of the three outcomes. */
   report(parent: BrowserWindow, message: string, detail: string): Promise<void>
+  /** A written export with something to say (a notebook whose drawings were not all made): one OK. */
+  tell(parent: BrowserWindow, notice: { message: string; detail: string }): Promise<void>
 }
 
 /** The project as a file: the folders and the excluded ones, and no note. */
@@ -64,8 +74,8 @@ export async function exportFile(request: ExportRequest | null, deps: ExportFile
   const first = chooser.format
   // The name follows the format the panel opens on (the Mac renames it as the popup moves; Windows swaps
   // only the extension when another type is picked).
-  const suggested = first === "pdf" && request
-    ? suggestedName(request.noteFile)
+  const suggested = first !== "project" && request
+    ? suggestedName(request.noteFile, formatExtension(first))
     : `${name}.${formatExtension("project")}`
   const where = await deps.askSave(parent, {
     title: request ? `Export “${request.title}”` : `Export “${name}”`,
@@ -77,13 +87,27 @@ export async function exportFile(request: ExportRequest | null, deps: ExportFile
   if (where.canceled || !where.filePath) return null
 
   const target = exportTarget(where.filePath, chooser)
+  let notice: { message: string; detail: string } | null = null
   try {
-    if (target.format === "pdf" && request) await deps.writePdf(target.file, request)
-    else await writeProjectFile(target.file, project)
+    switch (target.format) {
+      case "pdf":
+        if (request) { await deps.writePdf(target.file, request); break }
+        await writeProjectFile(target.file, project)
+        break
+      case "wolfram":
+        if (request) { notice = await deps.writeNotebook(target.file, request); break }
+        await writeProjectFile(target.file, project)
+        break
+      case "project":
+        await writeProjectFile(target.file, project)
+        break
+    }
   } catch (error) {
     await deps.report(parent, `Could not write “${path.basename(target.file)}”`,
       (error as Error).message || "WriteMind could not export this.")
     return null
   }
+  // Said after the file is there, so the file is never held up by the dialog.
+  if (notice) await deps.tell(parent, notice)
   return target
 }

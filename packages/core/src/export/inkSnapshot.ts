@@ -11,7 +11,7 @@
 
 import { cellFrame } from "../drawing/inkCell"
 import { decodeDrawing, writeDrawing, type InkCell } from "../drawing/model"
-import { itemSvg } from "./drawing"
+import { itemSvg, type WordBreaker } from "./drawing"
 import { PAPER_HEX } from "./inline"
 
 const n = (value: number): string => String(Math.round(value * 100) / 100)
@@ -29,6 +29,16 @@ export interface InkSvgOptions {
   metadata?: boolean
   /** What it is read against, for `readableInk`. White by default. */
   paper?: string
+  /**
+   * Port-only, the Wolfram export's three (export/wolfram/svg.ts). `background`: a rect of this colour under
+   * everything, so the picture is the page it was drawn on wherever it is shown (a dark notebook, a viewer that
+   * shows transparency as black). `shown`: the width it is SHOWN at — the width and height attributes, while the
+   * viewBox stays the cell's own width, so every line keeps its thickness relative to the drawing. `words`: a text
+   * box's and a node's words as SVG text (drawing.ts `InkOptions.words`).
+   */
+  background?: string
+  shown?: number
+  words?: WordBreaker
 }
 
 /** The height an ink cell this wide is shown at. */
@@ -45,11 +55,14 @@ export function inkCellSvg(cell: InkCell, width: number, options: InkSvgOptions)
   const w = Math.max(1, width)
   const h = inkCellHeight(cell, w)
   const size = cellFrame(w)
-  const ink = { mediaUrl: options.mediaUrl, paper: options.paper ?? PAPER_HEX }
+  const ink = { mediaUrl: options.mediaUrl, paper: options.paper ?? PAPER_HEX, ...(options.words ? { words: options.words } : {}) }
   const body = cell.items.map((item) => itemSvg(item, size, ink)).join("")
   const meta = options.metadata ? `<metadata id="${INK_METADATA_ID}">${xmlText(inkCellJson(cell))}</metadata>` : ""
-  return `<svg xmlns="http://www.w3.org/2000/svg" class="wm-ink-cell" data-ink-cell="${cell.id}" width="${n(w)}" height="${n(h)}" `
-    + `viewBox="0 0 ${n(w)} ${n(h)}" style="display:block;overflow:hidden">${meta}${body}</svg>`
+  const ground = options.background ? `<rect width="100%" height="100%" fill="${options.background}"/>` : ""
+  const shown = options.shown !== undefined && options.shown > 0 ? options.shown : w
+  const tall = shown === w ? h : shown * h / w
+  return `<svg xmlns="http://www.w3.org/2000/svg" class="wm-ink-cell" data-ink-cell="${cell.id}" width="${n(shown)}" height="${n(tall)}" `
+    + `viewBox="0 0 ${n(w)} ${n(h)}" style="display:block;overflow:hidden">${meta}${ground}${body}</svg>`
 }
 
 /**

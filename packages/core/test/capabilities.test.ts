@@ -60,6 +60,13 @@ describe("what this build can do", () => {
     expect([noScript.installsLanguages, noScript.activatesWolfram]).toEqual([false, false])
   })
 
+  // Port-only: the one OS fact, the names of the clipboard types a drawing cell copied into Mathematica goes under.
+  it("names the Wolfram clipboard's types on a Mac, and none of its own elsewhere", () => {
+    expect(capabilitiesFor("darwin", { ocr: false }).wolframClipboard).toEqual({ cell: "dyn.ah62d4rv4gk8y8xnfk6", png: "public.png" })
+    expect(capabilitiesFor("win32", { ocr: true }).wolframClipboard).toEqual({ cell: null, png: null })
+    expect(capabilitiesFor("linux").wolframClipboard).toEqual({ cell: null, png: null })
+  })
+
   it("names the platform the way the app says it", () => {
     expect(platformName("darwin")).toBe("macOS")
     expect(platformName("linux")).toBe("Linux")

@@ -10,6 +10,15 @@
 
 import type { Extension } from "@codemirror/state"
 import { EditorView } from "@codemirror/view"
+import { CELLS_MIME } from "./keys"
+
+/**
+ * Whether a paste is the app's picture to place on the drawing layer: not when something before it (the notebook's
+ * own paste of cells) has taken it, and never when WriteMind's own cells are on the clipboard — a drawing cell
+ * copied for Mathematica carries a PNG beside its cells, and pasting it back here is the cells and nothing else.
+ */
+export const takesPastedPicture = (types: readonly string[], defaultPrevented: boolean): boolean =>
+  !defaultPrevented && !types.includes(CELLS_MIME)
 
 const BLOCKS = new Set([
   "ADDRESS", "ARTICLE", "ASIDE", "BLOCKQUOTE", "DIV", "DL", "DT", "DD", "FIELDSET", "FIGURE", "FOOTER", "FORM",

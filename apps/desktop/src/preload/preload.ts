@@ -98,8 +98,13 @@ const api = {
   ocrStatus: () => ipcRenderer.invoke("ocr:status"),
   askForCamera: () => ipcRenderer.invoke("camera:ask"),
   exportPDF: (request: unknown) => ipcRenderer.invoke("export:pdf", request),
-  /** File ▸ Export…: one save panel, PDF or Project chosen in it; null when no note is open (project only). */
+  /** File ▸ Export…: one save panel, PDF, Wolfram Notebook or Project chosen in it; null when no note is open (project only). */
   exportFile: (request: unknown) => ipcRenderer.invoke("export:file", request),
+  /**
+   * Held cells with a drawing cell among them were copied: the shell writes the clipboard again for Mathematica, in
+   * the background (main/wolfram/clipboard.ts). Nothing comes back.
+   */
+  wolframCopy: (copy: unknown) => ipcRenderer.send("wolfram:copy", copy),
   duplicateNote: (file: string) => ipcRenderer.invoke("note:duplicate", file),
   /** What the application menu needs to know (a note open, the sidebar shown, ...). */
   setMenuState: (state: unknown) => ipcRenderer.invoke("menu:state", state),
@@ -153,6 +158,8 @@ const api = {
     e2eWindow: () => ipcRenderer.invoke("e2e:window"),
     e2ePerf: (command: string, arg?: unknown) => ipcRenderer.invoke("e2e:perf", command, arg),
     e2eSetBounds: (bounds: unknown) => ipcRenderer.invoke("e2e:setBounds", bounds),
+    e2eTold: () => ipcRenderer.invoke("e2e:told"),
+    e2eClipboard: (command: "read" | "save" | "restore") => ipcRenderer.invoke("e2e:clipboard", command),
   } : {}),
   /** Edit ▸ Undo / Redo in the app's own menu. */
   onEdit: (listener: (which: "undo" | "redo") => void) => {

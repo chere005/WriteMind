@@ -17,6 +17,7 @@ import path from "node:path"
 import { pathToFileURL } from "node:url"
 import {
   blockMediaFor, exportPane, measureHtml, noteBlocks, printHtml, readDrawing, suggestedName, type Drawing, type Measured,
+  type WolframMedia,
 } from "@writemind/core"
 
 export interface ExportRequest {
@@ -29,6 +30,12 @@ export interface ExportRequest {
   drawing: string | null
   /** The editor pane the drawing's objects were placed against. */
   pane: { width: number; height: number }
+  /**
+   * The drawings as the page measured them, for a Wolfram notebook (renderer/wolframMedia.ts): each drawing cell at
+   * the width it is shown, the floating layer in bands between the cells, the column. Absent: a drawing cell is its
+   * snapshot file and the floating layer is left out.
+   */
+  wolfram?: WolframMedia
 }
 
 export interface ExportDeps {

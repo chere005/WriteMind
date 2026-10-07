@@ -5,7 +5,8 @@
  * The Mac lists absolute paths because a GUI app there inherits launchd's PATH, which has no Homebrew in it. A
  * Windows app inherits the person's own PATH, so the tools are looked for BY NAME on it (`toolNames` in the core),
  * plus the one or two places a language's own installer puts them that a PATH may not reach — rustup's
- * `~\.cargo\bin`, WolframScript's folder under Program Files, the Wolfram Engine's version folder, python.org's
+ * `~\.cargo\bin`, WolframScript's folder under Program Files, the Wolfram Engine's version folder (and a full
+ * Mathematica's, for the Wolfram export: on a Mac inside its app), python.org's
  * per-user and all-users folders (where the WriteMind installer's "Install Python" puts it). Nothing here
  * starts anything: finding is reading the file system.
  *
@@ -130,6 +131,13 @@ export const MAC_TOOL_FOLDERS = ["/opt/homebrew/bin", "/usr/local/bin"]
  */
 export const MAC_ENGINE_APP = "/Applications/Wolfram Engine.app"
 export const MAC_ENGINE_WOLFRAMSCRIPT = `${MAC_ENGINE_APP}/Contents/Resources/Wolfram Player.app/Contents/MacOS/wolframscript`
+/**
+ * A full Mathematica's own wolframscript (port-only, for the Wolfram notebook export and a drawing cell copied into
+ * Mathematica: Sean has a full install on another machine, and it must be found with nothing chosen). The app is
+ * `Wolfram.app` since version 14.1 and `Mathematica.app` before it; wolframscript is in its `Contents/MacOS`.
+ */
+export const MAC_WOLFRAM_APPS = ["/Applications/Wolfram.app", "/Applications/Mathematica.app"]
+const MAC_APP_WOLFRAMSCRIPTS = MAC_WOLFRAM_APPS.map((app) => `${app}/Contents/MacOS/wolframscript`)
 
 const joiner = (platform: string) => (platform === "win32" ? path.win32 : path.posix)
 
@@ -179,19 +187,24 @@ function extraPlaces(evaluator: Evaluator, places: ToolPlaces): string[] {
     // rustup puts rustc in the home directory and nowhere else.
     case "rust": return places.home ? [p.join(places.home, ".cargo", "bin", "rustc" + exe)] : []
     // WolframScript's own installer puts it in a folder of its own; the Wolfram Engine's puts a copy in the engine's
-    // version folder (`Wolfram Engine\14.1\wolframscript.exe`), which no PATH reaches. The newest engine first.
-    // On a Mac the engine's DMG puts it inside the app, which Homebrew links to and nothing else does.
+    // version folder (`Wolfram Engine\14.1\wolframscript.exe`), which no PATH reaches. The newest engine first; then
+    // a full Mathematica's, in its own version folder (`Wolfram\14.3`, before 14.1 `Mathematica\14.0`), newest first.
+    // On a Mac the engine's DMG puts it inside the app, which Homebrew links to and nothing else does; a full
+    // Mathematica keeps its own in its app.
     case "wolfram": return windows
       ? places.programFiles.flatMap((dir) => {
         const research = p.join(dir, "Wolfram Research")
-        const engines = p.join(research, "Wolfram Engine")
+        const versions = (product: string) => {
+          const folder = p.join(research, product)
+          return newestFirst(places.folders?.(folder) ?? []).map((version) => p.join(folder, version, "wolframscript.exe"))
+        }
         return [
           p.join(research, "WolframScript", "wolframscript.exe"),
-          ...newestFirst(places.folders?.(engines) ?? []).map((version) => p.join(engines, version, "wolframscript.exe")),
+          ...versions("Wolfram Engine"), ...versions("Wolfram"), ...versions("Mathematica"),
         ]
       })
       : ["/opt/homebrew/bin/wolframscript", "/usr/local/bin/wolframscript",
-        ...(places.platform === "darwin" ? [MAC_ENGINE_WOLFRAMSCRIPT] : [])]
+        ...(places.platform === "darwin" ? [MAC_ENGINE_WOLFRAMSCRIPT, ...MAC_APP_WOLFRAMSCRIPTS] : [])]
     // python.org's installer (and winget, which runs it) does not put Python on the PATH unless asked, and a PATH it
     // does change reaches only programs started AFTER it: WriteMind open while the Windows installer added Python
     // still has the old one. So its own folders: the per-user launcher, then `Python3NN` under
@@ -223,14 +236,17 @@ export function lookedFor(evaluator: Evaluator, places: ToolPlaces): string[] {
   const onPath = `${toolNames(evaluator).join(", ")} on the PATH`
   // The Program Files folders are said once, as the places they are, not as three paths each.
   if (evaluator === "wolfram" && places.platform === "win32") {
-    return [onPath, "Program Files\\Wolfram Research\\WolframScript", "Program Files\\Wolfram Research\\Wolfram Engine\\<version>"]
+    return [onPath, "Program Files\\Wolfram Research\\WolframScript", "Program Files\\Wolfram Research\\Wolfram Engine\\<version>",
+      "Program Files\\Wolfram Research\\Wolfram\\<version>", "Program Files\\Wolfram Research\\Mathematica\\<version>"]
   }
   if (evaluator === "python" && places.platform === "win32") {
     return [onPath, "%LOCALAPPDATA%\\Programs\\Python (Launcher, Python3<version>)", "Program Files\\Python3<version>"]
   }
-  // The engine's app is said as the app, not as the five folders down inside it its wolframscript is.
+  // The engine's app (and a full Mathematica's) is said as the app, not as the folders down inside it its
+  // wolframscript is.
   if (evaluator === "wolfram" && places.platform === "darwin") {
-    return [onPath, ...extraPlaces(evaluator, places).filter((file) => file !== MAC_ENGINE_WOLFRAMSCRIPT), MAC_ENGINE_APP]
+    const inApps = new Set([MAC_ENGINE_WOLFRAMSCRIPT, ...MAC_APP_WOLFRAMSCRIPTS])
+    return [onPath, ...extraPlaces(evaluator, places).filter((file) => !inApps.has(file)), MAC_ENGINE_APP, ...MAC_WOLFRAM_APPS]
   }
   return [onPath, ...extraPlaces(evaluator, places)]
 }

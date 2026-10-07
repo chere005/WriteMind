@@ -11,7 +11,8 @@
  */
 
 import {
-  app, BrowserWindow, nativeImage, nativeTheme, dialog, ipcMain, Menu, net, powerMonitor, protocol, screen, session, shell, systemPreferences,
+  app, BrowserWindow, clipboard, ClipboardItem, nativeImage, nativeTheme, dialog, ipcMain, Menu, net, powerMonitor, protocol, screen,
+  session, shell, systemPreferences,
 } from "electron"
 import { promises as fs } from "node:fs"
 import path from "node:path"
@@ -38,6 +39,11 @@ import { PROJECT_COMMANDS, projectInfo, runProjectCommand, type ProjectChange } 
 import { startPenSubsystem, type PenSubsystem } from "./pen/subsystem"
 import { exportNotePdf, writeNotePdf, type ExportRequest } from "./exportPdf"
 import { exportFile } from "./exportFile"
+import { writeFileAtomic } from "./atomic"
+import { runKernel } from "./wolfram/kernel"
+import type { MediaDeps } from "./wolfram/media"
+import { writeWolframNotebook } from "./wolfram/notebookFile"
+import { copyForWolfram, validWolframCopy } from "./wolfram/clipboard"
 import { rememberWindow, windowPlacement } from "./windowMemory"
 import { installPerfProbe } from "./perfProbe"
 import { registerEval } from "./eval/ipc"
@@ -570,7 +576,38 @@ app.whenReady().then(async () => {
   }
   ipcMain.handle("export:pdf", async (_event, request: ExportRequest) =>
     exportNotePdf(request, { window, askSave, ...(await printedPictures(request)) }))
-  // File ▸ Export… (exportFile.ts): one panel, PDF or Project chosen in it; null when no note is open.
+  // THE WOLFRAM NOTEBOOK AND A DRAWING CELL COPIED INTO MATHEMATICA (main/wolfram/*): the note's pictures as files,
+  // read and converted here, and ONE kernel run through the eval runner (Wolfram's program as a cell finds it).
+  const wolframFiles: MediaDeps = {
+    findMedia: (name) => findMedia(notesRoot(), name),
+    stat: async (file) => {
+      try {
+        const stat = await fs.stat(file)
+        return stat.isFile() ? { mtimeMs: stat.mtimeMs, size: stat.size } : null
+      } catch { return null }
+    },
+    readFile: async (file) => new Uint8Array(await fs.readFile(file)),
+    pdfPicture: (file) => readPdfPicture(file),
+    bitmap: async (file, maxWidth) => {
+      const image = nativeImage.createFromPath(file)
+      if (image.isEmpty()) return null
+      const { width } = image.getSize()
+      const out = maxWidth !== null && width > maxWidth ? image.resize({ width: maxWidth, quality: "good" }) : image
+      return { png: new Uint8Array(out.toPNG()), width }
+    },
+    tempPng: async (bytes) => {
+      const folder = await fs.mkdtemp(path.join(app.getPath("temp"), "wm-wolfram-"))
+      const file = path.join(folder, "picture.png")
+      await fs.writeFile(file, bytes)
+      return file
+    },
+  }
+  // A temporary PNG is the only file in a folder of its own (`tempPng`): the folder goes with it.
+  const removeTemp = (file: string) => fs.rm(path.dirname(file), { recursive: true, force: true })
+  const kernel = (jobs: Parameters<typeof runKernel>[0], options: Parameters<typeof runKernel>[1]) => runKernel(jobs, options, { runner })
+  /** E2E only: what an export would have said (the scripts cannot press a native dialog's OK). */
+  const told: { message: string; detail: string }[] = []
+  // File ▸ Export… (exportFile.ts): one panel, PDF, Wolfram Notebook or Project chosen in it; null when no note is open.
   ipcMain.handle("export:file", async (_event, request: ExportRequest | null) =>
     exportFile(request, {
       window, askSave, documents: app.getPath("documents"),
@@ -579,8 +616,31 @@ app.whenReady().then(async () => {
         const pictures = await printedPictures(note)
         await writeNotePdf(file, note, pictures.mediaFile, pictures.pictureUrl)
       },
+      writeNotebook: (file, note) => writeWolframNotebook(file, note, {
+        ...wolframFiles, runKernel: kernel, removeTemp, version: app.getVersion(), write: writeFileAtomic,
+        // The kernel takes seconds: the window's own progress bar says something is happening, and nothing waits.
+        progress: (on) => { if (window && !window.isDestroyed()) window.setProgressBar(on ? 2 : -1) },
+      }),
       report: async (parent, message, detail) => { await dialog.showMessageBox(parent, { type: "warning", message, detail }) },
+      tell: async (parent, notice) => {
+        if (process.env.WRITEMIND_E2E) { told.push(notice); return }
+        await dialog.showMessageBox(parent, { type: "info", message: notice.message, detail: notice.detail, buttons: ["OK"] })
+      },
     }))
+  // A Copy or Cut of held cells with a drawing cell among them (renderer: `cellsCopied`): the clipboard written again
+  // for Mathematica, in the background. A failure is a line in the log, never a dialog.
+  const wolframClipboard = capabilitiesFor(process.platform).wolframClipboard
+  ipcMain.on("wolfram:copy", (_event, value: unknown) => {
+    const copy = validWolframCopy(value)
+    if (!copy) return
+    void copyForWolfram(copy, {
+      ...wolframFiles, removeTemp, runKernel: kernel, kinds: wolframClipboard,
+      clipboard: { readText: () => clipboard.readText(), read: () => clipboard.read(), write: (items) => clipboard.write(items as ClipboardItem[]) },
+      item: (entries) => new ClipboardItem(entries),
+      sleep: (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
+      log: (message) => console.warn(message),
+    }).catch((error: unknown) => { console.warn("WriteMind: the copy for Mathematica was not written:", error) })
+  })
 
   // THE APP'S OWN MENU (menu.ts). The page tells the shell what the menu
   // needs to know — a note open, the sidebar shown — and hears the clicks.
@@ -640,6 +700,34 @@ app.whenReady().then(async () => {
       }
     })
     ipcMain.handle("e2e:setBounds", (_event, bounds: Electron.Rectangle) => { window?.setBounds(bounds); window?.moveTop() })
+    // What an export would have told the person (the scripts cannot press a native dialog's OK), taken once.
+    ipcMain.handle("e2e:told", () => told.splice(0))
+    // The system clipboard, for the copy-into-Mathematica script: what is on it now (text types as text, the rest as
+    // base64), and the whole of it kept before the script copies and put back after.
+    let keptClipboard: Record<string, Blob> | null = null
+    const clipboardNow = async (): Promise<Record<string, Blob>> => {
+      const out: Record<string, Blob> = {}
+      const [first] = await clipboard.read()
+      for (const type of first?.types ?? []) {
+        const value = await first!.getType(type).catch(() => null)
+        if (value instanceof Blob) out[type] = value
+      }
+      return out
+    }
+    ipcMain.handle("e2e:clipboard", async (_event, command: "read" | "save" | "restore") => {
+      if (command === "save") { keptClipboard = await clipboardNow(); return true }
+      if (command === "restore") {
+        if (keptClipboard && Object.keys(keptClipboard).length > 0) await clipboard.write([new ClipboardItem(keptClipboard)])
+        else clipboard.clear()
+        keptClipboard = null
+        return true
+      }
+      const out: Record<string, string> = {}
+      for (const [type, value] of Object.entries(await clipboardNow())) {
+        out[type] = /png|tiff|image\//i.test(type) ? `base64:${Buffer.from(await value.arrayBuffer()).toString("base64")}` : await value.text()
+      }
+      return out
+    })
     ipcMain.handle("e2e:menu", () => dump(Menu.getApplicationMenu()?.items ?? []))
     ipcMain.handle("e2e:menuClick", (_event, id: string) => {
       const find = (items: Electron.MenuItem[]): Electron.MenuItem | null => {

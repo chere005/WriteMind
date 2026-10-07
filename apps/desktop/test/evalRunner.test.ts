@@ -10,7 +10,7 @@ import path from "node:path"
 import { PassThrough } from "node:stream"
 import { describe, expect, it, vi } from "vitest"
 import {
-  evalResult, identified, IDENTIFY_PYTHON, missingToolRefusal, outBody, tested, type Evaluator, type RunOutcome,
+  evalResult, identified, IDENTIFY_PYTHON, KERNEL_SCRIPT_FILE, WOLFRAM_KERNEL_SCRIPT, missingToolRefusal, outBody, tested, type Evaluator, type RunOutcome,
 } from "@writemind/core"
 import {
   childEnvironment, createProcessRunner, createRunner, EVAL_TIMEOUT_MS, PROBE_TIMEOUT_MS, processEnvironment,
@@ -95,6 +95,8 @@ function harness(present: string[], script: (command: string, args: string[]) =>
       make: async () => `C:\\Temp\\WriteMind-eval-${++dirs}`,
       write: async (file, text) => { written.set(file, text) },
       remove: async (dir) => { removed.push(dir) },
+      list: async () => [],
+      read: async () => new Uint8Array(),
     },
     environment: () => ({ PATH: "C:\\Windows", SystemRoot: "C:\\Windows" }),
     isTestHost: () => false,
@@ -126,9 +128,11 @@ describe("finding the tools (tools.ts)", () => {
     expect(toolCandidates("wolfram", WIN_PLACES([])))
       .toContain("C:\\Program Files\\Wolfram Research\\WolframScript\\wolframscript.exe")
     expect(lookedFor("rust", WIN_PLACES([]))).toEqual(["rustc on the PATH", "C:\\Users\\S\\.cargo\\bin\\rustc.exe"])
+    // CHANGED (port-only Wolfram export): a full Mathematica's version folders are looked in too, and said.
     expect(lookedFor("wolfram", WIN_PLACES([]))).toEqual([
       "wolframscript on the PATH", "Program Files\\Wolfram Research\\WolframScript",
       "Program Files\\Wolfram Research\\Wolfram Engine\\<version>",
+      "Program Files\\Wolfram Research\\Wolfram\\<version>", "Program Files\\Wolfram Research\\Mathematica\\<version>",
     ])
   })
 
@@ -550,3 +554,138 @@ describe("only a press starts a child (EvaluationSpawnTests)", () => {
     }
   })
 })
+
+// MARK: - The Wolfram export's and a copy's kernel run (port-only: docs/PARITY.md)
+
+describe("the one kernel run of a Wolfram export or copy (Runner.wolframJob)", () => {
+  const TOOL = "C:\\Program Files\\Wolfram Research\\WolframScript\\wolframscript.exe"
+  const DIR = "C:\\Temp\\WriteMind-eval-1"
+  const bytes = (text: string) => new TextEncoder().encode(text)
+  /** A scratch folder that answers like the kernel's: `answers` are what is in it when the child is done. */
+  const withAnswers = (h: Harness, answers: Record<string, string>) => {
+    h.deps.scratch = {
+      ...h.deps.scratch,
+      list: async () => Object.keys(answers),
+      read: async (file: string) => bytes(answers[file.slice(file.lastIndexOf("\\") + 1)] ?? ""),
+    }
+  }
+  const jobs = [{ name: "ink-1.svg", text: "<svg/>" }, { name: "wl-1.wl", text: "x == 1" }]
+
+  it("starts nothing in a test host, the real runner included", async () => {
+    const h = harness([TOOL], () => ({}), { isTestHost: () => true })
+    expect(await createRunner(h.deps).wolframJob("w", jobs, 1000)).toEqual({ kind: "cancelled" })
+    expect(h.spawned).toEqual([])
+    expect(await createProcessRunner().wolframJob("w", jobs, 1000)).toEqual({ kind: "cancelled" })
+  })
+
+  it("refuses a missing engine with what a Wolfram cell says, and starts nothing", async () => {
+    const h = harness([], () => ({}))
+    const outcome = await createRunner(h.deps).wolframJob("w", jobs, 1000)
+    expect(outcome).toEqual({ kind: "refused", refusal: { kind: "missingTool", evaluator: "wolfram", looked: lookedFor("wolfram", WIN_PLACES([])) } })
+    expect(h.spawned).toEqual([])
+  })
+
+  it("runs wolframscript -file on the fixed script, in a folder holding it and the inputs, and takes the folder away", async () => {
+    const h = harness([TOOL], () => ({ stdout: "" }))
+    withAnswers(h, { "ink-1.svg.boxes": "ImageBox[1]", "ink-1.svg.png": "png", "done": "14.1", "ink-1.svg": "not an answer" })
+    const outcome = await createRunner(h.deps).wolframJob("w", jobs, 1000)
+    expect(h.spawned.length).toBe(1)
+    expect(h.spawned[0]!.command).toBe(TOOL)
+    expect(h.spawned[0]!.args).toEqual(["-file", `${DIR}\\${KERNEL_SCRIPT_FILE}`, DIR])
+    expect(h.spawned[0]!.options).toMatchObject({ cwd: DIR, shell: false, stdio: ["ignore", "pipe", "pipe"] })
+    expect(h.written.get(`${DIR}\\${KERNEL_SCRIPT_FILE}`)).toBe(WOLFRAM_KERNEL_SCRIPT)
+    expect(h.written.get(`${DIR}\\ink-1.svg`)).toBe("<svg/>")
+    expect(h.written.get(`${DIR}\\wl-1.wl`)).toBe("x == 1")
+    expect(h.removed).toEqual([DIR])
+    expect(outcome.kind).toBe("ran")
+    if (outcome.kind !== "ran") return
+    expect(outcome.finished).toBe(true)
+    // Only .boxes and .png files are answers, and `done` says it finished.
+    expect([...outcome.answers.keys()].sort()).toEqual(["ink-1.svg.boxes", "ink-1.svg.png"])
+    expect(new TextDecoder().decode(outcome.answers.get("ink-1.svg.boxes"))).toBe("ImageBox[1]")
+  })
+
+  it("a run with no `done` is not finished, keeps the answers it did write, and says why the engine is silent", async () => {
+    const h = harness([TOOL], () => ({ stderr: "The Wolfram Engine requires one-time activation on this computer.", code: 255 }))
+    withAnswers(h, { "ink-1.svg.boxes": "ImageBox[1]" })
+    const outcome = await createRunner(h.deps).wolframJob("w", jobs, 1000)
+    expect(outcome.kind === "ran" && outcome.finished).toBe(false)
+    expect(outcome.kind === "ran" && [...outcome.answers.keys()]).toEqual(["ink-1.svg.boxes"])
+    expect(outcome.kind === "ran" && outcome.result.note).toContain("-activate")
+  })
+
+  it("a chosen program is used, and the environment is told it was chosen", async () => {
+    const chosen = "D:\\Wolfram\\14.3\\wolframscript.exe"
+    const asked: { path: string; chosen: boolean }[] = []
+    const h = harness([], () => ({}), {
+      places: () => ({ ...WIN_PLACES([chosen]), chosen: { wolfram: chosen } }),
+      environment: (_evaluator, tool) => { asked.push(tool); return { PATH: "x" } },
+    })
+    await createRunner(h.deps).wolframJob("w", jobs, 1000)
+    expect(h.spawned[0]!.command).toBe(chosen)
+    expect(asked).toEqual([{ path: chosen, chosen: true }])
+  })
+
+  it("throws before starting anything for a file name the run does not take", async () => {
+    const h = harness([TOOL], () => ({}))
+    const runner = createRunner(h.deps)
+    for (const name of ["../x.svg", "ink-1.svg.boxes", "writemind.wls", "ink-.svg", "ink-1.txt", "C:\\x"]) {
+      await expect(runner.wolframJob("w", [{ name, text: "" }], 1000), name).rejects.toThrow(/not a file the Wolfram run takes/)
+    }
+    expect(h.spawned).toEqual([])
+    expect(h.written.size).toBe(0)
+  })
+
+  it("kills a run that goes past its timeout, child and children, and keeps its answers", async () => {
+    const h = harness([TOOL], () => ({ hang: true }))
+    withAnswers(h, { "ink-1.svg.boxes": "ImageBox[1]" })
+    const outcome = await createRunner(h.deps).wolframJob("w", jobs, 30)
+    expect(h.killed.length).toBe(1)
+    expect(outcome.kind === "ran" && outcome.timedOut).toBe(true)
+    expect(outcome.kind === "ran" && outcome.finished).toBe(false)
+    expect(outcome.kind === "ran" && outcome.answers.size).toBe(1)
+    expect(h.removed).toEqual([DIR])
+  })
+
+  it("is taken back by a second run under the same id, and by cancelAll", async () => {
+    const h = harness([TOOL], () => ({ hang: true }))
+    const runner = createRunner(h.deps)
+    const first = runner.wolframJob("copy", jobs, 60_000)
+    await new Promise((resolve) => setTimeout(resolve, 10))
+    const second = runner.wolframJob("copy", jobs, 60_000)
+    expect(await first).toEqual({ kind: "cancelled" })
+    await new Promise((resolve) => setTimeout(resolve, 10))
+    runner.cancelAll()
+    expect(await second).toEqual({ kind: "cancelled" })
+    expect(runner.inFlight()).toBe(0)
+    expect(h.removed.length).toBe(2)
+  })
+
+  it("answers 'could not start' when the engine would not start, and takes the folder away", async () => {
+    const h = harness([TOOL], () => ({ error: "spawn EACCES" }))
+    const outcome = await createRunner(h.deps).wolframJob("w", jobs, 1000)
+    expect(outcome.kind).toBe("couldNotStart")
+    expect(h.removed.length).toBe(1)
+  })
+
+  it("is asked for from ONE file: the kernel cache's (a source scan)", () => {
+    const callers = (dir: string) => walkSources(dir).filter((file) => /\.wolframJob\(/.test(readFileSync(file, "utf8")))
+      .map((file) => path.relative(ROOT, file).replace(/\\/g, "/"))
+    expect(callers("apps/desktop/src")).toEqual(["apps/desktop/src/main/wolfram/kernel.ts"])
+    for (const dir of ["packages/core/src", "packages/editor/src", "apps/desktop/src/renderer"]) expect(callers(dir), dir).toEqual([])
+  })
+})
+
+/** Every .ts/.tsx file under a folder of the repo. */
+function walkSources(dir: string): string[] {
+  const out: string[] = []
+  const walk = (at: string) => {
+    for (const name of readdirSync(at)) {
+      const file = path.join(at, name)
+      if (statSync(file).isDirectory()) walk(file)
+      else if (/\.(ts|tsx)$/.test(file)) out.push(file)
+    }
+  }
+  walk(path.join(ROOT, dir))
+  return out
+}

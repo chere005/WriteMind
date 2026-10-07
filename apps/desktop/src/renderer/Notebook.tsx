@@ -18,7 +18,7 @@ import {
 import { ALL_KINDS, KIND_GROUPS, kindName, openCell, type CellKind, type ListStyle, type Seam } from "@writemind/core"
 import { textTimeline } from "./editTimeline"
 import { historyOf, stashText, takeText } from "./noteHistory"
-import { evaluationCells, evalHost, inkCellPainter, pictureCells, type InkCellPainter } from "@writemind/editor"
+import { cellsCopied, evaluationCells, evalHost, inkCellPainter, pictureCells, type InkCellPainter } from "@writemind/editor"
 import { tables, textCells } from "@writemind/editor"
 import { evalHostOfApp } from "./evalHost"
 import "./editor.css"
@@ -62,10 +62,12 @@ interface Props {
   inkPainter?: InkCellPainter | null
   /** The + menu's Drawing Cell at a bar: the app writes the ink cell's line and its sidecar item there. */
   onInsertInkCell?(offset: number): void
+  /** Held cells were copied or cut (before the cut takes them out): the app copies their drawing cells for Mathematica. */
+  onCellsCopied?(copy: { markdown: string; plain: string }): void
 }
 
 export function Notebook({ file, text, version, restore, rendered: showRendered, markers: showMarkers, listStyle, onChange, onReady,
-  onViewState, onLink, onFollow, inkPainter, onInsertInkCell }: Props) {
+  onViewState, onLink, onFollow, inkPainter, onInsertInkCell, onCellsCopied }: Props) {
   const host = useRef<HTMLDivElement | null>(null)
   const view = useRef<EditorView | null>(null)
   const latest = useRef(onChange)
@@ -88,6 +90,8 @@ export function Notebook({ file, text, version, restore, rendered: showRendered,
   painterRef.current = inkPainter ?? null
   const insertInkRef = useRef(onInsertInkCell)
   insertInkRef.current = onInsertInkCell
+  const copiedRef = useRef(onCellsCopied)
+  copiedRef.current = onCellsCopied
   // ONE painter object for the editor's whole life (the facet never changes); it asks whatever the app gives now.
   const painter = useRef<InkCellPainter>({
     aspect: (id) => painterRef.current?.aspect(id) ?? null,
@@ -143,6 +147,7 @@ export function Notebook({ file, text, version, restore, rendered: showRendered,
       // Picture and ink cells, both panes: block widgets the caret and text go above and below.
       pictureCells,
       inkCellPainter.of(painter),
+      cellsCopied.of((copy) => copiedRef.current?.(copy)),
       notebookKeys,
       textConventions,
       pasteHtmlAsText,

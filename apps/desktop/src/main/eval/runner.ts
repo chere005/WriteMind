@@ -8,6 +8,9 @@
  * - A RUN ONLY EVER STARTS FROM A PRESS — Shift+Enter in that cell. Never on opening a note, on a save, on a reload.
  *   Or a press in File ▸ Language Setup…: Test runs a fixed program (`TEST_SOURCE`) and never a note's text; Choose…
  *   and Use ask the picked program its version (`identify`).
+ *   Or a press of Export (Wolfram Notebook) or a Copy of a drawing cell (`wolframJob`): a fixed script
+ *   (`WOLFRAM_KERNEL_SCRIPT`), never a note's text as code; drawings and pictures go in as files and are imported,
+ *   maths is parsed held, nothing is evaluated.
  * - The guard against a test host is HERE, on the first line of `run`, not at the menu: a vitest run that reached
  *   the real spawn would start a compiler.
  * - The child never touches the note. The answer comes back in memory and the page writes it through the editor,
@@ -22,13 +25,14 @@
  */
 
 import { spawn as nodeSpawn } from "node:child_process"
-import { mkdtemp, rm, writeFile } from "node:fs/promises"
+import { mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises"
 import * as os from "node:os"
 import * as path from "node:path"
 import type { Readable } from "node:stream"
 import {
-  compileArguments, evalResult, isCompiled, missingToolRefusal, OUTPUT_BYTE_LIMIT, sourceFile, withoutTrailingNull,
-  wolframNote, type EvalResult, type Evaluator, type ProbeOutcome, type RunOutcome, type RunRequest, type ToolReport,
+  compileArguments, evalResult, isCompiled, KERNEL_INPUT, KERNEL_SCRIPT_FILE, missingToolRefusal, OUTPUT_BYTE_LIMIT,
+  sourceFile, withoutTrailingNull, WOLFRAM_KERNEL_SCRIPT, wolframNote, type EvalResult, type Evaluator, type KernelJob,
+  type ProbeOutcome, type RunOutcome, type RunRequest, type ToolReport, type WolframJobOutcome,
 } from "@writemind/core"
 import {
   flavorOf, identifyArguments, interpreterArguments, placesFromProcess, toolEntry, toolReport, type ToolPlaces,
@@ -73,6 +77,9 @@ export interface RunnerDeps {
     make(): Promise<string>
     write(file: string, text: string): Promise<void>
     remove(dir: string): Promise<void>
+    /** The names in a scratch folder (the kernel's answers), and one file's bytes. */
+    list(dir: string): Promise<string[]>
+    read(file: string): Promise<Uint8Array>
   }
   /**
    * What a child's environment is: replaced, not inherited (see `childEnvironment`). `tool` is the program the run
@@ -106,6 +113,13 @@ export interface Runner {
    * `cancelAll` kill it, it runs in a scratch folder of its own, and a test host starts nothing.
    */
   identify(id: string, evaluator: Evaluator, file: string): Promise<ProbeOutcome>
+  /**
+   * The Wolfram export's and a copy's ONE kernel run (main/wolfram/kernel.ts is the only caller; a test reads the
+   * sources to keep it so): the fixed script in a scratch folder with `inputs` beside it, `wolframscript -file`, and
+   * every answer it wrote read back — finished or not. Wolfram's program as a cell finds it (Language Setup's choice
+   * included); a job like a run: `cancel(id)` and `cancelAll` kill it, and a test host starts nothing.
+   */
+  wolframJob(id: string, inputs: readonly KernelJob[], timeoutMs: number): Promise<WolframJobOutcome>
   cancel(id: string): void
   cancelAll(): void
   tools(): ToolReport
@@ -309,6 +323,52 @@ export function createRunner(deps: RunnerDeps): Runner {
     }
   }
 
+  async function wolframJob(id: string, inputs: readonly KernelJob[], timeoutMs: number): Promise<WolframJobOutcome> {
+    // The same guard as a run, on the same first line.
+    if (deps.isTestHost()) return { kind: "cancelled" }
+    const entry = toolEntry("wolfram", deps.places())
+    const tool = entry.path
+    if (!tool) return { kind: "refused", refusal: missingToolRefusal("wolfram", entry) }
+    // Only the files the plan makes go in the folder: a name that is not one of them is a bug, and nothing starts.
+    for (const input of inputs) {
+      if (!KERNEL_INPUT.test(input.name)) throw new Error(`“${input.name}” is not a file the Wolfram run takes`)
+    }
+    // A second run under the same id takes the first back (a newer copy).
+    cancel(id)
+    const job: Job = { cancelled: false, children: new Set() }
+    jobs.set(id, job)
+    let dir: string | null = null
+    try {
+      dir = await deps.scratch.make()
+      const script = p.join(dir, KERNEL_SCRIPT_FILE)
+      await deps.scratch.write(script, WOLFRAM_KERNEL_SCRIPT)
+      for (const input of inputs) await deps.scratch.write(p.join(dir, input.name), input.text)
+      const ran = await spawnOne(job, tool, ["-file", script, dir], dir,
+        deps.environment("wolfram", { path: tool, chosen: entry.chosen !== undefined }),
+        // What it prints is not read (its answers are files): the cap only keeps a chatty engine from filling memory.
+        { timeoutMs, byteLimit: Math.max(runLimit, 1024 * 1024) })
+      if (job.cancelled) return { kind: "cancelled" }
+      // EVERY ANSWER IT FINISHED, done or not: each was renamed into place whole, so a run cut short still has them.
+      const answers = new Map<string, Uint8Array>()
+      let finished = false
+      for (const name of await deps.scratch.list(dir).catch(() => [] as string[])) {
+        if (name === "done") { finished = true; continue }
+        if (!/\.(boxes|png)$/.test(name)) continue
+        const bytes = await deps.scratch.read(p.join(dir, name)).catch(() => null)
+        if (bytes) answers.set(name, bytes)
+      }
+      const result = evalResult(ran)
+      result.note = wolframNote(result, "wolfram", tool)
+      return { kind: "ran", finished, timedOut: ran.timedOut, result, answers }
+    } catch (error) {
+      if (error instanceof Cancelled || job.cancelled) return { kind: "cancelled" }
+      return { kind: "couldNotStart", why: error instanceof Error ? error.message : String(error) }
+    } finally {
+      if (dir !== null) await deps.scratch.remove(dir)
+      if (jobs.get(id) === job) jobs.delete(id)
+    }
+  }
+
   function cancel(id: string): void {
     const job = jobs.get(id)
     if (!job) return
@@ -321,7 +381,7 @@ export function createRunner(deps: RunnerDeps): Runner {
     for (const id of [...jobs.keys()]) cancel(id)
   }
 
-  return { run, identify, cancel, cancelAll, tools: () => toolReport(deps.places()), inFlight: () => jobs.size }
+  return { run, identify, wolframJob, cancel, cancelAll, tools: () => toolReport(deps.places()), inFlight: () => jobs.size }
 }
 
 // MARK: - The real thing
@@ -400,6 +460,8 @@ export function createProcessRunner(store?: { get(): Partial<Record<Evaluator, s
       write: (file, text) => writeFile(file, text, "utf8"),
       // A child killed a moment ago can still hold its files on Windows: try again a few times.
       remove: (dir) => rm(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 120 }).catch(() => undefined),
+      list: (dir) => readdir(dir),
+      read: async (file) => new Uint8Array(await readFile(file)),
     },
     environment: (evaluator, tool) => processEnvironment(evaluator, tool),
     isTestHost: () => process.env.VITEST !== undefined,
