@@ -1,6 +1,7 @@
 // Port-only: no XCTest. COPY CELL (the tablet box's button, renderer/BoxActions.tsx): the clipboard side
 // (main/wolfram/clipboard.ts `cell`: the SVG file for the other apps, the kernel's types for Mathematica, never a PNG).
 // The page side is in copiedCell.test.ts.
+import { pathToFileURL } from "node:url"
 import { describe, expect, it } from "vitest"
 import { evalResult, wolframClipboardFor, type EngineState, type KernelJob, type WolframMedia } from "@writemind/core"
 import { copyForWolfram, validWolframCopy, type CopyDeps, type WolframCopy } from "../src/main/wolfram/clipboard"
@@ -11,7 +12,8 @@ const INK = `![ink](.drawings/media/ink-${ID}.svg)`
 const BOXES = `GraphicsBox[TagBox[RasterBox[CompressedData["1:eJx"], {{0, 100}, {200, 0}}], BoxForm\`ImageTag["Byte"]], ImageSize -> {100, 50}]`
 const SVG = `<svg xmlns="http://www.w3.org/2000/svg" width="400"/>`
 const FILE = "/tmp/WriteMind-copied/copy-x/Drawing.svg"
-const URI = `file://${FILE}\r\n`
+// The OS's own spelling of the path (a Windows runner turns "/tmp/x" into "D:\\tmp\\x"): what the code under test writes.
+const URI = `${pathToFileURL(FILE).href}\r\n`
 const URL_MAC = `electron application/osclipboard;format="public.file-url"`
 const MEDIA: WolframMedia = { inks: { [ID]: { svg: SVG, shown: 400 } }, bands: [], column: 400 }
 const OMEG = `electron application/osclipboard;format="dyn.ah62d4rv4gk8y8xnfk6"`

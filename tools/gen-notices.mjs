@@ -1,4 +1,3 @@
-#!/usr/bin/env node
 // THIRD-PARTY-NOTICES.md and the app's notices.json, written from what is actually installed. Plain node, no
 // network: it reads package-lock.json (which packages ship) and node_modules (their licence files).
 //
