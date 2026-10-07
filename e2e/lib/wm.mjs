@@ -56,7 +56,7 @@ export function wmBytes(text, { drawing, entries = {}, manifest = {} } = {}) {
     format: "writemind-note", version: 1, id: crypto.randomUUID(), created: now, modified: now,
     app: { name: "WriteMind e2e", version: "0" }, ...manifest,
   }
-  const list = [["mimetype", Buffer.from(MIME)], ["manifest.json", Buffer.from(JSON.stringify(full, null, 2))], ["note.wmdm", Buffer.from(text, "utf8")]]
+  const list = [["mimetype", Buffer.from(MIME)], ["manifest.json", Buffer.from(JSON.stringify(full, null, 2))], ["note.mdwm", Buffer.from(text, "utf8")]]
   if (drawing !== undefined) list.push(["drawing.json", Buffer.from(drawing, "utf8")])
   for (const [name, data] of Object.entries(entries)) list.push([name, Buffer.isBuffer(data) ? data : Buffer.from(data)])
   return zipOf(list)
@@ -98,7 +98,7 @@ export function readWm(file) {
   if (names[0] !== "mimetype" || entries.mimetype.toString() !== MIME) throw new Error(`${file} does not start with the mimetype entry`)
   return {
     entries, names,
-    text: (entries["note.wmdm"] ?? Buffer.alloc(0)).toString("utf8").replace(/^﻿/, ""),
+    text: (entries["note.mdwm"] ?? Buffer.alloc(0)).toString("utf8").replace(/^﻿/, ""),
     drawing: entries["drawing.json"] ? entries["drawing.json"].toString("utf8") : null,
     manifest: JSON.parse(entries["manifest.json"].toString("utf8")),
   }

@@ -174,7 +174,7 @@ function endLook(): void {
 const io = limiter(48)
 
 /**
- * A note's row: from the cache while the file has not moved, else the first 8 KB of its `note.wmdm` (the end record,
+ * A note's row: from the cache while the file has not moved, else the first 8 KB of its `note.mdwm` (the end record,
  * the directory and one inflate: never the whole file).
  */
 async function noteAt(full: string, key: string, watched: boolean): Promise<Note> {
@@ -189,7 +189,7 @@ async function noteAt(full: string, key: string, watched: boolean): Promise<Note
   let head = ""
   let read = false
   try {
-    const found = await io(() => readEntryHead(full, "note.wmdm", HEAD))
+    const found = await io(() => readEntryHead(full, "note.mdwm", HEAD))
     if (found) { head = found.head.toString("utf8"); read = true }
   } catch { head = "" }
   const note = makeNote(full, mtime, head.charCodeAt(0) === 0xfeff ? head.slice(1) : head)

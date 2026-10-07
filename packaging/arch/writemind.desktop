@@ -7,6 +7,6 @@ Exec=writemind %F
 Icon=writemind
 Terminal=false
 Categories=Office;TextEditor;
-MimeType=application/vnd.writemind.note+zip;text/markdown;
+MimeType=application/vnd.writemind.note+zip;application/vnd.writemind.markdownnote;text/markdown;
 Keywords=notes;notebook;writing;drawing;
 StartupWMClass=WriteMind

@@ -60,7 +60,7 @@ import { startUpdater, type Updater } from "./updater"
 import { UPDATE_COMMAND_IDS } from "../shared/update"
 import { takeWelcomed, welcomeOnce, welcomeWanted } from "./welcome"
 import { MOVE_STATE_FILE, NOTES_FOLDER, settleNotesFolder, type Settled } from "./notesFolderMove"
-import { conversionNotice, convertFolders, importMarkdownNote } from "./convert"
+import { conversionNotice, convertFolders, importMarkdownNote, importMdwmNote } from "./convert"
 import { OpenQueue, admit, candidates } from "./openFiles"
 import { conversionRefusal } from "./convertGuard"
 import type { Runner as EvalRunner } from "./eval/runner"
@@ -383,7 +383,8 @@ let appReady = false
 async function openFromOutside(files: string[]): Promise<void> {
   let any = false
   for (const file of files) {
-    const out = await admit(file, (markdown) => importMarkdownNote(markdown, { appVersion: app.getVersion(), log: (line) => console.log(`WriteMind: ${line}`) }))
+    const out = await admit(file, (markdown) => importMarkdownNote(markdown, { appVersion: app.getVersion(), log: (line) => console.log(`WriteMind: ${line}`) }),
+      (mdwm) => importMdwmNote(mdwm, { appVersion: app.getVersion() }))
     if ("error" in out) {
       console.warn(`WriteMind: ${out.error}`)
       if (!process.env.WRITEMIND_E2E && window) await dialog.showMessageBox(window, { type: "warning", message: "WriteMind could not open that file.", detail: out.error })
@@ -853,7 +854,8 @@ app.whenReady().then(async () => {
   appReady = true
   // What was double-clicked to start the app (the command line on Windows and Linux, `open-file` on a Mac).
   for (const file of [...candidates(process.argv, process.cwd(), app.isPackaged), ...askedEarly.splice(0)]) {
-    const out = await admit(file, (markdown) => importMarkdownNote(markdown, { appVersion: app.getVersion() })).catch(() => null)
+    const out = await admit(file, (markdown) => importMarkdownNote(markdown, { appVersion: app.getVersion() }),
+      (mdwm) => importMdwmNote(mdwm, { appVersion: app.getVersion() })).catch(() => null)
     if (out && !("error" in out)) openQueue.push(out.file)
   }
 

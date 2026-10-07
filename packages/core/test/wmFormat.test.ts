@@ -36,7 +36,7 @@ describe("vector 1: the minimal file", () => {
     expect(new TextDecoder().decode(first!.data)).toBe("application/vnd.writemind.note+zip")
     expect(first!.data.length).toBe(34)
     expect(MIMETYPE_BYTES).toEqual(first!.data)
-    expect([second!.name, third!.name]).toEqual(["manifest.json", "note.wmdm"])
+    expect([second!.name, third!.name]).toEqual(["manifest.json", "note.mdwm"])
   })
 
   it("opens, has the title's text, and a save with no edit writes the same decoded entries", () => {
@@ -106,14 +106,14 @@ describe("vector 3 (the model's half): what is not known survives a change of th
     ])
     const edited = withText(file, "# T\nx\n")
     const out = entriesToWrite(edited, { now: new Date("2026-10-09T10:00:00Z"), app: APP })
-    expect(out.entries.map((entry) => entry.name)).toEqual(["mimetype", "manifest.json", "note.wmdm", "drawing.json", "extra/x.bin"])
+    expect(out.entries.map((entry) => entry.name)).toEqual(["mimetype", "manifest.json", "note.mdwm", "drawing.json", "extra/x.bin"])
     expect(Array.from(out.entries.find((entry) => entry.name === "extra/x.bin")!.data)).toEqual([1, 2, 3])
     const written = JSON.parse(text(out.entries, "manifest.json"))
     expect(written["x-future"]).toEqual({ a: [1, 2] })
     expect(written.id).toBe("0b6f5c1e-8d4a-5c0e-9a77-2f1d3b6a9e10")
     expect(written.modified).toBe("2026-10-09T10:00:00Z")
     expect(written.created).toBe("2026-10-08T09:14:03Z")
-    expect(text(out.entries, "note.wmdm")).toBe("# T\nx\n")
+    expect(text(out.entries, "note.mdwm")).toBe("# T\nx\n")
     // The drawing the model would write after decoding this one, with what it dropped put back:
     const model = writeDrawing(decodeDrawing(drawing).drawing)
     expect(JSON.parse(model).items.map((item: { id: string }) => item.id)).toEqual(["a", "b"])
@@ -154,7 +154,7 @@ describe("vector 5: hostile names", () => {
   })
 
   it("accepts the names a note really has, a directory entry, and refuses the over-long", () => {
-    for (const name of ["note.wmdm", "media/3f9c2a7e5b1d4c80.png", "snapshots/ink-3f2b8c1e-0a4d-4e6f-9b1a-7c5d2e8f1a90.svg", "legacy/sidecar.json", "media/", "media/é.png"]) {
+    for (const name of ["note.mdwm", "media/3f9c2a7e5b1d4c80.png", "snapshots/ink-3f2b8c1e-0a4d-4e6f-9b1a-7c5d2e8f1a90.svg", "legacy/sidecar.json", "media/", "media/é.png"]) {
       expect(entryNameError(name), name).toBeNull()
     }
     expect(entryNameError(`media/${"a".repeat(256)}`)).toMatch(/too long/)
@@ -169,7 +169,7 @@ describe("compression policy (1.4)", () => {
     expect(methodFor("media/a.jpeg")).toBe("store")
     expect(methodFor("media/a.svg")).toBe("deflate")
     expect(methodFor("media/a.pdf")).toBe("deflate")
-    expect(methodFor("note.wmdm")).toBe("deflate")
+    expect(methodFor("note.mdwm")).toBe("deflate")
     expect(methodFor("snapshots/ink-3f2b8c1e-0a4d-4e6f-9b1a-7c5d2e8f1a90.svg")).toBe("deflate")
   })
 })

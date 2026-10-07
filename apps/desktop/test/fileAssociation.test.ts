@@ -4,7 +4,7 @@
 import { readFileSync } from "node:fs"
 import path from "node:path"
 import { describe, expect, it } from "vitest"
-import { WM_MIME } from "@writemind/core"
+import { MDWM_MIME, MDWM_UTI, WM_MIME, WM_UTI } from "@writemind/core"
 
 const root = path.resolve(__dirname, "../../..")
 const read = (...parts: string[]) => readFileSync(path.join(root, ...parts), "utf8")
@@ -15,10 +15,16 @@ describe("the .wm file association", () => {
     expect(yml).toMatch(/^fileAssociations:\n\s+- ext: wm\n(?:.*\n)*?\s+mimeType: application\/vnd\.writemind\.note\+zip\n/m)
     expect(yml).toContain("role: Editor")
     // The Mac declares the type itself (a UTI Finder can show), the Linux desktop entry offers it first.
-    expect(yml).toContain("UTTypeIdentifier: com.seancheren.writemind.note")
+    expect(yml).toContain(`UTTypeIdentifier: ${WM_UTI}`)
     expect(yml).toContain("public.filename-extension: [wm]")
     expect(yml).toMatch(/MimeType: application\/vnd\.writemind\.note\+zip;/)
     expect(WM_MIME).toBe("application/vnd.writemind.note+zip")
+    // The MarkdownNote: its own extension, media type (not text/*) and UTI, which conforms to public.data only.
+    expect(yml).toMatch(/- ext: mdwm\n(?:.*\n)*?\s+mimeType: application\/vnd\.writemind\.markdownnote\n/)
+    expect(yml).toContain(`UTTypeIdentifier: ${MDWM_UTI}`)
+    expect(yml).toContain("public.filename-extension: [mdwm]")
+    expect(yml).toMatch(/com\.seancheren\.writemind\.mdwm\n\s+UTTypeDescription: WriteMind MarkdownNote\n\s+UTTypeConformsTo:\n\s+- public\.data\n(?!\s+- public)/)
+    expect([MDWM_MIME, MDWM_UTI, WM_UTI]).toEqual(["application/vnd.writemind.markdownnote", "com.seancheren.writemind.mdwm", "com.seancheren.writemind.note"])
   })
 
   it("is in the Arch package: the desktop entry, and a shared-mime-info file that knows the name and the first bytes", () => {
@@ -29,6 +35,9 @@ describe("the .wm file association", () => {
     expect(xml).toContain('<sub-class-of type="application/zip"/>')
     expect(xml).toContain(`value="${WM_MIME}" offset="38"`)
     expect(xml).toContain('value="mimetype" offset="30"')
+    expect(xml).toContain(`type="${MDWM_MIME}"`)
+    expect(xml).toContain('<glob pattern="*.mdwm"')
+    expect(read("packaging", "arch", "writemind.desktop")).toContain(`${MDWM_MIME};`)
     expect(read("packaging", "arch", "PKGBUILD")).toContain("writemind-mime.xml")
   })
 })

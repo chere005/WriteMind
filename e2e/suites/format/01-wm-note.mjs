@@ -70,7 +70,7 @@ await focus()
 await typeText(" More.")
 await sleep(1600)
 const typed = readWm(path.join(notes, "Alpha.wm"))
-ok("the typing is in note.wmdm of the .wm", typed.text.includes("More."), JSON.stringify(typed.text))
+ok("the typing is in note.mdwm of the .wm", typed.text.includes("More."), JSON.stringify(typed.text))
 ok("the file is a valid archive: the mimetype is first, and the picture is still inside", typed.names[0] === "mimetype" && !!typed.entries["media/3f9c2a7e5b1d4c80.png"], typed.names.join(","))
 ok("...with nothing left beside it (no .tmp)", !fs.readdirSync(notes).some((name) => name.endsWith(".tmp")), JSON.stringify(fs.readdirSync(notes)))
 if (have("unzip", ["-v"])) {

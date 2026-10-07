@@ -1065,7 +1065,7 @@ export function App() {
   // A .wm or a .md let go on the window opens (the page's own drop, on a picture, is handled where the picture lands).
   useEffect(() => {
     const drop = (event: DragEvent) => {
-      const files = [...(event.dataTransfer?.files ?? [])].filter((one) => /\.(wm|md|markdown)$/i.test(one.name))
+      const files = [...(event.dataTransfer?.files ?? [])].filter((one) => /\.(wm|mdwm|md|markdown)$/i.test(one.name))
       if (files.length === 0 || !window.wm.pathOfFile || !window.wm.openFile) return
       event.preventDefault()
       for (const one of files) void window.wm.openFile(window.wm.pathOfFile(one))

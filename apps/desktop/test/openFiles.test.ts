@@ -6,7 +6,7 @@ import { mkdirSync, mkdtempSync, readFileSync, readdirSync, writeFileSync } from
 import os from "node:os"
 import path from "node:path"
 import { describe, expect, it } from "vitest"
-import { importMarkdownNote } from "../src/main/convert"
+import { importMarkdownNote, importMdwmNote } from "../src/main/convert"
 import { OpenQueue, admit, candidates, isOpenable } from "../src/main/openFiles"
 import { readWm, writeWm } from "./wmFiles"
 
@@ -74,6 +74,21 @@ describe("admitting a file", () => {
     const made = readWm(path.join(dir, "Plan.wm"))
     expect(made.manifest.legacy).toMatchObject({ source: "Plan.md", sha256: createHash("sha256").update(readFileSync(md)).digest("hex") })
     expect(made.manifest.id).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-5[0-9a-f]{3}-/)
+  })
+})
+
+describe("a MarkdownNote (.mdwm) opened from outside", () => {
+  it("is imported into a new .wm beside it with the same words, and the original is not touched", async () => {
+    const dir = scratch()
+    const mdwm = put(path.join(dir, "Words.mdwm"), "# Words\n\n<!-- markdown -->\n**bold**\n")
+    const before = readFileSync(mdwm)
+    expect(isOpenable(mdwm)).toBe(true)
+    const out = await admit(mdwm, imported, (file) => importMdwmNote(file, { appVersion: "2.16.0" }))
+    expect(out).toMatchObject({ file: path.join(dir, "Words.wm"), imported: true, from: mdwm })
+    expect(readWm(path.join(dir, "Words.wm")).text).toBe("# Words\n\n<!-- markdown -->\n**bold**\n")
+    expect(readFileSync(mdwm)).toEqual(before)
+    await admit(mdwm, imported, (file) => importMdwmNote(file, { appVersion: "2.16.0" }))
+    expect(readdirSync(dir).filter((name) => name.endsWith(".wm")).sort()).toEqual(["Words 2.wm", "Words.wm"])
   })
 })
 

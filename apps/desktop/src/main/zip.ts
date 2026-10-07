@@ -34,7 +34,7 @@ export const LIMITS = {
   ratio: 1000,
   ratioFrom: 16 * 1024 * 1024,
 }
-const TEXT_ENTRIES = new Set(["note.wmdm", "drawing.json", "manifest.json"])
+const TEXT_ENTRIES = new Set(["note.mdwm", "drawing.json", "manifest.json"])
 
 const SIG_LOCAL = 0x04034b50
 const SIG_CENTRAL = 0x02014b50

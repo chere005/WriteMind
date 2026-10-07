@@ -138,7 +138,7 @@ export async function notesDir() {
   return notesRoot
 }
 // A NOTE IS A .wm FILE (docs/SPEC-WM.md): the helpers below take the name a script has always written, "Name.md", and mean the
-// note "Name.wm" (a script that says "Name.wm" gets the same). The text is the note's `note.wmdm`; what else is inside (the
+// note "Name.wm" (a script that says "Name.wm" gets the same). The text is the note's `note.mdwm`; what else is inside (the
 // drawing, the pictures, the snapshots) is read with `readNoteWm`. Any other file name is a plain file, as before.
 const noteName = (rel) => rel.replace(/\.(md|markdown)$/i, ".wm")
 const isNoteFile = (rel) => /\.wm$/i.test(noteName(rel))
@@ -151,7 +151,7 @@ export async function writeNoteFile(rel, text, extras) {
   else fs.writeFileSync(file, text)
   return file
 }
-/** The words of a note (its `note.wmdm`), or the text of a plain file. */
+/** The words of a note (its `note.mdwm`), or the text of a plain file. */
 export async function readNoteFile(rel) { const file = await abs(rel); return isNoteFile(rel) ? readWm(file).text : fs.readFileSync(file, "utf8") }
 /** A note read whole, from disk: { text, drawing, entries, names, manifest }. Throws when it is not a valid .wm. */
 export async function readNoteWm(rel) { return readWm(await abs(rel)) }

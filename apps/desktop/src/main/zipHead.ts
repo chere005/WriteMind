@@ -1,6 +1,6 @@
 /**
  * The first bytes of one entry of an archive, without reading the file (docs/SPEC-WM.md 1.6's note): the sidebar needs
- * a note's title and snippet, which come from the first 8 KiB of `note.wmdm`, and a folder holds hundreds of notes.
+ * a note's title and snippet, which come from the first 8 KiB of `note.mdwm`, and a folder holds hundreds of notes.
  * The end record, the central directory and one inflate are all it takes.
  */
 

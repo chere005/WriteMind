@@ -280,7 +280,7 @@ is how the code is put together.
   Greek alphabet.
   Fill in the parts, watch it set, and insert it inline or on its own line.
   What the note holds is the WL — `Integrate[x^2, {x, 0, 1}]` — in a code
-  span or a ```wl block, so the words stay plain text (`note.wmdm`); the preview
+  span or a ```wl block, so the words stay plain text (`note.mdwm`); the preview
   typesets it.
 - **Any camera the Mac can see.** The **Input Devices** menu in the menu bar
   lists built-in, USB, Continuity Camera and Desk View devices with a

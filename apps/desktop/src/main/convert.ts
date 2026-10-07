@@ -664,6 +664,26 @@ export async function importMarkdownNote(file: string, options: Pick<ConvertOpti
   }
 }
 
+/**
+ * A MarkdownNote (`.mdwm`: the words of a note as a file of its own) opened from outside: a NEW `.wm` beside it holding those
+ * words, the original untouched. Throws with the reason when the file is not UTF-8 text.
+ */
+export async function importMdwmNote(file: string, options: Pick<ConvertOptions, "appVersion" | "now">): Promise<string> {
+  const folder = path.dirname(file)
+  const bytes = await fs.readFile(file)
+  let text: string
+  try { text = strict.decode(bytes) } catch { throw new Error("it is not UTF-8 text") }
+  const stat = await fs.stat(file)
+  const taken = new Set(await fs.readdir(folder))
+  const base = path.basename(file, path.extname(file))
+  let name = `${base}.wm`
+  for (let n = 2; taken.has(name); n++) name = `${base} ${n}.wm`
+  const target = path.join(folder, name)
+  const app: AppStamp = { name: "WriteMind", version: options.appVersion }
+  await createFile(target, newWmFile(stat.mtime, app, text, uuidV5(`${sha256(bytes)}:${path.basename(file)}`)), stat.mtime)
+  return target
+}
+
 // MARK: - What the person is told
 
 /** The notice: what was converted and where the backup is. Null when there is nothing to say. */

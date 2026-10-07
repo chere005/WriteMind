@@ -131,7 +131,7 @@ describe("a note's drawing, pictures and ink snapshots are INSIDE the .wm", () =
     const a = note(home, "a.wm")
     await readNote(a)
     await writeDrawing(home, a, '{ "items": [] }')
-    expect(readWm(a).names).toEqual(["mimetype", "manifest.json", "note.wmdm"])
+    expect(readWm(a).names).toEqual(["mimetype", "manifest.json", "note.mdwm"])
     expect(await readDrawing(home, a)).toBeNull()
   })
 
@@ -389,7 +389,7 @@ describe("the notes themselves", () => {
 })
 
 describe("a big folder", () => {
-  it("is read with every note's own heading, however many there are (the first 8 KiB of each note.wmdm, not the whole file)", async () => {
+  it("is read with every note's own heading, however many there are (the first 8 KiB of each note.mdwm, not the whole file)", async () => {
     const home = scratch()
     for (let n = 0; n < 700; n++) writeWm(path.join(home, `note-${n}.wm`), `# Heading ${n}\n\nbody\n`)
     const tree = await readTree(home, home, { folders: {} })
@@ -510,7 +510,7 @@ describe("a note is read afresh from its file, and what was read is what the app
     const home = scratch()
     const a = note(home, "a.wm", "# A\n", { entries: { "extra/x.bin": new Uint8Array([1, 2, 3]) } })
     const wm = await loadNote(a)
-    expect(wm.entries.map((entry) => entry.name)).toEqual(["note.wmdm", "extra/x.bin"])
+    expect(wm.entries.map((entry) => entry.name)).toEqual(["note.mdwm", "extra/x.bin"])
     await writeNote(a, "# A changed\n")
     expect(readWm(a).entries["extra/x.bin"]).toEqual(Buffer.from([1, 2, 3]))
   })

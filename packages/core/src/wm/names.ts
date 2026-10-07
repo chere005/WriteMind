@@ -70,7 +70,7 @@ export function writeNamesError(names: readonly string[]): string | null {
 
 export const WM_MIMETYPE = "mimetype"
 export const WM_MANIFEST = "manifest.json"
-export const WM_TEXT = "note.wmdm"
+export const WM_TEXT = "note.mdwm"
 export const WM_DRAWING = "drawing.json"
 export const WM_MEDIA = "media/"
 export const WM_SNAPSHOTS = "snapshots/"
@@ -79,7 +79,17 @@ export const WM_SNAPSHOTS = "snapshots/"
 export const WM_MIME = "application/vnd.writemind.note+zip"
 export const WM_EXTENSION = ".wm"
 
+/** The MarkdownNote: the words alone (what `note.mdwm` inside a Note holds), as a file of its own. Neither text nor markdown. */
+export const MDWM_MIME = "application/vnd.writemind.markdownnote"
+export const MDWM_EXTENSION = ".mdwm"
+/** macOS type identifiers: the Note conforms to `public.zip-archive`, the MarkdownNote to `public.data`. */
+export const WM_UTI = "com.seancheren.writemind.note"
+export const MDWM_UTI = "com.seancheren.writemind.mdwm"
+
 /** Whether a file name is a note: `.wm`, any case (readers match it case-insensitively, writers write lower case). */
+/** Whether a file name is a MarkdownNote (`.mdwm`, any case). */
+export const isMdwmName = (name: string): boolean => name.length > 5 && name.toLowerCase().endsWith(MDWM_EXTENSION)
+
 export const isWmName = (name: string): boolean => name.length > 3 && name.toLowerCase().endsWith(WM_EXTENSION)
 
 // MARK: - References from the text

@@ -73,7 +73,7 @@ describe("vector 10: a legacy folder becomes .wm files and the originals go to t
     expect(drawing.items[0].file).toBe("3f9c2a7e5b1d4c80.png")
     expect(a.manifest.legacy).toMatchObject({ source: "A.md", sha256: sha256(aBytes), sidecar: `.drawings/A-${sha1("A.md")}.json` })
     expect((a.manifest.legacy as { missing?: string[] }).missing).toBeUndefined()
-    expect(a.names).toEqual(["mimetype", "manifest.json", "note.wmdm", "drawing.json", `snapshots/ink-${INK}.svg`, "media/3f9c2a7e5b1d4c80.png"])
+    expect(a.names).toEqual(["mimetype", "manifest.json", "note.mdwm", "drawing.json", `snapshots/ink-${INK}.svg`, "media/3f9c2a7e5b1d4c80.png"])
 
     const b = readWm(path.join(notes, "Sec", "B.wm"))
     expect(b.text).toBe("# Bravo\n\n<a id=\"wm-12ab34cd\"></a>The anchored paragraph.\n\nBack to [Alpha](../A.wm).\n")

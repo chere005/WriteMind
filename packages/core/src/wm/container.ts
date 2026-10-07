@@ -111,7 +111,7 @@ export function newWmFile(now: Date | number, app: AppStamp, text = "", id?: str
 
 export const entryOf = (file: WmFile, name: string): WmEntry | undefined => file.entries.find((entry) => entry.name === name)
 
-/** The note's text (`note.wmdm`), empty when the entry is not there. */
+/** The note's text (`note.mdwm`), empty when the entry is not there. */
 export function textOfFile(file: WmFile): string {
   const entry = entryOf(file, WM_TEXT)
   return entry ? textOf(entry.data) : ""

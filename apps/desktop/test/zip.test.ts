@@ -43,7 +43,7 @@ describe("vector 1: the bytes of a minimal file", () => {
   it("opens, has the title's text, and a save with no edit gives an archive whose decoded entries equal the input's", () => {
     const first = zipBytes(entriesToWrite(newWmFile(NOW, APP, "# T\n"), null).entries, NOW)
     const read = readZip(first)
-    expect(read.map((entry) => entry.name)).toEqual(["mimetype", "manifest.json", "note.wmdm"])
+    expect(read.map((entry) => entry.name)).toEqual(["mimetype", "manifest.json", "note.mdwm"])
     const file = openWm(read)
     expect(textOfFile(file)).toBe("# T\n")
     const again = readZip(zipBytes(entriesToWrite(file, null).entries, NOW))
@@ -53,7 +53,7 @@ describe("vector 1: the bytes of a minimal file", () => {
 
   it("writes entries in the spec's order: mimetype, manifest, note, drawing, snapshots, media, the rest", () => {
     expect(sample().map((entry) => entry.name)).toEqual([
-      "mimetype", "manifest.json", "note.wmdm", "drawing.json",
+      "mimetype", "manifest.json", "note.mdwm", "drawing.json",
       "snapshots/ink-3f2b8c1e-0a4d-4e6f-9b1a-7c5d2e8f1a90.svg", "media/3f9c2a7e5b1d4c80.png", "media/é ü.svg", "legacy/sidecar.json",
     ])
   })
@@ -77,7 +77,7 @@ describe("a round trip on node:zlib alone", () => {
       at += 46 + length + bytes.readUInt16LE(at + 30) + bytes.readUInt16LE(at + 32)
     }
     expect(flags["media/é ü.svg"]! & 0x0800).toBe(0x0800)
-    expect(flags["note.wmdm"]! & 0x0800).toBe(0)
+    expect(flags["note.mdwm"]! & 0x0800).toBe(0)
   })
 
   it("stores the mimetype and pictures that are compressed already, and deflates the rest", () => {
@@ -89,7 +89,7 @@ describe("a round trip on node:zlib alone", () => {
       methods[bytes.subarray(at + 46, at + 46 + length).toString("utf8")] = bytes.readUInt16LE(at + 10)
       at += 46 + length + bytes.readUInt16LE(at + 30) + bytes.readUInt16LE(at + 32)
     }
-    expect(methods).toMatchObject({ mimetype: 0, "media/3f9c2a7e5b1d4c80.png": 0, "note.wmdm": 8, "manifest.json": 8, "media/é ü.svg": 8 })
+    expect(methods).toMatchObject({ mimetype: 0, "media/3f9c2a7e5b1d4c80.png": 0, "note.mdwm": 8, "manifest.json": 8, "media/é ü.svg": 8 })
   })
 
   it("copies the compressed bytes of an entry nobody changed, and compresses one that was changed anew", () => {
@@ -98,7 +98,7 @@ describe("a round trip on node:zlib alone", () => {
     const changed = withText(file, "# Other\n")
     const out = entriesToWrite(changed, null).entries as ZipEntry[]
     // (withEntry makes a fresh entry: the old compressed bytes are not carried over to new words.)
-    expect(out.find((entry) => entry.name === "note.wmdm")!.packed).toBeUndefined()
+    expect(out.find((entry) => entry.name === "note.mdwm")!.packed).toBeUndefined()
     const kept = out.find((entry) => entry.name === "media/3f9c2a7e5b1d4c80.png")!
     expect(kept.packed).toBeDefined()
     const bytes = zipBytes(out, NOW)
@@ -109,7 +109,7 @@ describe("a round trip on node:zlib alone", () => {
   it("reads and writes an empty entry, and a directory entry is read and ignored", () => {
     const entries: ZipEntry[] = [...entriesToWrite(newWmFile(NOW, APP, ""), null).entries, { name: "media/empty.svg", data: new Uint8Array(0) }]
     const read = readZip(zipBytes(entries, NOW))
-    expect(read.find((entry) => entry.name === "note.wmdm")!.data.length).toBe(0)
+    expect(read.find((entry) => entry.name === "note.mdwm")!.data.length).toBe(0)
     expect(read.find((entry) => entry.name === "media/empty.svg")!.data.length).toBe(0)
   })
 })
@@ -144,7 +144,7 @@ describe("the system's own tools read what this writes", () => {
     const target = file()
     const test = spawnSync("python3", ["-m", "zipfile", "-t", target], { encoding: "utf8" })
     expect(test.status, test.stdout + test.stderr).toBe(0)
-    const code = `import zipfile,sys\nz=zipfile.ZipFile(sys.argv[1])\nprint(z.namelist()[0]);print(z.read('mimetype').decode());print(z.getinfo('note.wmdm').compress_type)\nprint(z.getinfo('media/é ü.svg').filename)`
+    const code = `import zipfile,sys\nz=zipfile.ZipFile(sys.argv[1])\nprint(z.namelist()[0]);print(z.read('mimetype').decode());print(z.getinfo('note.mdwm').compress_type)\nprint(z.getinfo('media/é ü.svg').filename)`
     const read = spawnSync("python3", ["-c", code, target], { encoding: "utf8" })
     expect(read.stdout.split("\n").slice(0, 3)).toEqual(["mimetype", WM_MIME, "8"])
   })
@@ -157,7 +157,7 @@ describe("the system's own tools read what this writes", () => {
       "z=zipfile.ZipFile(sys.argv[1],'w')",
       "z.writestr(zipfile.ZipInfo('mimetype'),'application/vnd.writemind.note+zip',compress_type=zipfile.ZIP_STORED)",
       "z.writestr('manifest.json','{\"format\":\"writemind-note\",\"version\":1}',compress_type=zipfile.ZIP_DEFLATED)",
-      "with z.open('note.wmdm','w',force_zip64=True) as f: f.write('# From python\\n'.encode())",
+      "with z.open('note.mdwm','w',force_zip64=True) as f: f.write('# From python\\n'.encode())",
       "z.writestr('media/b.bin',bytes(range(256))*40,compress_type=zipfile.ZIP_DEFLATED)",
       "z.close()",
     ].join("\n")
@@ -185,10 +185,10 @@ describe("a file that cannot be read is refused whole", () => {
 
   it("an entry that holds more than it declares", () => {
     const bytes = base()
-    // note.wmdm's central entry: lower its declared size by one (the local header is not consulted).
+    // note.mdwm's central entry: lower its declared size by one (the local header is not consulted).
     let at = dirOf(bytes)
     for (let i = 0; i < 2; i++) at += 46 + bytes.readUInt16LE(at + 28) + bytes.readUInt16LE(at + 30) + bytes.readUInt16LE(at + 32)
-    expect(bytes.subarray(at + 46, at + 46 + bytes.readUInt16LE(at + 28)).toString()).toBe("note.wmdm")
+    expect(bytes.subarray(at + 46, at + 46 + bytes.readUInt16LE(at + 28)).toString()).toBe("note.mdwm")
     bytes.writeUInt32LE(bytes.readUInt32LE(at + 24) - 1, at + 24)
     expect(() => readZip(bytes)).toThrow(/more than its declared size|holds/)
   })
@@ -239,18 +239,18 @@ describe("a file that cannot be read is refused whole", () => {
 })
 
 describe("the first bytes of an entry, without reading the file", () => {
-  it("gives the first 8 KiB of a deflated note.wmdm and of a stored one, and the whole size", async () => {
+  it("gives the first 8 KiB of a deflated note.mdwm and of a stored one, and the whole size", async () => {
     const words = "The quick brown fox jumps over the lazy dog. ".repeat(2000)
     const dir = scratch()
     const deflated = path.join(dir, "d.wm")
     writeFileSync(deflated, zipBytes(entriesToWrite(newWmFile(NOW, APP, words), null).entries, NOW))
-    const found = await readEntryHead(deflated, "note.wmdm", 8192)
+    const found = await readEntryHead(deflated, "note.mdwm", 8192)
     expect(found!.size).toBe(Buffer.byteLength(words))
     expect(found!.head.toString("utf8")).toBe(words.slice(0, 8192))
     // A note shorter than that comes back whole; an entry that is not there is null.
     const short = path.join(dir, "s.wm")
     writeFileSync(short, zipBytes(entriesToWrite(newWmFile(NOW, APP, "# T\n"), null).entries, NOW))
-    expect((await readEntryHead(short, "note.wmdm", 8192))!.head.toString()).toBe("# T\n")
+    expect((await readEntryHead(short, "note.mdwm", 8192))!.head.toString()).toBe("# T\n")
     expect(await readEntryHead(short, "drawing.json", 8192)).toBeNull()
     const stored = path.join(dir, "t.wm")
     writeFileSync(stored, zipBytes([{ name: "mimetype", data: utf8(WM_MIME) }], NOW))
@@ -261,6 +261,6 @@ describe("the first bytes of an entry, without reading the file", () => {
     const dir = scratch()
     const file = path.join(dir, "x.wm")
     writeFileSync(file, "# a markdown note named like a .wm\n")
-    await expect(readEntryHead(file, "note.wmdm", 8192)).rejects.toThrow()
+    await expect(readEntryHead(file, "note.mdwm", 8192)).rejects.toThrow()
   })
 })

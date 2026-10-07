@@ -12,10 +12,10 @@
 
 import { promises as fs } from "node:fs"
 import path from "node:path"
-import { isWmName, legacyOrder } from "@writemind/core"
+import { isMdwmName, isWmName, legacyOrder } from "@writemind/core"
 
 /** The extensions that can be opened from outside: a note, and the markdown it is imported from. */
-export const isOpenable = (file: string): boolean => isWmName(file) || legacyOrder(file) >= 0
+export const isOpenable = (file: string): boolean => isWmName(file) || isMdwmName(file) || legacyOrder(file) >= 0
 
 /**
  * The files named on a command line: arguments that are not switches, resolved against `cwd`, that look like something
@@ -34,12 +34,13 @@ export function candidates(argv: readonly string[], cwd: string, packaged: boole
 export type Admitted = { file: string; imported: boolean; from?: string } | { error: string; file: string }
 
 /** A file asked for: a `.wm` as it is, a `.md` imported (`importMarkdown` makes the `.wm` beside it and says where). */
-export async function admit(file: string, importMarkdown: (file: string) => Promise<string>): Promise<Admitted> {
+export async function admit(file: string, importMarkdown: (file: string) => Promise<string>,
+  importMdwm: (file: string) => Promise<string> = importMarkdown): Promise<Admitted> {
   const stat = await fs.stat(file).catch(() => null)
   if (!stat?.isFile()) return { file, error: `${path.basename(file)} is not there` }
   if (isWmName(file)) return { file, imported: false }
-  if (legacyOrder(file) >= 0) {
-    try { return { file: await importMarkdown(file), imported: true, from: file } } catch (error) {
+  if (legacyOrder(file) >= 0 || isMdwmName(file)) {
+    try { return { file: await (isMdwmName(file) ? importMdwm : importMarkdown)(file), imported: true, from: file } } catch (error) {
       return { file, error: `${path.basename(file)} could not be opened as a note: ${error instanceof Error ? error.message : String(error)}` }
     }
   }

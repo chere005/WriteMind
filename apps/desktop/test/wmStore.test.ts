@@ -39,7 +39,7 @@ describe("vector 3: unknown things survive a session of typing and drawing", () 
     expect(kept.zzz).toBe(1)
     expect(kept.items.map((item: { id: string }) => item.id)).toEqual(["a", "q", "b"])
     expect(kept.items[0].tag).toBe("hi")
-    expect(after.names).toEqual(["mimetype", "manifest.json", "note.wmdm", "drawing.json", "extra/x.bin"])
+    expect(after.names).toEqual(["mimetype", "manifest.json", "note.mdwm", "drawing.json", "extra/x.bin"])
   })
 
   it("a save that changes nothing writes nothing: the file is the same bytes, and `modified` stays", async () => {
@@ -203,7 +203,7 @@ describe("one writer per note: text, drawing, snapshots and pictures land togeth
     const dir = scratch()
     const file = path.join(dir, "Made.wm")
     await createFile(file, newNoteFile("hello"))
-    expect(readWm(file).names).toEqual(["mimetype", "manifest.json", "note.wmdm"])
+    expect(readWm(file).names).toEqual(["mimetype", "manifest.json", "note.mdwm"])
     const one = await writeMedia(file, new Uint8Array([5, 6]), "PNG")
     const two = await writeMedia(file, new Uint8Array([5, 6]), ".png")
     expect(one).toEqual(two)
