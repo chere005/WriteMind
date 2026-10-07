@@ -1,6 +1,6 @@
 # WriteMind
 
-A markdown notebook, a live camera and a drawing layer over both, for macOS, Windows and Linux. Notes are plain `.md` files in a folder.
+A markdown notebook, a live camera and a drawing layer over both, for macOS, Windows and Linux. A note is a markdown file in a folder; its drawings and pictures live beside it in `.drawings/`.
 
 ## Install
 
