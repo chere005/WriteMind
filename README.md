@@ -11,6 +11,12 @@ Download from the [latest release](https://github.com/chere005/WriteMind/release
 
 Runnable cells use the Python, Wolfram, C, C++ and Rust you have installed; File ▸ Language Setup… shows and changes which.
 
+## Credits
+
+WriteMind is BSD 3-Clause licensed ([LICENSE](LICENSE)). [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md) lists every library it ships with and their licences, and Help ▸ About WriteMind shows the same list.
+
+WriteMind is independent of Wolfram Research, Inc. and uses Wolfram software only as a user of it, by running the Wolfram Engine or Mathematica you have installed and licensed; Wolfram, Mathematica, the Wolfram logo and the spikey are trademarks and/or copyrights of Wolfram Research, Inc., and all Wolfram software and logos belong to Wolfram Research.
+
 ## Develop
 
 ```sh

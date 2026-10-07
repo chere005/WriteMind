@@ -113,6 +113,8 @@ declare global {
       update?: import("../shared/update").UpdateApi
       /** File ▸ Language Setup… (shared/languages.ts, LanguageSetupDialog.tsx); absent in an old preload. */
       languages?: import("../shared/languages").LanguagesApi
+      /** Help ▸ About WriteMind (shared/about.ts, AboutDialog.tsx); absent in an old preload. */
+      about?: import("../shared/about").AboutApi
       onNotesChanged(listener: () => void): () => void
       onFlushRequest(listener: () => Promise<void> | void): () => void
       onEdit(listener: (which: "undo" | "redo") => void): () => void

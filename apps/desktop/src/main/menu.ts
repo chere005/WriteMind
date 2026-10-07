@@ -274,7 +274,24 @@ export function buildMenu(options: MenuOptions): MenuItemConstructorOptions[] {
     : []
 
   return [
-    ...(platform === "darwin" ? [{ role: "appMenu" as const }] : []),
+    // THE MAC'S APP MENU is `role: "appMenu"` item for item, except About: the role opens Apple's own panel, and
+    // WriteMind has ONE About dialog on every platform (AboutDialog.tsx), so the item is ours and runs "about".
+    ...(platform === "darwin"
+      ? [{
+          label: "WriteMind",
+          submenu: [
+            { id: "aboutApp", label: "About WriteMind", click: () => run("about") },
+            SEPARATOR,
+            { role: "services" as const },
+            SEPARATOR,
+            { role: "hide" as const },
+            { role: "hideOthers" as const },
+            { role: "unhide" as const },
+            SEPARATOR,
+            { role: "quit" as const },
+          ],
+        } satisfies MenuItemConstructorOptions]
+      : []),
     { label: "File", submenu: file },
     { label: "Project", submenu: projectMenu },
     { label: "Edit", submenu: edit },

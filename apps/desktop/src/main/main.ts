@@ -52,6 +52,7 @@ import { createLanguageStore, registerLanguages } from "./eval/languages"
 import { createProcessRunner } from "./eval/runner"
 import { placesFromProcess } from "./eval/tools"
 import { LANGUAGE_CHANNELS, LANGUAGES_FILE } from "../shared/languages"
+import { noticesFile, readAbout, registerAbout } from "./about"
 import { registerSheets } from "./sheets"
 import { registerScans } from "./scans"
 import { startUpdater, type Updater } from "./updater"
@@ -180,8 +181,8 @@ let updater: Updater | null = null
 
 // MARK: - The application menu
 
-/** Commands that are the main process's own: dialogs and the project file. */
-const MAIN_OWNED = new RegExp(`^(about|${UPDATE_COMMAND_IDS.join("|")}|${PROJECT_COMMANDS.source.slice(2, -2)})$`)
+/** Commands that are the main process's own: dialogs and the project file. (About is the page's: AboutDialog.tsx.) */
+const MAIN_OWNED = new RegExp(`^(${UPDATE_COMMAND_IDS.join("|")}|${PROJECT_COMMANDS.source.slice(2, -2)})$`)
 
 /** End-to-end scripts cannot click a native dialog: they name the answer ahead of time. */
 let e2ePick: string | null = null
@@ -205,12 +206,6 @@ async function runCommand(id: string): Promise<void> {
   // share one history, and the page decides which is taken back.
   if (id === "undo" || id === "redo") { window?.webContents.send("edit:history", id); return }
   if (!MAIN_OWNED.test(id)) { window?.webContents.send("menu:command", id); return }
-  if (id === "about") {
-    await dialog.showMessageBox(window!, {
-      type: "info", title: "About WriteMind", message: "WriteMind", detail: `Version ${app.getVersion()}`,
-    })
-    return
-  }
   if ((UPDATE_COMMAND_IDS as readonly string[]).includes(id)) { await updater?.command(id); return }
   await runProjectCommand(id, {
     project, window: () => window, home: notesRoot, documents: () => app.getPath("documents"),
@@ -535,6 +530,11 @@ app.whenReady().then(async () => {
     winget: winget() !== null,
     log: path.join(app.getPath("userData"), "tools-setup.log"),
     broadcast: (report) => window?.webContents.send(LANGUAGE_CHANNELS.changed, report),
+  })
+  // Help ▸ About WriteMind: the licence, the Wolfram statement and every library's licence, from out/notices.json.
+  registerAbout(ipcMain, {
+    info: () => readAbout(noticesFile(here), app.getVersion()),
+    open: (url) => shell.openExternal(url),
   })
   // The tablet's sheets (tabs) and their ink: userData/sheets.json.
   registerSheets(ipcMain)

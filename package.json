@@ -12,6 +12,7 @@
     "typecheck": "tsc -b --pretty false && tsc -p apps/desktop",
     "dev": "npm -w @writemind/desktop run dev",
     "build": "npm -w @writemind/desktop run build",
+    "notices": "node tools/gen-notices.mjs",
     "e2e": "node e2e/run.mjs",
     "e2e:list": "node e2e/run.mjs --list",
     "e2e:selftest": "node e2e/selftest.mjs",
