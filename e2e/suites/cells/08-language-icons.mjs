@@ -33,7 +33,8 @@ const badges = () => J(`[...document.querySelectorAll('.wm-eval-badge')].map((b)
     shown: b.textContent.replace('▾', '').trim(), icon: svg?.dataset.evalIcon ?? null, paths: svg ? svg.querySelectorAll('path').length : 0,
     side: s ? Math.round(Math.min(s.width, s.height)) : 0, hidden: svg?.getAttribute('aria-hidden') ?? null,
     left: r.left, right: r.right, top: r.top, bottom: r.bottom, colour: getComputedStyle(b).color, iconColour: svg ? getComputedStyle(svg).color : null,
-    painted: svg ? [...svg.querySelectorAll('path')].every((p) => (p.getAttribute('fill') === 'currentColor') !== (p.getAttribute('stroke') === 'currentColor')) : false } })`)
+    painted: svg ? [...svg.querySelectorAll('path')].every((p) => (p.getAttribute('fill') === 'currentColor') !== (p.getAttribute('stroke') === 'currentColor')) : false,
+    logoRed: svg ? [...svg.querySelectorAll('path')].every((p) => p.getAttribute('fill') === '#dd1100') : false } })`)
 
 await waitFor(`document.querySelectorAll('.wm-eval-badge').length === 6`)
 const all = await badges()
@@ -47,7 +48,8 @@ for (const b of five) {
     b.aria === `${NAMES[b.which]} (${LETTERS[b.which]})` && b.letters === LETTERS[b.which] && b.title.includes(NAMES[b.which]) && b.title.includes("Shift+Enter"), JSON.stringify(b))
   ok(`${b.which}: the drawing is hidden from assistive technology, the button names it`, b.hidden === "true")
   ok(`${b.which}: the icon is at least 12 px`, b.side >= 12, String(b.side))
-  ok(`${b.which}: painted in currentColor, filled or stroked and never both`, b.painted && b.iconColour === b.colour, JSON.stringify([b.iconColour, b.colour]))
+  if (b.which === "wolfram") ok("wolfram: the real logo, in its own red", b.logoRed, JSON.stringify(b))
+  else ok(`${b.which}: painted in currentColor, filled or stroked and never both`, b.painted && b.iconColour === b.colour, JSON.stringify([b.iconColour, b.colour]))
 }
 const unknown = all.find((b) => b.which === "")
 ok("an unknown language keeps its dash as text, with no icon", unknown && unknown.icon === null && unknown.shown === "—", JSON.stringify(unknown))

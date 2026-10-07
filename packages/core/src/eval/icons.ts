@@ -2,7 +2,7 @@
  * THE LANGUAGE ICONS an evaluation cell's mark shows in place of letters (Sean, a608cc3: "use icons for WL, CPP,
  * Python"). Port-only: the Mac's mark is still letters.
  *
- * DRAWN HERE, FROM NOTHING: each icon is a few shapes on a 16 x 16 grid, our own simple drawings of what the
+ * DRAWN HERE, FROM NOTHING (except Wolfram's, which is the real logo): each icon is a few shapes on a 16 x 16 grid, our own simple drawings of what the
  * language is known by (Wolfram's spiky star, Python's two snakes, C and C++ as a letter in a hexagon, Rust's cog),
  * not anybody's artwork and not a file. They are MONOCHROME — a shape is either filled or stroked and the page paints
  * it `currentColor`, so the mark's own colour (grey, the accent on hover, amber for a missing tool) is the icon's, in
@@ -26,11 +26,13 @@ export interface IconShape {
   width?: number
   /** Round the ends and the corners of a line (the default is square ends and sharp corners). */
   round?: boolean
+  /** A fixed colour (a logo's own); absent, the shape is `currentColor`. */
+  colour?: string
 }
 
 export interface LanguageIcon {
   /** The grid every shape is drawn on. */
-  size: 16
+  size: number
   shapes: IconShape[]
 }
 
@@ -38,14 +40,11 @@ export interface LanguageIcon {
 const HEXAGON = "M8 1 L14.2 4.5 V11.5 L8 15 L1.8 11.5 V4.5 Z"
 
 const ICONS: Record<Evaluator, LanguageIcon> = {
-  // Wolfram: the eight-pointed spikey, one solid star.
+  // Wolfram: the company's own spikey, the one drawn in full colour (Sean, 2026-10-07: "use the actual logo"). The one
+  // icon that is not monochrome and not on the 16 grid: its path is the logo's, on a 200 x 200 one.
   wolfram: {
-    size: 16,
-    shapes: [{
-      paint: "fill",
-      d: "M8 0.4 L8.88 5.88 L13.37 2.63 L10.12 7.12 L15.6 8 L10.12 8.88 L13.37 13.37 L8.88 10.12 L8 15.6 L7.12 10.12 "
-        + "L2.63 13.37 L5.88 8.88 L0.4 8 L5.88 7.12 L2.63 2.63 L7.12 5.88 Z",
-    }],
+    size: 200,
+    shapes: [{ paint: "fill", colour: "#dd1100", d: "M102.4,195.2l-19.9-34L46.4,177l3.9-39.2l-38.5-8.4L38.1,100L11.8,70.5l38.5-8.4l-3.9-39.2l36.1,15.9l19.9-34l19.9,34l36.1-15.8l-3.9,39.2l38.5,8.4L166.8,100l26.2,29.4l-38.5,8.4l3.9,39.2l-36.1-15.9L102.4,195.2z M89.1,153.9l8.7,14.8v-14.9l-9-13.1L89.1,153.9z M107.1,153.9v14.9l8.7-14.8l0.3-13.2L107.1,153.9z M125.1,152.2l22.4,9.8l-2.4-24.4l-19.5-6.2L125.1,152.2z M59.7,137.7l-2.4,24.4l22.4-9.8l-0.5-20.7L59.7,137.7z M89.4,125.3l13,18.9l13-18.9l-13-17.6L89.4,125.3z M137,125.3l12.6,4l17.2-3.8l-14.2-4.9L137,125.3z M38,125.6l17.2,3.8l12.6-4l-15.6-4.6L38,125.6z M110,102.2l13,17.6l22-6.5l-14-18.2L110,102.2z M59.9,113.3l22,6.5l13-17.6l-21-7.1L59.9,113.3z M155.6,111.9l13.3,4.5L157.8,104l-11.6-4.3L155.6,111.9z M47,103.9l-11.1,12.5l13.3-4.5l9.4-12.2L47,103.9z M139.9,87.4l19.2,7.1l16.3-18.2l-24-5.2L139.9,87.4z M29.4,76.3l16.2,18.2l19.2-7.1L53.4,71L29.4,76.3z M107.1,71v22.4l21-7.1l0.6-23L107.1,71z M76.8,86.3l21,7.1V71l-21.6-7.7L76.8,86.3z M138.2,58.2l-0.4,16.1l7.2-10.2l1.7-17.4L138.2,58.2z M59.9,64.1l7.2,10.2l-0.4-16.1l-8.5-11.4L59.9,64.1z M90.1,44.3l12.3,15.8l12.3-15.8l-12.3-21.1L90.1,44.3z M74.2,52.7l14.7,5.2l-7.3-9.4l-15.4-6.8L74.2,52.7z M123.3,48.5l-7.3,9.4l14.7-5.2l8.1-10.9L123.3,48.5z" }],
   },
   // Python: two snakes, one over the other, each turned half way round from the other.
   python: {

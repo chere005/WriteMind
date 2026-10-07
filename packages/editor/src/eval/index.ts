@@ -250,7 +250,7 @@ function iconElement(evaluator: Evaluator, side = ICON): SVGSVGElement {
     const path = document.createElementNS(SVG_NS, "path")
     path.setAttribute("d", shape.d)
     if (shape.paint === "fill") {
-      path.setAttribute("fill", "currentColor")
+      path.setAttribute("fill", shape.colour ?? "currentColor")
     } else {
       path.setAttribute("fill", "none")
       path.setAttribute("stroke", "currentColor")

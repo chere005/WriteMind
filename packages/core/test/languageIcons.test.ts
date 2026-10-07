@@ -27,7 +27,7 @@ describe("the language icons", () => {
   it("has one for every environment a cell can run as, and a text mark for nothing else", () => {
     for (const evaluator of EVALUATORS) {
       const icon = evaluatorIcon(evaluator)
-      expect(icon.size, evaluator).toBe(16)
+      expect(icon.size, evaluator).toBe(evaluator === "wolfram" ? 200 : 16)
       expect(icon.shapes.length, evaluator).toBeGreaterThan(0)
     }
     expect(languageIcon("eval wl")).toBe(evaluatorIcon("wolfram"))
@@ -50,8 +50,16 @@ describe("the language icons", () => {
     expect(evaluatorIcon("cpp").shapes.length).toBeGreaterThan(evaluatorIcon("c").shapes.length)
   })
 
+  it("draws Wolfram as its real logo, in the logo's red", () => {
+    const icon = evaluatorIcon("wolfram")
+    expect(icon.shapes).toHaveLength(1)
+    expect(icon.shapes[0]!.colour).toBe("#dd1100")
+    expect(icon.shapes[0]!.d.startsWith("M102.4,195.2")).toBe(true)
+  })
+
   it("keeps every shape on the 16 x 16 grid, in path commands a page can draw", () => {
     for (const evaluator of EVALUATORS) {
+      if (evaluator === "wolfram") continue // the logo's own 200 x 200 path (above)
       for (const shape of evaluatorIcon(evaluator).shapes) {
         expect(shape.d, evaluator).toMatch(/^[MLHVAZ0-9 .,-]+$/)
         expect(shape.d.startsWith("M"), evaluator).toBe(true)
@@ -68,10 +76,11 @@ describe("the language icons", () => {
     }
   })
 
-  it("names no colour: it is monochrome, painted in whatever the mark's own colour is (light and dark themes alike)", () => {
+  it("names no colour but Wolfram's: the rest are monochrome, painted in whatever the mark's own colour is (light and dark themes alike)", () => {
     for (const evaluator of EVALUATORS) {
       for (const shape of evaluatorIcon(evaluator).shapes) {
-        expect(Object.keys(shape).sort().every((key) => ["d", "paint", "round", "width"].includes(key)), evaluator).toBe(true)
+        const allowed = evaluator === "wolfram" ? ["colour", "d", "paint"] : ["d", "paint", "round", "width"]
+        expect(Object.keys(shape).sort().every((key) => allowed.includes(key)), evaluator).toBe(true)
       }
     }
   })
