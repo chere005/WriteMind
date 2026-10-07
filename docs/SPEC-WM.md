@@ -1,8 +1,8 @@
-# SPEC-WM: the `.wm` note, `.wmdm` text, `drawing.json` and the project file
+# SPEC-WM: the `.wm` Note, the `.mdwm` MarkdownNote, `drawing.json` and the project file
 
 Format version 1. Written 2026-10-07 against the code at 2.15.0.
 
-A note is a `.wm` file: a ZIP archive holding the text (`note.wmdm`), the drawing layer (`drawing.json`), the pictures and ink snapshots the note uses, and a `manifest.json`. A project is a small JSON file listing folders and `.wm` files. Notes written by 2.15.0 and earlier (`.md` + `.drawings/`) are converted once, in one direction (section 5).
+A note is a `.wm` file: a ZIP archive holding the MarkdownNote (`note.mdwm`), the drawing layer (`drawing.json`), the pictures and ink snapshots the note uses, and a `manifest.json`. A project is a small JSON file listing folders and `.wm` files. Notes written by 2.15.0 and earlier (`.md` + `.drawings/`) are converted once, in one direction (section 5).
 
 ## 0. Conventions
 
@@ -16,7 +16,7 @@ A note is a `.wm` file: a ZIP archive holding the text (`note.wmdm`), the drawin
 
 ### 1.1 Identity
 
-- Extension `.wm` (readers match it case-insensitively; writers write lower case). Media type `application/vnd.writemind.note+zip`. The `.wmdm` text has the extension `.wmdm` and media type `text/vnd.writemind.wmdm; charset=utf-8`. macOS UTIs: `com.seancheren.writemind.note` (conforms to `public.zip-archive`) and `com.seancheren.writemind.wmdm` (conforms to `public.plain-text`). The `vnd.` types are unregistered.
+- Extension `.wm` (readers match it case-insensitively; writers write lower case). Media type `application/vnd.writemind.note+zip`. The MarkdownNote format (the text inside) has the extension `.mdwm` and media type `application/vnd.writemind.markdownnote` (UTF-8 content; deliberately not `text/*`). macOS UTIs: `com.seancheren.writemind.note` (conforms to `public.zip-archive`) and `com.seancheren.writemind.mdwm` (conforms to `public.data`). The `vnd.` types are unregistered.
 - [new] The first entry of the archive is `mimetype`, **stored** (method 0), no extra field, no data descriptor, whose content is exactly the 34 bytes `application/vnd.writemind.note+zip` (no newline). So every conforming file has, at fixed offsets:
 
   | Bytes | Value |
@@ -37,7 +37,7 @@ A note is a `.wm` file: a ZIP archive holding the text (`note.wmdm`), the drawin
 |---|---|---|
 | `mimetype` | yes | 1.1 |
 | `manifest.json` | yes | 1.7 |
-| `note.wmdm` | yes (empty is allowed) | the text, section 2 |
+| `note.mdwm` | yes (empty is allowed) | the text, section 2 |
 | `drawing.json` | no | the drawing layer, section 3. Absent means an empty drawing. A writer MUST write it whenever the drawing has any item, and MAY omit it when it has none. |
 | `media/<name>` | no | a picture: the files `drawing.json` images and picture cells of the text name |
 | `snapshots/ink-<uuid>.svg` | no | one SVG per drawing cell (ink cell), the picture the text's `![ink](...)` line points at |
@@ -45,14 +45,14 @@ A note is a `.wm` file: a ZIP archive holding the text (`note.wmdm`), the drawin
 | `legacy/<name>` | no | files kept from a conversion (5.4) |
 | anything else | no | unknown: 1.8 |
 
-Writers emit entries in this order: `mimetype`, `manifest.json`, `note.wmdm`, `drawing.json`, `snapshots/*`, `media/*`, the rest. Readers MUST NOT depend on the order (beyond 1.1), and MUST find entries through the central directory, never by scanning local headers.
+Writers emit entries in this order: `mimetype`, `manifest.json`, `note.mdwm`, `drawing.json`, `snapshots/*`, `media/*`, the rest. Readers MUST NOT depend on the order (beyond 1.1), and MUST find entries through the central directory, never by scanning local headers.
 
 An example listing (entries only):
 
 ```text
 mimetype                                            stored   34
 manifest.json                                       deflate  412
-note.wmdm                                           deflate  3 180
+note.mdwm                                           deflate  3 180
 drawing.json                                        deflate  9 877
 snapshots/ink-3f2b8c1e-0a4d-4e6f-9b1a-7c5d2e8f1a90.svg   deflate  2 204
 media/3f9c2a7e5b1d4c80.png                          stored   58 311
@@ -69,7 +69,7 @@ media/3f9c2a7e5b1d4c80.png                          stored   58 311
 ### 1.4 Compression
 
 - `mimetype`: stored.
-- `manifest.json`, `note.wmdm`, `drawing.json`, `snapshots/*.svg`: deflate (writers SHOULD; readers accept either).
+- `manifest.json`, `note.mdwm`, `drawing.json`, `snapshots/*.svg`: deflate (writers SHOULD; readers accept either).
 - `media/*` and `attachments/*`: stored when the extension is one of `png jpg jpeg gif webp heic heif avif mp4 mov zip` (case-insensitive), deflate otherwise (`svg`, `pdf`, unknown).
 - A writer that keeps an entry it did not change MAY copy its compressed bytes as they are.
 
@@ -98,9 +98,9 @@ File names inside `media/`, `snapshots/` and `attachments/` are one segment. A p
 
 ### 1.6 Limits
 
-A reader MUST accept, and MAY refuse beyond: 20 000 entries; 256 MiB for each of `note.wmdm`, `drawing.json`, `manifest.json`; 2 GiB for any other entry; 8 GiB uncompressed in all. A reader refuses a file that exceeds the limits it enforces without reading further, and says which limit. A reader SHOULD also refuse an entry whose declared ratio is above 1000:1 when it inflates to more than 16 MiB.
+A reader MUST accept, and MAY refuse beyond: 20 000 entries; 256 MiB for each of `note.mdwm`, `drawing.json`, `manifest.json`; 2 GiB for any other entry; 8 GiB uncompressed in all. A reader refuses a file that exceeds the limits it enforces without reading further, and says which limit. A reader SHOULD also refuse an entry whose declared ratio is above 1000:1 when it inflates to more than 16 MiB.
 
-Note: the sidebar needs a note's title and snippet, which today come from the first 8192 bytes of the file ([code] `notes.ts` `noteAt`). For a `.wm` that is the first 8192 bytes of `note.wmdm`; reading it needs the central directory and one inflate, not the whole file.
+Note: the sidebar needs a note's title and snippet, which today come from the first 8192 bytes of the file ([code] `notes.ts` `noteAt`). For a `.wm` that is the first 8192 bytes of `note.mdwm`; reading it needs the central directory and one inflate, not the whole file.
 
 ### 1.7 `manifest.json`
 
@@ -172,9 +172,9 @@ Note: today's drawing sidecar and ink snapshots are written with no guard ([code
 - A file with no valid `manifest.json` is refused.
 - A reference to an entry that is not there is not an error: the picture is shown as missing, the reference stays in the text, nothing is written for it.
 
-## 2. `note.wmdm`: the text
+## 2. `note.mdwm`: the text
 
-`.wmdm` is today's markdown note text plus WriteMind's own conventions: the markdown marker line, the escape rule of text cells, anchors, maths, run cells, and references into the container. It is not meant to read well in another markdown viewer: a text cell's words rely on line breaks and backslashes a viewer will show literally.
+`.mdwm` is today's markdown note text plus WriteMind's own conventions: the markdown marker line, the escape rule of text cells, anchors, maths, run cells, and references into the container. It is not meant to read well in another markdown viewer: a text cell's words rely on line breaks and backslashes a viewer will show literally.
 
 ### 2.1 Bytes and lines
 
@@ -422,7 +422,7 @@ Precedence (what covers what): fenced bodies first, then double-backtick spans, 
 - A new markdown cell: marker first. A new text cell: the escape rule.
 - Everything else as the tables above say it.
 
-### 2.8 Example `note.wmdm`
+### 2.8 Example `note.mdwm`
 
 Each construct once. This text parses to the cells listed under it with the 2.15.0 parser, except that the parser does not yet recognise the `media/` and `snapshots/` destinations as the container's (2.6.1): it reports `file: null` for both pictures.
 
@@ -684,7 +684,7 @@ Not part of this format, unchanged: `.writemind/order.json` in each project fold
 
 ### 5.1 The legacy format (2.15.0 and earlier) [code]
 
-A note is a file with extension `.md`, `.markdown` or `.txt` (`NOTE_EXTENSIONS`) in a project folder `F` (or a section folder under it). Its text is the `.wmdm` grammar of section 2 with these differences: picture destinations are `[../]*.drawings/media/<name>` (one `../` per section folder between the note and `F`; the app reads only `<name>`); links name the target's file with its legacy extension.
+A note is a file with extension `.md`, `.markdown` or `.txt` (`NOTE_EXTENSIONS`) in a project folder `F` (or a section folder under it). Its text is the `.mdwm` grammar of section 2 with these differences: picture destinations are `[../]*.drawings/media/<name>` (one `../` per section folder between the note and `F`; the app reads only `<name>`); links name the target's file with its legacy extension.
 
 Hidden folders beside the notes:
 
@@ -709,7 +709,7 @@ For a legacy note `N` = `Section/Stem.ext` in `F`:
 2. **Name.** The new name is `Stem.wm` in the same folder; if that name is taken by a file that is not this note's own earlier conversion (below), `Stem 2.wm`, `Stem 3.wm`, ... (the app's `uniquePath` rule). So `A.md` and `A.markdown` become `A.wm` and `A 2.wm` (notes are taken in file-name order, case-insensitive, then by extension in the order `.md`, `.markdown`, `.txt`). The stem is already fit for a file name; `fileNames.ts` rules apply to the new one.
 3. **Drawing.** `D` = the first of the three sidecar places (5.1) that exists. `drawing.json` = `writeDrawing(decodeDrawing(D))`; for the Mac's spelling `fromMacDrawing` first. If the decode was **damaged** (3.6), or `D` was the Mac's spelling, the original bytes of `D` are also stored as `legacy/sidecar.json`. If no sidecar exists, no `drawing.json` is written (a drawing cell's items then come from its snapshot's metadata when it has them).
 4. **Assets.** The set of names = every picture file `drawing.json` names (images, pictures inside cells) + `ink-<id>.svg` of every cell + every `.drawings/media/<name>` the text names (the whole text, code fences included: keeping one file too many costs nothing). For each name, the bytes are the file found by 5.1's search. Pictures go to `media/<name>`, snapshots to `snapshots/<name>`; bytes are copied exactly. A missing snapshot is regenerated from its cell (3.5); any other file that cannot be found is skipped and listed in `legacy.missing`; its references stay as written. The name stays the same, **except** that a name that equals another of the note's names under case folding gets `-2`, `-3` before its extension, in the order met, and every reference to it (`drawing.json` `file`, the text) is rewritten to match.
-5. **Text.** `note.wmdm` = `B` with exactly these edits, outside fenced bodies and outside inline code spans, and not inside a text cell (a text cell's words are as typed and must not change; its escaped `[` is not a link):
+5. **Text.** `note.mdwm` = `B` with exactly these edits, outside fenced bodies and outside inline code spans, and not inside a text cell (a text cell's words are as typed and must not change; its escaped `[` is not a link):
    - a picture destination `[./][../]*.drawings/media/<name>` becomes `media/<name>` (`snapshots/<name>` for an `ink-<uuid>.svg`), `<name>` kept as written (percent-encoded or not) unless renamed in step 4;
    - a link destination `file[#anchor]` whose decoded `file` ends in `.md`, `.markdown` or `.txt` (case-insensitive), has no URL scheme, and resolves by `resolveLinkTarget` to a note being converted: the extension in the written text becomes `.wm`, everything else (directories, percent-encoding, `#anchor`) untouched. If the target's new name is not `<Stem>.wm` (it was renamed in step 2), the file component is replaced by the new name, percent-encoded as in 2.6.2. `Other%20Note.md#wm-1a2b3c4d` becomes `Other%20Note.wm#wm-1a2b3c4d`.
    - Unresolvable links and links with no extension are left alone. Anchors (`<a id>`, `<mark id>`, heading slugs), markers, escapes, blank lines, line endings, the older-notes paragraphs (no marker is added) are not touched.
@@ -721,7 +721,7 @@ For a legacy note `N` = `Section/Stem.ext` in `F`:
    ```
    (`missing` only when non-empty.) `sidecar` is the path of the file `D` was read from, relative to `F` (the notes root's older place keeps its `<root>`-relative path).
 8. **Write.** As 1.9, to `Section/<new name>`.
-9. **Verify.** Read the new file back: `note.wmdm` decodes to the bytes of step 5; every asset entry has the SHA-256 of its source; `drawing.json` decodes to a drawing deep-equal to `decodeDrawing(D)` after step 4's renames. On any difference remove the new file (it is ours) and keep the legacy note as it was; report it.
+9. **Verify.** Read the new file back: `note.mdwm` decodes to the bytes of step 5; every asset entry has the SHA-256 of its source; `drawing.json` decodes to a drawing deep-equal to `decodeDrawing(D)` after step 4's renames. On any difference remove the new file (it is ours) and keep the legacy note as it was; report it.
 
 ### 5.4 The backup, then the originals
 
@@ -750,7 +750,7 @@ The backup is never deleted by the app.
 1. **Nothing is dropped.** Load then save, with no edit: every entry's decoded bytes, every manifest key, every unknown drawing key and item, every unknown text, in place (1.8, 3.6, 2.2).
 2. **Whole file or old file.** At every instant a reader sees a complete old or a complete new `.wm` (1.9). A crash leaves at most `Name.wm.tmp`.
 3. **Not ours, not written.** The guard (1.9): a changed or missing file is not overwritten by an autosave.
-4. **Untouched text stays.** A save that did not edit `note.wmdm` writes the same decoded bytes; an edit rewrites only the edited cell's range (2.1).
+4. **Untouched text stays.** A save that did not edit `note.mdwm` writes the same decoded bytes; an edit rewrites only the edited cell's range (2.1).
 5. **Parse agreement.** Whole-document parse equals incremental parse over any sequence of edits; a text cell's escape rule round-trips (2.3).
 6. **References are never silently rewritten.** A reference to a missing entry stays as written (1.10).
 7. **Names are safe.** No entry name outside 1.5 is read, written or extracted; no read touches a path outside the container.
@@ -761,7 +761,7 @@ The backup is never deleted by the app.
 
 Each is an input and an expected result; build the archive with any ZIP library plus the byte rules of 1.1.
 
-1. **Minimal file.** Entries `mimetype` (stored), `manifest.json` (valid), `note.wmdm` = `# T\n`. Bytes 0-71 match 1.1 exactly. Opens; title `T`; saving with no edit gives an archive whose decoded entries equal the input's.
+1. **Minimal file.** Entries `mimetype` (stored), `manifest.json` (valid), `note.mdwm` = `# T\n`. Bytes 0-71 match 1.1 exactly. Opens; title `T`; saving with no edit gives an archive whose decoded entries equal the input's.
 2. **Sniffing.** (a) The same file repacked with `mimetype` second: opens, and is written back with `mimetype` first. (b) `mimetype` content `application/zip`: not a `.wm`, refused. (c) `manifest.json` with `format` `epub`: refused, file untouched.
 3. **Unknown things survive.** A file with `extra/x.bin` (3 bytes), a manifest `"x-future": {"a": [1, 2]}`, a `drawing.json` with top-level `"zzz": 1`, an item `{"kind": "sticker", "id": "q"}` between two strokes, and a stroke carrying `"tag": "hi"`. Open, type a character in the text, save. All five are still there, the sticker still between the strokes, `modified` changed, `id` unchanged.
 4. **Future version.** `manifest.version` 2 with an entry the reader does not know: opens, the editor is read-only, no autosave runs, the file's SHA-256 is unchanged after a session of attempted edits.

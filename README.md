@@ -4,15 +4,15 @@ A markdown notebook, a live camera and a drawing layer over both, for macOS, Win
 
 ## The `.wm` format (specified, not yet in the app)
 
-- A `.wm` file is a ZIP archive: `note.wmdm` (the text), `drawing.json` (the drawing layer), `media/` (pictures), `snapshots/` (ink-cell pictures) and `manifest.json`.
-- `.wmdm` is markdown plus WriteMind's own conventions: cell markers, the escapes of text cells, anchors, maths and runnable cells. It is not meant to read well in a plain markdown viewer.
+- The **Note** format, `.wm`, is a ZIP archive: `note.mdwm` (the note itself), `drawing.json` (the drawing layer), `media/` (pictures), `snapshots/` (ink-cell pictures) and `manifest.json`.
+- The **MarkdownNote** format, `.mdwm`, is the note's underlying representation: markdown extended with WriteMind's cell markers, text-cell escapes, anchors, maths and runnable cells. It is not markdown or plain text, and it is not meant to be read or edited outside WriteMind.
 - A project is a small JSON file, `.writemind-project`, that lists its folders and the `.wm` files open in it. The rest of the session (the caret, folds, unsaved text) is kept outside it.
 - Identifiers:
 
   | | Extension | Media type | macOS UTI (conforms to) |
   |---|---|---|---|
   | Note | `.wm` | `application/vnd.writemind.note+zip` | `com.seancheren.writemind.note` (`public.zip-archive`) |
-  | Text | `.wmdm` | `text/vnd.writemind.wmdm; charset=utf-8` | `com.seancheren.writemind.wmdm` (`public.plain-text`) |
+  | MarkdownNote | `.mdwm` | `application/vnd.writemind.markdownnote` | `com.seancheren.writemind.mdwm` (`public.data`) |
   | Project | `.writemind-project` | `application/json` | none |
 
   A `.wm` file is recognised by its first ZIP entry, `mimetype`, stored uncompressed and holding the note's media type. The `vnd.` types are not registered with IANA.
