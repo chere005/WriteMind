@@ -1,8 +1,8 @@
 # WriteMind
 
-A markdown notebook, a live camera and a drawing layer over both, for macOS, Windows and Linux. A note is a markdown file with its drawings and pictures beside it (a `.md` plus a `.drawings/` folder). The `.wm` format below is specified and being built: when it lands, notes convert on first launch and the originals are kept in a backup folder.
+A notebook, a live camera and a drawing layer over both, for macOS, Windows and Linux. A note is a `.wm` file: one ZIP holding its text, its drawing and its pictures. Notes written by 2.15.0 and earlier (a `.md` plus a `.drawings/` folder) are converted on the first launch that opens their folder, and the originals are moved, never deleted, to a backup folder beside it.
 
-## The `.wm` format (specified, not yet in the app)
+## The `.wm` format
 
 - The **Note** format, `.wm`, is a ZIP archive: `note.mdwm` (the note itself), `drawing.json` (the drawing layer), `media/` (pictures), `snapshots/` (ink-cell pictures) and `manifest.json`.
 - The **MarkdownNote** format, `.mdwm`, is the note's underlying representation: markdown extended with WriteMind's cell markers, text-cell escapes, anchors, maths and runnable cells. It is not markdown or plain text, and it is not meant to be read or edited outside WriteMind.
@@ -17,6 +17,7 @@ A markdown notebook, a live camera and a drawing layer over both, for macOS, Win
 
   A `.wm` file is recognised by its first ZIP entry, `mimetype`, stored uncompressed and holding the note's media type. The `vnd.` types are not registered with IANA.
 - Every save writes a new archive beside the note and renames it over: a note is never edited in place. The exact format is in [docs/SPEC-WM.md](docs/SPEC-WM.md).
+- Double-click a `.wm` in Finder or Explorer and it opens here. A plain `.md` opened or dropped on the window is imported into a new `.wm` beside it (the original is left as it is); `.txt` files are left alone.
 
 ## Install
 

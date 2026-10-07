@@ -3,8 +3,11 @@
 The tour. [README](../README.md) is the short version; [AGENTS.md](../AGENTS.md)
 is how the code is put together.
 
-- **Notes are files.** `~/Documents/WriteMind/*.md`, one per note, readable
-  by anything. The title is the note's first `# heading`, or its file name.
+- **Notes are files.** `~/Documents/WriteMind/*.wm`, one per note: a ZIP that
+  holds the words, the drawing and the pictures (docs/SPEC-WM.md). The title is
+  the note's first `# heading`, or its file name. Notes from before (`.md` plus
+  `.drawings/`) are converted on first launch and the originals kept in a backup
+  folder.
 - **Sections are folders.** Make a section in the sidebar and it is a folder
   on disk; a folder inside it is a subsection. The section you have selected
   is where the next new note goes. Drag a note — or a whole section — into
@@ -266,8 +269,8 @@ is how the code is put together.
   sits in the Edit menu at ⌥⌘Z whatever has the keyboard.
 - **Pictures on the page.** The image button adds one, ⌘V pastes one, and
   they behave like any other object on the layer. Files live in
-  `.drawings/media/`; a note's own copies go with it when it moves and go
-  when it does.
+  the note itself (`media/` inside its `.wm`), so they go with it when it moves
+  and go when it does.
 - **Maths, written as Wolfram Language.** The `f(x)` button opens a pane of
   shapes — integrals with their bounds (single, double and contour), sums
   and infinite series, Taylor series, limits including one-sided ones,
@@ -277,7 +280,7 @@ is how the code is put together.
   Greek alphabet.
   Fill in the parts, watch it set, and insert it inline or on its own line.
   What the note holds is the WL — `Integrate[x^2, {x, 0, 1}]` — in a code
-  span or a ```wl block, so the file is still plain markdown; the preview
+  span or a ```wl block, so the words stay plain text (`note.wmdm`); the preview
   typesets it.
 - **Any camera the Mac can see.** The **Input Devices** menu in the menu bar
   lists built-in, USB, Continuity Camera and Desk View devices with a

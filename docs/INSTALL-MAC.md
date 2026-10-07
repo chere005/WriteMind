@@ -26,7 +26,7 @@ not run on an Intel Mac.
    so replacing it keeps them.
 3. Eject the dmg (the ⏏ beside it in the Finder sidebar). You can delete the .dmg file afterwards.
 
-Your notes live in `~/Documents/WriteMind` (plain `.md` files); WriteMind's own settings,
+Your notes live in `~/Documents/WriteMind` (`.wm` files; notes from before are converted on first launch, the originals kept in a backup folder beside it); WriteMind's own settings,
 sessions and update choice are in `~/Library/Application Support/@writemind/desktop`. Notes kept by an
 older copy in `~/Documents/WriteMindCross` (the folder's name until 2026-10-06) are moved to
 `~/Documents/WriteMind` on the first launch; if both folders exist (the Swift WriteMind keeps its notes in

@@ -12,7 +12,7 @@
 
 import type { EditorView } from "@codemirror/view"
 import {
-  changedInkCells, inkCellOf, inkCells, inkCellSvg, minAspect, type Drawing, type InkCell,
+  changedInkCells, encodeRefName, inkCellOf, inkCells, inkCellSvg, minAspect, type Drawing, type InkCell,
 } from "@writemind/core"
 import {
   columnBox, cursorSeam, dropTargetAt, inkAspectsField, inkCellPlaces, insertCellLine, removeCellLine, repaintInkCells,
@@ -84,9 +84,13 @@ export function syncInkCells(view: EditorView, before: Drawing | null, after: Dr
 /** The cells as last written to their snapshots, per note (the same object = nothing to write). */
 const written = new Map<string, Map<string, InkCell>>()
 
-/** The cell's snapshot: the export's own vector writer, transparent, the cell's JSON in its metadata. */
+/**
+ * The cell's snapshot: the export's own vector writer, transparent, the cell's JSON in its metadata. A picture inside the cell is
+ * named relative to the snapshot, which sits in `snapshots/` while the picture is in `media/` (docs/SPEC-WM.md 3.5), so that
+ * any viewer that unpacks the note finds it.
+ */
 export const snapshotOf = (cell: InkCell, width: number): string =>
-  inkCellSvg(cell, width > 0 ? width : DEFAULT_WIDTH, { mediaUrl: (file) => file, metadata: true })
+  inkCellSvg(cell, width > 0 ? width : DEFAULT_WIDTH, { mediaUrl: (file) => `../media/${encodeRefName(file)}`, metadata: true })
 
 function write(note: string, cell: InkCell, width: number | null, onlyIfMissing: boolean): void {
   const svg = snapshotOf(cell, width ?? DEFAULT_WIDTH)

@@ -4,6 +4,7 @@
 // ink and all), Ctrl+Y takes it out again; nothing is lost either way (the picture's file stays). Real mouse and keys.
 // Unit side: packages/core/test/inkCell.test.ts (undockedInk / undockedPicture), apps/desktop/test/dockUndo.test.ts
 // (one Undo step), packages/editor/test/undock.test.ts (the line taken out).
+import { readWm } from "../../lib/wm.mjs"
 import {
   ok, finish, js, send, sleep, freshNote, saved, arm, line, dragPath, rightClick, key, shot, handles, setDoc, focus,
   canvasBox, noteFileExists, CTRL,
@@ -65,7 +66,7 @@ await key("Escape"); await sleep(400)
 const floating = await inkBox(".wm-ink")
 ok("they float exactly where the cell showed them (to 3 px)", near(floating, shown), JSON.stringify({ shown, floating }))
 await shot("undocked")
-ok("the cell's snapshot file is still there (nothing deleted)", await noteFileExists(`.drawings/media/ink-${cell?.id}.svg`))
+ok("the cell's snapshot is still inside the note (nothing deleted)", !!readWm(file).entries[`snapshots/ink-${cell?.id}.svg`])
 
 // ---- one Ctrl+Z puts the cell back, Ctrl+Y takes it out again
 await focus()
@@ -91,8 +92,8 @@ if (dock) {
   await focus(); await js(`${VIEW}.dispatch({selection:{anchor:25}})`)
   await handDrag([[dock.x, dock.y], [dock.x, dock.y]]); await sleep(700)
   const withPicture = await text()
-  ok("the dock handle makes it a picture cell", /!\[\]\(\.drawings\/media\/[^)]+\.png\)/.test(withPicture), JSON.stringify(withPicture))
-  const fileName = /\.drawings\/media\/([^)]+\.png)/.exec(withPicture)?.[1]
+  ok("the dock handle makes it a picture cell", /!\[\]\(media\/[^)]+\.png\)/.test(withPicture), JSON.stringify(withPicture))
+  const fileName = /\(media\/([^)]+\.png)\)/.exec(withPicture)?.[1]
   const img = JSON.parse(await js(`(()=>{const e=document.querySelector('.wm-cellpic img');if(!e)return 'null';const r=e.getBoundingClientRect();return JSON.stringify({x:r.x,y:r.y,w:r.width,h:r.height})})()`))
   ok("shown in the note", !!img && img.w > 100)
   await rightClick(img.x + img.w / 2, img.y + img.h / 2); await sleep(250)

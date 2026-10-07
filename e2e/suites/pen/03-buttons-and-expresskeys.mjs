@@ -9,7 +9,7 @@ import { js, send, ok, finish, sleep, freshNote, saved, waitFor, pe, reloadApp, 
 const file = await freshNote()
 await js(`localStorage.removeItem('writemind.pen')`)
 await reloadApp()
-const name = file.split(/[\\/]/).pop().replace(/\.md$/, "")
+const name = file.split(/[\\/]/).pop().replace(/\.wm$/, "")
 const reopen = async () => {
   await js(`(() => { const r=[...document.querySelectorAll('.note-row')]; const m=r.find(x=>x.textContent.includes(${JSON.stringify(name)}))||r[0]; m.click() })()`)
   await waitFor(`!!document.querySelector('.wm-canvas')`); await sleep(600)

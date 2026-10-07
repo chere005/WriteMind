@@ -3,6 +3,7 @@
 // they are kept inside it, labelled and typed in place, attached to each other, drawn by the cell's own canvas on
 // both pages, written into its snapshot (the ink file other viewers and the export show), they move with the cell,
 // and Undo takes them back. Real mouse and keys. Unit side: packages/core/test/inkCell.test.ts.
+import { readWm } from "../../lib/wm.mjs"
 import {
   ok, finish, js, send, sleep, freshNote, saved, arm, line, click, dblclick, rightClick, key, typeText, shot,
   handles, setDoc, focus, readNoteFile, CTRL,
@@ -107,7 +108,7 @@ await key("t", { modifiers: CTRL }); await sleep(600)
 
 // ---- 8. the cell's ink file (its snapshot, what other viewers and the export show) holds them
 await sleep(800)
-const svg = await readNoteFile(`.drawings/media/ink-${cellOf(d).id}.svg`)
+const svg = readWm(file).entries[`snapshots/ink-${cellOf(d).id}.svg`]?.toString() ?? ""
 ok("the cell's snapshot holds the shapes, the arrow and the text box", svg.includes("Inside the cell") && svg.includes(">Start<") && (svg.match(/<path/g) ?? []).length >= 3,
   svg.slice(0, 200))
 

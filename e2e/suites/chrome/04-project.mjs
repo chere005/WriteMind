@@ -1,4 +1,5 @@
 import fs from "node:fs"
+import { writeWm } from "../../lib/wm.mjs"
 import os from "node:os"
 import path from "node:path"
 import { js, menu, menuClick, pickNext, notesDir, ok, finish, sleep, shot, reloadApp } from "../../lib/harness.mjs"
@@ -6,7 +7,7 @@ const J = async (expr) => JSON.parse(await js(`JSON.stringify(${expr})`))
 const scratch = fs.mkdtempSync(path.join(os.tmpdir(), "wm-e2e-project-"))
 const extra = path.join(scratch, "chrome-extra")
 const file = path.join(scratch, "chrome-extra-project.writemind-project")
-fs.mkdirSync(extra, { recursive: true }); fs.writeFileSync(path.join(extra, "elsewhere.md"), "# Elsewhere\n\nA note in another folder.\n")
+fs.mkdirSync(extra, { recursive: true }); writeWm(path.join(extra, "elsewhere.wm"), "# Elsewhere\n\nA note in another folder.\n")
 const project = async () => (await menu()).find((t) => t.label === "Project").submenu
 const pick = pickNext
 const click = menuClick
@@ -31,7 +32,7 @@ p = await project()
 ok("Save Project As writes the file", fs.existsSync(file))
 ok("and the menu names the project after it", p[0].label === "chrome-extra-project", p[0].label)
 const saved = JSON.parse(fs.readFileSync(file, "utf8"))
-ok("the file lists both folders", saved.folders.length === 2 && saved.folders.includes(extra), JSON.stringify(saved))
+ok("the file lists both folders (the one beside the project file written relative to it)", saved.folders.length === 2 && saved.folders.map((one) => path.resolve(path.dirname(file), one)).includes(extra), JSON.stringify(saved))
 
 await menuClick("removeFolder:" + extra); await sleep(1500)
 p = await project()

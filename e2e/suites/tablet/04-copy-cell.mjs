@@ -122,7 +122,7 @@ try {
   await js(`${VIEW}.focus()`)
   await system("paste", "v"); await sleep(900)
   const pasted = await noteText()
-  const m = /!\[ink\]\(\.drawings\/media\/ink-([0-9a-f-]+)\.svg\)/g
+  const m = /!\[ink\]\(snapshots\/ink-([0-9a-f-]+)\.svg\)/g
   const lines = [...pasted.matchAll(m)]
   ok("a paste in the note is ONE new drawing cell, after the caret's paragraph (not text, not a picture)", lines.length === 1 && pasted.startsWith(`First paragraph.\n\n${lines[0][0]}`) && !pasted.includes("<svg"), JSON.stringify(pasted))
   const drawn = lines[0] ? (await saved(file, (d) => d.items.some((i) => i.kind === "cell" && i.id === lines[0][1]))) : { items: [] }

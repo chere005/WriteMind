@@ -21,6 +21,7 @@ import path from "node:path"
 import { fileURLToPath } from "node:url"
 import { connectCdp, sleep, until } from "./cdp.mjs"
 import { restartInstance, stopInstance } from "./instance.mjs"
+import { readWm, writeWm } from "./wm.mjs"
 
 export { sleep, until }
 
@@ -136,14 +137,24 @@ export async function notesDir() {
   if (!notesRoot) notesRoot = await js(`window.wm.capabilities().then(c => c.root)`)
   return notesRoot
 }
-const abs = async (rel) => path.join(await notesDir(), rel)
-export async function writeNoteFile(rel, text) {
+// A NOTE IS A .wm FILE (docs/SPEC-WM.md): the helpers below take the name a script has always written, "Name.md", and mean the
+// note "Name.wm" (a script that says "Name.wm" gets the same). The text is the note's `note.wmdm`; what else is inside (the
+// drawing, the pictures, the snapshots) is read with `readNoteWm`. Any other file name is a plain file, as before.
+const noteName = (rel) => rel.replace(/\.(md|markdown)$/i, ".wm")
+const isNoteFile = (rel) => /\.wm$/i.test(noteName(rel))
+const abs = async (rel) => path.join(await notesDir(), noteName(rel))
+/** Write a note (`extras`: { drawing, entries, manifest }, see lib/wm.mjs) or, for any other name, a plain file. */
+export async function writeNoteFile(rel, text, extras) {
   const file = await abs(rel)
   fs.mkdirSync(path.dirname(file), { recursive: true })
-  fs.writeFileSync(file, text)
+  if (isNoteFile(rel)) writeWm(file, text, extras)
+  else fs.writeFileSync(file, text)
   return file
 }
-export async function readNoteFile(rel) { return fs.readFileSync(await abs(rel), "utf8") }
+/** The words of a note (its `note.wmdm`), or the text of a plain file. */
+export async function readNoteFile(rel) { const file = await abs(rel); return isNoteFile(rel) ? readWm(file).text : fs.readFileSync(file, "utf8") }
+/** A note read whole, from disk: { text, drawing, entries, names, manifest }. Throws when it is not a valid .wm. */
+export async function readNoteWm(rel) { return readWm(await abs(rel)) }
 export async function noteFileExists(rel) { return fs.existsSync(await abs(rel)) }
 export async function removeNoteFile(rel) { fs.rmSync(await abs(rel), { recursive: true, force: true }) }
 /** Empty the notes folder (the instance's own temp folder, never anyone's real one) and reload the page. */
@@ -338,7 +349,7 @@ export async function ready() {
   throw new Error("no editor")
 }
 export async function openNote(name) {
-  await js(`[...document.querySelectorAll('.note-row')].find(r=>r.dataset.path?.replace(/\\\\/g,'/').endsWith('/'+${JSON.stringify(name + ".md")})||r.textContent.includes(${JSON.stringify(name)}))?.click()`)
+  await js(`[...document.querySelectorAll('.note-row')].find(r=>r.dataset.path?.replace(/\\\\/g,'/').endsWith('/'+${JSON.stringify(name + ".wm")})||r.textContent.includes(${JSON.stringify(name)}))?.click()`)
   await sleep(700)
 }
 export const noteRows = () => js(`[...document.querySelectorAll('.note-row')].map(r=>r.dataset.path)`)
@@ -353,7 +364,7 @@ export async function setPen(want) {
   await sleep(250)
 }
 
-// ---- drawings (the .drawings sidecar of a note)
+// ---- drawings (drawing.json inside a note)
 /** A fresh note, open, with the pen up. Returns its path. */
 export async function freshNote({ video = false } = {}) {
   await waitFor(`!!window.wm`)
@@ -362,7 +373,7 @@ export async function freshNote({ video = false } = {}) {
   const root = await js(`window.wm.capabilities().then(c => c.root)`)
   const file = await js(`window.wm.createNote(${JSON.stringify(root)})`)
   await sleep(900)
-  const name = file.split(/[\\/]/).pop().replace(/\.md$/, "")
+  const name = file.split(/[\\/]/).pop().replace(/\.wm$/, "")
   await js(`(() => { const r=[...document.querySelectorAll('.note-row')]; const m=r.find(x=>x.dataset.path===${JSON.stringify(file)})||r.find(x=>x.textContent.includes(${JSON.stringify(name)}))||r[0]; m.click() })()`)
   await waitFor(`!!document.querySelector('.wm-canvas')`)
   await setPen(false)
@@ -372,7 +383,7 @@ export async function freshNote({ video = false } = {}) {
 export const sidecar = async (file) => JSON.parse((await js(`window.wm.readDrawing(${JSON.stringify(file)})`)) ?? '{"items":[]}')
 /**
  * Wait for the 500 ms debounced save, then read the drawing back from disk. A slow machine (CI, a cold first save)
- * can take longer than that: the sidecar is read again until it exists, and with `until` (a test of the drawing read)
+ * can take longer than that: the drawing is read again until it exists, and with `until` (a test of the drawing read)
  * until it holds, for up to `ms` in all; then the last read is returned and the check that uses it fails as before.
  */
 export const saved = async (file, until = null, ms = 5000) => {

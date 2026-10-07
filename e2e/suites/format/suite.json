@@ -1,0 +1,4 @@
+{
+  "description": "a note is a .wm file: a legacy folder converts on launch, typing, a stroke and a picture land inside the file, a restart brings them back, the export reads it",
+  "scriptTimeoutSec": 240
+}

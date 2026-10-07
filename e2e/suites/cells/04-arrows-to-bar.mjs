@@ -5,15 +5,13 @@
 // Right / Shift+Down at a bar an arrow armed. The rules are packages/editor/src/barWalk.ts (barWalk.test.ts).
 import {
   ok, finish, js, sleep, freshNote, setDoc, doc, sel, key, typeText, focus, armed, setSel, setRendered, brackets,
-  dblclick, lineBoxes, shot, writeNoteFile, VIEW, CTRL,
+  dblclick, lineBoxes, shot, VIEW, CTRL,
 } from "../../lib/harness.mjs"
 
 await freshNote()
 await setRendered(false)
 
 const INK = "0f0e0d0c-0b0a-4908-8706-050403020100"
-await writeNoteFile(`.drawings/media/ink-${INK}.svg`,
-  `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 120" width="400" height="120"><path d="M20 90 C80 10 140 110 200 40 S320 20 380 80" stroke="#4a9eff" stroke-width="6" fill="none" stroke-linecap="round"/></svg>`)
 
 const LONG = "A long paragraph " + "that wraps round the column and keeps going ".repeat(9) + "to its end."
 const D = [
@@ -23,7 +21,7 @@ const D = [
   "- item a", "- item b", "",
   "```js", "let x = 1", "", "let y = 2", "```", "",
   "| a | b |", "|---|---|", "| 1 | 2 |", "",
-  `![ink](.drawings/media/ink-${INK}.svg)`, "",
+  `![ink](snapshots/ink-${INK}.svg)`, "",
   "```python", "1+1", "```", "",
   "```out", "2", "```", "",
   "# Closed", "", "hidden one", "", "hidden two", "",

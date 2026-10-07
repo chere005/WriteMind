@@ -66,6 +66,7 @@ against it, each as its own node process:
 | `maths` | the palette, insertion inline / as a block, typesetting (MathML), source back on click |
 | `camera` | a fake camera: the flow-chart reader, squaring a tilted page through four corners |
 | `tablet` | the tablet sheet as the video source: writing, box, chart, page, undo, erase, pen buttons on the sheet |
+| `format` | a note is a `.wm`: a legacy folder converts on launch (originals moved to a backup, a notice), typing, a pen stroke and a pasted picture land inside the file (read back by `e2e/lib/wm.mjs` and the system's `unzip -t`), a restart brings them back, the export reads it |
 | `chrome` | the three bars and their groups, one-press-one-action keys, the application menu, edit mode, projects |
 | `perf` | typing / scroll / pen frame times on a long note (generous limits; numbers are printed as notes) |
 

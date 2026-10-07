@@ -250,6 +250,9 @@ export function zipParts(entries: readonly ZipEntry[], when: Date = new Date()):
       crc = crc32(entry.data) >>> 0
       method = wanted === "store" ? 0 : 8
       compressed = method === 0 ? entry.data : deflateRawSync(entry.data, { level: 6 })
+      // Kept with the entry, so the next archive written with these bytes copies them instead of compressing again. (An entry
+      // whose bytes change is a new entry object: core's `withEntry` never edits one in place.)
+      ;(entry as ZipEntry).packed = { method, crc, compressed }
     }
     if (entry.data.length >= 0xffffffff || compressed.length >= 0xffffffff || offset >= 0xffffffff) {
       throw new ZipError("this note is larger than 4 GiB, which this writer cannot write (no ZIP64)")
