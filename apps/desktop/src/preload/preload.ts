@@ -129,6 +129,15 @@ const api = {
     load: (): Promise<string | null> => ipcRenderer.invoke("sheets:load"),
     save: (text: string): void => ipcRenderer.send("sheets:save", text),
   },
+  /** The document camera's scanned pages (tabs), kept in userData/scans.json and userData/scans/<id>.jpg (main/scans.ts). */
+  scans: {
+    load: (): Promise<string | null> => ipcRenderer.invoke("scans:load"),
+    save: (text: string): void => ipcRenderer.send("scans:save", text),
+    put: (id: string, bytes: Uint8Array): Promise<boolean> => ipcRenderer.invoke("scans:put", id, bytes),
+    get: (id: string): Promise<Uint8Array | null> => ipcRenderer.invoke("scans:get", id),
+    drop: (id: string): void => ipcRenderer.send("scans:drop", id),
+    sweep: (keep: string[]): void => ipcRenderer.send("scans:sweep", keep),
+  },
   /** Evaluation cells (shared/eval.ts): run ONE cell, on Shift+Enter in it, and nothing else. */
   evaluate: {
     run: (request) => ipcRenderer.invoke(EVAL_CHANNELS.run, request),

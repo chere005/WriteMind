@@ -457,5 +457,8 @@ A press on the words lets go of the pick, which gives the keys back.
 | same | double-click | the picture fills the WINDOW (sidebar and notes out of sight; never the display, never full screen); double-click again, or the faint ✕ over its top-left corner, to come back. Hiding the video leaves it too. Not remembered across a launch (Mac commit 0edfc08) |
 | same | Esc | puts the box away, and lets go of Resize by Square when it is armed |
 | same, the picture held (Hold image) | Esc | with the pane focused (its picture or one of its buttons was clicked last), back to the live picture; a box or an armed Resize by Square goes first, one per press. Esc in the notes leaves it held |
+| The tab row | click / double-click | a tab opens a kept page (or the live Camera); double-click renames it (Enter keeps, Esc leaves it) |
+| same | + | keeps what the camera shows (the held picture with Hold image) as a new page, and opens it |
+| same | x | closes a page; the first press asks ("Close?"), the second closes it and its picture |
 | Input Devices | Ctrl+Alt+R | Refresh Device List (the other camera commands are menu items) |
 | Input Devices ▸ Aspect Ratio | menu, no key | the viewfinder's shape: Free, 1:1, 4:3, 3:4, 3:2, 2:3, 16:9, 9:16 (ticked; remembered) (Mac commit c98c067) |

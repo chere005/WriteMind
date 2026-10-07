@@ -166,11 +166,11 @@ the open one keeps its width, the row scrolls and "+" stays. The pen cannot reac
 mouse clicks it, and **Pen ▸ Next / Previous Sheet** (Ctrl+Alt+PageDown / PageUp, round the end) are for the other hand.
 Switching never moves or resizes the sheet, so the pen's mapping stays. The sheets, their ink and paper and the open tab are
 **kept across restarts** in userData `sheets.json` (`main/sheets.ts`: debounced, temp file + rename, written at quit; read
-tolerantly by `sheetSet.ts`). Camera mode shows the same row as a stub (one "Camera" tab, a disabled "+"; TODO "Scanned pages as
-tabs"). Evidence: `test/sheetSet.test.ts` (add / close / rename / select / next / prev, the file round trip and bad files);
+tolerantly by `sheetSet.ts`). Camera mode shows the same row with the live "Camera" tab first and one tab per scanned page ("Scanned pages as
+tabs" below). Evidence: `test/sheetSet.test.ts` (add / close / rename / select / next / prev, the file round trip and bad files);
 `C:\CLAUDIO\agents\e2e\sheet-tabs\tabs.mjs` (`first`, then restart the instance, then `restart`: 48 checks, among them two sheets
 with different ink and paper, Bring in Writing takes the open one, an injected pen-feed stroke lands on the open one, the keys,
-rename, close asks, 14 tabs, the strip above the sheet, everything back after a restart, the camera stub). Needs Sean's pen: none
+rename, close asks, 14 tabs, the strip above the sheet, everything back after a restart; its "camera stub" check now finds the Camera tab and a "+"). Needs Sean's pen: none
 of it was written with the real tablet.
 
 **Pen.** Settings ▸ Pen: *Pen side button* = Selects (like ⌘, default) or
@@ -1161,6 +1161,18 @@ the rendered page, undo, File > Export as PDF and its printed page).
 | Lets go: the button again; Esc with the pane focused (a click on the picture focuses the pane, `tabIndex=-1` in camera mode only; a box goes first); another camera, Turn Camera Off, the Tablet, any stream that stops (`live` false) | done | the e2e (each case) |
 
 Not verified: a real camera (Chromium's fake device only); Sean's own feel for where the button sits.
+
+## Scanned pages as tabs (scanner-tabs lane, 2026-10-07; PORT-ONLY: Sean, "work on scanner tabs"; the Mac has no tablet sheet and no tab row)
+
+| Feature | Status | Evidence |
+|---|---|---|
+| The camera's tab row (`SheetStrip.tsx` `CameraTabs`): the live **Camera** tab first (always there, never closed), then one tab per kept page, named "Page N" (one past the highest; double-click renames). **+** keeps what the camera shows (the HELD picture with Hold image, else the live frame) as a new page and opens it; from a page's tab it keeps the live camera picture too. Disabled, with its reason in the tooltip, when there is no camera picture, while busy, or at 40 pages | done | `test/scanSet.test.ts` (the rules: add / close / rename / open, the camera as `current: null`), `e2e/suites/camera/04-scanned-pages-as-tabs.mjs` |
+| What a page keeps (`scanSet.ts` `ScanPage`): the picture as the camera gave it (a JPEG), its own quarter turn, the box, Straighten on / off and the four corners (looked for when it was kept, so Straighten starts on the page), the **learned page shape** (the measured shape snapped to the notebook's, `resolveShape`, so a stack of one notebook comes in one size; only a found page teaches the notebook's shape) and **what was read off it** (Text's lines with the key of the box, corners and turn they were read through: the same box again brings the words in again without reading) | done | `test/scanSet.test.ts` (round trip, `readKey`, `boxOnPane`), the e2e (box carried from the camera, per-page turn / corners, restart) |
+| A page stands in the video's place (`canvas.page-still`, beside the held `still`): the box, Straighten, Find page, Zoom, the turn, the box's Image / Writing / Text and the header's Writing / Page / Raw all work on IT, not on the live picture, exactly as on a held frame; the box and the corners and the turn are the page's own and kept with it (the Camera tab keeps its own: its box is spent by "+", as after a capture). A capture leaves the page in its tab, to bring in again; its box goes, as on the camera. **Hold image is the camera's**: disabled on a page. The note line under the picture names the page; a page whose picture file is gone says so (close the tab) | done | the e2e (Raw on Page 2 is Page 2's frame while the live feed moved on; Writing / Image from Page 1's box; a held frame kept; the turn does not touch the camera's) |
+| **x** on a page closes it, and ALWAYS asks first ("Close?", a second click; anything else or three seconds takes it back): the picture goes with it. The open page closing opens its right-hand neighbour, else the left, else the camera | done | the e2e, `test/scanSet.test.ts` |
+| Kept across restarts, as the tablet's sheets are, in userData: `scans.json` (the list; `main/scans.ts` reuses `sheetsFile`, the writer `sheets.json` has: held, written whole after a quiet moment, at quit, an unreadable file copied aside as `scans.unreadable-<time>.json`) and `scans/<id>.jpg` (each picture, written whole BEFORE its page joins the list; a picture no page names is swept at launch once a minute old). The id is `[\w-]{1,64}` or refused. **Not kept: which tab was open** (a launch starts on the camera). The pictures are in userData like `sheets.json`, not in the notes folder: a page is not a note's content until it is brought in | done | `test/scansFile.test.ts`, `test/scanTabs.test.ts` (the store against a stand-in for `wm.scans`: put before add, nothing written before the list is read, sweep), the e2e (restart: pages, names, turn, box, corners, shape; the pictures decode from their files; Writing works after) |
+
+Not verified: a real camera and a real stack of pages (the fake device plays one feed); Sean's own feel for "+" opening the new page rather than staying on the camera (it follows the tablet's "+"; say if a scan-a-stack flow should stay live); the Zoom on a page past "the button is on offer". Not built: Text read at "+" time (a page is read when Text is pressed, and kept), moving a page between tabs, a thumbnail.
 
 ## The Quick Reference (welcome lane, 2026-10-05; PORT-ONLY: Sean's ask, the Mac has no first-run note)
 
