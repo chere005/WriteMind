@@ -100,6 +100,9 @@ declare global {
       welcomed?(): Promise<string | null>
       /** The "your notes stay in WriteMindCross" notice, once, else null (main/notesFolderMove.ts); absent in an old preload. */
       notesFolderNotice?(): Promise<string | null>
+      /** What the conversion of the old .md notes did at this launch, once (main/convert.ts); null when it did nothing. */
+      conversionNotice?(): Promise<string | null>
+      onConversionNotice?(listener: (text: string) => void): () => void
       /** The tablet's sheets (tabs), as text (renderer/sheetSet.ts), kept in userData/sheets.json; absent in an old preload. */
       sheets?: { load(): Promise<string | null>; save(text: string): void }
       /** The document camera's scanned pages (renderer/scanSet.ts), kept in userData/scans.json and scans/<id>.jpg; absent in an old preload. */

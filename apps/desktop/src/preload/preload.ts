@@ -127,6 +127,14 @@ const api = {
   welcomed: (): Promise<string | null> => ipcRenderer.invoke("welcome:take"),
   /** "Your notes stay in Documents\WriteMindCross…" once, when both notes folders are there; else null (main/notesFolderMove.ts). */
   notesFolderNotice: (): Promise<string | null> => ipcRenderer.invoke("notesFolder:notice"),
+  /** What the conversion of the old .md notes did at this launch (convert.ts), once; null when it did nothing. */
+  conversionNotice: (): Promise<string | null> => ipcRenderer.invoke("conversion:notice"),
+  /** The same, said while the app runs (a folder was added to the project and its old notes were converted). */
+  onConversionNotice: (listener: (text: string) => void) => {
+    const wrapped = (_event: unknown, text: string) => listener(text)
+    ipcRenderer.on("conversion:notice", wrapped)
+    return () => ipcRenderer.removeListener("conversion:notice", wrapped)
+  },
   /** The tablet's sheets (tabs) and their ink, kept in userData/sheets.json (main/sheets.ts). */
   sheets: {
     load: (): Promise<string | null> => ipcRenderer.invoke("sheets:load"),

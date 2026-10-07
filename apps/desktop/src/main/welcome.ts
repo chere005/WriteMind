@@ -50,7 +50,7 @@ async function holdsNotes(folder: string, budget = { dirs: 400 }, depth = 0): Pr
   } catch (error) {
     return (error as NodeJS.ErrnoException).code === "ENOENT" ? "no" : "unknown"
   }
-  if (entries.some((one) => one.isFile() && [...LEGACY_EXTENSIONS, ".wm"].includes(path.extname(one.name).toLowerCase()))) return "yes"
+  if (entries.some((one) => one.isFile() && [...LEGACY_EXTENSIONS, ".txt", ".wm"].includes(path.extname(one.name).toLowerCase()))) return "yes"
   for (const one of entries) {
     if (!one.isDirectory() || one.name.startsWith(".")) continue
     const inner = await holdsNotes(path.join(folder, one.name), budget, depth + 1)

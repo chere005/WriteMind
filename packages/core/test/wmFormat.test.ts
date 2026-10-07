@@ -6,6 +6,7 @@ import { inkCellMarkdown, mediaFile, mediaFiles, pictureMarkdown } from "../src/
 import { decodeDrawing, writeDrawing } from "../src/drawing/model"
 import { keepUnknown } from "../src/drawing/keep"
 import { resolveLinkTarget } from "../src/notes/linking"
+import { containerNames, newNames, rewriteLegacyText } from "../src/wm/legacy"
 import {
   MIMETYPE_BYTES, WM_VERSION, WmError, entriesToWrite, entryNameError, foldedName, methodFor, newWmFile, openWm, parseManifest,
   readNamesError, sniffWm, textOfFile, utf8, withText, writeNamesError, type WmEntry,
@@ -359,6 +360,44 @@ describe("vector 9: tolerant decode, and what is kept", () => {
     expect(saved.items[0].items.map((item: { kind: string }) => item.kind)).toEqual(["stroke", "sticker"])
     expect(keepUnknown(null, '{"items":[]}')).toBe('{"items":[]}')
     expect(keepUnknown("not json", '{"items":[]}')).toBe('{"items":[]}')
+  })
+})
+
+describe("vector 11 (b), (a): names inside one container, and the new names of the notes", () => {
+  it("a name that equals another's after case folding gets -2, -3 before its extension, in the order met", () => {
+    expect([...containerNames(["X.png", "x.png", "y.png", "X.PNG", "noext", "NOEXT", "x.png"])]).toEqual([
+      ["X.png", "X.png"], ["x.png", "x-2.png"], ["y.png", "y.png"], ["X.PNG", "X-3.PNG"], ["noext", "noext"], ["NOEXT", "NOEXT-2"],
+    ])
+  })
+
+  it("A.md and A.markdown become A.wm and A 2.wm, in file-name order and then extension order; a name that is taken is skipped", () => {
+    const names = newNames([{ relative: "A.markdown" }, { relative: "a.md" }, { relative: "Sec/B.md" }], (dir) => new Set(dir === "Sec" ? ["B.wm"] : []))
+    expect(names.get("a.md")).toBe("a.wm")
+    expect(names.get("A.markdown")).toBe("A 2.wm")
+    expect(names.get("Sec/B.md")).toBe("B 2.wm")
+    // An earlier run's names are kept, and reserved.
+    const kept = newNames([{ relative: "A.md" }, { relative: "A.markdown" }], () => new Set(["A.wm"]), new Map([["A.markdown", "A.wm"]]))
+    expect(kept.get("A.markdown")).toBe("A.wm")
+    expect(kept.get("A.md")).toBe("A 2.wm")
+  })
+
+  it("rewrites what the spec lists and nothing else: pictures and links in markdown cells, never a text cell, a fence or a code span", () => {
+    const text = [
+      "# H [x](A.md)", "", "a text cell: words, escaped \\[x](A.md) and .drawings/media/a.png", "",
+      "<!-- markdown -->", "see [x](A.md#h) and `[y](A.md)` and ![](../.drawings/media/a%20b.png) and [z](https://e.com/A.md)", "",
+      "```", "[x](A.md)", "```", "", "![](.drawings/media/ink-3f2b8c1e-0a4d-4e6f-9b1a-7c5d2e8f1a90.svg)", "",
+      "- item with ![](./.drawings/media/gone.png) and [w](Other.md)",
+    ].join("\n")
+    const out = rewriteLegacyText(text, {
+      renamed: new Map([["a b.png", "a b-2.png"]]), missing: new Set(["gone.png"]),
+      link: (file) => (file === "A.md" ? "A.wm" : null),
+    })
+    expect(out).toBe([
+      "# H [x](A.wm)", "", "a text cell: words, escaped \\[x](A.md) and .drawings/media/a.png", "",
+      "<!-- markdown -->", "see [x](A.wm#h) and `[y](A.md)` and ![](media/a%20b-2.png) and [z](https://e.com/A.md)", "",
+      "```", "[x](A.md)", "```", "", "![](snapshots/ink-3f2b8c1e-0a4d-4e6f-9b1a-7c5d2e8f1a90.svg)", "",
+      "- item with ![](./.drawings/media/gone.png) and [w](Other.md)",
+    ].join("\n"))
   })
 })
 

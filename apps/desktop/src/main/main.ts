@@ -59,7 +59,9 @@ import { registerScans } from "./scans"
 import { startUpdater, type Updater } from "./updater"
 import { UPDATE_COMMAND_IDS } from "../shared/update"
 import { takeWelcomed, welcomeOnce, welcomeWanted } from "./welcome"
-import { NOTES_FOLDER, settleNotesFolder, type Settled } from "./notesFolderMove"
+import { MOVE_STATE_FILE, NOTES_FOLDER, settleNotesFolder, type Settled } from "./notesFolderMove"
+import { conversionNotice, convertFolders } from "./convert"
+import { conversionRefusal } from "./convertGuard"
 import type { Runner as EvalRunner } from "./eval/runner"
 import { MIN_WINDOW } from "../shared/layout"
 import { applyMacIdentity } from "./macIdentity"
@@ -167,6 +169,32 @@ function watchNotes(folders: string[]): void {
   folderWatch.set(folders.filter((one) => !isForeignPath(one)))
 }
 
+// THE CONVERSION of 2.15.0's notes (.md and their .drawings) to .wm, at launch and when a folder is added to the project
+// (convert.ts): what it did is said once, in the quiet bar (renderer/FolderNotice.tsx), and in the receipt it leaves in the backup.
+const conversionNotices: string[] = []
+async function runConversion(): Promise<void> {
+  try {
+    const userData = app.getPath("userData")
+    const moved = await fs.readFile(path.join(userData, MOVE_STATE_FILE), "utf8")
+      .then((text) => (JSON.parse(text) as { moved?: { to?: unknown } }).moved?.to).catch(() => null)
+    const context = {
+      documents: app.getPath("documents"), env: process.env, settled: settledFolder, movedTo: typeof moved === "string" ? moved : null,
+    }
+    const report = await convertFolders(project.folders.filter((one) => !isForeignPath(one)), {
+      root: notesRoot(), excluded: project.excluded, userData, appVersion: app.getVersion(),
+      refuse: (folder) => conversionRefusal(folder, context), log: (line) => console.log(`WriteMind: ${line}`),
+    })
+    const said = conversionNotice(report)
+    if (said) {
+      conversionNotices.push(said)
+      window?.webContents.send("conversion:notice", said)
+    }
+  } catch (error) {
+    // Whatever went wrong, nothing was deleted (convert.ts moves only what was written and read back): the app goes on.
+    console.error("WriteMind: the conversion of the old notes stopped", error)
+  }
+}
+
 /** The project's folders changed under the app: tell the page what is there now, and have it read the tree. */
 async function tellFolders(): Promise<void> {
   forgetTrust()
@@ -227,6 +255,8 @@ async function runCommand(id: string): Promise<void> {
 async function projectChanged(kind: ProjectChange): Promise<void> {
   setExcluded(project.excluded)
   setProjectFolders(project.folders)
+  // Another project, or a folder added to this one: its old notes are converted before the tree is read.
+  if (kind !== "saved") await runConversion()
   watchNotes(project.folders)
   await project.remember(projectStateFile())
   rebuildMenu()
@@ -384,6 +414,9 @@ app.whenReady().then(async () => {
   await project.restore(projectStateFile())
   setExcluded(project.excluded)
   setProjectFolders(project.folders)
+  // The old notes of the project's folders become .wm files before anything reads the tree (and before the welcome note looks).
+  await runConversion()
+  ipcMain.handle("conversion:notice", () => conversionNotices.splice(0).join("\n") || null)
 
   protocol.handle("wm", async (request) => {
     const url = new URL(request.url)

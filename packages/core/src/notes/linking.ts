@@ -252,14 +252,14 @@ export function resolveLinkTarget(notePaths: string[], from: string, file: strin
     ?? nearest(notePaths.filter((path) => name(path).toLowerCase() === base.toLowerCase()))
     ?? nearest(notePaths.filter((path) => bare(path) === base))
     ?? nearest(notePaths.filter((path) => bare(path).toLowerCase() === base.toLowerCase()))
-    // A link written when notes were `.md`, `.markdown` or `.txt` files (SPEC-WM 2.6.2, rule 6): the `.wm` of that name.
+    // A link written when notes were `.md` or `.markdown` files (SPEC-WM 2.6.2, rule 6): the `.wm` of that name.
     ?? (renamed === null ? null
       : nearest(notePaths.filter((path) => name(path) === renamed))
         ?? nearest(notePaths.filter((path) => name(path).toLowerCase() === renamed.toLowerCase())))
 }
 
-/** `Other.md` becomes `Other.wm` (also `.markdown` and `.txt`, any case); null for any other name. */
+/** `Other.md` becomes `Other.wm` (also `.markdown`, any case; a `.txt` is not converted, so it is not renamed); null for any other name. */
 export function withNoteExtension(file: string): string | null {
-  const found = /^(.*[^\\/])\.(?:md|markdown|txt)$/i.exec(file)
+  const found = /^(.*[^\\/])\.(?:md|markdown)$/i.exec(file)
   return found ? `${found[1]}.wm` : null
 }

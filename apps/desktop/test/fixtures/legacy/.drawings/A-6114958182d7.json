@@ -1,0 +1,31 @@
+{
+ "items": [
+  {
+   "kind": "image",
+   "id": "i1",
+   "file": "3f9c2a7e5b1d4c80.png",
+   "center": { "x": 0.5, "y": 0.5 },
+   "width": 0.35,
+   "aspect": 1,
+   "transform": { "dx": 0, "dy": 0, "scale": 1, "rotation": 0 },
+   "hidden": false,
+   "group": null
+  },
+  {
+   "kind": "cell",
+   "id": "3f2b8c1e-0a4d-4e6f-9b1a-7c5d2e8f1a90",
+   "aspect": 0.2778,
+   "items": [
+    {
+     "kind": "stroke",
+     "id": "s1",
+     "colorHex": "#1C1C1E",
+     "width": 3,
+     "points": [{ "x": 0.1, "y": 0.1 }, { "x": 0.2, "y": 0.15 }],
+     "transform": { "dx": 0, "dy": 0, "scale": 1, "rotation": 0 },
+     "group": null
+    }
+   ]
+  }
+ ]
+}
