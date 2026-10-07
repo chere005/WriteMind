@@ -69,7 +69,7 @@ describe("Copy Cell on a Mac", () => {
     expect(h.saved).toEqual([SVG])
     expect(h.writes.length).toBe(2)
     for (const written of h.writes) {
-      expect(written.get(URL_MAC)).toBe(`file://${FILE}`)
+      expect(written.get(URL_MAC)).toBe(pathToFileURL(FILE).href)
       expect(written.has("text/uri-list")).toBe(false)
       expect(written.get(SVG_MAC)).toBe(SVG)
       expect(written.get("text/plain")).toBe(SVG)
@@ -90,7 +90,7 @@ describe("Copy Cell on a Mac", () => {
       const h = harness("darwin", () => answered({}, {}, state))
       await copyForWolfram(cellCopy(), h.deps)
       expect(h.writes.length).toBe(1)
-      expect(h.writes[0]!.get(URL_MAC)).toBe(`file://${FILE}`)
+      expect(h.writes[0]!.get(URL_MAC)).toBe(pathToFileURL(FILE).href)
       expect(h.writes[0]!.get(SVG_MAC)).toBe(SVG)
     }
   })
