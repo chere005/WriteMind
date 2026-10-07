@@ -76,7 +76,7 @@ describe("the cell a copy is", () => {
     const cell = cellOfCopied({ strokes: STROKES, frame: FRAME, pane: PANE }, 700)!
     const shell = copiedCellForShell(cell, 700, 0, null)
     expect(shell.cell).toBe(true)
-    expect(shell.markdown).toBe(`![ink](.drawings/media/ink-${cell.id}.svg)`)
+    expect(shell.markdown).toBe(`![ink](snapshots/ink-${cell.id}.svg)`)
     expect(Object.keys(shell.media.inks)).toEqual([cell.id])
     expect(shell.media.bands).toEqual([])
     const svg = shell.media.inks[cell.id]!.svg

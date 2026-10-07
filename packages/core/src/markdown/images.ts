@@ -2,17 +2,20 @@
  * Pictures written into the note itself: the Mac's planned `MarkdownImages.swift` (C:\GIT\WriteMindSwift\docs\
  * PLAN-docking.md, "The model"), plus the port's ink cells (docs\PLAN-docking-ink-cells.md (a)).
  *
- * A DOCKED picture is the line `![](.drawings/media/<file>)` on a line of its own, and the parser makes that line a
- * picture CELL: text cannot overlap it, the caret goes above and below it. An INK cell is the same kind of line,
- * `![ink](.drawings/media/ink-<uuid>.svg)`: any markdown viewer shows the SVG snapshot, and WriteMind knows the
- * `ink-<uuid>` name and draws the editable cell from the note's sidecar.
+ * A DOCKED picture is the line `![](media/<file>)` on a line of its own, and the parser makes that line a picture
+ * CELL: text cannot overlap it, the caret goes above and below it. An INK cell is the same kind of line,
+ * `![ink](snapshots/ink-<uuid>.svg)`: WriteMind knows the `ink-<uuid>` name and draws the editable cell from the
+ * note's `drawing.json`; the SVG is a derived picture of it.
  *
- * `<prefix>` is `../` once per section folder between the note and its project folder (the media live in
- * `<projectFolder>/.drawings/media`), so other viewers find the file. WriteMind itself reads only the BASENAME
- * (`mediaFile`), so a note moved to another depth still works here.
+ * Both name an ENTRY of the note's `.wm` container (docs/SPEC-WM.md 2.6.1), by its name alone: one segment,
+ * percent-encoded. The 2.15.0 spelling, `[./][../]*.drawings/media/<name>` (a file beside the notes), is still READ
+ * and resolves to the same name; it is never written. WriteMind resolves a picture by NAME (`mediaFile`), so a note
+ * moved to another folder still finds its pictures.
  *
  * Pure: no file system, no DOM.
  */
+
+import { containerReference, encodeRefName, WM_MEDIA, WM_SNAPSHOTS, isSnapshotName } from "../wm/names"
 
 /** What a picture line says: its alt words and the path in its parentheses (angle brackets and a title taken off). */
 export interface PictureLine { alt: string; path: string }
@@ -51,11 +54,14 @@ export function pictureLine(line: string): PictureLine | null {
 }
 
 /**
- * The file inside the note's OWN media folder that a path names: `.drawings/media/<name>`, after any number of `../`
- * (and an optional `./`), either slash. Null for a picture that lives anywhere else (a URL, an absolute path, a
- * folder of its own): only the app's own media are drawn off the project's media folder and kept by a sweep.
+ * The file inside the note's OWN container that a path names: `media/<name>` or `snapshots/<name>` (2.6.1), or the
+ * 2.15.0 spelling `.drawings/media/<name>` after any number of `../` (and an optional `./`), either slash. Null for a
+ * picture that lives anywhere else (a URL, an absolute path, a folder of its own): only the note's own media are drawn
+ * out of the container and kept by a sweep.
  */
 export function mediaFile(path: string): string | null {
+  const inside = containerReference(path)
+  if (inside !== null) return inside
   const found = /^(?:\.[\\/])?(?:\.\.[\\/])*\.drawings[\\/]media[\\/]([^\\/]+)$/.exec(path.trim())
   if (!found) return null
   let name = found[1]!
@@ -82,20 +88,20 @@ export function inkCellId(file: string | null): string | null {
 /** The snapshot file of an ink cell. */
 export const inkFileName = (id: string): string => `ink-${id}.svg`
 
-/** `../` once per folder between the note and its project folder. */
-const prefix = (depth = 0): string => "../".repeat(Math.max(0, Math.floor(Number.isFinite(depth) ? depth : 0)))
-
 /** Alt words that cannot end the brackets early or break the line. */
 const safeAlt = (alt: string): string => alt.replace(/[\r\n]+/g, " ").replace(/[[\]]/g, "").trim()
 
-/** The line that docks a picture: `![alt](<prefix>.drawings/media/<file>)`. */
-export function pictureMarkdown(file: string, depth = 0, alt = ""): string {
-  return `![${safeAlt(alt)}](${prefix(depth)}.drawings/media/${file})`
+/**
+ * The line that docks a picture: `![alt](media/<file>)` (`snapshots/<file>` for a drawing cell's snapshot). `depth`,
+ * the sections between the note and its project folder, is not needed by a reference into the container and is ignored.
+ */
+export function pictureMarkdown(file: string, _depth = 0, alt = ""): string {
+  return `![${safeAlt(alt)}](${isSnapshotName(file) ? WM_SNAPSHOTS : WM_MEDIA}${encodeRefName(file)})`
 }
 
-/** The line of an ink cell: `![ink](<prefix>.drawings/media/ink-<id>.svg)`. */
-export function inkCellMarkdown(id: string, depth = 0): string {
-  return `![ink](${prefix(depth)}.drawings/media/${inkFileName(id)})`
+/** The line of an ink cell: `![ink](snapshots/ink-<id>.svg)`. */
+export function inkCellMarkdown(id: string, _depth = 0): string {
+  return `![ink](${WM_SNAPSHOTS}${encodeRefName(inkFileName(id))})`
 }
 
 /**
