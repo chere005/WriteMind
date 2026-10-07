@@ -50,5 +50,7 @@
 .wm-swatch.none { background: var(--wm-page); }
 .wm-swatch.on { border-color: var(--wm-accent); box-shadow: 0 0 0 1px var(--wm-accent); }
 .wm-style-colour { width: 26px; height: 26px; padding: 0; border: 0; background: transparent; cursor: pointer; }
-.wm-handle-group { width: auto; padding: 0 9px; border-radius: 11px; font-size: 11px; }
+/* The Group / Ungroup button is a pill that fits its word (Sean, 2026-10-06: "make the group/ungroup button icon fit
+   around the text"); .wm-handle's fixed 22 px circle would otherwise let the word spill out of it. */
+.wm-handle.wm-handle-group { width: auto; min-width: 22px; padding: 0 9px; border-radius: 11px; font-size: 11px; white-space: nowrap; }
 .wm-handle-on { color: var(--wm-accent); border-color: var(--wm-accent); }

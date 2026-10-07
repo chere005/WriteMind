@@ -32,14 +32,13 @@ const AD_HOC = ["-c.mac.identity=-", "-c.forceCodeSigning=true", "-c.mac.timesta
 describe("electron-builder.yml, the Mac", () => {
   const mac = builder.mac
 
-  it("makes only dmgs, one per chip, the chip in the name", () => {
-    expect(mac.target).toEqual([{ target: "dmg", arch: ["arm64", "x64"] }])
-    expect(JSON.stringify(mac.target)).not.toContain("zip")
+  it("makes a dmg (to download) and a zip (for the updater) per chip, the chip in the name", () => {
+    expect(mac.target).toEqual([{ target: "dmg", arch: ["arm64", "x64"] }, { target: "zip", arch: ["arm64", "x64"] }])
     expect(mac.artifactName).toBe("${productName}-${version}-mac-${arch}.${ext}")
     expect(mac.artifactName).toContain("${arch}")
   })
 
-  it("writes no update info for a dmg (no blockmap, no latest-mac.yml)", () => {
+  it("writes no update info for a dmg (the zip's latest-mac.yml is the feed)", () => {
     expect(builder.dmg.writeUpdateInfo).toBe(false)
   })
 
@@ -105,7 +104,7 @@ describe("release.yml", () => {
     expect(run).not.toContain("-cnotmatch")
   })
 
-  it("mac builds both dmgs ad hoc with --publish never, checks them, then uploads them with gh", () => {
+  it("mac builds the dmgs (signed: and the zips) with --publish never, checks them, then uploads them with gh", () => {
     const mac = jobs.mac
     const run = runs(mac)
     expect(mac["runs-on"]).toBe("macos-15")
@@ -113,10 +112,12 @@ describe("release.yml", () => {
     expect(run).toContain("npm ci")
     expect(run).toContain("npm run build")
     // Signed and notarized when the secrets are set (the Developer ID line), otherwise package:mac:adhoc's.
-    expect(run).toContain("--mac dmg --arm64 --x64 --publish never")
+    expect(run).toContain("--mac dmg zip --arm64 --x64 --publish never")
     expect(run).toContain("npm run package:mac:adhoc")
     expect(run).toContain("bash tools/verify-mac.sh")
     expect(run).toContain('gh release upload "$TAG" dist-electron/*-mac-*.dmg --clobber')
+    // The updater's files go up only from a signed build (an ad-hoc copy cannot install them).
+    expect(run).toMatch(/WRITEMIND_MAC_SIGNED:-\}" = 1 \]; then[\s\S]*latest-mac\.yml --clobber/)
     // verify before upload
     expect(run.indexOf("verify-mac.sh")).toBeLessThan(run.indexOf("gh release upload"))
     expect(run).not.toMatch(/--publish always/)

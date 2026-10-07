@@ -41,6 +41,8 @@ export interface SurfaceHandle {
   repaint(): void
   /** The sheet's size on screen, in CSS pixels. */
   size(): Size
+  /** A Bring in from the header: what it did is in the NOTE, so the next Ctrl+Z is the note's (as the box row's `leaveFor`). */
+  leave(): void
 }
 
 interface Props {
@@ -230,11 +232,14 @@ export const TabletSurface = forwardRef<SurfaceHandle, Props>(function TabletSur
    * A Bring in from the box's row: what it did is in the NOTE, so the next Ctrl+Z is the note's (the row goes with the
    * box, and the sheet under the mouse is not "the pen over the sheet" until the pointer moves onto it again).
    */
-  const leaveFor = async (action: () => void | Promise<void>): Promise<void> => {
+  const leave = (): void => {
     hovered.current = false
     // The row goes from under a still pointer, and the browser then says it entered the sheet: that does not count.
     quietAt.current = lastAt.current
     if (wrap.current && wrap.current.contains(document.activeElement)) wrap.current.blur()
+  }
+  const leaveFor = async (action: () => void | Promise<void>): Promise<void> => {
+    leave()
     await action()
   }
   /** The last place a pointer was seen over the host (the sheet or the row), in client px. */
@@ -279,6 +284,7 @@ export const TabletSurface = forwardRef<SurfaceHandle, Props>(function TabletSur
     clear: () => { latest.current.page.clear(); schedule(true); latest.current.onEdited() },
     repaint: () => schedule(true),
     size: () => size.current,
+    leave,
   }), [act, schedule])
 
   /** `unit`: on the sheet (on a bound sheet, at the cell's edge); `raw`: where it really is; `inside`: in the cell (always, on a plain sheet). */

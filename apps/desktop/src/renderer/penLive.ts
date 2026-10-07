@@ -25,11 +25,17 @@ export interface PenLive {
   seen: { tip: boolean; lower: boolean; upper: boolean; eraser: boolean }
   /** The pointer is a pen, and the last event came from it. */
   pen: boolean
+  /**
+   * The tip touched with NO side button held: this is a stroke being drawn, and a button pressed or let go before the
+   * pen lifts does nothing (Sean, 2026-10-06: "when i'm currently drawing, pressing a button doesn't do anything,
+   * currently it's changing the pointer"). A hold is decided at contact.
+   */
+  drawing: boolean
 }
 
 let live: PenLive = {
   tip: false, lower: false, upper: false, eraser: false, alt: false, pressure: 0,
-  seen: { tip: false, lower: false, upper: false, eraser: false }, pen: false,
+  seen: { tip: false, lower: false, upper: false, eraser: false }, pen: false, drawing: false,
 }
 /** What the buttons readers see: a new object only when a button changed. */
 let shown = live
@@ -58,8 +64,9 @@ function sample(event: PointerEvent): void {
   }
   const grew = seen.tip !== live.seen.tip || seen.lower !== live.seen.lower
     || seen.upper !== live.seen.upper || seen.eraser !== live.seen.eraser
-  live = { tip, lower, upper, eraser, alt, pressure: tip || eraser ? event.pressure : 0, seen, pen: true }
-  if (changed || grew) notify()
+  const drawing = tip && (live.tip ? live.drawing : !lower && !upper && !eraser)
+  live = { tip, lower, upper, eraser, alt, pressure: tip || eraser ? event.pressure : 0, seen, pen: true, drawing }
+  if (changed || grew || drawing !== shown.drawing) notify()
   else if (pressureWatchers > 0 && frame === null) {
     frame = requestAnimationFrame(() => { frame = null; shownPressure = live; pressureListeners.forEach((listener) => listener()) })
   }
@@ -74,7 +81,7 @@ export function watchLive(): void {
   }
   document.addEventListener("pointerleave", (event) => {
     if (event.pointerType !== "pen" || !live.pen) return
-    live = { ...live, tip: false, lower: false, upper: false, eraser: false, pressure: 0 }
+    live = { ...live, tip: false, lower: false, upper: false, eraser: false, pressure: 0, drawing: false }
     notify()
   }, true)
 }
@@ -86,7 +93,7 @@ export function subscribeLive(listener: () => void): () => void {
 
 /** The action of the button that is held now, if one is: what the pen is "in". */
 export function heldSlot(state: PenLive = live): Slot | null {
-  if (!state.pen) return null
+  if (!state.pen || (state.tip && state.drawing)) return null
   return slotOf({
     pointerType: "pen", button: -1, altKey: state.alt,
     buttons: (state.tip ? 1 : 0) | (state.lower ? 2 : 0) | (state.upper ? 4 : 0) | (state.eraser ? 32 : 0),

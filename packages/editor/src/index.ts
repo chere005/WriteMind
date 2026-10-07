@@ -12,6 +12,8 @@ export { notebookDecorations, safeSpanStyle } from "./decorations"
 export { seamExtensions, armedField, armedTypeField, armSeam, setArmedType, pageSeams } from "./seams"
 export { cellBrackets, heldCells, GUTTER_WIDTH } from "./brackets"
 export { notebookKeys, wrap, heading, list, listStyleSource, quote, fence, mathsCell, indentLines, outdentLines, textCell, markdownCell, mergeTheCell } from "./keys"
+// Held cells copied (the app copies their drawing cells for Mathematica too), and the cells' own clipboard type.
+export { cellsCopied, CELLS_MIME } from "./keys"
 // Text cells and markdown cells (docs/PLAN-text-cells.md): the hidden marker, literal typing, plain copy.
 export { textCells, markerField, hiddenMarkers, plainSelection, redoWaiting } from "./textCells"
 export { codeTypingKeys } from "./codeTyping"
@@ -19,7 +21,7 @@ export { notebookTheme } from "./theme"
 export { textConventions } from "./conventions"
 export { find, findField, setFind, findCount, findNextMatch, replaceMatch, replaceEvery } from "./find"
 export { hiddenMarkerDeletion } from "./markerDeletion"
-export { pasteHtmlAsText, htmlToPlain } from "./paste"
+export { pasteHtmlAsText, htmlToPlain, takesPastedPicture } from "./paste"
 export {
   folding, foldField, foldSection, setFolds, foldedKeys, hiddenNow, toggleFold, foldAll, unfoldAll,
   sectionAtCaret, revealAt, foldsHiding,

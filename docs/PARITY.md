@@ -95,6 +95,23 @@ Differences: the face is Segoe UI (the Mac's San Francisco); a link prints blue 
 highlighted and `<a id>` anchors are dropped where the Mac prints them as literal text. A code block taller than a sheet is zoomed
 (its words may wrap a hair differently).
 
+### Wolfram notebook and Copy into Mathematica (port-only, Sean 2026-10-06)
+
+The Mac has neither. "add export to wolfram notebook.. make drawing cells a Graphics[]", then, after the first build:
+"actually, use wolfram's import of SVG as "Image" instead of "Graphics"!!!! and paste those as images rather than as graphics!!!"
+and "you should be able through clipboard wizardry serve something i can paste to a notebook as the image itself rather
+than the link". A drawing cell is an IMAGE: its SVG (from the sidecar, never the snapshot file) imported by the Wolfram
+Engine, `ImportString[svg, {"SVG", "Image"}]`; the engine is WriteMind's own wolframscript lookup (Language Setup's choice
+first; a full Mathematica's `/Applications/Wolfram.app`, `Mathematica.app`, `Program Files\Wolfram Research\Wolfram\<v>`
+and `Mathematica\<v>` too), ONE kernel run per export or copy.
+
+| Feature | Here | Status |
+|---|---|---|
+| File ▸ Export… (Ctrl+E) has a third type, Wolfram Notebook (`.nb`): headings, text, lists, to-dos, quotes, tables, rules in Mathematica's own styles; maths and `wolfram` code Input cells (maths typeset by the kernel, held, never evaluated); Python ExternalLanguage; answers Output cells; every drawing cell, floating-layer band and picture an embedded Image (an Output cell that re-running the Input above it keeps) | `packages/core/src/export/wolfram/` (text, maths, svg, plan, notebook, kernel, clipboard), `apps/desktop/src/main/wolfram/`, `eval/runner.ts` `wolframJob` | works; checked with the real engine and the front end's own render (`apps/desktop/scripts/check-wolfram.ts`), `e2e/suites/export/01` |
+| No engine, or one that does not answer: the export still writes the file; each image is a CLOSED initialization Input cell `Image[ImportString[svg, {"SVG","Image"}]]` (a picture carries its bytes), and a dialog says the drawings appear when the cells are evaluated (Evaluation ▸ Evaluate Initialization Cells; checked: only those cells run) | `exportNotice` | works |
+| Copy or Cut of held cells with a drawing cell: Mac: the front end's own pasteboard type (`dyn.ah62d4rv4gk8y8xnfk6`, 'OMEG') holds the cells (the drawing as the open Input cell at once, as the image when the kernel answers), beside the PNG for Pages / Word; Windows / Linux: the plain text becomes the front end's linear syntax for the image (only when every held cell is a drawing) beside the standard `image/png`. WriteMind's own cells stay on the clipboard and win inside WriteMind (`takesPastedPicture`: no floating picture on a paste back) | `main/wolfram/clipboard.ts`; `capabilities.wolframClipboard` | works to the clipboard (checked in the real app, `e2e/suites/export/02`); the paste into a real notebook is for the full install (docs/TODO.md) |
+| A machine with no engine: a copy changes nothing (AGENTS: show nothing); an export still works (above) | `wolframClipboardFor`, `exportNotice` | works |
+
 ### The window
 
 | Mac | Here | Status |
@@ -910,7 +927,7 @@ faked, and the source scans), `packages/editor/test/evalCells.test.ts` (4). E2E:
 | Ctrl+9 (Format ▸ Evaluation Cell, the Mac's ⌘9): at a bar the cell is made THERE with the caret in it (29149b9); in a fenced cell it converts that cell, keeping the code; anywhere else a new cell after it, caret inside; not on the + menu | done | e2e 3, 5; core test (CellTypeTests); `menu.test.ts`, `keyList.test.ts` |
 | The In/Out pair is one bracket in the gutter at the pair's depth, 3 px proud at each end, its two cells one step in; not a cell to any gesture (`isCell`) | done (a small edit to the cells lane's `brackets.ts`) | `evalCells.test.ts`; e2e 1; shot `1z-gutter.png` |
 | Language icons instead of letters (a608cc3) | not built (letters, as on the Mac) | docs/TODO.md |
-| The Mac's per-tool path override (`evalTool.<name>` in its defaults) | not built | docs/TODO.md |
+| The Mac's per-tool path override (`evalTool.<name>` in its defaults) | **built as a port-first screen**, File ▸ Language Setup… on all three platforms (2026-10-06; see "Language Setup" below). **Differs from the Mac on purpose**: a chosen program is the ONLY one its language uses, and one that has gone is refused with a sentence naming its path and Language Setup — the Mac's `Evaluator.tool()` falls through to its candidates | "Language Setup" below |
 
 Not verified: a real keyboard (CDP key events only); C, C++ and Rust running for real (only the faked process layer),
 and a Wolfram cell giving an answer (the Engine is not activated); the quit path with a run in flight (`cancelAll` is
@@ -931,6 +948,39 @@ port 9421; the eval lane's `eval\run.mjs` re-run there, 27/27); shots `C:\CLAUDI
 | A note that holds an evaluation cell has a 48 px left margin (30 elsewhere) so `Out[100]` fits at full size; the text, the selection's clip and the hover wash all follow; a note with none keeps 30 px, so the words under existing ink in ordinary notes do not move | done; the text of a note moves 18 px right when its FIRST evaluation cell appears (ink placed earlier stays put) | `evalCells.test.ts` (the class only with an eval cell); e2e "a note with no evaluation cell … where they always did" |
 | The spinner sits on the second row, so `In[n]` never moves while a cell runs | done | shot `running.png`; eval e2e 8 |
 | Gate fixes (2026-10-05): (1) a note put away while a cell ran comes back with nothing "running" (the stashed state kept `running`, so the spinner turned for ever and Shift+Enter did nothing): the plugin clears a stale run when a view is built; (2) an older pair (```` ```python ```` over ```` ```out ````, no `eval` fence) keeps the 30 px margin and its `Out[n]` is sized to it (`markColumn`) instead of drawn over the words; (3) the marks measure nothing in a note with no evaluation cell or answer; (4) a child that exits while a grandchild holds its pipes settles the run after 750 ms and is never killed by its stale PID; (5) the "not activated" sentence names the wolframscript that was found, quoted (the Engine's installer leaves it off the PATH) | done; the margin that moves a note's words when its first eval cell appears is **Sean's decision** (`docs/TODO.md`, Evaluation cells (5)) | `evalCells.test.ts` (+1, the column), `evalRunner.test.ts` (+1 orphan, activation path), `evaluationCells.test.ts` (activation path); e2e `C:\CLAUDIO\agents\e2e\gate\smoke.mjs` ("coming back, no spinner…", "Shift+Enter runs that cell again", "its Out[1] ends before the words begin"); shots `C:\CLAUDIO\agents\shots\gate\` |
+
+### Language Setup: the per-tool override, as a screen (2026-10-06)
+
+Sean, 2026-10-06: "on all platforms there should also be a language setup options screen from the menu bar which makes
+it easy to set up or point to a WL / python environment for WriteMind to use", and a Wolfram Language / Python setup on
+Windows. The Mac's equivalent is `defaults write com.seancheren.WriteMind evalTool.<name> <path>`, read in
+`Evaluator.tool()` (`WriteMind/Eval/Evaluator.swift`), with no screen; this one is port-first. Code: `shared/languages.ts`
+(the settings file, the picker, the setup sentences), `main/eval/languages.ts` (the store and the IPC),
+`main/eval/tools.ts` (`toolEntry`, `resolveChoice`, `choiceProblem`, `foundTools`, `wolframLicence`),
+`main/eval/runner.ts` (`identify`, the chosen tool's folder on the PATH), `main/toolSetup.ts` (Windows),
+`packages/core/src/eval/probe.ts`, `renderer/LanguageSetupDialog.tsx` + `languageSetupView.ts`. Unit:
+`evalProbe.test.ts`, `toolsChosen.test.ts`, `languages.test.ts`, `languagesIpc.test.ts`, `toolSetup.test.ts`,
+`languageSetupView.test.ts`, and additions to `evaluationCells`, `capabilities`, `evalRunner`, `helpers`, `menu`,
+`notesFolderMove`, `evalCells`. E2E: `e2e/suites/languages/01-language-setup.mjs` (written; not yet run).
+
+| Feature | Status | Evidence |
+|---|---|---|
+| File ▸ Language Setup… on Windows, Mac and Linux, after Clean Up Unused Files…, no key, never greyed; also Runs As ▸ Language Setup… on a cell's mark, opening at that cell's language | built | `menu.test.ts`; e2e |
+| A program chosen there is the ONLY one its language uses (userData/`languages.json`, version 1); one that has gone, or is not a program, is refused before anything starts with "Python is set to “…” in Language Setup, which is not there any more…"; the mark's tooltip, the Runs As row ("not there") and the refusal are one builder (`missingToolRefusal`) | built; **differs from the Mac** (`evalTool.<name>` falls through) | `toolsChosen.test.ts` (BREAK-IT: no fallback), `evalRunner.test.ts`, `evaluationCells.test.ts` |
+| A choice applies at the next run with no restart (the places are read per run; the store re-reads the file when its time or size moves, so a hand edit or the notes-folder move applies too); open notes' marks follow the push at once | built | `languagesIpc.test.ts`, `notesFolderMove.test.ts`, `evalCells.test.ts` (`followTools`) |
+| `languages.json` held by another program or unreadable: the choices last read stay the choices and no choice is written until it reads again; if nothing was ever read, every language refuses ("WriteMind could not read Language Setup's choices…", Runs As "not known") rather than run what it finds by itself | built | `languagesIpc.test.ts` (BREAK-IT, the written content asserted), `toolsChosen.test.ts`, `evaluationCells.test.ts`, `languageSetupView.test.ts` |
+| Choose… (a file, a venv folder, the Wolfram Engine's `.app`; a link kept as the link on a Mac), checked by name and shape, then asked its version (`wolframscript -version`, `--version`, Python's version and path) before it is saved; Python 2, the Store placeholder (9009) and Apple's stand-in (needs the Command Line Tools) refused by name | built | `toolsChosen.test.ts`, `evalProbe.test.ts`, `languagesIpc.test.ts`, `languages.test.ts` (picker) |
+| Also on this computer: the other copies found by themselves, one click to Use (a link and its file once — but a venv, whose `bin/python3` links to its base interpreter, is told apart by its `pyvenv.cfg` (`toolIdentity`), so the base stays listed; the Store alias never offered) | built | `toolsChosen.test.ts` (`foundTools`, BREAK-IT), `languagesIpc.test.ts` (BREAK-IT) |
+| A Python found by itself that is only a stand-in, told from the file system without running it (`pythonStandIn`): the Store's WindowsApps shortcut, a `py.exe` with no `Python3NN` folder or other python.exe, Apple's `/usr/bin/python3` with neither the Command Line Tools' nor an Xcode's python3: said in amber with Install Python… / Get Python… (and `xcode-select --install`); Apple's real one offers Get Python… too; an install that leaves only a stand-in is not "Python installed." | built | `toolsChosen.test.ts`, `languagesIpc.test.ts` (BREAK-IT), `languageSetupView.test.ts` (BREAK-IT) |
+| Test runs a fixed program (`TEST_SOURCE`) through the runner, never a note's text; nothing is started when the screen opens | built | `evalProbe.test.ts`; `evalRunner.test.ts` source scans (`runner.run(` only in ipc.ts and languages.ts; the page's calls only from `onClick`) |
+| A chosen tool's folder goes first on the child's PATH (a venv's `bin`, MinGW's DLLs); a tool found by itself leaves the PATH as it was | built | `evalRunner.test.ts` (BREAK-IT) |
+| Wolfram not activated (no `mathpass` where activation leaves one): Activate… on Windows, the command to type elsewhere (bare on a Mac/Linux path: `& "…"` is a zsh parse error, fixed in `wolframCommand`) | built | `toolsChosen.test.ts` (`wolframLicence`), `languageSetupView.test.ts`, `evaluationCells.test.ts` |
+| Windows: Install Python…, Install Wolfram Engine… and Activate… run the installer's own `installer-tools.ps1` (`-FromApp`, copied beside the app by build.mjs) in a console of its own — opened by a hidden PowerShell's `Start-Process`, not by a `detached` spawn (which gives a console program no console); offered only with the script and winget; Get Python… / Get Wolfram Engine… (the download page) everywhere else. What a setup window said shows in the dialog that started it, beside the offer to try again (the licence notice kept), and a sentence about something not there yet goes once it is | built; the ps1 changes and the window itself **not yet run on Windows** (no PowerShell on the Mac that built them) | `toolSetup.test.ts` (the command line read back), `helpers.test.ts`, `capabilities.test.ts`, `languages.test.ts` (`setupSentence`), `languagesIpc.test.ts`, `languageSetupView.test.ts` |
+| The keyboard stays in the dialog: a press that takes away its own button (Find Automatically, Use, Install…, Choose… while it checks) gives the focus back to that row's Choose… (Stop while busy) or Done, so Escape still closes it | built | `languageSetupView.test.ts` (`keyboardHome`, a scan of the dialog); e2e (no hand-placed focus before the last Escape) |
+| The Mac's DMG Wolfram Engine (`/Applications/Wolfram Engine.app/…/Wolfram Player.app/Contents/MacOS/wolframscript`) found by itself | built (measured: Homebrew's link points at it) | `toolsChosen.test.ts` |
+
+Not verified: the screen on screen (not launched in the lane that built it); the e2e suite; a cold Wolfram Test on
+Windows against the 20 s limit; the Linux licence path; a conda environment's `Library\bin` on the PATH (not added).
 
 ## The rendered page edits what is written (preview lane, 2026-10-05)
 

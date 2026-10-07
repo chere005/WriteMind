@@ -8,14 +8,14 @@ import path from "node:path"
 import { DEFAULT_SETTINGS, type PenFeedSettings } from "../../shared/pen"
 
 export interface PenState {
-  version: 2
+  version: 3
   settings: PenFeedSettings
   /** Whether the driver honoured the system mapping on this device (see mapping.ts); absent = never tried. */
   mapping: Record<string, "honoured" | "refused">
 }
 
 export function defaultState(): PenState {
-  return { version: 2, settings: { ...DEFAULT_SETTINGS }, mapping: {} }
+  return { version: 3, settings: { ...DEFAULT_SETTINGS }, mapping: {} }
 }
 
 export function parseState(text: string | null): PenState {
@@ -28,7 +28,8 @@ export function parseState(text: string | null): PenState {
   const s = o.settings as Record<string, unknown> | undefined
   if (s && typeof s === "object") {
     if (typeof s.enabled === "boolean") out.settings.enabled = s.enabled
-    if (typeof s.mapSheet === "boolean") out.settings.mapSheet = s.mapSheet
+    // A version 2 file's mapSheet is the old default (off), not a choice: version 3 made it on.
+    if (typeof s.mapSheet === "boolean" && typeof o.version === "number" && o.version >= 3) out.settings.mapSheet = s.mapSheet
   }
   // (An old file's "frames", the stored two-touch calibrations, is ignored: the frame comes from the device and the Orientation menu.)
   const m = o.mapping as Record<string, unknown> | undefined

@@ -121,6 +121,7 @@ await click(cellBtn.x, cellBtn.y); await sleep(900)
 const text = await js(`document.querySelector('.cm-content').cmTile.view.state.doc.toString()`)
 const m = /!\[ink\]\(\.drawings\/media\/ink-([0-9a-f-]+)\.svg\)/.exec(text)
 ok("Bring in as Drawing Cell writes a drawing cell after the caret's paragraph", !!m && text.startsWith(`First paragraph.\n\n${m[0]}`), JSON.stringify(text))
+ok("...and the sheet keeps the writing (Sean, 2026-10-06)", (await sheetStrokes()).length > 0)
 const cell = m ? (await saved(file, (d) => d.items.some((i) => i.kind === "cell" && i.id === m[1]))).items.find((i) => i.kind === "cell" && i.id === m[1]) : null
 const live = m ? await rect(`.wm-inkcell[data-ink-cell="${m[1]}"]`) : null
 if (cell && live) {
@@ -161,4 +162,19 @@ ok("a window-pen stroke begun on a box button is written on the sheet from its f
 ok("...and Erase was not clicked (the boxed stroke is still there, the box stays)", inBox(s1, { x: 0.2, y: 0.15, w: 0.3, h: 0.25 }) === 1 && !!(await rect(".camera .tablet .box")))
 await mouse("mouseMoved", t.x + t.w - 10, t.y + 10, { buttons: 0 })
 await shot("window-pen-from-row")
+
+// 5. the header's Bring in ▾ (Sean, 2026-10-06): "To docked cell" makes Writing dock a drawing cell; the sheet keeps it
+await key("Escape"); await sleep(100)
+const cellsBefore = ((await js(`document.querySelector('.cm-content').cmTile.view.state.doc.toString()`)).match(/!\[ink\]/g) ?? []).length
+await js(`document.querySelector('[data-tablet=bring-to]').click(); true`); await sleep(150)
+ok("Bring in ▾ offers To writing and To docked cell", await js(`[...document.querySelectorAll('[data-bring-to]')].map(b => b.textContent).join('|')`) === "To writing|To docked cell")
+await js(`document.querySelector('[data-bring-to=cell]').click(); true`); await sleep(150)
+ok("...the choice is remembered", await js(`localStorage.getItem('writemind.bringInTo')`) === '"cell"')
+const kept = (await sheetStrokes()).length
+await js(`document.querySelector('.camera-bar [data-capture=ink]').click(); true`); await sleep(900)
+const after5 = await js(`document.querySelector('.cm-content').cmTile.view.state.doc.toString()`)
+ok("To docked cell: Writing docks a new drawing cell in the note", (after5.match(/!\[ink\]/g) ?? []).length === cellsBefore + 1, JSON.stringify(after5))
+ok("...and the sheet keeps the writing", (await sheetStrokes()).length === kept && kept > 0)
+await js(`document.querySelector('[data-tablet=bring-to]').click(); true`); await sleep(100)
+await js(`document.querySelector('[data-bring-to=writing]').click(); true`); await sleep(100)
 finish()

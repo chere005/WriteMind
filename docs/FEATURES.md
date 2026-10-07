@@ -169,6 +169,22 @@ is how the code is put together.
   Wolfram, Python or TypeScript, and the block is coloured — in the editor
   and in the preview — by a palette that has a light and a dark half, so it
   reads either way round.
+- **Cells that run.** An evaluation cell (```` ```eval wl ````, `eval python`,
+  `eval c`, `eval c++`, `eval rust`; Format ▸ Evaluation Cell) runs with
+  Shift+Enter, and its answer lands under it as an `out` cell — `In[n]` over
+  the code, `Out[n]` over the answer. **File ▸ Language Setup…** (every
+  platform, and Language Setup… at the end of a cell's Runs As menu) shows
+  which program each language runs with and where it was found, and lets you
+  choose another — a virtual environment's Python, a Wolfram Engine somewhere
+  WriteMind does not look — from the program itself or from the copies it
+  found; **Test** runs a small program with it. A program chosen there is the
+  only one that language uses: if it goes, the cell says so rather than
+  quietly running another. On Windows it installs Python or the Wolfram Engine
+  and opens the engine's sign-in window with the installer's own script;
+  elsewhere it opens the download pages and gives the command to activate. A
+  python that is only a stand-in — the Microsoft Store's shortcut on a stock
+  Windows, Apple's `/usr/bin/python3` without the Command Line Tools — is said
+  to be one, and the row offers to install or get a real Python.
 - **Strikethrough.** ⇧⌘X, written `~~like this~~`, struck through in the
   editor and in the preview.
 - **Crop a picture.** Select one and the crop button sits at its bottom
@@ -278,3 +294,16 @@ is how the code is put together.
 - **Tabs for the notes you have open.** The wheel walks along them, and the
   button at the right-hand end lists every open note — the way back to one
   that has scrolled off the end.
+
+## Wolfram notebooks (port-only)
+
+- **File ▸ Export… ▸ Wolfram Notebook** writes the note as a `.nb`: its headings, text, lists, to-dos, quotes, tables and rules
+  in Mathematica's own styles; its maths and Wolfram code as Input cells you can evaluate, Python as a Python cell, answers as
+  Output cells. Every drawing cell, every band of the floating drawing layer and every picture is an IMAGE in the notebook
+  itself (no link), made by the Wolfram Engine from the drawing's SVG. Without an engine (or one that is not activated) the
+  file is still written: each image is a closed cell that makes it, and WriteMind says the drawings appear when the cells
+  are evaluated (Evaluation ▸ Evaluate Initialization Cells).
+- **Copying a drawing cell** (with the bracket, then Copy or Cut) puts it on the clipboard so that it pastes into a Mathematica
+  notebook as the image itself, between cells or inside an input; into Pages or Word it is a picture at its size. On a Mac
+  the cell is there at once as a cell that makes the drawing, and as the image itself a moment later, when the engine has
+  answered. Pasting it back into WriteMind is the cell and nothing else.

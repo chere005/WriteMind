@@ -197,7 +197,8 @@ jobs:
     name: Mac dmgs (signed and notarized when the secrets are set) into the draft
     needs: prepare
     runs-on: macos-15
-    timeout-minutes: 45
+    # Apple's notary can queue a submission for an hour or more (2.8.0 and 2.9.0 ran out of 45 minutes waiting on it).
+    timeout-minutes: 150
     env:
       VERSION: ${{ needs.prepare.outputs.version }}
       # Developer ID signing and notarization, from the repo's secrets (docs/MAC-SESSION.md). Without CSC_LINK the
@@ -252,7 +253,7 @@ jobs:
         working-directory: apps/desktop
         run: |
           if [ "${WRITEMIND_MAC_SIGNED:-}" = 1 ]; then
-            "$GITHUB_WORKSPACE/node_modules/.bin/electron-builder" --mac dmg --arm64 --x64 --publish never --config electron-builder.yml
+            "$GITHUB_WORKSPACE/node_modules/.bin/electron-builder" --mac dmg zip --arm64 --x64 --publish never --config electron-builder.yml
           else
             # The same line as apps/desktop's package:mac:adhoc (ci.yml's mac-package job runs that script on main).
             npm run package:mac:adhoc
@@ -261,12 +262,17 @@ jobs:
       - name: Check them (signature, chips, helper, Info.plist, the dmgs)
         run: bash tools/verify-mac.sh
 
-      - name: Both dmgs, uploaded to the draft release
+      # Signed: the zips and latest-mac.yml too, which a Mac copy's updater installs from (an ad-hoc build makes none).
+      - name: The dmgs (and, signed, the zips and latest-mac.yml), uploaded to the draft release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           ls -l dist-electron/*-mac-*.dmg
           gh release upload "$TAG" dist-electron/*-mac-*.dmg --clobber
+          if [ "${WRITEMIND_MAC_SIGNED:-}" = 1 ]; then
+            ls -l dist-electron/*-mac-*.zip dist-electron/*-mac-*.zip.blockmap dist-electron/latest-mac.yml
+            gh release upload "$TAG" dist-electron/*-mac-*.zip dist-electron/*-mac-*.zip.blockmap dist-electron/latest-mac.yml --clobber
+          fi
 
       - name: The dmgs as a build artifact too
         if: always()

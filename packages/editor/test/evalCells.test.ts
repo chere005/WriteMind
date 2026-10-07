@@ -5,12 +5,16 @@
  * parse rather than a fresh one).
  */
 
+import { readFileSync } from "node:fs"
+import path from "node:path"
 import { EditorState } from "@codemirror/state"
 import { describe, expect, it } from "vitest"
-import { pairNumber } from "@writemind/core"
+import { pairNumber, type ToolReport } from "@writemind/core"
 import { isCell, PAIR_OVERHANG } from "../src/brackets"
 import { EditorView } from "@codemirror/view"
-import { EVAL_MARGIN, evaluatesHere, evaluationCells, groupsIn, holdsEvaluation, markColumn } from "../src/eval/index"
+import {
+  EVAL_MARGIN, evaluatesHere, evaluationCells, followTools, groupsIn, holdsEvaluation, markColumn, type EvalHost,
+} from "../src/eval/index"
 import { PAGE_LEFT } from "../src/theme"
 import { notebookState } from "../src/notebook"
 
@@ -82,5 +86,37 @@ describe("the marks' column (Sean, 2026-10-05: keep the In/Out indentation clean
     const evaluating = state(`${fence}eval python\nx\n${fence}`)
     expect(markColumn(evaluating)).toBeGreaterThan(PAGE_LEFT)
     expect(markColumn(evaluating)).toBeLessThan(EVAL_MARGIN)
+  })
+})
+
+/** PORT-ONLY: File ▸ Language Setup… tells every open note what is in use, and the note follows it while it is open. */
+describe("following what is in use (Language Setup)", () => {
+  const host = (subscribe?: EvalHost["onToolsChanged"]): EvalHost => ({
+    run: async () => ({ kind: "cancelled" }), cancel: () => {}, tools: async () => ({}) as ToolReport,
+    evaluator: () => "wolfram", remember: () => {}, ...(subscribe ? { onToolsChanged: subscribe } : {}),
+  })
+
+  it("subscribes for the note's life and lets go when asked; with nothing to follow it does nothing", () => {
+    const listeners = new Set<(tools: ToolReport) => void>()
+    const seen: ToolReport[] = []
+    const unfollow = followTools(host((listener) => { listeners.add(listener); return () => { listeners.delete(listener) } }),
+      (tools) => seen.push(tools))
+    expect(listeners.size).toBe(1)
+    const report = { python: { path: "/v/bin/python3", looked: [] } } as unknown as ToolReport
+    for (const listener of listeners) listener(report)
+    expect(seen).toEqual([report])
+    unfollow()
+    expect(listeners.size).toBe(0)
+    // An older shell, a test's host, no host at all: a function that lets go of nothing.
+    expect(() => followTools(host(), () => {})()).not.toThrow()
+    expect(() => followTools(null, () => {})()).not.toThrow()
+  })
+
+  it("is followed from the plugin's constructor and let go in its destroy", () => {
+    const source = readFileSync(path.resolve(__dirname, "../src/eval/index.ts"), "utf8").replace(/\r\n/g, "\n")
+    const constructor = source.slice(source.indexOf("constructor(private readonly view: EditorView)"), source.indexOf("private quiet("))
+    expect(constructor).toMatch(/this\.unfollow = followTools\(view\.state\.facet\(evalHost\)/)
+    const destroy = source.slice(source.indexOf("  destroy(): void {"), source.indexOf("const evalPlugin ="))
+    expect(destroy).toMatch(/this\.unfollow\(\)/)
   })
 })

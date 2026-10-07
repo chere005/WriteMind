@@ -26,20 +26,18 @@ let strokes = d.items.filter(i => i.kind === "stroke")
 ok("two stroke items arrived (no picture)", strokes.length === 2 && !d.items.some(i => i.kind === "image"), JSON.stringify(d.items.map(i => i.kind)))
 ok("with a pressure per point, rising", strokes.every(s => s.pressures?.length === s.points.length && s.pressures.at(-1) > s.pressures[0] + 0.3))
 ok("placed on the pane inside it, at page scale", strokes.every(s => s.points.every(p => p.x > 0 && p.x < 1 && p.y > 0 && p.y < 1)) && Math.max(...strokes.flatMap(s => s.points.map(p => p.x))) - Math.min(...strokes.flatMap(s => s.points.map(p => p.x))) < 0.42)
-ok("the sheet cleared once sent", (await px()) === 0)
+ok("the sheet keeps the writing once sent (Sean, 2026-10-06)", (await px()) > 200, String(await px()))
 
-// Undo goes last-thing-first: with the pen over the sheet the clearing is undone (the writing comes back to
-// the sheet and stays in the note); then one Ctrl+Z at the page takes the capture back from the note. (The pen
-// hovers low on the sheet, inside it whatever its height.)
-await hover(X + 100, Y + Math.round(t.h * 0.8), { pen: true }); await sleep(250)
-await key("z", { modifiers: CTRL })
-ok("Ctrl+Z over the sheet brings the cleared writing back onto it", (await px()) > 200, String(await px()))
-ok("...and leaves the capture in the note", (await saved(file)).items.length === 2)
+// One Ctrl+Z at the page takes the capture back from the note; the sheet is untouched by it.
+const kept = await px()
+// The pen goes over the note's page (as it does on its way to the note), so the next Ctrl+Z is the note's.
+await hover(300, 200, { pen: true }); await sleep(150)
 await mouse("mouseMoved", 300, 60, { buttons: 0 })
 await js(`document.querySelector('.cm-content').focus()`)
 await key("z", { modifiers: CTRL })
-d = await saved(file)
+d = await saved(file, (x) => x.items.length === 0)
 ok("one Ctrl+Z at the page takes the capture back from the note", d.items.length === 0, JSON.stringify(d.items.map(i => i.kind)))
+ok("...and the sheet still has the writing", (await px()) === kept, `${kept} -> ${await px()}`)
 
 // 2. Ctrl+Z with the pen over the sheet takes back a STROKE ON THE SHEET.
 await penStroke(seg(X + 60, Y + 250, X + 220, Y + 250, 10))
@@ -50,16 +48,15 @@ ok("Ctrl+Z over the sheet takes back the last stroke", (await px()) < before, `$
 await barBtn("clear"); await sleep(100)
 ok("Clear wipes the sheet", (await px()) === 0)
 
-// 3. The BOX: only the section in it comes in; the rest stays on the sheet. (The Box button went, 2026-10-05: the
-// Select toggle makes the pen pull the dashed box, and the box gets its own row of buttons under it.)
+// 3. The BOX: only the section in it comes in; the rest stays on the sheet. (The Box button went, 2026-10-05, and the
+// Select toggle, 2026-10-06: the mouse pulls the dashed box, and the box gets its own row of buttons under it.)
 await penStroke(seg(X + 30, Y + 100, X + 110, Y + 100, 8))      // left
 await penStroke(seg(X + 150, Y + 100, X + 230, Y + 100, 8))     // right
-await barBtn("select")
-await pe("pointerdown", X + 10, Y + 60); await pe("pointermove", X + 80, Y + 120); await pe("pointermove", X + 130, Y + 150); await pe("pointerup", X + 130, Y + 150, { buttons: 0 })
+ok("there is no Select toggle on the sheet (Sean, 2026-10-06)", !(await js(`!!document.querySelector('.camera-bar [data-tablet=select]')`)))
+const M = { type: "mouse", pressure: 0 }
+await pe("pointerdown", X + 10, Y + 60, M); await pe("pointermove", X + 80, Y + 120, M); await pe("pointermove", X + 130, Y + 150, M); await pe("pointerup", X + 130, Y + 150, { ...M, buttons: 0 })
 ok("the dashed box is shown", await js(`!!document.querySelector('.camera .box')`))
 ok("...with its row of buttons (Erase, Bring in Writing, Bring in as Drawing Cell)", await js(`!!document.querySelector('[data-tablet=box-actions]')`))
-await barBtn("select")
-ok("the Select toggle lets go when pressed again", !(await js(`document.querySelector('.camera-bar [data-tablet=select]').classList.contains('on')`)))
 await js(`document.querySelector('.cm-content').focus()`)
 const n1 = (await saved(file)).items.length
 await takeBtn("Bring the writing in")

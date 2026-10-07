@@ -45,6 +45,28 @@ describe("what this build can do", () => {
     }
   })
 
+  // Port-only: File ▸ Language Setup…'s Install and Activate buttons. Off unless the shell found what does the work.
+  it("installs languages only with the shipped script AND winget, and activates Wolfram with the script alone", () => {
+    for (const platform of platforms) {
+      const none = capabilitiesFor(platform, { ocr: false })
+      expect(none.installsLanguages).toBe(false)
+      expect(none.activatesWolfram).toBe(false)
+    }
+    const both = capabilitiesFor("win32", { ocr: false, languageSetup: { script: true, winget: true } })
+    expect([both.installsLanguages, both.activatesWolfram]).toEqual([true, true])
+    const noWinget = capabilitiesFor("win32", { ocr: false, languageSetup: { script: true, winget: false } })
+    expect([noWinget.installsLanguages, noWinget.activatesWolfram]).toEqual([false, true])
+    const noScript = capabilitiesFor("win32", { ocr: false, languageSetup: { script: false, winget: true } })
+    expect([noScript.installsLanguages, noScript.activatesWolfram]).toEqual([false, false])
+  })
+
+  // Port-only: the one OS fact, the names of the clipboard types a drawing cell copied into Mathematica goes under.
+  it("names the Wolfram clipboard's types on a Mac, and none of its own elsewhere", () => {
+    expect(capabilitiesFor("darwin", { ocr: false }).wolframClipboard).toEqual({ cell: "dyn.ah62d4rv4gk8y8xnfk6", png: "public.png" })
+    expect(capabilitiesFor("win32", { ocr: true }).wolframClipboard).toEqual({ cell: null, png: null })
+    expect(capabilitiesFor("linux").wolframClipboard).toEqual({ cell: null, png: null })
+  })
+
   it("names the platform the way the app says it", () => {
     expect(platformName("darwin")).toBe("macOS")
     expect(platformName("linux")).toBe("Linux")

@@ -8,16 +8,17 @@
 
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react"
 import { EditorView } from "@codemirror/view"
-import { columnBox, cursorSeam, findNextMatch, revealAt, type InkCellPainter } from "@writemind/editor"
+import { columnBox, cursorSeam, findNextMatch, revealAt, takesPastedPicture, type InkCellPainter } from "@writemind/editor"
 import {
   anchorOffset, bounds as itemBounds, capturePlacedCentre, decodeDrawing, emptyDrawing, insertBlock, insertionPointBelow,
   languageTitle, listTitle, makeNote, newID, noTransform, parseCameraAspect, parseLink, placedCentre, PRESET_COLOURS, readDrawing,
-  resolveLinkTarget, shifted, textFingerprint, writeDrawing, inkCellOf, inkFileName, visibleItems, withInkCell,
-  type CanvasItem, type CodeLanguage, type Drawing, type ListStyle, type Note, type Placement,
+  resolveLinkTarget, shifted, textFingerprint, writeDrawing, inkCellOf, inkFileName, inkIdsIn, visibleItems, withInkCell,
+  type CanvasItem, type CodeLanguage, type Drawing, type Evaluator, type ListStyle, type Note, type Placement,
 } from "@writemind/core"
 import { Canvas, clipboardDrawing, type CanvasMode } from "./Canvas"
 import { depthOf, dockNewInk, insertInkCell } from "./dock"
 import { scopePenTo } from "./inkScope"
+import { withSnapshots, wolframMedia } from "./wolframMedia"
 import { dockHostFor, inkPainter, shownWidth, snapshotNow, snapshotsAfterSave, snapshotsOnOpen, syncInkCells } from "./inkCells"
 import { cellSheetsSaw, setCellSheetHost } from "./cellSheets"
 import { CellMenu } from "./CellMenu"
@@ -57,6 +58,8 @@ import { NO_FOLDER_TEXT, targetFolderOf } from "./sidebarTree"
 import { UpdateDialog } from "./UpdateDialog"
 import { CleanUpDialog } from "./CleanUpDialog"
 import { heldBy } from "./cleanUp"
+import { LanguageSetupDialog } from "./LanguageSetupDialog"
+import { setLanguageSetupOpener } from "./evalHost"
 import { FolderNotice } from "./FolderNotice"
 
 /** How long after the last keystroke the note is written. */
@@ -132,6 +135,13 @@ export function App() {
   const [showKeys, setShowKeys] = useState(false)
   // File ▸ Clean Up Unused Files… (CleanUpDialog.tsx, main/housekeeping.ts).
   const [cleanUp, setCleanUp] = useState(false)
+  // File ▸ Language Setup… (LanguageSetupDialog.tsx, main/eval/languages.ts), opened at a language from a cell's
+  // Runs As menu (`focus`), or at the top from the menu bar.
+  const [languageSetup, setLanguageSetup] = useState<{ focus: Evaluator | null } | null>(null)
+  useEffect(() => {
+    setLanguageSetupOpener((evaluator) => setLanguageSetup({ focus: evaluator }))
+    return () => setLanguageSetupOpener(null)
+  }, [])
   const lastQuery = useRef("")
   // The rendered page: the same editor with the markdown's marks put away.
   const [rendered, setRendered] = useState(false)
@@ -784,6 +794,9 @@ export function App() {
   // text pasted into the notebook is the editor's business, never ours.
   useEffect(() => {
     const paste = (event: ClipboardEvent) => {
+      // A paste carrying WriteMind's own cells is the cells and nothing else (a drawing cell copied for Mathematica has
+      // a PNG beside them, which would otherwise land as a floating picture too).
+      if (!takesPastedPicture([...(event.clipboardData?.types ?? [])])) return
       const file = [...(event.clipboardData?.items ?? [])]
         .find((item) => item.kind === "file" && item.type.startsWith("image/"))
         ?.getAsFile()
@@ -914,6 +927,17 @@ export function App() {
     // The pointer becomes a pen for this cell alone (inkScope.ts: Sean, 2026-10-05).
     if (id) scopePenTo(id)
   }, [changeDrawing, depth, dockHost, history])
+  // COPY OR CUT OF HELD CELLS with a drawing cell among them: the shell writes the clipboard again for Mathematica
+  // (the image itself; main/wolfram/clipboard.ts). Synchronous and before a cut takes the cells out of the note.
+  // A copy with no drawing cell in it starts nothing.
+  const onCellsCopied = useCallback((copy: { markdown: string; plain: string }) => {
+    const editor = viewRef.current
+    const ids = inkIdsIn(copy.markdown)
+    if (!editor || ids.length === 0 || !window.wm.wolframCopy) return
+    const media = wolframMedia(editor, drawingRef.current, currentPane(editor, lastPane), new Set(ids))
+    if (Object.keys(media.inks).length === 0) return
+    window.wm.wolframCopy({ plain: copy.plain, markdown: copy.markdown, media, noteFile: openRef.current })
+  }, [])
   // The tablet box's "Bring in as Drawing Cell" (BoxActions.tsx): the boxed writing, landed in the pane as Bring in
   // Writing lands it, docked as a NEW drawing cell at the input cursor (the armed bar, else after the caret's cell),
   // its snapshot written at once. One Undo step in the note.
@@ -1243,20 +1267,28 @@ export function App() {
       case "openFolder": void window.wm.revealNotes(); return
       // Ctrl+S: what is pending (the note and its drawing) is written now (the Mac's flushPendingSave).
       case "save": if (current) void flushNow(false); return
-      // Ctrl+E: one panel, and PDF or Project is chosen in it (main/exportFile.ts). With no note open, the project.
-      case "export":
+      // Ctrl+E: one panel, and PDF, Wolfram Notebook or Project is chosen in it (main/exportFile.ts). With no note open, the project.
+      case "export": {
         // The text as it is in the editor, not as it is on disk: what is on screen is "this note".
-        void window.wm.exportFile(current ? {
-          noteFile: current, title: title.replace(/\.(md|markdown|txt)$/i, ""),
-          markdown: textRef.current, drawing: writeDrawing(drawingRef.current),
-          // The pane the ink was placed against: its last real size when the notes pane is put away.
-          pane: currentPane(view, lastPane),
-        } : null)
+        const pane = currentPane(view, lastPane)
+        const markdown = textRef.current
+        void (async () => {
+          await window.wm.exportFile(current ? {
+            noteFile: current, title: title.replace(/\.(md|markdown|txt)$/i, ""),
+            markdown, drawing: writeDrawing(drawingRef.current),
+            // The pane the ink was placed against: its last real size when the notes pane is put away.
+            pane,
+            // The drawings as this page measured them, for a Wolfram notebook (a PDF takes the sidecar's own).
+            wolfram: await withSnapshots(wolframMedia(view, drawingRef.current, pane), markdown),
+          } : null)
+        })()
         return
+      }
       // Ctrl+P: the same writer as Pen ▸ Pen Down and the pen button.
       case "togglePen": runPenCommand("penToggle"); return
       case "keyList": setShowKeys((was) => !was); return
       case "cleanUp": setCleanUp(true); return
+      case "languageSetup": setLanguageSetup({ focus: null }); return
       case "undoDrawing": {
         const back = history.undo(drawingRef.current)
         if (back) changeDrawing(back)
@@ -1435,7 +1467,8 @@ export function App() {
                         markers={markers} listStyle={listStyle}
                         onChange={change} onReady={setView}
                         onViewState={onViewState} onLink={onLink} onFollow={onFollow}
-                        inkPainter={painter.current} onInsertInkCell={(offset) => insertInk(offset)} />
+                        inkPainter={painter.current} onInsertInkCell={(offset) => insertInk(offset)}
+                        onCellsCopied={onCellsCopied} />
               <Canvas key={current ?? ""} drawing={drawing} onChange={changeDrawing} mode={mode} history={history}
                       colorHex={penColour} penWidth={penWidth}
                       placing={placing} onPlaced={placed}
@@ -1511,6 +1544,8 @@ export function App() {
         state: view?.state ?? null, text: textRef.current, drawings: [drawingRef.current, pendingDrawing.current, clipboardDrawing()],
         open: open.map((note) => note.path),
       })} />}
+      {languageSetup && <LanguageSetupDialog platform={kind} capabilities={platform} focus={languageSetup.focus}
+                                             onClose={() => setLanguageSetup(null)} />}
       <UpdateDialog />{/* "Updates available" and Help ▸ Check for Updates…'s answers (main/updater.ts); otherwise nothing */}
       <CellMenu onPlace={arm} />
     </div>

@@ -10,6 +10,16 @@
 
 import type { Extension } from "@codemirror/state"
 import { EditorView } from "@codemirror/view"
+import { CELLS_MIME } from "./keys"
+
+/**
+ * Whether a paste is the app's picture to place on the drawing layer: never when WriteMind's own cells are on the
+ * clipboard — a drawing cell copied for Mathematica carries a PNG beside its cells, and pasting it back here is the
+ * cells and nothing else. (Not "unless something before it took the paste": the listener is on the window, after
+ * CodeMirror's own paste handler, which prevents the default of EVERY paste that reaches the focused editor, an
+ * image-only one too, so `defaultPrevented` says nothing about whether the notebook took it.)
+ */
+export const takesPastedPicture = (types: readonly string[]): boolean => !types.includes(CELLS_MIME)
 
 const BLOCKS = new Set([
   "ADDRESS", "ARTICLE", "ASIDE", "BLOCKQUOTE", "DIV", "DL", "DT", "DD", "FIELDSET", "FIGURE", "FOOTER", "FORM",

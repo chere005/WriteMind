@@ -109,11 +109,12 @@ export function PenMenu() {
           <label>
             <input type="checkbox" data-pen="map-sheet" checked={status?.settings.mapSheet === true}
                    onChange={(event) => { void changeSettings({ mapSheet: event.target.checked }) }} />
-            {" "}Map the whole tablet to the sheet (experimental)
+            {" "}Map the whole tablet to the sheet
           </label>
           <p className="hint">
-            Asks the Wacom driver to move the cursor only inside the sheet. Off by default; if the cursor ever misbehaves,
-            switch it off or restart WriteMind.
+            While the sheet is in front the whole tablet writes on it (on a Mac WriteMind takes the tablet from the
+            Wacom driver, which asks once for Input Monitoring). If the cursor ever misbehaves, switch it off or restart
+            WriteMind.
           </p>
           {status?.mapping === "refused" && (
             <p className="hint">

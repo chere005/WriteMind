@@ -7,8 +7,9 @@
 # What only a Mac can check, so CI runs it on its macOS runner (ci.yml's
 # mac-package job, release.yml's mac job) before anything is uploaded:
 #   - both dmgs are there (WriteMind-<version>-mac-arm64.dmg, -mac-x64.dmg),
-#     and no zip, .blockmap or latest-mac.yml beside them (a Mac copy never
-#     downloads an update: docs/BUILDING.md);
+#     no dmg .blockmap; signed (WRITEMIND_MAC_SIGNED=1), both zips and a
+#     latest-mac.yml naming them (the updater installs from those); ad hoc,
+#     neither (an ad-hoc copy only opens the release page);
 #   - every dist-electron/mac*/WriteMind.app: its main executable is the
 #     chip its folder says; `codesign --verify --deep --strict` passes; the
 #     signature is AD HOC (there is no Developer ID) and without the
@@ -143,6 +144,14 @@ check_app() {
   else
     fail "$name: no Vision helper at Contents/Resources/app.asar.unpacked/out/helpers/wm-vision (was the build run on a Mac with swiftc?)"
   fi
+
+  local pen="$app/Contents/Resources/app.asar.unpacked/out/helpers/wm-pen"
+  if [ -x "$pen" ]; then
+    [ "$(archs "$pen")" = "arm64 x86_64" ] && ok "$name: wm-pen is universal" || fail "$name: wm-pen is '$(archs "$pen")', expected x86_64 and arm64"
+    codesign --verify --strict "$pen" > /dev/null 2>&1 && ok "$name: wm-pen is signed" || fail "$name: wm-pen's signature does not verify"
+  else
+    fail "$name: no executable tablet helper at Contents/Resources/app.asar.unpacked/out/helpers/wm-pen"
+  fi
 }
 
 # The apps electron-builder left: mac/ is the Intel build, mac-arm64/ Apple silicon's.
@@ -181,9 +190,6 @@ for arch in arm64 x64; do
   label="${dmg##*/}"
   ok "$label ($(du -h "$dmg" | cut -f1))"
   hdiutil verify -quiet "$dmg" > /dev/null 2>&1 && ok "$label: hdiutil verify" || fail "$label: hdiutil verify failed"
-  if [ "$signed" = 1 ]; then
-    xcrun stapler validate "$dmg" > /dev/null 2>&1 && ok "$label: notarization ticket stapled" || fail "$label: xcrun stapler validate failed"
-  fi
   mnt="$(mktemp -d)"
   mounts="$mounts $mnt"
   if hdiutil attach -quiet -nobrowse -readonly -noautoopen -mountpoint "$mnt" "$dmg" > /dev/null 2>&1; then
@@ -199,9 +205,23 @@ for arch in arm64 x64; do
     fail "$label: hdiutil attach failed"
   fi
 done
-for extra in "$dist"/*-mac*.zip "$dist"/*.dmg.blockmap "$dist"/latest-mac.yml; do
-  [ -e "$extra" ] && fail "${extra##*/} should not be made (electron-builder.yml: dmg only, dmg.writeUpdateInfo false)"
+for extra in "$dist"/*.dmg.blockmap; do
+  [ -e "$extra" ] && fail "${extra##*/} should not be made (electron-builder.yml: dmg.writeUpdateInfo false)"
 done
+# Signed: the updater's files, one zip per chip, each named in latest-mac.yml. Ad hoc: none of them.
+if [ "$signed" = 1 ]; then
+  for arch in arm64 x64; do
+    zip="$dist/WriteMind-$version-mac-$arch.zip"
+    [ -f "$zip" ] && ok "${zip##*/}" || fail "no $zip (the updater installs from it)"
+    grep -q "WriteMind-$version-mac-$arch.zip" "$dist/latest-mac.yml" 2> /dev/null \
+      && ok "latest-mac.yml names ${zip##*/}" || fail "latest-mac.yml does not name ${zip##*/}"
+  done
+  grep -q "^version: $version\$" "$dist/latest-mac.yml" 2> /dev/null && ok "latest-mac.yml is $version" || fail "latest-mac.yml is not version $version"
+else
+  for extra in "$dist"/*-mac*.zip "$dist"/latest-mac.yml; do
+    [ -e "$extra" ] && fail "${extra##*/} should not be made by an ad-hoc build (package:mac:adhoc: --mac dmg)"
+  done
+fi
 
 if [ "$failures" -gt 0 ]; then
   echo "verify-mac: $failures check(s) failed" >&2

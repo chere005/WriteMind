@@ -5,17 +5,30 @@
  * The Mac lists absolute paths because a GUI app there inherits launchd's PATH, which has no Homebrew in it. A
  * Windows app inherits the person's own PATH, so the tools are looked for BY NAME on it (`toolNames` in the core),
  * plus the one or two places a language's own installer puts them that a PATH may not reach — rustup's
- * `~\.cargo\bin`, WolframScript's folder under Program Files, the Wolfram Engine's version folder, python.org's
+ * `~\.cargo\bin`, WolframScript's folder under Program Files, the Wolfram Engine's version folder (and a full
+ * Mathematica's, for the Wolfram export: on a Mac inside its app), python.org's
  * per-user and all-users folders (where the WriteMind installer's "Install Python" puts it). Nothing here
  * starts anything: finding is reading the file system.
  *
  * Only `.exe` / `.com` count on Windows. A `.cmd` or `.bat` shim cannot be started without a shell, and a cell is
  * never run through a shell.
+ *
+ * A PROGRAM CHOSEN IN FILE ▸ LANGUAGE SETUP… IS THE ONLY ONE ITS LANGUAGE USES (`toolEntry`). The Mac's
+ * `evalTool.<name>` falls through to the candidates when the file it names is not runnable; the port refuses
+ * instead, with a sentence naming the path (`missingToolRefusal`), because the person chose it for a reason — a venv
+ * with the packages a cell imports, a newer engine — and a cell that quietly ran on another program would answer as
+ * if nothing were wrong. `findTool`, `toolCandidates` and `lookedFor` still mean "where WriteMind looks BY ITSELF":
+ * they never read the choice. Checking a choice is reading the file system too (`resolveChoice`, `choiceProblem`);
+ * asking the program what it is (`identifyArguments`) is the runner's, and only ever on a press.
  */
 
-import { existsSync, lstatSync, readdirSync } from "node:fs"
+import { accessSync, constants, existsSync, lstatSync, readdirSync, realpathSync, statSync } from "node:fs"
 import * as path from "node:path"
-import { EVALUATORS, toolNames, type CompilerFlavor, type Evaluator, type ToolReport } from "@writemind/core"
+import {
+  EVALUATORS, IDENTIFY_PYTHON, isToolName, toolNames, type CompilerFlavor, type Evaluator, type ToolEntry,
+  type ToolReport,
+} from "@writemind/core"
+import { isAbsolutePath, type FoundPython } from "../../shared/languages"
 
 export interface ToolPlaces {
   platform: string
@@ -26,13 +39,42 @@ export interface ToolPlaces {
   programFiles: string[]
   /** `%LOCALAPPDATA%`, where a per-user Python goes (python.org's installer, and winget's `--scope user`). */
   localAppData?: string
+  /** `%APPDATA%` and `%ProgramData%`: where activating the Wolfram Engine leaves its licence on Windows. */
+  appData?: string
+  programData?: string
+  /** What was chosen in File ▸ Language Setup… (main/eval/languages.ts): for those languages, the only candidate. */
+  chosen?: Partial<Record<Evaluator, string>>
+  /**
+   * Language Setup's own file, when it is there and NOTHING has been read from it yet (held by another program, or
+   * not readable): what was chosen is not known, so every language refuses (`toolEntry`) rather than guess. Once
+   * the file has been read, a later failure keeps the choices last read instead (`createLanguageStore`).
+   */
+  unreadable?: string
   isFile(file: string): boolean
+  /**
+   * Whether a file is one this app may start as a chosen program: a file (a link followed) marked executable off
+   * Windows; on Windows an `.exe` or `.com`, asked with the same `lstat` as `isFile` — the Store's app execution
+   * aliases are reparse points that a `stat` cannot follow. Absent (a test's fake) is `isFile`.
+   */
+  isProgram?(file: string): boolean
+  /** Whether it is a folder (a link followed): a venv, a conda environment, a `.app` picked whole. */
+  isDirectory?(file: string): boolean
+  /** The file a link leads to (the file itself when it is not one, or cannot be read): two spellings of one program. */
+  realPath?(file: string): string
   /** The folders directly inside `dir` (none when it is not there), for an installer that puts a version folder in. */
   folders?(dir: string): string[]
 }
 
-export function placesFromProcess(): ToolPlaces {
+/**
+ * This machine's places, with Language Setup's choices (and, when its file could never be read, that file). Made
+ * afresh for every run, so a choice applies at once.
+ */
+export function placesFromProcess(chosen: Partial<Record<Evaluator, string>> = {}, unreadable: string | null = null): ToolPlaces {
   const env = process.env
+  const windows = process.platform === "win32"
+  const isFile = (file: string): boolean => {
+    try { return existsSync(file) && !lstatSync(file).isDirectory() } catch { return false }
+  }
   return {
     platform: process.platform,
     pathVariable: env.PATH ?? env.Path ?? "",
@@ -40,8 +82,25 @@ export function placesFromProcess(): ToolPlaces {
     programFiles: [...new Set([env.ProgramFiles, env.ProgramW6432, env["ProgramFiles(x86)"]]
       .filter((dir): dir is string => typeof dir === "string" && dir.length > 0))],
     localAppData: env.LOCALAPPDATA ?? "",
-    isFile: (file) => {
-      try { return existsSync(file) && !lstatSync(file).isDirectory() } catch { return false }
+    appData: env.APPDATA ?? "",
+    programData: env.ProgramData ?? "",
+    chosen,
+    ...(unreadable !== null ? { unreadable } : {}),
+    isFile,
+    isProgram: windows
+      ? (file) => isFile(file) && /\.(exe|com)$/i.test(file)
+      : (file) => {
+        try {
+          if (!statSync(file).isFile()) return false
+          accessSync(file, constants.X_OK)
+          return true
+        } catch { return false }
+      },
+    isDirectory: (file) => {
+      try { return statSync(file).isDirectory() } catch { return false }
+    },
+    realPath: (file) => {
+      try { return realpathSync.native(file) } catch { return file }
     },
     folders: (dir) => {
       try { return readdirSync(dir, { withFileTypes: true }).filter((entry) => entry.isDirectory()).map((entry) => entry.name) } catch { return [] }
@@ -66,7 +125,28 @@ export function newestFirst(names: string[]): string[] {
 /** Where Homebrew puts its tools, which a GUI app's PATH on the Mac does not reach. */
 export const MAC_TOOL_FOLDERS = ["/opt/homebrew/bin", "/usr/local/bin"]
 
+/**
+ * The wolframscript inside the Wolfram Engine's own app, as its DMG installs it. Measured on 2026-10-06: Homebrew's
+ * `/opt/homebrew/bin/wolframscript` is a link to exactly this file, and without Homebrew nothing else points at it.
+ */
+export const MAC_ENGINE_APP = "/Applications/Wolfram Engine.app"
+export const MAC_ENGINE_WOLFRAMSCRIPT = `${MAC_ENGINE_APP}/Contents/Resources/Wolfram Player.app/Contents/MacOS/wolframscript`
+/**
+ * A full Mathematica's own wolframscript (port-only, for the Wolfram notebook export and a drawing cell copied into
+ * Mathematica: Sean has a full install on another machine, and it must be found with nothing chosen). The app is
+ * `Wolfram.app` since version 14.1 and `Mathematica.app` before it; wolframscript is in its `Contents/MacOS`.
+ */
+export const MAC_WOLFRAM_APPS = ["/Applications/Wolfram.app", "/Applications/Mathematica.app"]
+const MAC_APP_WOLFRAMSCRIPTS = MAC_WOLFRAM_APPS.map((app) => `${app}/Contents/MacOS/wolframscript`)
+
 const joiner = (platform: string) => (platform === "win32" ? path.win32 : path.posix)
+
+/**
+ * The Microsoft Store's app execution aliases (`%LOCALAPPDATA%\Microsoft\WindowsApps\python3.exe`, `python.exe`): on
+ * the user PATH of every stock Windows 10/11, and on a machine without the Store's Python only a shortcut that prints
+ * "Python was not found" and exits 9009.
+ */
+export const STORE_ALIAS = /[\\/]Microsoft[\\/]WindowsApps[\\/]/i
 
 /**
  * Every place the tool might be, in the order they are tried. On Windows the Microsoft Store's `python.exe`
@@ -79,8 +159,13 @@ export function toolCandidates(evaluator: Evaluator, places: ToolPlaces): string
   const dirs = places.pathVariable.split(windows ? ";" : ":").map((dir) => dir.trim().replace(/^"|"$/g, ""))
     .filter((dir) => dir.length > 0)
   // A Finder-launched Mac app inherits launchd's PATH (`/usr/bin:/bin:/usr/sbin:/sbin`), which has no Homebrew in it:
-  // look in Homebrew's folders (Apple silicon, then Intel) after whatever PATH it did get.
-  if (places.platform === "darwin") dirs.push(...MAC_TOOL_FOLDERS)
+  // Homebrew's folders (Apple silicon, then Intel) go in AHEAD of the system's, as a Terminal has them, so Homebrew's
+  // python3 wins over Apple's older /usr/bin/python3 (which, without the Command Line Tools, only asks to install them).
+  if (places.platform === "darwin") {
+    const missing = MAC_TOOL_FOLDERS.filter((dir) => !dirs.includes(dir))
+    const system = dirs.findIndex((dir) => /^\/(usr\/)?s?bin\/?$/.test(dir))
+    dirs.splice(system < 0 ? dirs.length : system, 0, ...missing)
+  }
   const extensions = windows ? [".exe", ".com"] : [""]
   const found: string[] = []
   for (const name of toolNames(evaluator)) {
@@ -88,7 +173,7 @@ export function toolCandidates(evaluator: Evaluator, places: ToolPlaces): string
   }
   const extra = extraPlaces(evaluator, places)
   const all = [...found, ...extra]
-  const store = (file: string) => /[\\/]Microsoft[\\/]WindowsApps[\\/]/i.test(file)
+  const store = (file: string) => STORE_ALIAS.test(file)
   const unique = [...new Set(all)]
   return [...unique.filter((file) => !store(file)), ...unique.filter(store)]
 }
@@ -102,17 +187,24 @@ function extraPlaces(evaluator: Evaluator, places: ToolPlaces): string[] {
     // rustup puts rustc in the home directory and nowhere else.
     case "rust": return places.home ? [p.join(places.home, ".cargo", "bin", "rustc" + exe)] : []
     // WolframScript's own installer puts it in a folder of its own; the Wolfram Engine's puts a copy in the engine's
-    // version folder (`Wolfram Engine\14.1\wolframscript.exe`), which no PATH reaches. The newest engine first.
+    // version folder (`Wolfram Engine\14.1\wolframscript.exe`), which no PATH reaches. The newest engine first; then
+    // a full Mathematica's, in its own version folder (`Wolfram\14.3`, before 14.1 `Mathematica\14.0`), newest first.
+    // On a Mac the engine's DMG puts it inside the app, which Homebrew links to and nothing else does; a full
+    // Mathematica keeps its own in its app.
     case "wolfram": return windows
       ? places.programFiles.flatMap((dir) => {
         const research = p.join(dir, "Wolfram Research")
-        const engines = p.join(research, "Wolfram Engine")
+        const versions = (product: string) => {
+          const folder = p.join(research, product)
+          return newestFirst(places.folders?.(folder) ?? []).map((version) => p.join(folder, version, "wolframscript.exe"))
+        }
         return [
           p.join(research, "WolframScript", "wolframscript.exe"),
-          ...newestFirst(places.folders?.(engines) ?? []).map((version) => p.join(engines, version, "wolframscript.exe")),
+          ...versions("Wolfram Engine"), ...versions("Wolfram"), ...versions("Mathematica"),
         ]
       })
-      : ["/opt/homebrew/bin/wolframscript", "/usr/local/bin/wolframscript"]
+      : ["/opt/homebrew/bin/wolframscript", "/usr/local/bin/wolframscript",
+        ...(places.platform === "darwin" ? [MAC_ENGINE_WOLFRAMSCRIPT, ...MAC_APP_WOLFRAMSCRIPTS] : [])]
     // python.org's installer (and winget, which runs it) does not put Python on the PATH unless asked, and a PATH it
     // does change reaches only programs started AFTER it: WriteMind open while the Windows installer added Python
     // still has the old one. So its own folders: the per-user launcher, then `Python3NN` under
@@ -144,10 +236,17 @@ export function lookedFor(evaluator: Evaluator, places: ToolPlaces): string[] {
   const onPath = `${toolNames(evaluator).join(", ")} on the PATH`
   // The Program Files folders are said once, as the places they are, not as three paths each.
   if (evaluator === "wolfram" && places.platform === "win32") {
-    return [onPath, "Program Files\\Wolfram Research\\WolframScript", "Program Files\\Wolfram Research\\Wolfram Engine\\<version>"]
+    return [onPath, "Program Files\\Wolfram Research\\WolframScript", "Program Files\\Wolfram Research\\Wolfram Engine\\<version>",
+      "Program Files\\Wolfram Research\\Wolfram\\<version>", "Program Files\\Wolfram Research\\Mathematica\\<version>"]
   }
   if (evaluator === "python" && places.platform === "win32") {
     return [onPath, "%LOCALAPPDATA%\\Programs\\Python (Launcher, Python3<version>)", "Program Files\\Python3<version>"]
+  }
+  // The engine's app (and a full Mathematica's) is said as the app, not as the folders down inside it its
+  // wolframscript is.
+  if (evaluator === "wolfram" && places.platform === "darwin") {
+    const inApps = new Set([MAC_ENGINE_WOLFRAMSCRIPT, ...MAC_APP_WOLFRAMSCRIPTS])
+    return [onPath, ...extraPlaces(evaluator, places).filter((file) => !inApps.has(file)), MAC_ENGINE_APP, ...MAC_WOLFRAM_APPS]
   }
   return [onPath, ...extraPlaces(evaluator, places)]
 }
@@ -157,12 +256,216 @@ export function findTool(evaluator: Evaluator, places: ToolPlaces): string | nul
   return toolCandidates(evaluator, places).find((file) => places.isFile(file)) ?? null
 }
 
+/**
+ * WHAT ONE LANGUAGE RUNS WITH: the program chosen in Language Setup when there is one — and then ONLY that one, gone
+ * or not — else the first candidate found by itself, exactly as before there was a choice.
+ */
+export function toolEntry(evaluator: Evaluator, places: ToolPlaces): ToolEntry {
+  // Language Setup's file is there and nothing could be read from it: whether this language has a choice is not
+  // known, and the copy found by itself might be exactly the one the person moved away from. Said, not guessed.
+  if (places.unreadable !== undefined) {
+    return {
+      path: null, looked: [`${places.unreadable} (Language Setup's choices)`],
+      chosen: { path: places.unreadable, problem: "unreadable" },
+    }
+  }
+  const chosen = places.chosen?.[evaluator]
+  if (chosen === undefined) return { path: findTool(evaluator, places), looked: lookedFor(evaluator, places) }
+  const isProgram = places.isProgram ?? places.isFile
+  const isFile = places.isFile(chosen)
+  // "Gone" is nothing there at all; a folder, or a file that cannot be started, is there and is not a program.
+  const there = isFile || (places.isDirectory?.(chosen) ?? false)
+  const problem = !there ? "gone" : !isFile || !isProgram(chosen) ? "notAProgram" : null
+  return {
+    path: problem === null ? chosen : null,
+    looked: [`${chosen} (chosen in Language Setup)`],
+    chosen: { path: chosen, problem },
+  }
+}
+
 export function toolReport(places: ToolPlaces): ToolReport {
   const report = {} as ToolReport
-  for (const evaluator of EVALUATORS) {
-    report[evaluator] = { path: findTool(evaluator, places), looked: lookedFor(evaluator, places) }
-  }
+  for (const evaluator of EVALUATORS) report[evaluator] = toolEntry(evaluator, places)
   return report
+}
+
+/**
+ * WHICH PROGRAM A FILE IS, for telling two copies apart (`foundTools`, and "Also on this computer" leaving out the
+ * one in use): two spellings of one file — Homebrew's link and the file it leads to — are one program. EXCEPT A
+ * PYTHON IN A VIRTUAL ENVIRONMENT: a venv's `bin/python3` is a link to the very interpreter it was made from
+ * (measured on this Mac, 2026-10-06: a venv made from `/opt/homebrew/bin/python3` resolves to the same
+ * `Cellar/python@3.14/…/python3.14`), yet it is a different environment — its own packages, its own `pip`. Python
+ * knows it is in one by a `pyvenv.cfg` beside the program or one folder up (`bin/` or `Scripts\`), and so does this:
+ * that folder is the program's identity, and the venv and its base Python are two programs.
+ */
+export function toolIdentity(evaluator: Evaluator, file: string, places: ToolPlaces): string {
+  const real = places.realPath ?? ((one: string) => one)
+  const p = joiner(places.platform)
+  let key = real(file)
+  if (evaluator === "python") {
+    const folder = p.dirname(file)
+    const environment = [folder, p.dirname(folder)].find((dir) => places.isFile(p.join(dir, "pyvenv.cfg")))
+    if (environment !== undefined) key = `venv:${real(environment)}`
+  }
+  return places.platform === "win32" ? key.toLowerCase() : key
+}
+
+/**
+ * EVERY COPY FOUND BY ITSELF, in the order a run would try them, for Language Setup's "Also on this computer": the
+ * easy way to point at another program is to be shown it. Two spellings of one program (`toolIdentity`) are one
+ * copy, under the first spelling (the one a run would use).
+ */
+export function foundTools(evaluator: Evaluator, places: ToolPlaces): string[] {
+  const seen = new Set<string>()
+  const found: string[] = []
+  for (const file of toolCandidates(evaluator, places)) {
+    if (!places.isFile(file)) continue
+    const key = toolIdentity(evaluator, file, places)
+    if (seen.has(key)) continue
+    seen.add(key)
+    found.push(file)
+  }
+  return found
+}
+
+/** Apple's python3 on every Mac: the real one inside the Command Line Tools or Xcode, or a stand-in until they are there. */
+export const APPLE_PYTHON = "/usr/bin/python3"
+export const MAC_COMMAND_LINE_TOOLS_PYTHON = "/Library/Developer/CommandLineTools/usr/bin/python3"
+
+/**
+ * WHAT A PYTHON FOUND BY ITSELF REALLY IS, when the file system alone can say it is not one a cell can use — read,
+ * never run, because Apple's stand-in asks to install the Command Line Tools when it is merely started, and Language
+ * Setup starts nothing when it opens:
+ *
+ * - `storeAlias`: Windows' Microsoft Store shortcut (`STORE_ALIAS`), on the PATH of every stock Windows.
+ * - `pyLauncher`: a `py.exe` with no Python 3 for it to start — none of python.org's `Python3NN` folders (per user or
+ *   for all users) and no other python.exe found: what uninstalling Python leaves in `C:\Windows`.
+ * - `appleStandIn`: `/usr/bin/python3` on a Mac with neither the Command Line Tools' python3 nor any Xcode's.
+ * - `apple`: Apple's `/usr/bin/python3` WITH them: it runs, and it is an old Python; a newer one is worth offering.
+ *
+ * Null for anything else. The Windows installer's `FindPython` (packaging/installer-tools.ps1) counts neither the
+ * Store's shortcut nor a launcher with nothing behind it, so the screen and the installer agree.
+ */
+export function pythonStandIn(file: string, places: ToolPlaces): FoundPython | null {
+  const p = joiner(places.platform)
+  if (places.platform === "win32") {
+    if (STORE_ALIAS.test(file)) return "storeAlias"
+    if (!/^py(\.exe)?$/i.test(p.basename(file))) return null
+    const local = places.localAppData ? p.join(places.localAppData, "Programs", "Python") : ""
+    const installed = [...(local ? [local] : []), ...places.programFiles]
+      .some((dir) => pythonFolders(places.folders?.(dir) ?? []).some((name) => places.isFile(p.join(dir, name, "python.exe"))))
+    const another = foundTools("python", places)
+      .some((one) => !STORE_ALIAS.test(one) && !/^py(\.exe)?$/i.test(p.basename(one)))
+    return installed || another ? null : "pyLauncher"
+  }
+  if (places.platform === "darwin" && file === APPLE_PYTHON) {
+    const xcodes = new Set(["Xcode.app", ...(places.folders?.("/Applications") ?? []).filter((name) => /^Xcode.*\.app$/i.test(name))])
+    const real = [MAC_COMMAND_LINE_TOOLS_PYTHON, ...[...xcodes].map((app) => `/Applications/${app}/Contents/Developer/usr/bin/python3`)]
+    return real.some((one) => places.isFile(one)) ? "apple" : "appleStandIn"
+  }
+  return null
+}
+
+/** "gcc, clang or cl": a language's program names, as a sentence lists them. */
+const orList = (names: string[]): string =>
+  names.length <= 1 ? names.join("") : `${names.slice(0, -1).join(", ")} or ${names[names.length - 1]}`
+
+/**
+ * WHAT A PICKED FOLDER MEANS. A venv or a conda environment is picked whole as often as its program is (the Mac's
+ * picker takes a folder; Explorer's does not, but a pasted path can name one), and the Wolfram Engine is picked as
+ * its `.app`: each is looked inside, in this order, and the first file there wins. A file is itself.
+ */
+export function resolveChoice(evaluator: Evaluator, picked: string, places: ToolPlaces): { file: string } | { problem: string } {
+  if (!(places.isDirectory?.(picked) ?? false)) return { file: picked }
+  const windows = places.platform === "win32"
+  const p = joiner(places.platform)
+  const exe = windows ? ".exe" : ""
+  let inside: string[]
+  let none: string
+  switch (evaluator) {
+    case "python":
+      // A venv keeps its program in Scripts on Windows and bin elsewhere; a conda environment at its root on Windows.
+      inside = windows ? [p.join(picked, "Scripts", "python.exe"), p.join(picked, "python.exe")]
+        : [p.join(picked, "bin", "python3"), p.join(picked, "bin", "python")]
+      none = `There is no Python in that folder (WriteMind looked for ${windows ? "Scripts\\python.exe and python.exe" : "bin/python3 and bin/python"}).`
+      break
+    case "wolfram":
+      if (/\.app$/i.test(picked)) {
+        inside = [p.join(picked, "Contents", "Resources", "Wolfram Player.app", "Contents", "MacOS", "wolframscript"),
+          p.join(picked, "Contents", "MacOS", "wolframscript")]
+        none = `WriteMind found no wolframscript inside “${p.basename(picked)}”.`
+      } else {
+        inside = [p.join(picked, "wolframscript" + exe)]
+        none = "There is no wolframscript in that folder."
+      }
+      break
+    case "c": case "cpp": case "rust":
+      inside = toolNames(evaluator).flatMap((name) => [p.join(picked, "bin", name + exe), p.join(picked, name + exe)])
+      none = `There is no ${orList(toolNames(evaluator))} in that folder.`
+      break
+  }
+  const file = inside.find((one) => places.isFile(one))
+  return file ? { file } : { problem: none }
+}
+
+/**
+ * WHY A FILE CANNOT BE THIS LANGUAGE'S PROGRAM, or null when it can — asked when it is chosen, before anything is
+ * started or saved, in this order (the first that fails is the one said): a full path, a file that is there, never a
+ * script on Windows (nothing is started through a shell), only `.exe` / `.com` there, a name this language's program
+ * has (`isToolName`), and marked executable off Windows.
+ */
+export function choiceProblem(evaluator: Evaluator, file: string, places: ToolPlaces): string | null {
+  const windows = places.platform === "win32"
+  const p = joiner(places.platform)
+  const name = p.basename(file)
+  if (!isAbsolutePath(file, places.platform)) return `“${file}” is not a full path.`
+  if (!places.isFile(file)) return `“${name}” is not there.`
+  if (windows && /\.(cmd|bat|ps1|lnk)$/i.test(name)) {
+    return `“${name}” is a script, and WriteMind never starts anything through a shell. Choose the .exe it runs.`
+  }
+  if (windows && !/\.(exe|com)$/i.test(name)) return "WriteMind starts only .exe and .com programs on Windows."
+  if (!isToolName(evaluator, name)) {
+    switch (evaluator) {
+      case "wolfram": return "That is not wolframscript. Wolfram cells run through wolframscript."
+      case "python": return "That is not a Python: WriteMind runs a program called python, python3, python3.N or py."
+      case "c": return "That is not a C compiler (gcc, clang or cl)."
+      case "cpp": return "That is not a C++ compiler (g++, clang++ or cl)."
+      case "rust": return "That is not rustc."
+    }
+  }
+  if (!windows && !(places.isProgram ?? places.isFile)(file)) return `“${name}” is not marked as a program (it needs chmod +x).`
+  return null
+}
+
+/**
+ * WHAT A PICKED PROGRAM IS ASKED to say what it is (`Runner.identify`, from Choose… and Use only): its version. Null
+ * for Microsoft's `cl`, which has no version flag (it prints a banner and complains), so it is taken on its name.
+ */
+export function identifyArguments(evaluator: Evaluator, file: string): string[] | null {
+  switch (evaluator) {
+    case "wolfram": return ["-version"]
+    case "python": return [...interpreterArguments(file), "-c", IDENTIFY_PYTHON]
+    case "c": case "cpp": return flavorOf(file) === "msvc" ? null : ["--version"]
+    case "rust": return ["--version"]
+  }
+}
+
+/**
+ * WHETHER THE WOLFRAM ENGINE HAS BEEN ACTIVATED, as far as a file can say: activation leaves a `mathpass` licence
+ * file, the engine's own or Mathematica's, per user or for the whole machine. On Windows these are the places
+ * packaging/installer-tools.ps1's `IsActivated` looks — keep the two in step. The Mac's was measured on 2026-10-06
+ * (`~/Library/WolframEngine/Licensing/mathpass`); the Linux one is Wolfram's documented place, not yet measured on Arch.
+ */
+export function wolframLicence(places: ToolPlaces): boolean {
+  const p = joiner(places.platform)
+  const products = ["WolframEngine", "Mathematica"]
+  const bases = places.platform === "win32"
+    ? [places.appData, places.programData].filter((dir): dir is string => typeof dir === "string" && dir.length > 0)
+      .flatMap((dir) => products.map((product) => p.join(dir, product)))
+    : places.platform === "darwin"
+      ? [...(places.home ? [p.join(places.home, "Library")] : []), "/Library"].flatMap((dir) => products.map((product) => p.join(dir, product)))
+      : places.home ? products.map((product) => p.join(places.home, `.${product}`)) : []
+  return bases.some((dir) => places.isFile(p.join(dir, "Licensing", "mathpass")))
 }
 
 /** Microsoft's `cl` takes its own flags; everything else found here takes gcc's. */

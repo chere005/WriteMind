@@ -353,6 +353,13 @@ describe("anchors, pictures, pastes and long lines", () => {
   it("whole cells on the plain-text clipboard: a text cell's words, a markdown cell without its marker", () => {
     expect(plainCells(`2${BS}*3*4\n<a id="wm-1"></a>bar\n\n${MARKDOWN_MARKER}\n**b**\n\n# h`)).toBe(`2*3*4\nbar\n\n**b**\n\n# h`)
   })
+
+  it("gives a code or evaluation cell without its fences (pasted into a Wolfram notebook the backticks came too)", () => {
+    expect(plainCells("```eval wolfram\nPlot[Sin[x], {x, 0, 1}]\n1 + 1\n```")).toBe("Plot[Sin[x], {x, 0, 1}]\n1 + 1")
+    expect(plainCells("```python\nprint(1)\n```\n\nafter")).toBe("print(1)\n\nafter")
+    expect(plainCells("before\n\n```\nx\n```")).toBe("before\n\nx")
+    expect(plainCells("```wolfram\nunfinished")).toBe("unfinished")
+    expect(plainCells("```wolfram\n```")).toBe("")  })
 })
 
 describe("a block written into a paragraph keeps each half its kind", () => {

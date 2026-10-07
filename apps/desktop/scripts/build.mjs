@@ -20,6 +20,10 @@ await build({ ...common, entryPoints: ["src/preload/preload.ts"], outfile: "out/
 import { copyFileSync, cpSync, mkdirSync, rmSync, writeFileSync } from "node:fs"
 mkdirSync("out/helpers", { recursive: true })
 cpSync("src/helpers", "out/helpers", { recursive: true })
+// The Windows installer's own optional-tools script, for File > Language Setup...'s Install and Activate buttons
+// (main/toolSetup.ts, helpers.ts `toolsScript`): the same file the installer embeds from the build resources, so the
+// two cannot drift. `asarUnpack: out/helpers/**` already takes it out of the archive.
+copyFileSync("../../packaging/installer-tools.ps1", "out/helpers/installer-tools.ps1")
 // THE BUNDLED READER (docs/OCR-BUNDLED.md): its worker, onnxruntime's WebAssembly (the one file that runs on every
 // platform) and the PP-OCRv5 models fetched and checked by fetch-ocr-models.mjs, all in out/helpers/bundled-ocr, which
 // asarUnpack takes out of the archive. Without the models (offline, empty cache) the folder is left out and the app

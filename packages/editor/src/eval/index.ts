@@ -25,7 +25,7 @@ import { isolateHistory } from "@codemirror/commands"
 import {
   caretUnder, DEFAULT_EVALUATOR, end, EVALUATORS, evaluatorFrom, evaluatorTitle, fenced, fenceLanguage,
   firstCellFromBy, groupsOf, isAnswerCell, isEvaluation, isOut, landingFor, landingOf, makeEvaluation, markLanguage, markTitle,
-  openCell, outAfter, pairNumber, refusalMessage, resolveEvaluator, setEnvironment, substring, writeAnswer,
+  missingToolRefusal, openCell, outAfter, pairNumber, refusalMessage, resolveEvaluator, setEnvironment, substring, writeAnswer,
   type EvalGroup, type Evaluator, type MarkRole, type PositionedBlock, type RunOutcome, type RunRequest,
   type ToolReport,
 } from "@writemind/core"
@@ -43,9 +43,24 @@ export interface EvalHost {
   evaluator(): Evaluator
   /** An environment was picked from a cell's mark: it is what the next new cell is. */
   remember(evaluator: Evaluator): void
+  /**
+   * What is in use changed (File ▸ Language Setup…, port-only): a program chosen, forgotten or installed. Every open
+   * note's marks follow at once — the amber of a missing tool comes and goes with no reopening. Returns the unsubscribe.
+   */
+  onToolsChanged?(listener: (tools: ToolReport) => void): () => void
+  /** Open File ▸ Language Setup…, at that language's row (null: at the top). Absent: the Runs As menu does not offer it. */
+  openLanguageSetup?(evaluator: Evaluator | null): void
 }
 
 export const evalHost = Facet.define<EvalHost, EvalHost | null>({ combine: (values) => values[0] ?? null })
+
+/**
+ * Follow the shell's word on what is in use, for as long as the note is open: `apply` with each new report, and the
+ * returned function lets go. A host that has no such word (the tests' hosts, an older shell) is followed by nothing.
+ */
+export function followTools(host: EvalHost | null | undefined, apply: (tools: ToolReport) => void): () => void {
+  return host?.onToolsChanged?.(apply) ?? (() => {})
+}
 
 // MARK: - State
 
@@ -251,6 +266,7 @@ const CSS = `
 .wm-eval-menu .wm-eval-tick { width: 12px; flex: none; }
 .wm-eval-menu .wm-eval-gone { color: var(--wm-faint, #8a8a94); font-size: 11px; margin-left: auto; padding-left: 12px; }
 .wm-eval-menu .wm-eval-title { padding: 2px 12px 4px; font-size: 11px; color: var(--wm-faint, #8a8a94); }
+.wm-eval-menu .wm-eval-rule { height: 1px; margin: 4px 0; background: var(--wm-rule, #d4d4d8); }
 .cm-editor .wm-bracket.wm-bracket-pair:not(.wm-bracket-lit) { border-width: 1.5px; }
 `
 
@@ -327,6 +343,8 @@ class EvalPlugin {
   private noticeTimer: ReturnType<typeof setTimeout> | null = null
   private menu: HTMLElement | null = null
   private destroyed = false
+  /** Lets go of the shell's word on what is in use (`followTools`). */
+  private readonly unfollow: () => void
   readonly measure = { key: "wm-eval-marks", read: () => null, write: () => this.draw() }
 
   constructor(private readonly view: EditorView) {
@@ -346,6 +364,10 @@ class EvalPlugin {
       })
     }
     this.refreshTools()
+    // A choice made in File ▸ Language Setup… while this note is open reaches its marks now, not at the next open.
+    this.unfollow = followTools(view.state.facet(evalHost), (tools) => {
+      if (!this.destroyed) this.view.dispatch({ effects: setTools.of(tools) })
+    })
     view.requestMeasure(this.measure)
   }
 
@@ -533,19 +555,20 @@ class EvalPlugin {
       const title = markTitle(mark.role)
       const missing = mark.evaluator !== null && tools !== null && tools[mark.evaluator].path === null
       const choosing = mark.role.kind === "input" && mark.role.number === null
-      const signature = `${title}|${mark.language}|${mark.role.kind}|${choosing}|${missing}|${mark.running}|${column}`
+      // The tooltip of a missing tool is the runner's own refusal (one builder for both), so a choice that has gone
+      // in Language Setup names its path and the way back, here as in the sentence Shift+Enter would get.
+      const choiceTitle = mark.evaluator === null
+        ? "No language this app can run: pick what this cell runs as"
+        : missing && tools
+          ? refusalMessage(missingToolRefusal(mark.evaluator, tools[mark.evaluator]))
+          : `Runs as ${evaluatorTitle(mark.evaluator)} — Shift+Enter to run it, or pick another here`
+      const signature = `${title}|${mark.language}|${mark.role.kind}|${choosing}|${missing}|${mark.running}|${column}|${choiceTitle}`
       if (element.dataset.signature === signature) continue
       element.dataset.signature = signature
       element.textContent = ""
       const first = document.createElement("div")
       first.className = "wm-eval-row"
       element.appendChild(first)
-      const looked = mark.evaluator && tools ? tools[mark.evaluator].looked : []
-      const choiceTitle = mark.evaluator === null
-        ? "No language this app can run: pick what this cell runs as"
-        : missing
-          ? refusalMessage({ kind: "missingTool", evaluator: mark.evaluator, looked })
-          : `Runs as ${evaluatorTitle(mark.evaluator)} — Shift+Enter to run it, or pick another here`
       const at = mark.at
       const opensMenu = (control: HTMLElement) => control.addEventListener("mousedown", (event) => {
         event.preventDefault()
@@ -684,12 +707,15 @@ class EvalPlugin {
       name.textContent = evaluatorTitle(evaluator)
       item.append(tick, name)
       if (tools && tools[evaluator].path === null) {
-        // SAID PLAINLY, where the choice is made: this one is not on this machine.
+        // SAID PLAINLY, where the choice is made: this one is not on this machine — or, when a program was chosen
+        // for it in Language Setup, that program is not there any more.
         const gone = document.createElement("span")
         gone.className = "wm-eval-gone"
-        gone.textContent = "not installed"
+        // (or Language Setup's own file could not be read, so which program it is set to is not known yet)
+        const chosen = tools[evaluator].chosen
+        gone.textContent = chosen?.problem === "unreadable" ? "not known" : chosen ? "not there" : "not installed"
         item.appendChild(gone)
-        item.title = refusalMessage({ kind: "missingTool", evaluator, looked: tools[evaluator].looked })
+        item.title = refusalMessage(missingToolRefusal(evaluator, tools[evaluator]))
       }
       item.addEventListener("mousedown", (event) => {
         event.preventDefault()
@@ -698,6 +724,29 @@ class EvalPlugin {
         this.pick(evaluator, at)
       })
       menu.appendChild(item)
+    }
+    // AND THE WAY TO SET ONE UP (File ▸ Language Setup…, port-only), at this cell's language, where a missing one is
+    // first noticed. Only when the app can open it.
+    const host = view.state.facet(evalHost)
+    if (host?.openLanguageSetup) {
+      const rule = document.createElement("div")
+      rule.className = "wm-eval-rule"
+      menu.appendChild(rule)
+      const setup = document.createElement("button")
+      setup.type = "button"
+      setup.dataset.evalSetup = "1"
+      const tick = document.createElement("span")
+      tick.className = "wm-eval-tick"
+      const name = document.createElement("span")
+      name.textContent = "Language Setup…"
+      setup.append(tick, name)
+      setup.addEventListener("mousedown", (event) => {
+        event.preventDefault()
+        event.stopPropagation()
+        this.closeMenu()
+        host.openLanguageSetup?.(current)
+      })
+      menu.appendChild(setup)
     }
     document.body.appendChild(menu)
     const box = anchor.getBoundingClientRect()
@@ -751,6 +800,7 @@ class EvalPlugin {
     const running = this.view.state.field(evalField, false)?.running
     if (running) this.view.state.facet(evalHost)?.cancel(running.id)
     if (this.noticeTimer) clearTimeout(this.noticeTimer)
+    this.unfollow()
     this.closeMenu()
     this.layer.remove()
   }

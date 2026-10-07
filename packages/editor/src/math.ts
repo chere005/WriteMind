@@ -38,8 +38,8 @@ import {
   type DecorationSet, type ViewUpdate,
 } from "@codemirror/view"
 import {
-  INLINE_MATH_CSS, firstCellFromBy, inlineSpans, isMathFence, isTextCell, mathExpressionInCode, mathmlFor, positioned,
-  type InlineSpan, type MathDisplay, type MathNode, type PositionedBlock,
+  INLINE_MATH_CSS, firstCellFromBy, inlineSpans, isMathFence, isTextCell, mathExpressionInCode, mathmlFor, mathsCellSource,
+  positioned, type InlineSpan, type MathDisplay, type MathNode, type PositionedBlock,
 } from "@writemind/core"
 import { notebook, notebookField } from "./notebook"
 import { armedField } from "./seams"
@@ -469,7 +469,8 @@ function candidatesOf(state: EditorState): TypesetBlock[] {
     const last = doc.lineAt(cell.range.location + cell.range.length)
     // A fence that is never closed is not drawn (the page is the source).
     if (last.number === first.number || !isFenceLine(last.text)) continue
-    const source = cell.block.body.split("\n").map((line) => line.trim()).join(" ").trim()
+    // (The one reading of a maths cell's body, the Wolfram export's too: core export/wolfram/maths.ts.)
+    const source = mathsCellSource(cell.block.body)
     // Anything on the closing fence's line after the backticks is part of that line, which the typeset block
     // replaces whole: the words would vanish from the page, though they are in the file. So such a block stays
     // source (the Mac's source pane shows them; here the page is the source). It happens when text is typed

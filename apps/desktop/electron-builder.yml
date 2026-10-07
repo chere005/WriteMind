@@ -16,11 +16,13 @@ copyright: Copyright © 2026 Shahean Cheren
 # tag — .github/workflows/release.yml does that on a pushed v* tag. A draft
 # first: the workflow publishes it once every file is up, so no installed copy
 # ever sees a release without its latest.yml. A local `package:win` publishes
-# nothing (no tag, no token). THE MAC DMGS are never published by
+# nothing (no tag, no token). THE MAC FILES are never published by
 # electron-builder (`--publish never`): the workflow's mac job uploads them to
-# the same draft with `gh release upload`. A Mac copy does not update itself
-# (an ad-hoc signed app cannot be replaced by Squirrel.Mac): it only offers the
-# release page, so there is no zip and no latest-mac.yml.
+# the same draft with `gh release upload` — the dmgs (what a person downloads)
+# and, from a Developer ID build, the ZIPS and latest-mac.yml (what a Mac copy's
+# updater reads: Squirrel.Mac installs from the zip). An ad-hoc build makes
+# dmgs only (package:mac:adhoc's `--mac dmg`) and its copies open the release
+# page instead (shared/update.ts updateEligibility).
 publish:
   provider: github
   owner: chere005
@@ -78,13 +80,15 @@ mac:
   target:
     - target: dmg
       arch: [arm64, x64]
+    - target: zip
+      arch: [arm64, x64]
   # The prompts' wording, which macOS shows verbatim. The notes live in
   # ~/Documents/WriteMind, and Documents is a folder macOS asks about.
   extendInfo:
     NSCameraUsageDescription: WriteMind uses the camera to take the writing off a notebook page.
     NSDocumentsFolderUsageDescription: WriteMind keeps your notes in the WriteMind folder in Documents.
 
-# No .blockmap and no update feed for a dmg: a Mac copy never downloads an update.
+# No .blockmap and no update feed for a dmg: a Mac copy updates from the zip.
 dmg:
   writeUpdateInfo: false
 

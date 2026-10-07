@@ -8,6 +8,7 @@ import { contextBridge, ipcRenderer } from "electron"
 import { PEN_CHANNELS, type PenApi } from "../shared/pen"
 import { EVAL_CHANNELS, type EvalApi } from "../shared/eval"
 import { UPDATE_CHANNELS, type UpdateApi } from "../shared/update"
+import { LANGUAGE_CHANNELS, type LanguagesApi } from "../shared/languages"
 
 /** window.wm.pen: the tablet pen's feed (shared/pen.ts PenApi; every channel name is spelled once there). The E2E hooks exist only under WRITEMIND_E2E. */
 const listen = <T>(channel: string, listener: (payload: T) => void): (() => void) => {
@@ -97,8 +98,13 @@ const api = {
   ocrStatus: () => ipcRenderer.invoke("ocr:status"),
   askForCamera: () => ipcRenderer.invoke("camera:ask"),
   exportPDF: (request: unknown) => ipcRenderer.invoke("export:pdf", request),
-  /** File ▸ Export…: one save panel, PDF or Project chosen in it; null when no note is open (project only). */
+  /** File ▸ Export…: one save panel, PDF, Wolfram Notebook or Project chosen in it; null when no note is open (project only). */
   exportFile: (request: unknown) => ipcRenderer.invoke("export:file", request),
+  /**
+   * Held cells with a drawing cell among them were copied: the shell writes the clipboard again for Mathematica, in
+   * the background (main/wolfram/clipboard.ts). Nothing comes back.
+   */
+  wolframCopy: (copy: unknown) => ipcRenderer.send("wolfram:copy", copy),
   duplicateNote: (file: string) => ipcRenderer.invoke("note:duplicate", file),
   /** What the application menu needs to know (a note open, the sidebar shown, ...). */
   setMenuState: (state: unknown) => ipcRenderer.invoke("menu:state", state),
@@ -129,6 +135,21 @@ const api = {
     cancel: (id) => ipcRenderer.invoke(EVAL_CHANNELS.cancel, id),
     tools: () => ipcRenderer.invoke(EVAL_CHANNELS.tools),
   } satisfies EvalApi,
+  /**
+   * File ▸ Language Setup… (shared/languages.ts): what each language runs with, and choosing it. The page names a
+   * language, never a program to start: the picker, the checks and the probe are all the main process's.
+   */
+  languages: {
+    report: () => ipcRenderer.invoke(LANGUAGE_CHANNELS.report),
+    choose: (evaluator) => ipcRenderer.invoke(LANGUAGE_CHANNELS.choose, evaluator),
+    use: (evaluator, file) => ipcRenderer.invoke(LANGUAGE_CHANNELS.use, evaluator, file),
+    automatic: (evaluator) => ipcRenderer.invoke(LANGUAGE_CHANNELS.automatic, evaluator),
+    test: (evaluator) => ipcRenderer.invoke(LANGUAGE_CHANNELS.test, evaluator),
+    cancel: (evaluator) => ipcRenderer.invoke(LANGUAGE_CHANNELS.cancel, evaluator),
+    setup: (action) => ipcRenderer.invoke(LANGUAGE_CHANNELS.setup, action),
+    open: (link) => ipcRenderer.invoke(LANGUAGE_CHANNELS.open, link),
+    onChanged: (listener) => listen(LANGUAGE_CHANNELS.changed, listener),
+  } satisfies LanguagesApi,
   /** End-to-end scripts only (WRITEMIND_E2E): read the menu bar and press an item. */
   ...(process.env.WRITEMIND_E2E ? {
     e2eMenu: () => ipcRenderer.invoke("e2e:menu"),
@@ -137,6 +158,8 @@ const api = {
     e2eWindow: () => ipcRenderer.invoke("e2e:window"),
     e2ePerf: (command: string, arg?: unknown) => ipcRenderer.invoke("e2e:perf", command, arg),
     e2eSetBounds: (bounds: unknown) => ipcRenderer.invoke("e2e:setBounds", bounds),
+    e2eTold: () => ipcRenderer.invoke("e2e:told"),
+    e2eClipboard: (command: "read" | "save" | "restore") => ipcRenderer.invoke("e2e:clipboard", command),
   } : {}),
   /** Edit ▸ Undo / Redo in the app's own menu. */
   onEdit: (listener: (which: "undo" | "redo") => void) => {

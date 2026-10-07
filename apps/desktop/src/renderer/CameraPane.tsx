@@ -35,14 +35,14 @@ import {
 import { bandUnder, chartFromLabelled, chartSummary, type Corners } from "./capturePipeline"
 import { detectPage, takePicture, uprightPicture, uprightSize } from "./cameraTake"
 import {
-  normalRotation, rememberedRotation, rememberedShape, rememberedZoom, rememberRotation, rememberShape, rememberZoom,
-  useCameraAspect, type CaptureMode, type Rotation, type ZoomBox,
+  normalRotation, rememberBringTo, rememberedBringTo, rememberedRotation, rememberedShape, rememberedZoom, rememberRotation,
+  rememberShape, rememberZoom, useCameraAspect, type BringTo, type CaptureMode, type Rotation, type ZoomBox,
 } from "./cameraSettings"
 import { idleProblem } from "./cameraDevices"
 import { useCameraStream, useHeldFrame } from "./useCameraStream"
 import { ocrAvailable, readCanvasLines, wordsForChart } from "./ocrClient"
 import { CAMERA_OFF, TABLET_SOURCE } from "../shared/commands"
-import { setSheetSelect, usePenSettings, useSheetTools } from "./penSettings"
+import { usePenSettings, useSheetTools } from "./penSettings"
 import { TabletSurface, type SurfaceHandle } from "./TabletSurface"
 import { eraseFromSheet, takeFromSheet, type Capture } from "./tabletCapture"
 import { currentSheet, stepSheet, useSheetTabs } from "./tabletSheets"
@@ -51,6 +51,7 @@ import { stepNote, useCellSheet } from "./cellSheets"
 import { registerPenHandlers } from "./penActions"
 import { OrientationSelect } from "./OrientationSelect"
 import { PaperMenu } from "./PaperMenu"
+import { BringInMenu } from "./BringInMenu"
 import { paper as currentPaper } from "./tabletPaper"
 import { usePenWord, usePenWordNote } from "./penWord"
 import { usePenFeed } from "./usePenFeed"
@@ -163,6 +164,8 @@ export function CameraPane({
   const [, edited] = useState(0)
   const [trouble, setTrouble] = useState<string | null>(null)
   const [read, setRead] = useState<string | null>(null)
+  /** Where the header's Writing puts the writing (BringInMenu.tsx): the note's page, or a new docked drawing cell. */
+  const [bringTo, setBringTo] = useState<BringTo>(rememberedBringTo)
   /** The box dragged on the picture, in the pane's own points as the person sees it. */
   const [box, setBox] = useState<Rect | null>(null)
   /** The tablet's sheets (one per tab, tabletSheets.ts) and the open one, which everything below acts on. */
@@ -487,19 +490,20 @@ export function CameraPane({
   const takeTablet = useCallback(async (mode: "ink" | "page") => {
     const startedIn = noteRef.current
     const takenFrom = sheets.current
+    // The sheet keeps the writing, so the next Ctrl+Z is the note's (taking the capture back), not a stroke's.
+    surface.current?.leave()
     const out = await takeFromSheet(mode, {
       box: sheetBox, shown: surface.current?.size() ?? { width: 0, height: 0 }, pane,
       penColour, penWidth, paper: currentPaper(),
     })
     if ("trouble" in out) { setTrouble(out.trouble); return }
     if (noteRef.current !== startedIn) {
-      // The sheet was already cleared for it: one Undo on the sheet brings the writing back.
-      setTrouble(SWITCHED); surface.current?.repaint(); edited((was) => was + 1); return
+      // The sheet still has it: take it again from there.
+      setTrouble(SWITCHED); return
     }
     setTrouble(null)
     setRead(out.read)
-    // Writing leaves the sheet once it is in the note (one Undo on the sheet brings it back); the box goes either way, as on the Mac.
-    if (out.cleared) surface.current?.repaint()
+    // The sheet keeps what was brought in (tabletCapture.ts); the box goes, as on the Mac.
     boxOn(takenFrom, null)
     edited((was) => was + 1)
     onCapture(out.capture)
@@ -508,8 +512,8 @@ export function CameraPane({
   /**
    * The box's row (BoxActions.tsx). ERASE rubs out what is inside the box (one Undo on the sheet; the box stays).
    * BRING IN AS DRAWING CELL takes the boxed writing as Writing does and docks it as a NEW drawing cell at the input
-   * cursor (App.tsx `dockSheetCell`: the armed bar, else after the caret's cell; one Undo in the note), then takes it
-   * off the sheet as Writing does; nothing leaves the sheet when the note would not take the cell.
+   * cursor (App.tsx `dockSheetCell`: the armed bar, else after the caret's cell; one Undo in the note). The sheet keeps
+   * the writing, as Writing does.
    */
   const eraseBox = useCallback(() => {
     const out = eraseFromSheet(sheetBox, surface.current?.size() ?? { width: 0, height: 0 })
@@ -526,10 +530,8 @@ export function CameraPane({
     })
     if ("trouble" in out) { setTrouble(out.trouble); return }
     if (!onDockCell?.(out.capture)) { setTrouble("the note could not take a drawing cell here"); return }
-    out.clear?.()
     setTrouble(null)
     setRead(null)
-    surface.current?.repaint()
     boxOn(takenFrom, null)
     edited((was) => was + 1)
   }, [sheetBox, sheets.current, boxOn, onDockCell, pane, penColour, penWidth])
@@ -796,10 +798,9 @@ export function CameraPane({
           <>
             <PaperMenu />
             <OrientationSelect compact />
-            <button className={`icon-button${pen.selectTool ? " on" : ""}`} data-tablet="select" aria-pressed={pen.selectTool}
-                    title="Select on the sheet: the pen pulls the dashed box too, as the mouse does"
-                    onClick={() => setSheetSelect(!pen.selectTool)}
-                    style={{ width: "auto", padding: "0 8px", fontSize: 11 }}>Select</button>
+            {/* No Select toggle on the sheet (Sean, 2026-10-06: left on, it held the pen in a mode he took for a stuck
+                eraser: "i had the select button pressed.. remove that button"). The mouse boxes a part; so does the pen
+                with its select button held, or the Pen ▸ Select Tool toggle (an ExpressKey / double tap). */}
             <button className="icon-button" data-tablet="undo" disabled={binding.bound && !binding.away ? false : !sheet.canUndo}
                     title={binding.bound && binding.away
                       ? "Take back what was written here since its note was put away (it has not reached the drawing cell yet)"
@@ -813,10 +814,12 @@ export function CameraPane({
                     onClick={() => { surface.current?.clear(); setSheetBox(null) }}
                     style={{ width: "auto", padding: "0 8px", fontSize: 11 }}>Clear</button>
             <span className="bring-in" role="group" aria-label="Bring in">
-              <span className="label">Bring in</span>
+              <BringInMenu to={bringTo} onChange={(next) => { setBringTo(next); rememberBringTo(next) }} />
               <button className="icon-button" data-capture="ink" disabled={binding.bound}
-                      title={binding.bound ? "This sheet is a drawing cell of the note already" : "Bring the writing in as strokes: the boxed part, or the whole sheet. It leaves the sheet (Undo on the sheet brings it back)."}
-                      onClick={() => { void takeTablet("ink") }}
+                      title={binding.bound ? "This sheet is a drawing cell of the note already"
+                        : bringTo === "cell" ? "Bring the writing in as a new drawing cell at the input cursor: the boxed part, or the whole sheet. The sheet keeps it."
+                        : "Bring the writing in as strokes on the note's page: the boxed part, or the whole sheet. The sheet keeps it."}
+                      onClick={() => { if (bringTo === "cell") { surface.current?.leave(); void boxToCell() } else void takeTablet("ink") }}
                       style={{ width: "auto", padding: "0 8px", fontSize: 11 }}>Writing</button>
               <button className="icon-button" data-capture="page" disabled={binding.bound}
                       title={binding.bound ? "This sheet is a drawing cell of the note already" : "Bring the sheet in as a picture, paper and all: the boxed part, or the whole sheet (read its words with Aa)"}

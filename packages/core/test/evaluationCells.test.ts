@@ -13,15 +13,17 @@ import { isMathFence } from "../src/math/typesetter"
 import { replacing, type Edit, type Range } from "../src/text/range"
 import {
   colouring, compileArguments, DEFAULT_EVALUATOR, EVALUATORS, evaluatorBadge, evaluatorFence, evaluatorFrom,
-  evaluatorTitle, isCompiled, isEvaluation, isRunKey, refusalMessage, resolveEvaluator, sourceFile, toolNames,
+  evaluatorTitle, isCompiled, isEvaluation, isRunKey, isToolName, refusalMessage, resolveEvaluator, sourceFile, toolNames,
   type Refusal,
 } from "../src/eval/evaluator"
-import { evalResult, isOut, outBody, outCell, withoutTrailingNull, wolframNote } from "../src/eval/output"
+import {
+  evalResult, isOut, outBody, outCell, withoutTrailingNull, wolframCommand, wolframNote, wolframTrouble,
+} from "../src/eval/output"
 import {
   caretUnder, evalGroups, groupRange, isAnswerCell, isGroupedCell, landingOf, makeEvaluation, markLanguage, markTitle, outAfter,
   offsetShiftedByEdit, pairNumber, runnableCell, seamAfter, setEnvironment, shiftedByEdit, writeAnswer,
 } from "../src/eval/cells"
-import { landingFor } from "../src/eval/run"
+import { landingFor, missingToolRefusal } from "../src/eval/run"
 import { ALL_KINDS, kindName, openCell } from "../src/cells/types"
 
 const cell = (text: string, index: number): Range => positioned(text)[index]!.range
@@ -139,6 +141,95 @@ describe("an evaluation cell is not a code cell", () => {
     expect(withoutTrailingNull("hello\nNull\n")).toBe("hello")
     expect(withoutTrailingNull("x^3/3\n")).toBe("x^3/3\n")
     expect(withoutTrailingNull("Null is a word\n")).toBe("Null is a word\n")
+  })
+})
+
+/**
+ * PORT-ONLY: File ▸ Language Setup… (the Mac has `defaults write … evalTool.<name>` and no screen). A program chosen
+ * there is the ONLY one its language uses, and a chosen one that has gone is said rather than replaced.
+ */
+describe("a program chosen in Language Setup (port-only)", () => {
+  it("knows each language's program by its name: every name the PATH search uses, and their usual spellings", () => {
+    for (const evaluator of EVALUATORS) {
+      for (const name of toolNames(evaluator)) {
+        expect(isToolName(evaluator, name), `${evaluator} ${name}`).toBe(true)
+        expect(isToolName(evaluator, `${name}.exe`), `${evaluator} ${name}.exe`).toBe(true)
+      }
+    }
+    for (const name of ["python3.12", "python3.13t", "py.exe", "Python.EXE", "pypy3", "pypy3.10", "python3.12.exe"]) {
+      expect(isToolName("python", name), name).toBe(true)
+    }
+    expect(isToolName("c", "x86_64-w64-mingw32-gcc.exe")).toBe(true)
+    expect(isToolName("c", "gcc-14")).toBe(true)
+    expect(isToolName("c", "cc")).toBe(true)
+    expect(isToolName("cpp", "clang++-18")).toBe(true)
+    expect(isToolName("cpp", "x86_64-w64-mingw32-g++.exe")).toBe(true)
+    expect(isToolName("c", "cl.exe")).toBe(true)
+    expect(isToolName("cpp", "cl.exe")).toBe(true)
+    expect(isToolName("wolfram", "wolframscript.exe")).toBe(true)
+  })
+
+  it("refuses what is not one: pythonw (no console), rm, a .cmd shim, the kernel, the other language's compiler", () => {
+    expect(isToolName("python", "pythonw.exe")).toBe(false)
+    expect(isToolName("python", "rm")).toBe(false)
+    expect(isToolName("python", "python.cmd")).toBe(false)
+    expect(isToolName("python", "python.bat")).toBe(false)
+    expect(isToolName("wolfram", "WolframKernel")).toBe(false)
+    expect(isToolName("wolfram", "wolframscript.cmd")).toBe(false)
+    expect(isToolName("c", "g++")).toBe(false)
+    expect(isToolName("cpp", "gcc")).toBe(false)
+    expect(isToolName("rust", "cargo")).toBe(false)
+    expect(isToolName("c", "")).toBe(false)
+  })
+
+  it("says a chosen program that has gone, naming it and Language Setup; without a choice the sentence is the old one", () => {
+    const gone = refusalMessage({ kind: "missingTool", evaluator: "python", looked: ["x"], chosen: { path: "/v/bin/python3", problem: "gone" } })
+    expect(gone).toBe("Python is set to “/v/bin/python3” in Language Setup, which is not there any more. "
+      + "Choose another in File ▸ Language Setup…, or press Find Automatically there.")
+    const notOne = refusalMessage({ kind: "missingTool", evaluator: "wolfram", looked: [], chosen: { path: "/x/wolframscript", problem: "notAProgram" } })
+    expect(notOne).toContain("“/x/wolframscript”")
+    expect(notOne).toContain("is not a program WriteMind can start")
+    expect(notOne).toContain("Language Setup")
+    expect(refusalMessage({ kind: "missingTool", evaluator: "c", looked: ["gcc, clang, cl on the PATH"] }))
+      .toBe("C is not installed where WriteMind looks (gcc, clang, cl on the PATH).")
+    // Language Setup's file could not be read: which program was chosen is not known, and that is what is said.
+    expect(refusalMessage({ kind: "missingTool", evaluator: "python", looked: [], chosen: { path: "/u/languages.json", problem: "unreadable" } }))
+      .toBe("WriteMind could not read Language Setup's choices (“/u/languages.json”), so it does not know which program "
+        + "Python cells run with. It reads that file again at the next run.")
+  })
+
+  it("builds every missing-tool refusal in one place, with the choice only when the choice is the problem", () => {
+    expect(missingToolRefusal("c", { path: null, looked: ["gcc"] }))
+      .toEqual({ kind: "missingTool", evaluator: "c", looked: ["gcc"] })
+    expect(missingToolRefusal("python", { path: null, looked: ["/v (chosen in Language Setup)"], chosen: { path: "/v", problem: "gone" } }))
+      .toEqual({ kind: "missingTool", evaluator: "python", looked: ["/v (chosen in Language Setup)"], chosen: { path: "/v", problem: "gone" } })
+    // A choice that works has no problem to report.
+    expect(missingToolRefusal("python", { path: "/v", looked: [], chosen: { path: "/v", problem: null } }))
+      .toEqual({ kind: "missingTool", evaluator: "python", looked: [] })
+  })
+
+  it("writes the Wolfram command as the terminal it was found for can type it", () => {
+    // Port-only. Windows: PowerShell's call operator, unchanged.
+    const windows = "C:\\Program Files\\Wolfram Research\\Wolfram Engine\\15.0\\wolframscript.exe"
+    expect(wolframCommand(windows)).toBe(`& "${windows}"`)
+    expect(wolframCommand("C:/Tools/wolframscript.exe")).toBe('& "C:/Tools/wolframscript.exe"')
+    // A Mac or Linux path goes into zsh or bash, where `& "…"` is a parse error: bare when it can be.
+    expect(wolframCommand("/opt/homebrew/bin/wolframscript")).toBe("/opt/homebrew/bin/wolframscript")
+    expect(wolframCommand("/Applications/Wolfram Engine.app/Contents/MacOS/wolframscript"))
+      .toBe("'/Applications/Wolfram Engine.app/Contents/MacOS/wolframscript'")
+    expect(wolframCommand("/Users/o'neil/bin/wolframscript")).toBe("'/Users/o'\\''neil/bin/wolframscript'")
+    expect(wolframCommand()).toBe("wolframscript")
+    expect(wolframCommand("wolframscript")).toBe("wolframscript")
+    // And the note says the same command.
+    const locked = evalResult({ stderr: "requires one-time activation", status: 255 })
+    expect(wolframNote(locked, "wolfram", "/opt/homebrew/bin/wolframscript"))
+      .toContain("run `/opt/homebrew/bin/wolframscript -activate` once")
+  })
+
+  it("names the two not-activated failures once, for the Out cell and for Test alike", () => {
+    expect(wolframTrouble(evalResult({ stderr: "The Wolfram Engine requires one-time activation", status: 255 }))).toBe("notActivated")
+    expect(wolframTrouble(evalResult({ stderr: "A WolframKernel location could not be determined.", status: 255 }))).toBe("noKernel")
+    expect(wolframTrouble(evalResult({ stderr: "Syntax::sntxi: Incomplete expression", status: 1 }))).toBeNull()
   })
 })
 

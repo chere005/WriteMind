@@ -17,7 +17,7 @@
 
 import { applyMatrix, baseBounds, baseCenter, bounds, matrixOf, route, type Size } from "../drawing/geometry"
 import { connectorPaths, dashPattern, strokeCurve } from "../drawing/ink"
-import { visibleItems, type CanvasItem, type Drawing } from "../drawing/model"
+import { visibleItems, type CanvasItem, type Drawing, type ShapeItem } from "../drawing/model"
 import { pressureScale } from "../drawing/pen"
 import { isClosed, polylines, type Point, type Rect } from "../drawing/shapes"
 import { readableInk, TEXT_BOX } from "../drawing/textBox"
@@ -30,10 +30,23 @@ export interface InkPiece {
   html: string
 }
 
+/**
+ * Words broken into lines the way the screen breaks them: `text` in a box `room` px wide, at `font.size` px with lines
+ * `font.line` px apart. The canvas's own wrapper is the one handed in (it needs a font to measure with, and the core
+ * has none).
+ */
+export type WordBreaker = (text: string, room: number, font: { size: number; line: number }) => string[]
+
 export interface InkOptions {
   paper?: string
   /** A picture's file name → a URL the printing page can load. */
   mediaUrl(file: string): string
+  /**
+   * Port-only (the Wolfram export, export/wolfram/): with it, a text box's and a node's words are SVG `<text>`, one
+   * `<tspan>` per line broken where the screen broke them, instead of a `<foreignObject>` — an SVG reader that is not a
+   * browser (the Wolfram Engine's importer) drops a `<foreignObject>` and the words with it.
+   */
+  words?: WordBreaker
 }
 
 const n = (value: number): string => String(Math.round(value * 100) / 100)
@@ -139,11 +152,58 @@ function imageBody(item: Extract<CanvasItem, { kind: "image" }>, size: Size, opt
     + `width="${n(box.width)}" height="${n(box.height)}" preserveAspectRatio="none" transform="${transform}"/>`
 }
 
+/** What a node's label is set in, on the canvas and here: 13 px type on 16 px lines, and no more than six of them. */
+const LABEL = { size: 13, line: 16, lines: 6, padX: 6 } as const
+
+/**
+ * Words as the Wolfram Engine's SVG importer can take them. Checked against the engine (12.x, Mac): a code point above
+ * U+FFFF (an emoji) sets the WHOLE line in tofu boxes, ASCII included; a character outside XML 1.0's Char production
+ * (a vertical tab from Word, a form feed from a PDF, U+0001, U+FFFE) makes the whole import fail, and the drawing
+ * with it. So an astral code point (or a lone surrogate) becomes U+25A1 — a box the importer does draw — and an
+ * illegal control becomes a space, which is what a soft break or a page break read as. Tab, LF and CR are legal and
+ * stay (the breaker takes the lines apart before they get here).
+ */
+export function importable(text: string): string {
+  // eslint-disable-next-line no-control-regex
+  return text.replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F￾￿]/g, " ")
+    .replace(/[\uD800-\uDBFF][\uDC00-\uDFFF]|[\uD800-\uDFFF]/g, "□")
+}
+
+/**
+ * A shape's words as SVG `<text>` (`InkOptions.words`): the lines the screen broke them into, in the shape's own
+ * transform. A text box's start inside its padding, each on the baseline the canvas puts it on (the canvas sets a
+ * line's TOP, half the leading down; an em's top is about 0.8 of the size above its baseline), and a line whose
+ * baseline falls past the box is cut, as the box's own edge cuts it on screen. A node's label is centred on the box.
+ */
+function shapeText(shape: ShapeItem, box: Rect, colour: string, turn: string, words: WordBreaker): string {
+  const family = FONT.replace(/"/g, "'")
+  const tspans = (lines: string[], x: number, baseline: (index: number) => number): string =>
+    lines.map((line, index) => line === "" ? "" : `<tspan x="${n(x)}" y="${n(baseline(index))}">${escapeHtml(line)}</tspan>`).join("")
+  if (shape.kind === "text") {
+    const room = Math.max(1, box.width - TEXT_BOX.padding.width * 2)
+    const top = box.y + TEXT_BOX.padding.height + (TEXT_BOX.lineHeight - TEXT_BOX.fontSize) / 2 + 0.8 * TEXT_BOX.fontSize
+    const baseline = (index: number) => top + index * TEXT_BOX.lineHeight
+    const lines = words(importable(shape.label), room, { size: TEXT_BOX.fontSize, line: TEXT_BOX.lineHeight })
+      .filter((_line, index) => index === 0 || baseline(index) <= box.y + box.height)
+    const body = tspans(lines, box.x + TEXT_BOX.padding.width, baseline)
+    return body ? `<text font-family="${family}" font-size="${TEXT_BOX.fontSize}" fill="${colour}" transform="${turn}">${body}</text>` : ""
+  }
+  const room = Math.max(10, box.width - LABEL.padX * 2)
+  const lines = words(importable(shape.label), room, { size: LABEL.size, line: LABEL.line }).slice(0, LABEL.lines)
+  // The canvas centres each line's middle on the box's (`textBaseline = "middle"`): an em's middle is 0.3 of the
+  // size above its baseline.
+  const middle = box.y + box.height / 2 + 0.3 * LABEL.size
+  const baseline = (index: number) => middle + (index - (lines.length - 1) / 2) * LABEL.line
+  const body = tspans(lines, box.x + box.width / 2, baseline)
+  return body ? `<text font-family="${family}" font-size="${LABEL.size}" fill="${colour}" text-anchor="middle" transform="${turn}">${body}</text>` : ""
+}
+
 /**
  * A shape as SVG elements alone (for a drawing written as ONE svg, such as an ink cell's snapshot): its outline as
- * paths, and its words (a text box's, a node's label) in a `<foreignObject>` holding the same box the page draws.
+ * paths, and its words (a text box's, a node's label) in a `<foreignObject>` holding the same box the page draws —
+ * or, given `words`, as SVG text (`shapeText`).
  */
-function shapeBody(item: Extract<CanvasItem, { kind: "shape" }>, size: Size, paper: string): string {
+function shapeBody(item: Extract<CanvasItem, { kind: "shape" }>, size: Size, paper: string, wordBreaker?: WordBreaker): string {
   const shape = item.shape
   const box = baseBounds(item, size)
   const colour = readableInk(shape.colorHex, shape.fillHex ?? paper)
@@ -156,6 +216,12 @@ function shapeBody(item: Extract<CanvasItem, { kind: "shape" }>, size: Size, pap
     + `box-sizing:border-box;${style}">${escapeHtml(shape.label)}</div></foreignObject>`
   if (shape.kind === "text") {
     if (!shape.fillHex && shape.label === "") return ""
+    if (wordBreaker) {
+      // The card (its fill and its corner) and then the words on it.
+      const card = shape.fillHex ? `<rect x="${n(box.x)}" y="${n(box.y)}" width="${n(box.width)}" height="${n(box.height)}" `
+        + `rx="${TEXT_BOX.cornerRadius}" fill="${shape.fillHex}" transform="${turn}"/>` : ""
+      return card + (shape.label === "" ? "" : shapeText(shape, box, colour, turn, wordBreaker))
+    }
     return words(`border-radius:${TEXT_BOX.cornerRadius}px;${shape.fillHex ? `background:${shape.fillHex};` : ""}`
       + `padding:${TEXT_BOX.padding.height}px ${TEXT_BOX.padding.width}px;font:${TEXT_BOX.fontSize}px/${TEXT_BOX.lineHeight}px ${FONT.replace(/"/g, "'")};`
       + `color:${colour};white-space:pre-wrap;overflow-wrap:break-word;overflow:hidden`)
@@ -169,8 +235,9 @@ function shapeBody(item: Extract<CanvasItem, { kind: "shape" }>, size: Size, pap
     + `fill="${shape.fillHex && closed && lines.length === 1 ? shape.fillHex : "none"}" stroke="${colour}" `
     + `stroke-width="${n(width)}" stroke-linecap="round" stroke-linejoin="round"/>`).join("")
   if (shape.label) {
-    body += words(`display:flex;align-items:center;justify-content:center;padding:4px 6px;font:13px/16px ${FONT.replace(/"/g, "'")};`
-      + `color:${colour};text-align:center;white-space:pre-wrap;overflow-wrap:break-word`)
+    body += wordBreaker ? shapeText(shape, box, colour, turn, wordBreaker)
+      : words(`display:flex;align-items:center;justify-content:center;padding:4px 6px;font:13px/16px ${FONT.replace(/"/g, "'")};`
+        + `color:${colour};text-align:center;white-space:pre-wrap;overflow-wrap:break-word`)
   }
   return body
 }
@@ -231,7 +298,7 @@ export function itemSvg(item: CanvasItem, size: Size, options: InkOptions): stri
     case "stroke": return strokeBody(item, size, paper)
     case "connector": return connectorBody(item, size, paper)
     case "image": return item.image.file ? imageBody(item, size, options) : ""
-    case "shape": return shapeBody(item, size, paper)
+    case "shape": return shapeBody(item, size, paper, options.words)
     case "cell": return ""
   }
 }

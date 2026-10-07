@@ -47,6 +47,13 @@ export interface UpdateStatus {
 export const STARTUP_CHECK_DELAY_MS = 3_000
 /** The test feed (WRITEMIND_UPDATE_FEED) looks almost at once. */
 export const TEST_FIRST_CHECK_DELAY_MS = 1_500
+/**
+ * A launch look that failed (no network yet after a wake or a login, GitHub slow) is tried again after these, and
+ * then the app looks again every LOOK_AGAIN_MS while it runs (a Mac app runs for days without being quit): Sean,
+ * 2026-10-06, "on mac 2.1 i restarted and didn't see 2.2 notification, but when i checked for updates it saw them".
+ */
+export const LAUNCH_RETRY_MS = [60_000, 5 * 60_000] as const
+export const LOOK_AGAIN_MS = 4 * 60 * 60_000
 
 export const UPDATE_CHANNELS = {
   status: "update:status",
@@ -134,6 +141,11 @@ export interface CopyFacts {
   besideExe: string[]
   /** `resources/app-update.yml` is there (electron-builder writes it when the build has a `publish` block). */
   hasFeedFile: boolean
+  /**
+   * A Mac: this WriteMind.app is signed with a Developer ID and runs from where it was put (not off a mounted dmg,
+   * not translocated by Gatekeeper), which is what Squirrel.Mac needs to replace it in place.
+   */
+  macSelfUpdates?: boolean
 }
 
 export type Eligibility = { ok: true; how: UpdateHow } | { ok: false; why: string }
@@ -149,7 +161,9 @@ export function updateEligibility(facts: CopyFacts): Eligibility {
   if (facts.platform !== "win32" && !mac) return { ok: false, why: "Updates come with the Windows installer; on this system, install a new version by hand." }
   if (!facts.packaged || env.WRITEMIND_DEV === "1") return { ok: false, why: "This is a development run of WriteMind, which does not update itself." }
   if (env.WRITEMIND_E2E) return { ok: false, why: "This is a test run of WriteMind, which does not update itself." }
-  if (mac) return { ok: true, how: "download" }
+  // A Mac copy installs the update itself when it can be replaced in place (Sean, 2026-10-06: "download and install
+  // the update itself on mac ... if click update"); an ad-hoc build, or one run off the dmg, opens the release page.
+  if (mac) return { ok: true, how: facts.hasFeedFile && facts.macSelfUpdates === true ? "install" : "download" }
   if (env.PORTABLE_EXECUTABLE_DIR) return { ok: false, why: "This is the portable WriteMind, which does not update itself: download the new one, or use the installer." }
   if (!facts.hasFeedFile) return { ok: false, why: "This build of WriteMind was made without an update feed." }
   if (!facts.besideExe.some((name) => /^Uninstall .+\.exe$/i.test(name))) {

@@ -11,7 +11,8 @@
  */
 
 import {
-  app, BrowserWindow, nativeImage, nativeTheme, dialog, ipcMain, Menu, net, powerMonitor, protocol, screen, session, shell, systemPreferences,
+  app, BrowserWindow, clipboard, ClipboardItem, nativeImage, nativeTheme, dialog, ipcMain, Menu, net, powerMonitor, protocol, screen,
+  session, shell, systemPreferences,
 } from "electron"
 import { promises as fs } from "node:fs"
 import path from "node:path"
@@ -26,7 +27,8 @@ import { pictureFiles } from "./macDrawing"
 import { rescueUnsaved } from "./rescue"
 import { findUnused, trashNoteAndDrawing, trashSectionAndDrawings, trashUnused } from "./housekeeping"
 import type { Held } from "../shared/housekeeping"
-import { ADD_JAPANESE_OCR, readerFor, windowsOcr } from "./helpers"
+import { ADD_JAPANESE_OCR, penHelper, readerFor, toolsScript, windowsOcr, winget } from "./helpers"
+import { createToolSetup } from "./toolSetup"
 import { ocrFor } from "./ocr"
 import { buildMenu } from "./menu"
 import { initialMenuState, type MenuState } from "../shared/commands"
@@ -37,9 +39,18 @@ import { PROJECT_COMMANDS, projectInfo, runProjectCommand, type ProjectChange } 
 import { startPenSubsystem, type PenSubsystem } from "./pen/subsystem"
 import { exportNotePdf, writeNotePdf, type ExportRequest } from "./exportPdf"
 import { exportFile } from "./exportFile"
+import { writeFileAtomic } from "./atomic"
+import { runKernel } from "./wolfram/kernel"
+import type { MediaDeps } from "./wolfram/media"
+import { writeWolframNotebook } from "./wolfram/notebookFile"
+import { copyForWolfram, validWolframCopy } from "./wolfram/clipboard"
 import { rememberWindow, windowPlacement } from "./windowMemory"
 import { installPerfProbe } from "./perfProbe"
 import { registerEval } from "./eval/ipc"
+import { createLanguageStore, registerLanguages } from "./eval/languages"
+import { createProcessRunner } from "./eval/runner"
+import { placesFromProcess } from "./eval/tools"
+import { LANGUAGE_CHANNELS, LANGUAGES_FILE } from "../shared/languages"
 import { registerSheets } from "./sheets"
 import { startUpdater, type Updater } from "./updater"
 import { UPDATE_COMMAND_IDS } from "../shared/update"
@@ -269,9 +280,9 @@ async function createWindow(): Promise<void> {
     // because a window that does not look like the system's is the first
     // thing that says "this was ported".
     titleBarStyle: process.platform === "darwin" ? "hiddenInset" : "default",
-    // Linux window managers take the icon from the window itself; macOS
-    // and Windows take it from the bundle.
-    ...(process.platform === "linux"
+    // Linux window managers take the icon from the window itself, and so does Windows' taskbar
+    // button (a dev run's electron.exe has Electron's); macOS takes it from the bundle.
+    ...(process.platform !== "darwin"
       ? { icon: path.join(here, "../renderer/icon.png") }
       : {}),
     webPreferences: {
@@ -333,6 +344,9 @@ async function createWindow(): Promise<void> {
 // ONE WINDOW PER PROFILE. A second launch (a double-click on a shortcut that is already running) brings the
 // first one forward instead of opening a second window on the same notes — two writers on one folder is the
 // bug `mayWrite` exists for. The lock is per user-data folder, so a test instance never meets the real app.
+// WINDOWS' TASKBAR groups a window with the Start menu shortcut by this id, which electron-builder's installer gives
+// the shortcut (appId): without it the running app is a separate, Electron-iconed button.
+if (process.platform === "win32") app.setAppUserModelId("com.seancheren.writemind")
 const gotLock = app.requestSingleInstanceLock()
 if (!gotLock) {
   app.quit()
@@ -402,6 +416,8 @@ app.whenReady().then(async () => {
   // The OCR engine is asked about NOW, in the background, so that the first
   // `app:capabilities` does not wait for a PowerShell to start.
   void windowsOcr(here)
+  // File ▸ Language Setup…'s Install and Activate: the installer's own script beside the app (Windows), and winget.
+  const languageScript = toolsScript(here)
   ipcMain.handle("app:capabilities", async () => {
     const reader = await readerFor(here)
     return {
@@ -409,8 +425,11 @@ app.whenReady().then(async () => {
       // `wm-vision` on macOS, Windows' own OCR engine on Windows,
       // `tesseract` anywhere. None is a dependency — with none
       // installed the app runs the same and simply does not offer to
-      // read a picture.
-      ...capabilitiesFor(process.platform, { ocr: reader.ocr, engine: reader.engine, japanese: reader.japanese }),
+      // read a picture. The same for setting a language up from the app.
+      ...capabilitiesFor(process.platform, {
+        ocr: reader.ocr, engine: reader.engine, japanese: reader.japanese,
+        languageSetup: { script: languageScript !== null, winget: winget() !== null },
+      }),
       platform: process.platform,
       root: notesRoot(),
     }
@@ -495,8 +514,26 @@ app.whenReady().then(async () => {
     return ocr.request({ id: String(request.id), source, ...(languages.length > 0 ? { languages } : {}) })
   })
   ipcMain.handle("ocr:cancel", (_event, id: string) => { ocr.cancel(String(id)) })
-  // Evaluation cells: run ONE cell on a press, take a run back, say where the tools are (main/eval).
-  evalRunner = registerEval(ipcMain)
+  // Evaluation cells: run ONE cell on a press, take a run back, say where the tools are (main/eval). The runner reads
+  // File ▸ Language Setup…'s choices (userData/languages.json, main/eval/languages.ts) afresh for every run.
+  const languages = createLanguageStore(path.join(app.getPath("userData"), LANGUAGES_FILE), process.platform)
+  const runner = registerEval(ipcMain, createProcessRunner(languages))
+  evalRunner = runner
+  // File ▸ Language Setup…'s questions: what is in use (the file system only), Choose…, Use, Find Automatically, Test.
+  registerLanguages(ipcMain, {
+    store: languages, runner, platform: process.platform,
+    places: () => placesFromProcess(languages.get(), languages.unreadable()),
+    // askOpen: an end-to-end script names its answer ahead of time (WRITEMIND_E2E).
+    ask: (options) => (window ? askOpen(window, options as Electron.OpenDialogOptions) : Promise.resolve({ canceled: true, filePaths: [] })),
+    open: (url) => shell.openExternal(url),
+    // Windows: the installer's script in a window of its own (main/toolSetup.ts); null everywhere else.
+    setup: languageScript
+      ? createToolSetup({ script: languageScript, userData: app.getPath("userData"), e2e: !!process.env.WRITEMIND_E2E })
+      : null,
+    winget: winget() !== null,
+    log: path.join(app.getPath("userData"), "tools-setup.log"),
+    broadcast: (report) => window?.webContents.send(LANGUAGE_CHANNELS.changed, report),
+  })
   // The tablet's sheets (tabs) and their ink: userData/sheets.json.
   registerSheets(ipcMain)
   /** What the reader is, what it can read, and how to add Japanese - for the diagnostics. */
@@ -539,7 +576,38 @@ app.whenReady().then(async () => {
   }
   ipcMain.handle("export:pdf", async (_event, request: ExportRequest) =>
     exportNotePdf(request, { window, askSave, ...(await printedPictures(request)) }))
-  // File ▸ Export… (exportFile.ts): one panel, PDF or Project chosen in it; null when no note is open.
+  // THE WOLFRAM NOTEBOOK AND A DRAWING CELL COPIED INTO MATHEMATICA (main/wolfram/*): the note's pictures as files,
+  // read and converted here, and ONE kernel run through the eval runner (Wolfram's program as a cell finds it).
+  const wolframFiles: MediaDeps = {
+    findMedia: (name) => findMedia(notesRoot(), name),
+    stat: async (file) => {
+      try {
+        const stat = await fs.stat(file)
+        return stat.isFile() ? { mtimeMs: stat.mtimeMs, size: stat.size } : null
+      } catch { return null }
+    },
+    readFile: async (file) => new Uint8Array(await fs.readFile(file)),
+    pdfPicture: (file) => readPdfPicture(file),
+    bitmap: async (file, maxWidth) => {
+      const image = nativeImage.createFromPath(file)
+      if (image.isEmpty()) return null
+      const { width } = image.getSize()
+      const out = maxWidth !== null && width > maxWidth ? image.resize({ width: maxWidth, quality: "good" }) : image
+      return { png: new Uint8Array(out.toPNG()), width }
+    },
+    tempPng: async (bytes) => {
+      const folder = await fs.mkdtemp(path.join(app.getPath("temp"), "wm-wolfram-"))
+      const file = path.join(folder, "picture.png")
+      await fs.writeFile(file, bytes)
+      return file
+    },
+  }
+  // A temporary PNG is the only file in a folder of its own (`tempPng`): the folder goes with it.
+  const removeTemp = (file: string) => fs.rm(path.dirname(file), { recursive: true, force: true })
+  const kernel = (jobs: Parameters<typeof runKernel>[0], options: Parameters<typeof runKernel>[1]) => runKernel(jobs, options, { runner })
+  /** E2E only: what an export would have said (the scripts cannot press a native dialog's OK). */
+  const told: { message: string; detail: string }[] = []
+  // File ▸ Export… (exportFile.ts): one panel, PDF, Wolfram Notebook or Project chosen in it; null when no note is open.
   ipcMain.handle("export:file", async (_event, request: ExportRequest | null) =>
     exportFile(request, {
       window, askSave, documents: app.getPath("documents"),
@@ -548,8 +616,31 @@ app.whenReady().then(async () => {
         const pictures = await printedPictures(note)
         await writeNotePdf(file, note, pictures.mediaFile, pictures.pictureUrl)
       },
+      writeNotebook: (file, note) => writeWolframNotebook(file, note, {
+        ...wolframFiles, runKernel: kernel, removeTemp, version: app.getVersion(), write: writeFileAtomic,
+        // The kernel takes seconds: the window's own progress bar says something is happening, and nothing waits.
+        progress: (on) => { if (window && !window.isDestroyed()) window.setProgressBar(on ? 2 : -1) },
+      }),
       report: async (parent, message, detail) => { await dialog.showMessageBox(parent, { type: "warning", message, detail }) },
+      tell: async (parent, notice) => {
+        if (process.env.WRITEMIND_E2E) { told.push(notice); return }
+        await dialog.showMessageBox(parent, { type: "info", message: notice.message, detail: notice.detail, buttons: ["OK"] })
+      },
     }))
+  // A Copy or Cut of held cells with a drawing cell among them (renderer: `cellsCopied`): the clipboard written again
+  // for Mathematica, in the background. A failure is a line in the log, never a dialog.
+  const wolframClipboard = capabilitiesFor(process.platform).wolframClipboard
+  ipcMain.on("wolfram:copy", (_event, value: unknown) => {
+    const copy = validWolframCopy(value)
+    if (!copy) return
+    void copyForWolfram(copy, {
+      ...wolframFiles, removeTemp, runKernel: kernel, kinds: wolframClipboard,
+      clipboard: { readText: () => clipboard.readText(), read: () => clipboard.read(), write: (items) => clipboard.write(items as ClipboardItem[]) },
+      item: (entries) => new ClipboardItem(entries),
+      sleep: (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
+      log: (message) => console.warn(message),
+    }).catch((error: unknown) => { console.warn("WriteMind: the copy for Mathematica was not written:", error) })
+  })
 
   // THE APP'S OWN MENU (menu.ts). The page tells the shell what the menu
   // needs to know — a note open, the sidebar shown — and hears the clicks.
@@ -569,7 +660,7 @@ app.whenReady().then(async () => {
   // THE PEN: the tablet read by the app itself, only while the Tablet sheet is open and this window is in front.
   pen = startPenSubsystem({
     app, screen, ipc: ipcMain, powerMonitor, window: () => window, e2e: !!process.env.WRITEMIND_E2E,
-    env: process.env, platform: process.platform,
+    env: process.env, platform: process.platform, penHelper: penHelper(here),
     log: (line) => console.log(line),
   })
   // UPDATES (main/updater.ts): before the window, so the page's first question about them has an answer. Restart
@@ -609,6 +700,34 @@ app.whenReady().then(async () => {
       }
     })
     ipcMain.handle("e2e:setBounds", (_event, bounds: Electron.Rectangle) => { window?.setBounds(bounds); window?.moveTop() })
+    // What an export would have told the person (the scripts cannot press a native dialog's OK), taken once.
+    ipcMain.handle("e2e:told", () => told.splice(0))
+    // The system clipboard, for the copy-into-Mathematica script: what is on it now (text types as text, the rest as
+    // base64), and the whole of it kept before the script copies and put back after.
+    let keptClipboard: Record<string, Blob> | null = null
+    const clipboardNow = async (): Promise<Record<string, Blob>> => {
+      const out: Record<string, Blob> = {}
+      const [first] = await clipboard.read()
+      for (const type of first?.types ?? []) {
+        const value = await first!.getType(type).catch(() => null)
+        if (value instanceof Blob) out[type] = value
+      }
+      return out
+    }
+    ipcMain.handle("e2e:clipboard", async (_event, command: "read" | "save" | "restore") => {
+      if (command === "save") { keptClipboard = await clipboardNow(); return true }
+      if (command === "restore") {
+        if (keptClipboard && Object.keys(keptClipboard).length > 0) await clipboard.write([new ClipboardItem(keptClipboard)])
+        else clipboard.clear()
+        keptClipboard = null
+        return true
+      }
+      const out: Record<string, string> = {}
+      for (const [type, value] of Object.entries(await clipboardNow())) {
+        out[type] = /png|tiff|image\//i.test(type) ? `base64:${Buffer.from(await value.arrayBuffer()).toString("base64")}` : await value.text()
+      }
+      return out
+    })
     ipcMain.handle("e2e:menu", () => dump(Menu.getApplicationMenu()?.items ?? []))
     ipcMain.handle("e2e:menuClick", (_event, id: string) => {
       const find = (items: Electron.MenuItem[]): Electron.MenuItem | null => {

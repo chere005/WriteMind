@@ -53,9 +53,13 @@ describe("which copies look for updates", () => {
     expect(updateEligibility(installed)).toEqual({ ok: true, how: "install" })
   })
 
-  it("a packaged Mac build does, and only offers the download; a Mac development or test run does not", () => {
+  it("a packaged Mac build does: it installs when it can be replaced in place, else offers the download", () => {
     const mac: CopyFacts = { platform: "darwin", packaged: true, env: {}, besideExe: ["WriteMind"], hasFeedFile: false }
     expect(updateEligibility(mac)).toEqual({ ok: true, how: "download" })
+    expect(updateEligibility({ ...mac, hasFeedFile: true, macSelfUpdates: true })).toEqual({ ok: true, how: "install" })
+    expect(updateEligibility({ ...mac, hasFeedFile: false, macSelfUpdates: true })).toEqual({ ok: true, how: "download" })
+    expect(updateEligibility({ ...mac, hasFeedFile: true, macSelfUpdates: false })).toEqual({ ok: true, how: "download" })
+    expect(updateEligibility({ ...mac, macSelfUpdates: true, hasFeedFile: true, env: { WRITEMIND_E2E: "1" } })).toEqual({ ok: false, why: expect.stringMatching(/test run/) })
     // Wherever it was dragged to, with or without electron-builder's app-update.yml: it never installs.
     expect(updateEligibility({ ...mac, hasFeedFile: true })).toEqual({ ok: true, how: "download" })
     expect(updateEligibility({ ...mac, packaged: false })).toEqual({ ok: false, why: expect.stringMatching(/development run/) })

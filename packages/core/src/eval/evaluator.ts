@@ -143,13 +143,41 @@ export function toolNames(evaluator: Evaluator): string[] {
   }
 }
 
+/**
+ * WHETHER A FILE CAN BE THIS LANGUAGE'S PROGRAM, by its name alone (port-only: File ▸ Language Setup… checks a
+ * program a person picks, and the settings file a person may edit by hand, against it). The names are `toolNames`'
+ * and their usual spellings — `python3.12`, a free-threaded `python3.13t`, PyPy, a versioned `clang-18`, MinGW's
+ * `x86_64-w64-mingw32-gcc` — so a venv's `bin/python3` passes and `rm`, `WolframKernel` or `pythonw` (no console, so
+ * no output to read) do not. On Windows the `.exe` / `.com` is not part of the name; a `.cmd` shim is, so it fails:
+ * a cell is never started through a shell. Case does not matter (Windows' file names do not care).
+ */
+export function isToolName(evaluator: Evaluator, basename: string): boolean {
+  const name = basename.replace(/\.(exe|com)$/i, "")
+  switch (evaluator) {
+    case "wolfram": return /^wolframscript$/i.test(name)
+    case "python": return /^(py|python(\d+(\.\d+)*t?)?|pypy\d*(\.\d+)*)$/i.test(name)
+    case "c": return /^(?:[\w.]+-)*(gcc|clang|cc)(-\d+(\.\d+)*)?$|^cl$/i.test(name)
+    case "cpp": return /^(?:[\w.]+-)*(g\+\+|clang\+\+|c\+\+)(-\d+(\.\d+)*)?$|^cl$/i.test(name)
+    case "rust": return /^rustc$/i.test(name)
+  }
+}
+
 // MARK: - What is refused, and why
+
+/**
+ * Why a program chosen in File ▸ Language Setup… cannot be run. Port-only: the Mac's `evalTool.<name>` falls through
+ * to the candidates instead; here a choice is the only one its language uses, so a choice that has gone is said.
+ * `unreadable` is the one that names no program: Language Setup's own file is there and nothing could be read from
+ * it, so which program was chosen is not known (the `path` beside it is that file's).
+ */
+export type ChosenProblem = "gone" | "notAProgram" | "unreadable"
 
 /** Why a cell will not run. Every one is a sentence a person can act on; none spawns anything or writes a cell. */
 export type Refusal =
   | { kind: "notAnEvaluationCell" }
   | { kind: "unknownEnvironment"; tag: string }
-  | { kind: "missingTool"; evaluator: Evaluator; looked: string[] }
+  /** `chosen`: the program chosen in Language Setup, and why it cannot be started (absent when nothing was chosen). */
+  | { kind: "missingTool"; evaluator: Evaluator; looked: string[]; chosen?: { path: string; problem: ChosenProblem } }
   /** An unclosed fence parses to the END OF THE NOTE, so the answer would close the cell it was meant to sit under. */
   | { kind: "unclosed" }
 
@@ -163,8 +191,23 @@ export function refusalMessage(refusal: Refusal): string {
       return `This cell says it runs as “${refusal.tag}”, which is not one of `
         + `${known.slice(0, -1).join(", ")} or ${known[known.length - 1] ?? ""}. Pick one from the mark on its left.`
     }
-    case "missingTool":
+    case "missingTool": {
+      const chosen = refusal.chosen
+      // NOT KNOWING WHAT WAS CHOSEN IS SAID TOO, for the same reason: the program found by itself may be the very
+      // one the person chose away from.
+      if (chosen?.problem === "unreadable") {
+        return `WriteMind could not read Language Setup's choices (“${chosen.path}”), so it does not know which `
+          + `program ${evaluatorTitle(refusal.evaluator)} cells run with. It reads that file again at the next run.`
+      }
+      // A CHOSEN PROGRAM THAT HAS GONE IS SAID, not quietly swapped for another: the person chose it for a reason
+      // (a venv, a newer engine), and a cell that ran on something else would answer as if nothing had changed.
+      if (chosen) {
+        return `${evaluatorTitle(refusal.evaluator)} is set to “${chosen.path}” in Language Setup, which `
+          + `${chosen.problem === "gone" ? "is not there any more" : "is not a program WriteMind can start"}. `
+          + "Choose another in File ▸ Language Setup…, or press Find Automatically there."
+      }
       return `${evaluatorTitle(refusal.evaluator)} is not installed where WriteMind looks (${refusal.looked.join(", ")}).`
+    }
     case "unclosed":
       return "That cell has no closing ``` yet, so there is nothing to run."
   }
