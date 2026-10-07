@@ -297,7 +297,8 @@ async function writeState(file: string, state: MoveState, log: (line: string) =>
 /** What the person is told when both folders are there. */
 export function keptOldNotice(documents: string, platform: string = process.platform): string {
   const sep = windowsLike(platform) ? "\\" : "/"
-  const docs = path.basename(documents.replace(/[\\/]+$/, "")) || "Documents"
+  // The platform's own path rules, not the host's: a Windows path read on a Mac (the tests) has no "/" to cut at.
+  const docs = (windowsLike(platform) ? path.win32 : path.posix).basename(documents.replace(/[\\/]+$/, "")) || "Documents"
   const whose = platform === "darwin" ? " (on a Mac, usually the Swift WriteMind's notes)" : ""
   return `Your notes stay in ${docs}${sep}${OLD_NOTES_FOLDER}, because a ${docs}${sep}${NOTES_FOLDER} folder already `
     + `exists${whose}. Move or merge them yourself if you like.`

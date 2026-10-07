@@ -416,7 +416,8 @@ describe("a big folder", () => {
     const tree = await readTree(home, home, { folders: {} })
     expect(tree.notes).toHaveLength(700)
     expect(tree.notes.every((row) => row.title === `Heading ${path.basename(row.path).replace(/\D/g, "")}`)).toBe(true)
-  })
+    // 700 files on a hosted Windows runner took 11 s once: the default 5 s made CI fail (and mail Sean) on speed alone.
+  }, 60_000)
 
   it("does not remember a row it could not read as if it were the note (EMFILE gave file names for titles that stuck)", async () => {
     const home = scratch()

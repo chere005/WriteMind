@@ -185,7 +185,8 @@ jobs:
     name: Mac dmgs (signed and notarized when the secrets are set) into the draft
     needs: prepare
     runs-on: macos-15
-    timeout-minutes: 45
+    # Apple's notary can queue a submission for an hour or more (2.8.0 and 2.9.0 ran out of 45 minutes waiting on it).
+    timeout-minutes: 150
     env:
       VERSION: ${{ needs.prepare.outputs.version }}
       # Developer ID signing and notarization, from the repo's secrets (docs/MAC-SESSION.md). Without CSC_LINK the

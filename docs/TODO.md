@@ -169,19 +169,6 @@ batch in flight on that day. After it, roughly in this order:
   Windows paths or names for granted; they now use this system's own (and `eval/runner.ts` joins its scratch paths by
   `deps.platform`, as `tools.ts` does), and the mac job's unit step blocks; (5) Sean's own look at a
   first open on his Mac (Open Anyway, the camera prompt, Help ▸ Check for Updates…).
-- **The Mac App Store (Sean asked what it would take, 2026-10-06): NOT started; a decision first.** Today the Mac
-  build is Developer ID-shaped and AGENTS.md says "No sandbox, on purpose". A store build needs: (1) the **App
-  Sandbox**, which every child process inherits — a Homebrew Python's standard library under `/opt/homebrew/Cellar`
-  and wolframscript's `~/Library/WolframEngine/Licensing` are outside the container, so runnable cells would fail
-  even with their program chosen; (2) for each program chosen in Language Setup a **security-scoped bookmark**
-  (`securityScopedBookmarks: true` in the picker, a `version: 2` `languages.json` carrying the bookmarks,
-  `startAccessingSecurityScopedResource` around every run and identify) — and even then a Python's own folders are
-  not covered; (3) the notes folder as a user-chosen, bookmarked folder (the sandbox's container otherwise); (4) a
-  Mac App Store distribution certificate, provisioning profile, `mas` target in electron-builder.yml and the
-  sandbox entitlements, with no in-app updater (the store updates it); (5) **App Review guideline 2.5.2** (apps may not
-  download or run code that changes their features) is a real risk for running cells at all. Language Setup does not
-  block that path: the settings file is versioned, Install is Windows-only behind a capability, and Get … links are
-  allowed. A store build without runnable cells (or with them off) is the likely shape, if Sean wants one.
 - **"WriteMind", not "Electron", in the Mac Dock (2026-10-05): built, NOT yet seen on a Mac.** Dev bundle renamed
   and given the Mac app's icon (`scripts/mac-dev-identity.mjs`), name / About panel / dev dock tile at run time
   (`main/macIdentity.ts`), `mac.icon` for WriteMind.app (docs/BUILDING.md). To check on the Mac: `npm run dev`, then
