@@ -1,8 +1,8 @@
 # WriteMind
 
-A markdown notebook, a live camera and a drawing layer over both, for macOS, Windows and Linux. A note is a `.wm` file, a ZIP archive that holds its text, its drawing and its pictures. Notes from earlier versions (a `.md` file with its drawings in a `.drawings/` folder beside it) are converted to `.wm` on first launch, and the originals are kept in a backup folder.
+A markdown notebook, a live camera and a drawing layer over both, for macOS, Windows and Linux. A note is a markdown file with its drawings and pictures beside it (a `.md` plus a `.drawings/` folder). The `.wm` format below is specified and being built: when it lands, notes convert on first launch and the originals are kept in a backup folder.
 
-## Notes and projects
+## The `.wm` format (specified, not yet in the app)
 
 - A `.wm` file is a ZIP archive: `note.wmdm` (the text), `drawing.json` (the drawing layer), `media/` (pictures), `snapshots/` (ink-cell pictures) and `manifest.json`.
 - `.wmdm` is markdown plus WriteMind's own conventions: cell markers, the escapes of text cells, anchors, maths and runnable cells. It is not meant to read well in a plain markdown viewer.
