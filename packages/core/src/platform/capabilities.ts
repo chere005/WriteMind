@@ -19,7 +19,12 @@
  * it — it should look like it was written for the machine it is on. The
  * one exception is the camera's box, which is dragged by hand everywhere
  * until the page-finding lands, because that changes what the user does.
+ *
+ * The one OS fact here is the name the OS gives a clipboard type
+ * (`wolframClipboard`): not a capability but a spelling, spelled once.
  */
+
+import { wolframClipboardFor, type WolframClipboard } from "../export/wolfram/clipboard"
 
 /** Which reader is behind `handwritingOCR`. */
 export type OcrEngine = "vision" | "windows" | "tesseract"
@@ -55,6 +60,11 @@ export interface Capabilities {
   installsLanguages: boolean
   /** Its Activate… for the Wolfram Engine: the same script (it opens the engine's own sign-in), winget or not. */
   activatesWolfram: boolean
+  /**
+   * The raw clipboard types a drawing cell copied into Mathematica goes under (port-only, export/wolfram/clipboard.ts):
+   * the front end's own cells (null where its name is not known) and the PNG (null: the standard `image/png`).
+   */
+  wolframClipboard: WolframClipboard
 }
 
 /** What the shell found on this machine. */
@@ -69,9 +79,10 @@ export interface Helpers {
   languageSetup?: { script: boolean; winget: boolean }
 }
 
-export function capabilitiesFor(_platform: string, helpers: Helpers = { ocr: false }): Capabilities {
+export function capabilitiesFor(platform: string, helpers: Helpers = { ocr: false }): Capabilities {
   const setup = helpers.languageSetup
   return {
+    wolframClipboard: wolframClipboardFor(platform),
     handwritingOCR: helpers.ocr,
     ocrEngine: helpers.ocr ? (helpers.engine ?? null) : null,
     japaneseOCR: helpers.ocr && helpers.japanese === true,

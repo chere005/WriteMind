@@ -7,11 +7,14 @@ import {
   EXPORT_FORMATS, ExportFormatChooser, PROJECT_FILE_EXTENSION, exportFilters, exportTarget, formatExtension,
   formatMessage, formatTitle, offeredFormats, type ExportFormat,
 } from "../src/export/formats"
+import { suggestedName } from "../src/export/document"
 
+// CHANGED 2026-10-06 (Sean: "add export to wolfram notebook"): the popup has a third format, the port's own Wolfram
+// Notebook (.nb), between PDF and Project; the lines that counted two formats count three (docs/PARITY.md).
 describe("ExportFormatTests", () => {
-  it("the popup offers both formats by their own names", () => {
+  it("the popup offers every format by its own name", () => {
     const chooser = new ExportFormatChooser()
-    expect(chooser.formats.map(formatTitle)).toEqual(["PDF", "Project"])
+    expect(chooser.formats.map(formatTitle)).toEqual(["PDF", "Wolfram Notebook", "Project"])
     expect(chooser.format, "the one somebody means when they press Ctrl+E").toBe("pdf")
   })
 
@@ -25,7 +28,7 @@ describe("ExportFormatTests", () => {
     chooser.setFormats([])
     expect(chooser.formats).toEqual(["project"])
     expect(offeredFormats(false)).toEqual(["project"])
-    expect(offeredFormats(true)).toEqual(["pdf", "project"])
+    expect(offeredFormats(true)).toEqual(["pdf", "wolfram", "project"])
   })
 
   it("changing the format is announced", () => {
@@ -46,8 +49,17 @@ describe("ExportFormatTests", () => {
   it("each format names the extension it writes", () => {
     expect(formatExtension("pdf")).toBe("pdf")
     expect(formatExtension("project")).toBe(PROJECT_FILE_EXTENSION)
-    expect(EXPORT_FORMATS.length).toBe(2)
+    expect(formatExtension("wolfram")).toBe("nb")
+    expect(EXPORT_FORMATS.length).toBe(3)
     expect(formatMessage("project")).toContain("the folders, not the notes")
+    expect(formatMessage("wolfram")).toBe("Where the Wolfram notebook goes.")
+  })
+
+  // Port-only: the name the panel opens with follows the format it opens on.
+  it("suggests the note's own name with the format's extension", () => {
+    expect(suggestedName("C:\\notes\\Lecture 3.md")).toBe("Lecture 3.pdf")
+    expect(suggestedName("/notes/Lecture 3.md", "nb")).toBe("Lecture 3.nb")
+    expect(suggestedName("/notes/README", "nb")).toBe("README.nb")
   })
 })
 
@@ -56,6 +68,7 @@ describe("the save dialog's answer", () => {
   it("lists the offered formats as the dialog's file types, in the popup's order", () => {
     expect(exportFilters(offeredFormats(true))).toEqual([
       { name: "PDF", extensions: ["pdf"] },
+      { name: "Wolfram Notebook", extensions: ["nb"] },
       { name: "Project", extensions: [PROJECT_FILE_EXTENSION] },
     ])
     expect(exportFilters(offeredFormats(false))).toEqual([{ name: "Project", extensions: [PROJECT_FILE_EXTENSION] }])
@@ -68,6 +81,8 @@ describe("the save dialog's answer", () => {
     expect(chooser.format, "the chooser follows the answer").toBe("project")
     expect(exportTarget("C:\\out\\Lecture 3.PDF", new ExportFormatChooser()))
       .toEqual({ format: "pdf", file: "C:\\out\\Lecture 3.PDF" })
+    expect(exportTarget("/Users/s/Documents/Lecture 3.nb", new ExportFormatChooser()))
+      .toEqual({ format: "wolfram", file: "/Users/s/Documents/Lecture 3.nb" })
   })
 
   it("a name typed without one still gets the extension it chose", () => {

@@ -79,3 +79,58 @@ describe("Homebrew on a Finder-launched Mac app (tools.ts)", () => {
     expect(findTool("python", places)).toBe("/usr/bin/python3")
   })
 })
+
+// Port-only (the Wolfram notebook export and a drawing cell copied into Mathematica): a FULL Mathematica is found
+// with nothing chosen in Language Setup — Sean has one on another machine.
+describe("a full Mathematica where its installer put it (tools.ts)", () => {
+  const research = `${PF}\\Wolfram Research`
+  const mac = (installed: string[]): ToolPlaces => ({
+    platform: "darwin", pathVariable: "/usr/bin:/bin", home: "/Users/a", programFiles: [], isFile: (file) => installed.includes(file),
+  })
+
+  it("on a Mac: the Engine's app first, then Wolfram.app, then Mathematica.app, after Homebrew's", () => {
+    const engine = "/Applications/Wolfram Engine.app/Contents/Resources/Wolfram Player.app/Contents/MacOS/wolframscript"
+    const wolfram = "/Applications/Wolfram.app/Contents/MacOS/wolframscript"
+    const mathematica = "/Applications/Mathematica.app/Contents/MacOS/wolframscript"
+    const order = toolCandidates("wolfram", mac([]))
+    // (The PATH's own folders come in between: they are not the point here.)
+    expect(order.filter((file) => !/^\/(usr\/)?bin\//.test(file))).toEqual([
+      "/opt/homebrew/bin/wolframscript", "/usr/local/bin/wolframscript", engine, wolfram, mathematica,
+    ])
+    expect(findTool("wolfram", mac([mathematica]))).toBe(mathematica)
+    expect(findTool("wolfram", mac([mathematica, wolfram]))).toBe(wolfram)
+    expect(findTool("wolfram", mac([mathematica, wolfram, engine]))).toBe(engine)
+  })
+
+  it("on a Mac the apps are said as apps, not as the folders inside them", () => {
+    expect(lookedFor("wolfram", mac([]))).toEqual(["wolframscript on the PATH", "/opt/homebrew/bin/wolframscript",
+      "/usr/local/bin/wolframscript", "/Applications/Wolfram Engine.app", "/Applications/Wolfram.app", "/Applications/Mathematica.app"])
+  })
+
+  it("on Windows: Wolfram\\<version> and Mathematica\\<version>, newest first, after the Engine's folders", () => {
+    const tree = {
+      [`${research}\\Wolfram Engine`]: ["14.1"],
+      [`${research}\\Wolfram`]: ["13.3", "14.3", "14.10"],
+      [`${research}\\Mathematica`]: ["12.0", "14.0"],
+    }
+    const all = toolCandidates("wolfram", places([], tree))
+    const mine = all.filter((file) => /wolframscript\.exe$/.test(file) && file.startsWith(research))
+    expect(mine).toEqual([
+      `${research}\\WolframScript\\wolframscript.exe`,
+      `${research}\\Wolfram Engine\\14.1\\wolframscript.exe`,
+      `${research}\\Wolfram\\14.10\\wolframscript.exe`, `${research}\\Wolfram\\14.3\\wolframscript.exe`, `${research}\\Wolfram\\13.3\\wolframscript.exe`,
+      `${research}\\Mathematica\\14.0\\wolframscript.exe`, `${research}\\Mathematica\\12.0\\wolframscript.exe`,
+    ])
+    const exe = `${research}\\Wolfram\\14.3\\wolframscript.exe`
+    expect(findTool("wolfram", places([exe], tree))).toBe(exe)
+    const old = `${research}\\Mathematica\\14.0\\wolframscript.exe`
+    expect(findTool("wolfram", places([old], tree))).toBe(old)
+  })
+
+  it("on Windows the folders are said once each, as the places they are", () => {
+    expect(lookedFor("wolfram", places([]))).toEqual([
+      "wolframscript on the PATH", "Program Files\\Wolfram Research\\WolframScript", "Program Files\\Wolfram Research\\Wolfram Engine\\<version>",
+      "Program Files\\Wolfram Research\\Wolfram\\<version>", "Program Files\\Wolfram Research\\Mathematica\\<version>",
+    ])
+  })
+})

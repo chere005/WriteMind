@@ -174,6 +174,31 @@ batch in flight on that day. After it, roughly in this order:
   (`main/macIdentity.ts`), `mac.icon` for WriteMind.app (docs/BUILDING.md). To check on the Mac: `npm run dev`, then
   the Dock label, the icon, the menu bar's first title and About WriteMind.
 
+## Wolfram notebook and copy into Mathematica: for the full install (Sean, 2026-10-06)
+
+Built and checked against the real Engine (the kernel, and the front end's own hidden render); the front end's GUI paste
+cannot be tried where the Engine app is all there is. **What to try on a machine with a full Mathematica** (docs/PARITY.md
+"Wolfram notebook and Copy into Mathematica"):
+
+1. With no Language Setup choice, Export and Copy should find wolframscript (`/Applications/Wolfram.app` or `Mathematica.app`;
+   on Windows `Program Files\Wolfram Research\Wolfram\<version>`). If not, choose it in File ▸ Language Setup….
+2. Copy a drawing cell. Paste into a notebook straight away and again after five seconds, between cells and inside an Input
+   cell. Mac: first the open Input cell (Shift+Enter makes the image), then the image itself, no dialog. Windows: after five
+   seconds, the image.
+3. Copy a heading together with a drawing cell: it should paste as a Chapter / Section cell plus the image.
+4. Open an exported `.nb` in light and dark; run an Input above a drawing (the drawing stays); open a no-engine export and run
+   Evaluation ▸ Evaluate Initialization Cells (the drawings appear, code cells do not run).
+5. **Windows needs a name.** The front end's own clipboard format on Windows is not known, so `wolframClipboardFor("win32").cell` is
+   null and Windows uses the linear syntax in the plain text. On Windows, copy an image cell in Mathematica and run
+   `Add-Type -A System.Windows.Forms; [Windows.Forms.Clipboard]::GetDataObject().GetFormats()`; the name goes in
+   `packages/core/src/export/wolfram/clipboard.ts`. The same goes for Mathematica before 12 (untried).
+6. Paste a copied drawing into Pages or Word (the picture at its on-screen size), and into a plain-text editor (the markdown line
+   on a Mac, the linear syntax on Windows).
+
+Re-run the engine's half by hand: `node node_modules/vite-node/vite-node.mjs apps/desktop/scripts/check-wolfram.ts [folder] [--render]`
+(folder inside the temp folder; the PNGs it writes are what to look at). Ink colours that are too light for white (yellow, light
+green, orange) are swapped for black in these images, as in the PDF (`readableInk`).
+
 ## Not ported yet, in the order they are worth doing
 
 - **Tables, from scratch: part one DONE, the rest to build** (tables lane, 2026-10-05; port-first: the Mac took

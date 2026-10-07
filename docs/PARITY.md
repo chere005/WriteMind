@@ -95,6 +95,23 @@ Differences: the face is Segoe UI (the Mac's San Francisco); a link prints blue 
 highlighted and `<a id>` anchors are dropped where the Mac prints them as literal text. A code block taller than a sheet is zoomed
 (its words may wrap a hair differently).
 
+### Wolfram notebook and Copy into Mathematica (port-only, Sean 2026-10-06)
+
+The Mac has neither. "add export to wolfram notebook.. make drawing cells a Graphics[]", then, after the first build:
+"actually, use wolfram's import of SVG as "Image" instead of "Graphics"!!!! and paste those as images rather than as graphics!!!"
+and "you should be able through clipboard wizardry serve something i can paste to a notebook as the image itself rather
+than the link". A drawing cell is an IMAGE: its SVG (from the sidecar, never the snapshot file) imported by the Wolfram
+Engine, `ImportString[svg, {"SVG", "Image"}]`; the engine is WriteMind's own wolframscript lookup (Language Setup's choice
+first; a full Mathematica's `/Applications/Wolfram.app`, `Mathematica.app`, `Program Files\Wolfram Research\Wolfram\<v>`
+and `Mathematica\<v>` too), ONE kernel run per export or copy.
+
+| Feature | Here | Status |
+|---|---|---|
+| File ▸ Export… (Ctrl+E) has a third type, Wolfram Notebook (`.nb`): headings, text, lists, to-dos, quotes, tables, rules in Mathematica's own styles; maths and `wolfram` code Input cells (maths typeset by the kernel, held, never evaluated); Python ExternalLanguage; answers Output cells; every drawing cell, floating-layer band and picture an embedded Image (an Output cell that re-running the Input above it keeps) | `packages/core/src/export/wolfram/` (text, maths, svg, plan, notebook, kernel, clipboard), `apps/desktop/src/main/wolfram/`, `eval/runner.ts` `wolframJob` | works; checked with the real engine and the front end's own render (`apps/desktop/scripts/check-wolfram.ts`), `e2e/suites/export/01` |
+| No engine, or one that does not answer: the export still writes the file; each image is a CLOSED initialization Input cell `Image[ImportString[svg, {"SVG","Image"}]]` (a picture carries its bytes), and a dialog says the drawings appear when the cells are evaluated (Evaluation ▸ Evaluate Initialization Cells; checked: only those cells run) | `exportNotice` | works |
+| Copy or Cut of held cells with a drawing cell: Mac: the front end's own pasteboard type (`dyn.ah62d4rv4gk8y8xnfk6`, 'OMEG') holds the cells (the drawing as the open Input cell at once, as the image when the kernel answers), beside the PNG for Pages / Word; Windows / Linux: the plain text becomes the front end's linear syntax for the image (only when every held cell is a drawing) beside the standard `image/png`. WriteMind's own cells stay on the clipboard and win inside WriteMind (`takesPastedPicture`: no floating picture on a paste back) | `main/wolfram/clipboard.ts`; `capabilities.wolframClipboard` | works to the clipboard (checked in the real app, `e2e/suites/export/02`); the paste into a real notebook is for the full install (docs/TODO.md) |
+| A machine with no engine: a copy changes nothing (AGENTS: show nothing); an export still works (above) | `wolframClipboardFor`, `exportNotice` | works |
+
 ### The window
 
 | Mac | Here | Status |

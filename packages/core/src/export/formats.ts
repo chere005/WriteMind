@@ -1,46 +1,59 @@
 /**
- * File ▸ Export… (Ctrl+E): the note on paper, or the project, and the save
- * panel asks which. The Mac's `ExportMenu.Format` and `ExportFormatChooser`
- * (Sean, 2026-09-21: "export is either as pdf or as project (which is just
- * the directory structure).. output format is chosen in the save menu").
+ * File ▸ Export… (Ctrl+E): the note on paper, the note as a Wolfram notebook, or the project, and the save panel
+ * asks which. The Mac's `ExportMenu.Format` and `ExportFormatChooser` (Sean, 2026-09-21: "export is either as pdf or
+ * as project (which is just the directory structure).. output format is chosen in the save menu"); the Wolfram
+ * notebook is the port's own (Sean, 2026-10-06: "add export to wolfram notebook"; docs/PARITY.md).
  *
  * ONE COMMAND, ONE PANEL, the format chosen in it. On the Mac that is a
  * "Format:" popup under the panel. On Windows the dialog's own "Save as type"
  * list is the popup: it names the formats in their own words ("PDF",
- * "Project") and swaps the chosen one's extension into the name. Electron
- * does not say which entry was picked, so the format is read back from the
- * file it answers with (`exportTarget`); a name with no extension at all gets
- * the format the panel opened on, as the Mac's "a name typed without one
- * still gets the extension it chose".
+ * "Wolfram Notebook", "Project") and swaps the chosen one's extension into the
+ * name. Electron does not say which entry was picked, so the format is read
+ * back from the file it answers with (`exportTarget`); a name with no
+ * extension at all gets the format the panel opened on, as the Mac's "a name
+ * typed without one still gets the extension it chose".
  *
  * Nothing is offered that cannot be made: with no note open there is no page
- * to print, and the list has the project alone (`offeredFormats`).
+ * to print and no note to write, and the list has the project alone
+ * (`offeredFormats`).
  */
 
-export type ExportFormat = "pdf" | "project"
+export type ExportFormat = "pdf" | "wolfram" | "project"
 
 /** Every format, in the popup's order: the one somebody means when they press Ctrl+E first. */
-export const EXPORT_FORMATS: readonly ExportFormat[] = ["pdf", "project"]
+export const EXPORT_FORMATS: readonly ExportFormat[] = ["pdf", "wolfram", "project"]
 
 /** The project file's extension (the Mac's `Project.fileExtension`; main/project.ts's `PROJECT_EXTENSION`). */
 export const PROJECT_FILE_EXTENSION = "writemind-project"
 
 /** The word the popup shows. */
 export function formatTitle(format: ExportFormat): string {
-  return format === "pdf" ? "PDF" : "Project"
+  switch (format) {
+    case "pdf": return "PDF"
+    case "wolfram": return "Wolfram Notebook"
+    case "project": return "Project"
+  }
 }
 
 /** The extension a file of this format is written with. */
 export function formatExtension(format: ExportFormat): string {
-  return format === "pdf" ? "pdf" : PROJECT_FILE_EXTENSION
+  switch (format) {
+    case "pdf": return "pdf"
+    case "wolfram": return "nb"
+    case "project": return PROJECT_FILE_EXTENSION
+  }
 }
 
 /** The panel's line about what is being saved (the Mac's `Format.message`). */
 export function formatMessage(format: ExportFormat): string {
-  return format === "pdf" ? "Where the PDF goes." : "Where the project file goes — the folders, not the notes."
+  switch (format) {
+    case "pdf": return "Where the PDF goes."
+    case "wolfram": return "Where the Wolfram notebook goes."
+    case "project": return "Where the project file goes — the folders, not the notes."
+  }
 }
 
-/** What an export can make right now: the PDF only when a note is open. */
+/** What an export can make right now: the PDF and the notebook only when a note is open. */
 export function offeredFormats(hasNote: boolean): ExportFormat[] {
   return hasNote ? [...EXPORT_FORMATS] : ["project"]
 }

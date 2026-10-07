@@ -72,7 +72,13 @@ declare global {
       exportFile(request: {
         noteFile: string; title: string; markdown: string; drawing: string | null
         pane: { width: number; height: number }
+        /** The drawings as the page measured them, for a Wolfram notebook (wolframMedia.ts). */
+        wolfram?: import("@writemind/core").WolframMedia
       } | null): Promise<{ format: import("@writemind/core").ExportFormat; file: string } | null>
+      /** Held cells with a drawing cell among them were copied (main/wolfram/clipboard.ts); absent in an old preload. */
+      wolframCopy?(copy: {
+        plain: string; markdown: string; media: import("@writemind/core").WolframMedia; noteFile: string | null
+      }): void
       duplicateNote(file: string): Promise<string>
       setMenuState(state: import("../shared/commands").MenuState): Promise<void>
       runMain(id: string): Promise<void>
@@ -83,6 +89,8 @@ declare global {
       e2ePick?(answer: string): Promise<void>
       e2eWindow?(): Promise<unknown>
       e2eSetBounds?(bounds: unknown): Promise<void>
+      e2eTold?(): Promise<{ message: string; detail: string }[]>
+      e2eClipboard?(command: "read" | "save" | "restore"): Promise<Record<string, string> | boolean>
       /** The tablet pen's native feed (shared/pen.ts PenApi); present on every platform, `available: false` off Windows. */
       pen: import("../shared/pen").PenApi
       /** The quick reference written at this launch (a new install), once, else null (main/welcome.ts); absent in an old preload. */

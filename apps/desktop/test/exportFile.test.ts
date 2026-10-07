@@ -1,11 +1,11 @@
-// File ▸ Export… (main/exportFile.ts): one panel, PDF or Project chosen in it. The last test of
+// File ▸ Export… (main/exportFile.ts): one panel, PDF, Wolfram Notebook or Project chosen in it. The last test of
 // WriteMindTests/ExportFormatTests.swift (Mac e8b3266) is transcribed here, beside the writer it tests.
 import { mkdtempSync, readFileSync, existsSync } from "node:fs"
 import os from "node:os"
 import path from "node:path"
 import { describe, expect, it } from "vitest"
 import type { BrowserWindow, SaveDialogOptions } from "electron"
-import { PROJECT_FILE_EXTENSION } from "@writemind/core"
+import { formatExtension, PROJECT_FILE_EXTENSION, suggestedName } from "@writemind/core"
 import { exportFile, writeProjectFile, type ExportFileDeps } from "../src/main/exportFile"
 import { PROJECT_EXTENSION, parseProject } from "../src/main/project"
 
@@ -21,6 +21,8 @@ const note = {
 function deps(answer: string | null, over: Partial<ExportFileDeps> = {}) {
   const asked: SaveDialogOptions[] = []
   const pdfs: string[] = []
+  const notebooks: string[] = []
+  const told: { message: string; detail: string }[] = []
   const reports: string[] = []
   const d: ExportFileDeps = {
     window: {} as BrowserWindow,
@@ -31,10 +33,12 @@ function deps(answer: string | null, over: Partial<ExportFileDeps> = {}) {
     },
     project: () => ({ name: "Course", project: { version: 1, folders: ["/a/notes", "/b/more"], excluded: ["/a/notes/old"] } }),
     writePdf: async (file) => { pdfs.push(file) },
+    writeNotebook: async (file) => { notebooks.push(file); return null },
+    tell: async (_parent, notice) => { told.push(notice) },
     report: async (_parent, message) => { reports.push(message) },
     ...over,
   }
-  return { d, asked, pdfs, reports }
+  return { d, asked, pdfs, notebooks, told, reports }
 }
 
 describe("ExportFormatTests (the file it writes)", () => {
@@ -56,12 +60,14 @@ describe("ExportFormatTests (the file it writes)", () => {
 })
 
 describe("File ▸ Export…: one panel, the format chosen in it", () => {
-  it("with a note open the panel offers PDF then Project, named for the note, in Documents", async () => {
+  // CHANGED (port-only Wolfram export): the panel offers PDF, Wolfram Notebook, then Project (it was PDF, Project).
+  it("with a note open the panel offers PDF, Wolfram Notebook, then Project, named for the note, in Documents", async () => {
     const { d, asked } = deps(null)
     expect(await exportFile(note, d)).toBeNull()
     expect(asked).toHaveLength(1)
     expect(asked[0]!.filters).toEqual([
-      { name: "PDF", extensions: ["pdf"] }, { name: "Project", extensions: [PROJECT_EXTENSION] },
+      { name: "PDF", extensions: ["pdf"] }, { name: "Wolfram Notebook", extensions: ["nb"] },
+      { name: "Project", extensions: [PROJECT_EXTENSION] },
     ])
     expect(asked[0]!.defaultPath).toBe(path.join("C:\\Users\\S\\Documents", "Lecture 3.pdf"))
     expect(asked[0]!.properties).toContain("showOverwriteConfirmation")
@@ -104,5 +110,41 @@ describe("File ▸ Export…: one panel, the format chosen in it", () => {
     const { d, reports } = deps(PDF_ANSWER, { writePdf: async () => { throw new Error("disk full") } })
     expect(await exportFile(note, d)).toBeNull()
     expect(reports).toEqual(["Could not write “Lecture 3.pdf”"])
+  })
+
+  it("an answer ending .nb is the note as a Wolfram notebook, and no PDF is made", async () => {
+    const file = path.join(scratch(), "Lecture 3.nb")
+    const { d, pdfs, notebooks } = deps(file)
+    expect(await exportFile(note, d)).toEqual({ format: "wolfram", file })
+    expect(notebooks).toEqual([file])
+    expect(pdfs).toEqual([])
+  })
+
+  it("the panel opens on the PDF's name; a notebook is named the same way with its own extension", async () => {
+    const { d, asked } = deps(null)
+    await exportFile(note, d)
+    expect(asked[0]!.defaultPath).toMatch(/Lecture 3\.pdf$/)
+    expect(suggestedName(note.noteFile, formatExtension("wolfram"))).toBe("Lecture 3.nb")
+  })
+
+  it("what the export has to say about its drawings is said once, after the file is there", async () => {
+    const file = path.join(scratch(), "Lecture 3.nb")
+    const notice = { message: "“Lecture 3.nb” is written.", detail: "Its drawings appear when its cells are evaluated." }
+    const { d, told } = deps(file, { writeNotebook: async () => notice })
+    await exportFile(note, d)
+    expect(told).toEqual([notice])
+  })
+
+  it("nothing to say, no dialog", async () => {
+    const { d, told } = deps(path.join(scratch(), "x.nb"))
+    await exportFile(note, d)
+    expect(told).toEqual([])
+  })
+
+  it("a notebook that cannot be written is reported, and nothing is told", async () => {
+    const { d, reports, told } = deps(path.join(scratch(), "Lecture 3.nb"), { writeNotebook: async () => { throw new Error("disk full") } })
+    expect(await exportFile(note, d)).toBeNull()
+    expect(reports).toEqual(["Could not write “Lecture 3.nb”"])
+    expect(told).toEqual([])
   })
 })

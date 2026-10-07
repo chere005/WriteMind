@@ -151,9 +151,10 @@ describe("the other copies found by themselves (foundTools)", () => {
     const places = mac({ files: [MAC_ENGINE_WOLFRAMSCRIPT] })
     expect(findTool("wolfram", places)).toBe(MAC_ENGINE_WOLFRAMSCRIPT)
     expect(MAC_ENGINE_WOLFRAMSCRIPT).toBe("/Applications/Wolfram Engine.app/Contents/Resources/Wolfram Player.app/Contents/MacOS/wolframscript")
-    // Said as the app, not as the path five folders down inside it.
+    // Said as the app, not as the path five folders down inside it. (CHANGED, port-only Wolfram export: a full
+    // Mathematica's apps are looked in and said too.)
     expect(lookedFor("wolfram", places)).toEqual(["wolframscript on the PATH", "/opt/homebrew/bin/wolframscript",
-      "/usr/local/bin/wolframscript", "/Applications/Wolfram Engine.app"])
+      "/usr/local/bin/wolframscript", "/Applications/Wolfram Engine.app", "/Applications/Wolfram.app", "/Applications/Mathematica.app"])
     // Linux has no such app.
     expect(lookedFor("wolfram", linux())).toEqual(["wolframscript on the PATH", "/opt/homebrew/bin/wolframscript", "/usr/local/bin/wolframscript"])
   })

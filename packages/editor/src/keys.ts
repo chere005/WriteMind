@@ -266,7 +266,17 @@ const baseKeys: Extension = keymap.of([
  * false) when nothing is held, so an ordinary selection keeps the ordinary
  * editor's behaviour.
  */
-const CELLS_MIME = "application/x-writemind-cells"
+export const CELLS_MIME = "application/x-writemind-cells"
+
+/**
+ * Told of every Copy and Cut of held cells, after the clipboard event has its words and its cells' markdown and
+ * before a cut takes them out of the note: the app copies the drawing cells among them for Mathematica too
+ * (main/wolfram/clipboard.ts). The first one given; none: nothing is told.
+ */
+export const cellsCopied = Facet.define<((copy: { markdown: string; plain: string }) => void) | null,
+  ((copy: { markdown: string; plain: string }) => void) | null>({
+  combine: (values) => values.find((value) => value !== null) ?? null,
+})
 
 /** Several edits as ONE transaction, with the selection mapped through them. */
 function applyEdits(view: EditorView, edits: Edit[], keep: "caret" | "cells"): void {
@@ -333,25 +343,32 @@ const heldMarkdown = (view: EditorView, held: Range[]): string => {
   return held.map((cell) => copyCell(cell, text)).join("\n\n")
 }
 
-/** Copy, cut and paste go through the DOM events, so the system clipboard is used. */
-const cellClipboard = EditorView.domEventHandlers({
+type ClipboardHandler = (event: ClipboardEvent, view: EditorView) => boolean
+
+/** Copy, cut and paste go through the DOM events, so the system clipboard is used. (The handlers alone: for the tests.) */
+export const cellClipboardHandlers: { copy: ClipboardHandler; cut: ClipboardHandler; paste: ClipboardHandler } = {
   copy(event, view) {
     const held = heldOnes(view)
     if (held.length === 0 || !event.clipboardData) return false
     const markdown = heldMarkdown(view, held)
+    const plain = plainCells(markdown)
     // Other apps get the words (no hidden escapes or markers); WriteMind gets the cells' markdown.
-    event.clipboardData.setData("text/plain", plainCells(markdown))
+    event.clipboardData.setData("text/plain", plain)
     event.clipboardData.setData(CELLS_MIME, markdown)
     event.preventDefault()
+    view.state.facet(cellsCopied)?.({ markdown, plain })
     return true
   },
   cut(event, view) {
     const held = heldOnes(view)
     if (held.length === 0 || !event.clipboardData) return false
     const markdown = heldMarkdown(view, held)
-    event.clipboardData.setData("text/plain", plainCells(markdown))
+    const plain = plainCells(markdown)
+    event.clipboardData.setData("text/plain", plain)
     event.clipboardData.setData(CELLS_MIME, markdown)
     event.preventDefault()
+    // Told while the cells are still in the note: what is copied of them (a drawing cell's ink) is read from it.
+    view.state.facet(cellsCopied)?.({ markdown, plain })
     deleteHeldCells(view)
     return true
   },
@@ -379,7 +396,9 @@ const cellClipboard = EditorView.domEventHandlers({
     applyEdits(view, [pasteCell(markdown, after, text)], "cells")
     return true
   },
-})
+}
+
+const cellClipboard = EditorView.domEventHandlers(cellClipboardHandlers)
 
 /**
  * Typing over held cells REPLACES them: the first is overwritten by what was
