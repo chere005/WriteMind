@@ -1,4 +1,4 @@
-import { mkdtempSync, readFileSync, readdirSync, writeFileSync } from "node:fs"
+import { linkSync, mkdtempSync, readFileSync, readdirSync, statSync, writeFileSync } from "node:fs"
 import os from "node:os"
 import path from "node:path"
 import { describe, expect, it } from "vitest"
@@ -127,5 +127,51 @@ describe("a new file is never put over one that is there", () => {
     await expect(createNow(file, [Buffer.from("second")])).rejects.toMatchObject({ code: "EEXIST" })
     expect(readFileSync(file, "utf8")).toBe("first")
     expect(readdirSync(dir)).toEqual(["New.wm"])
+  })
+})
+
+describe("a note's bytes never have two names for longer than a moment, and no two writers share a temporary name", () => {
+  it("createNow takes the temporary name away BEFORE it flushes the folder: a kill after the link leaves one name, not two", async () => {
+    const dir = scratch()
+    const file = path.join(dir, "New.wm")
+    const seen: { links: number; names: string[] }[] = []
+    await createNow(file, [Buffer.from("fresh note")], recording([], {
+      syncFolder: async (folder) => { seen.push({ links: statSync(file).nlink, names: readdirSync(folder).sort() }) },
+    }))
+    // (the first flush is the one after the link: the note has one name by then)
+    expect(seen[0]).toEqual({ links: 1, names: ["New.wm"] })
+  })
+
+  it("a leftover Name.wm.tmp that is a second name of the note is taken away, and a write killed before its rename leaves the note's bytes alone", async () => {
+    const dir = scratch()
+    const file = path.join(dir, "Note.wm")
+    writeFileSync(file, "the note, 514 bytes in real life")
+    // What a kill between the link and the unlink of the older writer left behind: two names for one inode.
+    linkSync(file, partialOf(file))
+    const dies = new Error("killed")
+    await expect(writeNow(file, [Buffer.from("the next save")], {
+      durable: true, ports: recording([], { rename: async () => { throw dies } }),
+    })).rejects.toBe(dies)
+    expect(readFileSync(file, "utf8")).toBe("the note, 514 bytes in real life")
+    expect(readdirSync(dir)).toEqual(["Note.wm"])
+  })
+
+  it("two writes of one note use temporary files of their own (the process and a random part), created exclusively", async () => {
+    const dir = scratch()
+    const file = path.join(dir, "Note.wm")
+    const names: string[] = []
+    const ports = recording([], {
+      create: async (partial) => { names.push(path.basename(partial)); return diskPorts.create(partial) },
+    })
+    await writeNow(file, "one", { ports })
+    await writeNow(file, "two", { ports })
+    expect(names).toHaveLength(2)
+    expect(names[0]).not.toBe(names[1])
+    for (const name of names) expect(name).toMatch(new RegExp(`^Note\\.wm\\.${process.pid}-[0-9a-f]{8}\\.tmp$`))
+    // A name that is already there is never opened for writing: the exclusive create says so.
+    const taken = path.join(dir, "taken.tmp")
+    writeFileSync(taken, "somebody's")
+    await expect(diskPorts.create(taken)).rejects.toMatchObject({ code: "EEXIST" })
+    expect(readFileSync(taken, "utf8")).toBe("somebody's")
   })
 })

@@ -13,6 +13,7 @@
  * file's, before the rename, and the folder's, after it (`writeNow`, called by wmStore.ts inside its own queue).
  */
 
+import { randomBytes } from "node:crypto"
 import { promises as fs, constants } from "node:fs"
 import path from "node:path"
 
@@ -24,8 +25,25 @@ export const codeOf = (error: unknown): string =>
 /** What a rename over a file in use answers with. Antivirus and sync clients hold a file for a moment. */
 const BUSY = new Set(["EBUSY", "EPERM", "EACCES"])
 
-/** The file the bytes are written to first: beside the real one, so the rename never crosses a disk. */
+/**
+ * The name the PRE-3.0 writer used for the file the bytes are written to first (and the one a killed write of that
+ * writer may have left): beside the real one, so the rename never crosses a disk. It is no longer written to (below).
+ */
 export const partialOf = (file: string): string => `${file}.tmp`
+
+/**
+ * The file the bytes are written to first, under a name of its own: the process and a random part, so two instances (or a
+ * write and a create) never share one, and a leftover of a killed write is never a file somebody else is about to open.
+ * It is created EXCLUSIVELY (`create` below), so it can never be an existing name that is another name for the note.
+ */
+export const uniquePartialOf = (file: string): string => `${file}.${process.pid}-${randomBytes(4).toString("hex")}.tmp`
+
+/**
+ * A `Name.wm.tmp` left by a kill of the older writer, taken away. It may be a second name for the note's own bytes (a
+ * killed create linked it to the note before it removed it): unlinking a name never touches the other name's bytes, and
+ * the old writer's habit of opening it and truncating it did.
+ */
+const clearStale = (file: string): Promise<void> => fs.rm(partialOf(file), { force: true }).catch(() => undefined)
 
 /** Writes to one file go one after the other: they share the `.tmp` name. */
 const queues = new Map<string, Promise<unknown>>()
@@ -59,7 +77,8 @@ export interface WritePorts {
 export const diskPorts: WritePorts = {
   access: (file) => fs.access(file, constants.W_OK),
   async create(file) {
-    const handle = await fs.open(file, "w")
+    // "wx": never an existing file (a shared inode truncated is a note emptied).
+    const handle = await fs.open(file, "wx")
     return {
       async write(parts) {
         for (const part of parts) {
@@ -113,7 +132,7 @@ export interface WriteOptions {
 export async function writeNow(file: string, data: string | Uint8Array | readonly Uint8Array[], options: WriteOptions = {}):
   Promise<boolean> {
   const ports = options.ports ?? diskPorts
-  const partial = partialOf(file)
+  const partial = uniquePartialOf(file)
   const parts: readonly Uint8Array[] = typeof data === "string" ? [Buffer.from(data, "utf8")]
     : data instanceof Uint8Array ? [data] : data
   // A file that is read-only stays read-only: the rename below would replace it on some systems, and "the
@@ -124,6 +143,7 @@ export async function writeNow(file: string, data: string | Uint8Array | readonl
     if (codeOf(error) !== "ENOENT") throw error
   }
   if (options.guard && !(await options.guard())) return false
+  await clearStale(file)
   try {
     const temp = await ports.create(partial)
     try {
@@ -163,9 +183,10 @@ export async function writeNow(file: string, data: string | Uint8Array | readonl
  */
 export async function createNow(file: string, data: string | Uint8Array | readonly Uint8Array[], ports: WritePorts = diskPorts):
   Promise<void> {
-  const partial = partialOf(file)
+  const partial = uniquePartialOf(file)
   const parts: readonly Uint8Array[] = typeof data === "string" ? [Buffer.from(data, "utf8")]
     : data instanceof Uint8Array ? [data] : data
+  await clearStale(file)
   try {
     const temp = await ports.create(partial)
     try {
@@ -181,6 +202,9 @@ export async function createNow(file: string, data: string | Uint8Array | readon
       // No hard links here: an exclusive copy is the same promise.
       await fs.copyFile(partial, file, constants.COPYFILE_EXCL)
     }
+    // The temporary name goes AT ONCE, before anything else can stop the run: until it is gone the note's bytes have two
+    // names, and a kill in the gap left a `.tmp` that a later write opened and truncated (514 bytes became 0).
+    await ports.remove(partial).catch(() => undefined)
     await ports.syncFolder(path.dirname(file))
   } finally {
     await ports.remove(partial).catch(() => undefined)
