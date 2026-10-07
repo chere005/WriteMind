@@ -81,6 +81,7 @@ describe("Copy Cell on a Mac", () => {
     expect(h.writes[1]!.get(OMEG)).toBe(`Cell[BoxData[${BOXES}], "Output", GeneratedCell -> False, CellAutoOverwrite -> False, TaggingRules -> {"WriteMind" -> "ink"}]`)
     // The kernel is not asked for a PNG: the file is the picture for the other apps.
     expect(h.runs[0]!.options.png).toBe(false)
+    expect(h.runs[0]!.options.removeBackground).toBe(true)
   })
 
   it("with no engine the first write stands, file and all: the copy works without Mathematica", async () => {

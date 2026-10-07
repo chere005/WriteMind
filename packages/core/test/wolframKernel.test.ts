@@ -11,6 +11,8 @@ describe("the script", () => {
     expect(WOLFRAM_KERNEL_SCRIPT.match(/SetDirectory\[/g)).toHaveLength(1)
     expect(WOLFRAM_KERNEL_SCRIPT).not.toMatch(/\$HomeDirectory|\$UserDocumentsDirectory|Environment\[/)
     expect(KERNEL_SCRIPT_FILE).toBe("writemind.wls")
+    expect(WOLFRAM_KERNEL_SCRIPT).toContain(`Quiet@RemoveBackground[img]`)
+    expect(WOLFRAM_KERNEL_SCRIPT).toContain(`FileExistsQ["remove-background"]`)
   })
 
   it("holds every ToExpression, and evaluates nothing it reads", () => {
@@ -31,7 +33,7 @@ describe("the script", () => {
 
 describe("the inputs", () => {
   it("are the job files the plan names, and an empty png, and nothing else", () => {
-    for (const name of ["ink-1.svg", "band-12.svg", "pdf-3.svg", "pic-4.txt", "wl-5.wl", "png"]) expect(KERNEL_INPUT.test(name), name).toBe(true)
+    for (const name of ["ink-1.svg", "band-12.svg", "pdf-3.svg", "pic-4.txt", "wl-5.wl", "png", "remove-background"]) expect(KERNEL_INPUT.test(name), name).toBe(true)
     for (const name of ["writemind.wls", "ink-1.svg.boxes", "../ink-1.svg", "ink-.svg", "pic-1.svg", "x.wl", "done", "ink-1.svg/..", "PNG", "wl-1.wls"]) {
       expect(KERNEL_INPUT.test(name), name).toBe(false)
     }
@@ -48,6 +50,7 @@ describe("the cache key", () => {
     const picture = { name: "pic-1.txt", text: `{"/m/a.png", 640}` }
     expect(jobKey(picture, "100:2048")).not.toBe(jobKey(picture, "101:2048"))
     expect(jobKey(picture, "100:2048")).toBe(jobKey(picture, "100:2048"))
+    expect(jobKey({ name: "ink-1.svg", text: "<svg/>" }, "", true)).not.toBe(jobKey({ name: "ink-1.svg", text: "<svg/>" }))
   })
 
   it("is SHA-1 of the UTF-8 bytes", () => {

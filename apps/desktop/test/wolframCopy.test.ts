@@ -73,6 +73,7 @@ describe("a Mac copy (the front end's own clipboard type)", () => {
     const stale = { [OMEG]: "old", [LEGACY_OMEG]: "old", "public.png": "old", "public.tiff": "old" }
     const h = harness("darwin", "DRAWING", () => answered({ "ink-1.svg": BOXES }, { "ink-1.svg": "PNGDATA" }), clipboardAfterDomCopy("DRAWING", stale))
     await copyForWolfram(copy(INK), h.deps)
+    expect(h.runs[0]!.options.removeBackground).toBe(true)
     expect(h.writes.length).toBe(2)
     const [first, second] = h.writes
     // At once: no kernel yet, so the cell is the Input cell that makes the drawing (open, without InitializationCell).

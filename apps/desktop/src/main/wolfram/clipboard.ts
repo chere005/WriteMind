@@ -179,7 +179,10 @@ export async function copyForWolfram(copy: WolframCopy, deps: CopyDeps): Promise
     // 4. The kernel, once. A newer copy takes this run back (the id is the same).
     // (A copied cell asks for none: the file is its picture for the other apps.)
     const single = plan.cells.length === 1 && plan.cells[0]!.drawing && !copy.cell
-    const ran = await deps.runKernel(plan.jobs, { id: "wolfram:copy", png: single, timeoutMs: COPY_TIMEOUT_MS, stamps: stampsFor(plan, stamps) })
+    const ran = await deps.runKernel(plan.jobs, {
+      id: "wolfram:copy", png: single, removeBackground: true,
+      timeoutMs: COPY_TIMEOUT_MS, stamps: stampsFor(plan, stamps),
+    })
     if (ran.state.kind !== "answered" && ran.state.kind !== "timedOut") {
       if (ran.state.kind !== "cancelled") deps.log?.(`WriteMind: the copy for Mathematica has no images (${ran.state.kind})`)
       return

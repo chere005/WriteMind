@@ -25,7 +25,8 @@ import type { KernelJob } from "./plan"
 export const WOLFRAM_KERNEL_SCRIPT = `(* WriteMind's ONE kernel run for an export or a copy: wolframscript -file <this> <job folder>.
    In:  ink-<n>.svg, band-<n>.svg, pdf-<n>.svg (a drawing on white; its width attribute is the width it is shown at),
         pic-<n>.txt ({"<file>", <shown width>} for a picture cell), wl-<n>.wl (maths source, kernel spelling),
-        and an empty file "png" when a copy wants PNGs too.
+        an empty file "png" when a copy wants PNGs too, and "remove-background" when a clipboard copy wants
+        Wolfram's RemoveBackground applied to its images.
    Out: <name>.boxes (the boxes, as the front end keeps them in a file) and <name>.png, each renamed into place
         whole, and "done" last. A name with no answer is one WriteMind writes its own cell for.
    Nothing here evaluates a note's text: drawings and pictures are imported, maths is parsed held. *)
@@ -38,8 +39,9 @@ put[f_, s_String] := (Export[f <> ".part", s, "Text", CharacterEncoding -> "ASCI
 boxText[b_] := Module[{rules = (# -> wmCD[Compress[#]]) & /@ Cases[b, _NumericArray, Infinity]},
   StringReplace[ToString[b /. rules, InputForm, PageWidth -> Infinity, CharacterEncoding -> "ASCII"],
     "wmCD[" -> "CompressedData["]];
-answer[f_, img_] := (put[f <> ".boxes", boxText[ToBoxes[img]]];
-  If[FileExistsQ["png"], Export[f <> ".png", Image[img, ImageResolution -> 144], "PNG"]]);
+answer[f_, img_] := Module[{result = If[FileExistsQ["remove-background"], Quiet@RemoveBackground[img], img]},
+  put[f <> ".boxes", boxText[ToBoxes[result]]];
+  If[FileExistsQ["png"], Export[f <> ".png", Image[result, ImageResolution -> 144], "PNG"]]];
 Do[With[{raw = Quiet@ImportByteArray[ReadByteArray[f], {"SVG", "Image"}, ImageResolution -> 144]},
     If[ImageQ[raw], answer[f, Image[RemoveAlphaChannel[raw, White], ImageSize -> Round[ImageDimensions[raw]/2]]]]],
   {f, FileNames["*.svg"]}];
@@ -60,7 +62,7 @@ put["done", ToString[$VersionNumber]];
 export const KERNEL_SCRIPT_FILE = "writemind.wls"
 
 /** The only names a job folder's inputs may have (anything else is refused before anything starts). */
-export const KERNEL_INPUT = /^(?:(?:ink|band|pdf)-\d+\.svg|pic-\d+\.txt|wl-\d+\.wl|png)$/
+export const KERNEL_INPUT = /^(?:(?:ink|band|pdf)-\d+\.svg|pic-\d+\.txt|wl-\d+\.wl|png|remove-background)$/
 
 /** What a job's name says it is, without its number: two jobs of one kind and one text are one answer. */
 const kindOf = (name: string): string => name.replace(/-\d+\./, ".")
@@ -69,8 +71,8 @@ const kindOf = (name: string): string => name.replace(/-\d+\./, ".")
  * The cache key of a job: what kind it is, what is in it, and `stamp` — for a picture, which names a file rather
  * than holding it, the file's `mtimeMs:size`, so a picture changed on disk is made again.
  */
-export function jobKey(job: KernelJob, stamp = ""): string {
-  return sha1(`${kindOf(job.name)}\u0000${job.text}\u0000${stamp}`)
+export function jobKey(job: KernelJob, stamp = "", removeBackground = false): string {
+  return sha1(`${kindOf(job.name)}\u0000${job.text}\u0000${stamp}\u0000${removeBackground ? "RemoveBackground" : ""}`)
 }
 
 /** What the runner's one kernel run came to (main/eval/runner.ts `wolframJob`). */

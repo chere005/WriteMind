@@ -1599,12 +1599,14 @@ export function App() {
                         readOnly={readOnly}
                         inkPainter={painter.current} onInsertInkCell={(offset) => insertInk(offset)}
                         onCellsCopied={onCellsCopied} onDrawingPasted={pasteSheetCell} />
-              <Canvas key={current ?? ""} drawing={drawing} onChange={changeDrawing} mode={mode} history={history}
-                      colorHex={penColour} penWidth={penWidth}
-                      placing={placing} onPlaced={placed}
-                      scroller={view ? view.scrollDOM : null}
-                      onReadPicture={readOn ? onReadPicture : undefined}
-                      dock={dockHost} />
+              {/* The page drawing layer belongs to the rendered notebook: unmount it in source mode so its marks
+                  are hidden and none of its pointer or keyboard handlers can take input from the Markdown editor. */}
+              {rendered && <Canvas key={current ?? ""} drawing={drawing} onChange={changeDrawing} mode={mode} history={history}
+                                   colorHex={penColour} penWidth={penWidth}
+                                   placing={placing} onPlaced={placed}
+                                   scroller={view ? view.scrollDOM : null}
+                                   onReadPicture={readOn ? onReadPicture : undefined}
+                                   dock={dockHost} />}
             </div>
             <div className="footer">
               <span>{title}</span>
