@@ -9,7 +9,7 @@
 // The unit side: apps/desktop/test/wmStoreFixes.test.ts (13).
 import fs from "node:fs"
 import {
-  ok, finish, js, sleep, until, key, CTRL, freshNote, setDoc, saved, shot,
+  ok, finish, js, sleep, until, key, CTRL, freshNote, setDoc, setRendered, saved, shot,
 } from "../../lib/harness.mjs"
 import { readWm } from "../../lib/wm.mjs"
 import { restartApp } from "../../lib/harness.mjs"
@@ -27,6 +27,7 @@ const served = (name) => js(`new Promise((res) => { const i = new Image(); i.onl
 const a = await freshNote()
 await setDoc("# A\n", 0)
 await sleep(700)
+await setRendered(true) // the page ink layer (pictures, objects) belongs to the rendered page (2.17.0)
 await js(PASTE_PNG)
 const inA = await saved(a, (d) => d.items.some((i) => i.kind === "image"), 8000)
 const picture = inA.items.find((i) => i.kind === "image")?.file

@@ -12,7 +12,7 @@ import path from "node:path"
 import { spawnSync } from "node:child_process"
 import {
   ok, skip, finish, js, sleep, until, notesDir, resetNotes, writeNoteFile, restartApp, openNote, focus, typeText, doc, setDoc, saved,
-  readNoteWm, setPen, canvasBox, dragPath, line, pickNext, menuClick, freshNote, shot,
+  readNoteWm, setRendered, setPen, canvasBox, dragPath, line, pickNext, menuClick, freshNote, shot,
 } from "../../lib/harness.mjs"
 import { readWm } from "../../lib/wm.mjs"
 
@@ -89,6 +89,7 @@ if (have("python3", ["-c", "import zipfile"])) {
 const file = await freshNote()
 await setDoc("# Drawn\n\nwords\n", 0)
 await sleep(900)
+await setRendered(true) // the page ink layer belongs to the rendered page (2.17.0)
 await setPen(true)
 const cb = await canvasBox()
 await dragPath(line([cb.x + 120, cb.y + 200], [cb.x + 360, cb.y + 260], 12), { pen: true })
