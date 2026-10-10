@@ -1,5 +1,5 @@
 // The pen takes over the pointer: OS cursor hidden, own cursor drawn, no mouse-like behaviour. 
-import { js, ok, finish, sleep, freshNote, pe } from "../../lib/harness.mjs"
+import { js, ok, finish, sleep, freshNote, pe, setEraserTool, eraserState } from "../../lib/harness.mjs"
 const file = await freshNote()
 await js(`localStorage.removeItem('writemind.pen')`)
 await sleep(400); await js(`document.querySelector('.cm-content').dispatchEvent(new PointerEvent('pointermove',{bubbles:true,clientX:5,clientY:5,pointerId:1,pointerType:'mouse',isPrimary:true}))`); await sleep(80)
@@ -15,10 +15,10 @@ ok("and an in-app cursor follows (ring over the page)", c.d === 'block' && c.k =
 const tb = await js(`(()=>{const b=document.querySelector('.top-bar button').getBoundingClientRect();return JSON.stringify({x:b.x+5,y:b.y+5})})()`).then(JSON.parse)
 await pe("pointermove", tb.x, tb.y, { buttons: 0, pressure: 0 }); await sleep(80)
 ok("an arrow-dot over the chrome", (await cur()).k === 'arrow')
-await js(`document.querySelector('[data-bar=erase]')?.click()`)
+await setEraserTool(true)
 await pe("pointermove", where.x, where.y, { buttons: 0, pressure: 0 }); await sleep(80)
 ok("a cross while erasing", (await cur()).k === 'erase')
-await js(`document.querySelector('[data-bar=erase]')?.click()`)
+await setEraserTool(false)
 
 // No mouse behaviour from the pen: caret stays, compat mousemove is not delivered, context menu suppressed.
 await js(`document.querySelector('.cm-content').focus(); window.__mm = 0; document.querySelector('.cm-scroller').addEventListener('mousemove', () => window.__mm++)`)
@@ -30,15 +30,15 @@ ok("the mouse-only hover events a pen generates are not delivered", (await js(`w
 const prevented = await js(`(()=>{const e=new MouseEvent('contextmenu',{bubbles:true,cancelable:true,clientX:${where.x},clientY:${where.y}});document.querySelector('.cm-content').dispatchEvent(e);return e.defaultPrevented})()`)
 ok("press-and-hold context menu is suppressed for the pen", prevented)
 // pen clicks on chrome still click
-const before = await js(`document.querySelector('[data-bar=erase]').getAttribute('aria-pressed')`)
-await js(`(()=>{const b=document.querySelector('[data-bar=erase]').getBoundingClientRect();window.__p=[b.x+4,b.y+4]})()`)
+const before = await js(`document.querySelector('[data-bar=pen]').getAttribute('aria-pressed')`)
+await js(`(()=>{const b=document.querySelector('[data-bar=pen]').getBoundingClientRect();window.__p=[b.x+4,b.y+4]})()`)
 const p = await js(`window.__p`)
 await pe("pointerdown", p[0], p[1]); await pe("pointerup", p[0], p[1], { buttons: 0 })
-await js(`document.querySelector('[data-bar=erase]').click()`)  // pen press yields a compat click in a real browser
+await js(`document.querySelector('[data-bar=pen]').click()`)  // pen press yields a compat click in a real browser
 // real mouse gives the OS cursor back
 await sleep(400)
 await js(`document.querySelector('.cm-content').dispatchEvent(new PointerEvent('pointermove',{bubbles:true,clientX:5,clientY:5,pointerId:1,pointerType:'mouse',isPrimary:true}))`)
 await sleep(80)
 ok("a mouse move gives the OS cursor back", !(await active()) && (await cur()).d === 'none')
-await js(`document.querySelector('[data-bar=erase]')?.getAttribute('aria-pressed')==='true' && document.querySelector('[data-bar=erase]').click()`)
+await js(`document.querySelector('[data-bar=pen]')?.getAttribute('aria-pressed')==='true' && document.querySelector('[data-bar=pen]').click()`)
 finish()

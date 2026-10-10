@@ -129,6 +129,9 @@ export const COMMANDS: CommandDef[] = [
   // Insert
   c("insertImage", "Image…", "page", "CmdOrCtrl+Shift+I"),
   c("insertTextBox", "Text Box", "page"),
+  // The toolbar's Table button (docs/PLAN-bars-2026-10.md P1): an empty two-column table as a cell of its own. No key
+  // (Sean, 2026-10-10: the inserts are buttons); the editor's own table keys (Tab, Return) take over inside it.
+  c("insertTable", "Table", "editor"),
   // Port-only key: the Mac opens the maths popover from the bar only.
   c("insertMath", "Maths…", "page", "CmdOrCtrl+Shift+M"),
   c("codeBlock", "Code Block", "editor", "CmdOrCtrl+8"),

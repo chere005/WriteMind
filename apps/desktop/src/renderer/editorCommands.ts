@@ -16,7 +16,7 @@ import {
   type CodeLanguage, type Edit, type Heading, type ListStyle, type Range,
 } from "@writemind/core"
 import {
-  applyEdit, evaluationCell, fence, mathsCell, foldAll, foldedKeys, heading, heldCells, indentLines, list, markdownCell, mergeTheCell, outdentLines, quote,
+  applyEdit, evaluationCell, fence, mathsCell, tableCell, foldAll, foldedKeys, heading, heldCells, indentLines, list, markdownCell, mergeTheCell, outdentLines, quote,
   sectionAtCaret, selectAllOccurrences, selectNext, tagFence, toggleFold, unfoldAll, wrap,
 } from "@writemind/editor"
 import { EditorSelection } from "@codemirror/state"
@@ -63,10 +63,10 @@ function applyEdits(view: EditorView, edits: Edit[]): boolean {
 const onCells = (view: EditorView, make: (span: Range, text: string) => Edit | null): boolean =>
   applyEdits(view, editsOver(cellsToAct(view), view.state.doc.toString(), make))
 
-const edit = (view: EditorView, make: (text: string, where: Range) => Edit | null): boolean => {
+const edit = (view: EditorView, make: (text: string, where: Range) => Edit | null, apart = false): boolean => {
   const change = make(view.state.doc.toString(), selection(view))
   if (!change) return false
-  applyEdit(view, change)
+  applyEdit(view, change, apart)
   return true
 }
 
@@ -105,6 +105,7 @@ export function runEditorCommand(view: EditorView, id: string, options: EditorOp
       else tagFence(fenceOf(options.codeLanguage))(view)
       return true
     case "mathsCell": mathsCell(view); return true
+    case "insertTable": tableCell(view); return true
     case "splitCell": edit(view, (text, where) => splitCell(text, where)); return true
     case "mergeCells": mergeTheCell(view); return true
     case "duplicateCell": onCells(view, (span, text) => duplicateCell(span, text)); return true
@@ -112,8 +113,9 @@ export function runEditorCommand(view: EditorView, id: string, options: EditorOp
     case "deleteCell": onCells(view, (span, text) => deleteCell(span, text)); return true
     case "moveCellUp": onCells(view, (span, text) => moveCell(span, true, text)); return true
     case "moveCellDown": onCells(view, (span, text) => moveCell(span, false, text)); return true
-    case "moveSectionUp": edit(view, (text, where) => moveSection(text, where, true)); return true
-    case "moveSectionDown": edit(view, (text, where) => moveSection(text, where, false)); return true
+    // Each move is a step of its own (the bar's buttons are pressed one after another within the history's grouping time).
+    case "moveSectionUp": edit(view, (text, where) => moveSection(text, where, true), true); return true
+    case "moveSectionDown": edit(view, (text, where) => moveSection(text, where, false), true); return true
     case "selectNext": selectNext(view); return true
     case "selectAll": selectAllOccurrences(view); return true
     case "expandSelection": expandSelection(view); return true

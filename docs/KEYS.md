@@ -162,7 +162,7 @@ Notes, so nobody "fixes" them:
   URL are put away on every line but the caret's and the file is untouched; the choice is remembered); the
   preview draws every block but the one being written in. Both labels flip (Hide / Show Markdown Markers; Show
   Markdown Preview / Editor).
-- **Format ▸ List and Ctrl+Shift+L** both write the style the list button's chevron picked (dots `- `, dashes
+- **Format ▸ List and Ctrl+Shift+L** both write the style the list button's menu last picked (dots `- `, dashes
   `* `, numbers `1. `, to-dos `- [ ] `), and the choice is remembered.
 
 ## Text cells and markdown cells (docs/PLAN-text-cells.md; Sean, 2026-10-05; port-first)
@@ -276,15 +276,15 @@ the palette writes). A text cell never typesets anything. Rules: `packages/core/
 | Ctrl+7 in a maths cell | a text cell of its source: plain words (by the escape rule), never typeset |
 | Ctrl+8 in a maths cell | a Wolfram Language code block of the same source (```` ```wolfram ````: `wl` IS the maths fence, so it would still be maths) |
 
-## The maths palette (Insert ▸ Maths…, the ƒ(x) button)
+## The maths palette (Insert ▸ Maths…, the Maths button)
 
-Ctrl+Shift+M opens it (again, from inside it, puts it away) with the picked shape focused, even with the Maths
-section of the bar put away. Inside: **arrows** pick a shape (Left/Right one, Up/Down a row, PageUp/PageDown a
+Ctrl+Shift+M opens it (again, from inside it, puts it away) with the picked shape focused, even with the Insert
+section of the bar put away or folded into the ⋯ menu. Inside: **arrows** pick a shape (Left/Right one, Up/Down a row, PageUp/PageDown a
 group, Home/End the ends) and the form follows; **Tab / Shift+Tab** walk Slots, Wolfram Language line, the
 "On its own line" tick, Insert, and wrap; **Enter** inserts (as the tick says; not while an input method is
 composing), **Ctrl+Enter** inserts the other way, **Space** on the tick toggles it, **Esc** closes and gives the
 keyboard back to the note. Maths on its own line goes in as a cell of its own (a blank line above and below it), the
-caret on the bar under it; at the very end of the note that bar is armed, so the next character is a new cell. This holds however the palette was opened (the key, a click on ƒ(x), the Insert menu)
+caret on the bar under it; at the very end of the note that bar is armed, so the next character is a new cell. This holds however the palette was opened (the key, a click on the Maths button, the Insert menu)
 and after a click on a bare part of it (its heading hands the keyboard to the picked shape); only a click away
 from the palette puts it away. The Mac popover has none of these (it is mouse-first); the pane itself is the Mac's.
 
@@ -304,14 +304,14 @@ source under the menu; Ctrl/Cmd-click is the drawing layer's, as on words.
   cell (right-click the cell ▸ Open in Tablet Sheet) there is nothing of the
   sheet's own to take back: Ctrl+Z, the header's Undo and the pen's double tap
   are the note's Undo, and the sheet follows the cell.
-- **Pen side buttons** (Pen chip ▸ *Buttons*, see below): on the sheet the
+- **Pen side buttons** (the pen menu's *Tablet buttons and orientation…* ▸ *Buttons*, see below): on the sheet the
   first (upper, Middle Click) one held while the pen touches rubs out strokes,
   the second (lower, Right Click) one held drags the dashed box; a double tap
   in the air is Undo (first) / Redo (second) of the
   *sheet's* strokes (with nothing there, the note's). The eraser end always
   erases.
-- **⌫ Erase** (toolbar pen group): touch a stroke on the note's page to rub
-  it out; picking the ✎ pen, Ctrl+P or a shape tool turns it off.
+- **Eraser** (the pen button, once its menu has made the eraser its tool; Ctrl+Alt+2 does both): touch a stroke on the
+  note's page to rub it out; putting the pen down with Ctrl+P or picking a shape tool turns it off.
 - **Erase / Select on the sheet**: the SHEET's own pair (one for every sheet
   tab, not remembered). Neither has a header button (Sean, 2026-10-05 Erase,
   2026-10-06 Select): hold the pen's first button to rub out, use the box row's
@@ -331,7 +331,7 @@ source under the menu; Ctrl/Cmd-click is the drawing layer's, as on words.
 - **Erase Tool / Select Tool** by the pen (a double tap set to "Erase tool
   on/off" / "Select tool on/off", or the ExpressKey Ctrl+Alt+2 / Ctrl+Alt+3, or
   the Pen menu) toggle the tools of the surface the pen is over, or was last
-  over: the sheet's on the sheet's side of the pane, the toolbar's elsewhere.
+  over: the sheet's on the sheet's side of the pane, the notebook's (the pen button's, for Erase) elsewhere.
 
 ## No full screen (Sean's rule)
 
@@ -394,8 +394,8 @@ choice becomes that button's double tap. The pen cursor shows the held
 button's hold: dashed square (select, + for add), red cross (erase), hand
 (pan); the Pen chip names it too.
 
-Doing everything with the pen alone: the toolbar's **⬚ Select tool** (or
-a button's "Select tool on/off" double tap / its ExpressKey) turns a plain tip into the cursor:
+Doing everything with the pen alone: the **Select tool** (Ctrl+Alt+3, the Pen menu, or
+a button's "Select tool on/off" double tap / its ExpressKey: it has no button on the bar) turns a plain tip into the cursor:
 drag an object to move it, drag on nothing to pull a marquee; the handles
 turn, scale, delete (✕) and group; **Delete selection** / **Clear selection**
 are assignable to a button or ExpressKey (the Mac's ⌫ and Esc).
@@ -496,3 +496,19 @@ more than three back, is superseded after an undo, or the app quits. The words k
 switch, a save, a rename, a move, a disk reload that did not change the text, and (for the last eight closed notes) a closed
 tab. A trashed note comes back from the backup (the item stays in the OS Trash) under its own name, or "name 2" with a
 notice when the name is taken. Typing in another tab is that tab's step; the journal is the window's.
+
+## The bar over the note (docs/PLAN-bars-2026-10.md P1, Sean 2026-10-10)
+
+Every button runs the same command its key does and its tooltip names that key (this machine's: no hand-typed Ctrl).
+The Insert buttons Text box, Table and the Style menu's kinds have no keys of their own beyond the table above
+(Table: Insert ▸ Table, no key). The pen button: **Ctrl+Alt+1 / ⌥⌘1** is the button when the pen is its tool and the
+menu's Pen when the eraser is; **Ctrl+Alt+2 / ⌥⌘2** the same for the eraser; both keep the menu and the button in step.
+
+## The pen button (Sean, 2026-10-10)
+
+| What | Does |
+|---|---|
+| a click on the pen button | the pen down or up (or, when the button is the eraser, the eraser on or off); accent fill while it is on |
+| the caret beside it, a right-click, a half-second hold, ArrowDown on the focused button | its menu: Pen / Eraser (checked, with their keys), Colour, Width, Pen always draws (tablet), Tablet buttons and orientation… |
+| Pen / Eraser in the menu | makes that the button's tool AND turns it on (the other is let go); the choice is remembered, whether it is on is not |
+| a colour or a width in the menu | sets the pen's; the menu stays up for both; the current one is ringed / marked |

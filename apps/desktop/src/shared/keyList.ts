@@ -43,7 +43,7 @@ export const KEY_MENUS: { menu: string; ids: string[] }[] = [
       "moveSectionUp", "moveSectionDown",
     ],
   },
-  { menu: "Insert", ids: ["insertImage", "insertTextBox", "insertMath", "codeBlock", "mathsCell", "insertInkCell"] },
+  { menu: "Insert", ids: ["insertImage", "insertTextBox", "insertTable", "insertMath", "codeBlock", "mathsCell", "insertInkCell"] },
   {
     menu: "Pen",
     ids: [

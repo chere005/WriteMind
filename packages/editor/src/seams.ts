@@ -14,6 +14,7 @@
 import {
   EditorSelection, Prec, StateEffect, StateField, type Extension, type Transaction,
 } from "@codemirror/state"
+import { isolateHistory } from "@codemirror/commands"
 import { Decoration, EditorView, ViewPlugin, keymap, type ViewUpdate } from "@codemirror/view"
 import {
   between, end, firstCellFromBy, GAP_HEIGHT, onPlus, openCell, plus, seamAt, seams, armIn, type CellBox, type CellKind,
@@ -558,7 +559,8 @@ const pointerCursors = EditorView.theme({
 export function openCellAt(view: EditorView, offset: number, kind: CellKind): void {
   const at = Math.min(Math.max(offset, 0), view.state.doc.length)
   const opened = openCell(kind, view.state.doc.toString(), at, "")
-  rewrite(view, opened.markdown, opened.caret)
+  // Making the cell is a step of its own (Ctrl+Z takes the cell back), never joined to the typing before it.
+  rewrite(view, opened.markdown, opened.caret, true)
 }
 
 /**
@@ -592,7 +594,7 @@ export function armAtNoteEnd(view: EditorView): boolean {
  * range means that range.
  */
 /** Apply a whole-document rewrite as the one change it really is. */
-function rewrite(view: EditorView, markdown: string, caret: number): void {
+function rewrite(view: EditorView, markdown: string, caret: number, apart = false): void {
   const old = view.state.doc.toString()
   let from = 0
   const most = Math.min(old.length, markdown.length)
@@ -608,7 +610,7 @@ function rewrite(view: EditorView, markdown: string, caret: number): void {
     userEvent: "input.type",
     // The cell is written whole by the core's rules (a text cell's first character already literal): textCells.ts
     // leaves it as it is.
-    annotations: cellWritten.of(true),
+    annotations: apart ? [cellWritten.of(true), isolateHistory.of("full")] : cellWritten.of(true),
   })
   // The bar under a closed section stands before the next heading, and a cell written there is that section's: it
   // opens, so nothing typed goes out of sight. (The caret is set again, so the fold's own "step out of what is
@@ -626,7 +628,9 @@ export function openArmed(view: EditorView, written: string, literal = true): bo
   if (armed === null) return false
   const kind = view.state.field(armedTypeField, false) ?? { kind: "text" as const }
   const opened = openCell(kind, view.state.doc.toString(), armed, written, literal)
-  rewrite(view, opened.markdown, opened.caret)
+  // A cell made with nothing typed in it (a Style pick at the bar) is its own undo step; one opened by a character
+  // stays with the typing that follows it.
+  rewrite(view, opened.markdown, opened.caret, written.length === 0)
   return true
 }
 

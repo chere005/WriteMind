@@ -45,6 +45,11 @@ ok("the toggle's row does not depend on the sidebar being open (y)", open.sideba
 const lights = await js(`document.querySelector('.app').classList.contains('mac')`) ? 72 : 0
 ok("x moves only by the sidebar's own width (less the traffic lights' room on a Mac)", Math.abs((open.sidebar.x - shut.sidebar.x) - (sidebarWidth - lights)) < 8, `${open.sidebar.x} vs ${shut.sidebar.x} (sidebar ${sidebarWidth}, lights ${lights})`)
 
+// ---- A. the text bar starts with the Style button (the sidebar's switch is the tab row's: docs/PLAN-bars-2026-10.md P2)
+const textBar = await J(`(() => { const b = document.querySelector('.top-bar').firstElementChild; const r = b.getBoundingClientRect(); return { bar: b.dataset.bar, h: document.querySelector('.top-bar').getBoundingClientRect().height } })()`)
+ok("the text bar starts with the Style button (BEHAVIOUR CHANGE: the sidebar's switch left it)", textBar.bar === "style", JSON.stringify(textBar))
+ok("and is one 36px row", Math.round(textBar.h) === 36, JSON.stringify(textBar))
+
 // ---- B. the sidebar's own bar
 // (docs/PLAN-bars-2026-10.md P3, CHANGED: it was 44 tall and read edit · new section · markdown · video, right-aligned. It is the Mac's 36px bar now:
 // a search field, +, the pencil. New Section is in the + menu; the markdown and video buttons are the tab row's, to the right of the sidebar's button.)
@@ -55,23 +60,32 @@ const topText = await js(`document.querySelector('.top-bar').innerText`)
 ok("no rendered-page toggle or PDF button left in the text bar", !topText.includes("◧") && !topText.includes("PDF") && !topText.includes("◉"), topText)
 ok("the markdown toggle and the video switch are not on the sidebar's bar", await js(`!document.querySelector('.sidebar-bar [data-bar=markdown]') && !document.querySelector('.sidebar-bar [data-bar=video]')`))
 
-// ---- C. groups, in the Mac's order, each collapsible and remembered
-const groups = await J(`[...document.querySelectorAll('.bar-group')].map(g => g.dataset.group)`)
-ok("groups in the Mac's order", JSON.stringify(groups) === JSON.stringify(["style", "structure", "insert", "maths", "flowchart", "capture"]), groups.join())
-const before = await J(`document.querySelector('[data-group=structure]').querySelectorAll('button:not(.bar-grip)').length`)
-await js(`document.querySelector('[data-grip=structure]').click()`); await sleep(200)
-const after = await J(`document.querySelector('[data-group=structure]').querySelectorAll('button:not(.bar-grip)').length`)
-ok("the grip collapses a group to one icon", before > 4 && after === 1, `${before} -> ${after}`)
+// ---- C. four sections (Text, Blocks, Insert, Pen), put away in the Customize checklist and remembered; no grips
+const sectionsOpen = () => js(`document.querySelectorAll('.bar-context label').length`)
+await js(`document.querySelector('.top-bar').dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, clientX: 600, clientY: 50 }))`); await sleep(150)
+ok("the bar's context menu is the Customize checklist: four sections", (await sectionsOpen()) === 4)
+ok("named Text, Blocks, Insert and Pen", JSON.stringify(await J(`[...document.querySelectorAll('.bar-context label')].map(l => l.textContent.trim())`)) === JSON.stringify(["Text", "Blocks", "Insert", "Pen"]))
+ok("no grips on the bar (a put-away section is shown only in the checklist)", (await js(`document.querySelectorAll('.bar-grip, .bar-group, .away-icon').length`)) === 0)
+const listBefore = await js(`!!document.querySelector('[data-bar=list]')`)
+await js(`document.querySelector('.bar-context [data-section=blocks]').click()`); await sleep(200)
+ok("unticking Blocks puts List, Quote and Code away", listBefore && !(await js(`!!document.querySelector('[data-bar=list]') || !!document.querySelector('[data-bar=quote]') || !!document.querySelector('[data-bar=code]')`)))
+ok("the Style button and the pen stay", await js(`!!document.querySelector('[data-bar=style]') && !!document.querySelector('[data-bar=pen]')`))
 await reloadApp()
 await openHead()
-ok("and the collapse is remembered", await js(`document.querySelector('[data-group=structure]').classList.contains('away')`))
-await js(`document.querySelector('[data-group=structure] .away-icon').click()`); await sleep(200)
-ok("the icon brings it back", !(await js(`document.querySelector('[data-group=structure]').classList.contains('away')`)))
+ok("and the put-away is remembered", !(await js(`!!document.querySelector('[data-bar=list]')`)))
 await js(`document.querySelector('.top-bar').dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, clientX: 600, clientY: 50 }))`); await sleep(150)
-ok("the bar's context menu lists the six sections", (await js(`document.querySelectorAll('.bar-context label').length`)) === 6)
-await js(`document.querySelector('.bar-context [data-section=maths]').click()`); await sleep(150)
-ok("and unticking one puts it away", await js(`document.querySelector('[data-group=maths]').classList.contains('away')`))
-await js(`document.querySelector('[data-group=maths] .away-icon').click()`); await sleep(150)
+await js(`document.querySelector('.bar-context [data-section=blocks]').click()`); await sleep(200)
+ok("ticking it brings it back", await js(`!!document.querySelector('[data-bar=list]')`))
+await key("Escape"); await sleep(150)
+ok("Escape puts the checklist away", (await sectionsOpen()) === 0)
+// what the six old sections had put away is migrated once, to the four
+await js(`localStorage.removeItem('writemind.toolSections'); localStorage.setItem('writemind.collapsedGroups', JSON.stringify(['structure']))`)
+await reloadApp()
+await openHead()
+ok("an old 'Structure' put away comes up as 'Blocks' put away", !(await js(`!!document.querySelector('[data-bar=list]')`)) && await js(`!!document.querySelector('[data-bar=pen]')`))
+await js(`localStorage.removeItem('writemind.toolSections'); localStorage.setItem('writemind.collapsedGroups', '[]')`)
+await reloadApp()
+await openHead()
 
 // ---- D. one press = one action
 await js(`document.querySelector('.cm-content').focus()`)

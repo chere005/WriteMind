@@ -182,6 +182,7 @@ export function buildMenu(options: MenuOptions): MenuItemConstructorOptions[] {
   const insert: MenuItemConstructorOptions[] = [
     item("insertImage", "Image…", { enabled: state.hasNote }),
     item("insertTextBox", "Text Box", { enabled: state.hasNote }),
+    item("insertTable", "Table", { enabled: state.hasNote }),
     item("insertMath", "Maths…", { enabled: state.hasNote }),
     SEPARATOR,
     item("codeBlock", state.codeLanguage ? `${state.codeLanguage} Block` : "Code Block",

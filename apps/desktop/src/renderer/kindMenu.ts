@@ -72,6 +72,9 @@ const same = (a: CurrentKind, b: CellKind | { kind: "evaluation" }): boolean => 
 /** The words the Style button shows for the caret's cell. */
 export function kindLabel(current: CurrentKind): string {
   if (!current) return headingName(0)
+  // Cells the menu does not offer (their own buttons make them) are still named when the caret is in one.
+  if (current.kind === "table") return "Table"
+  if (current.kind === "picture") return "Picture"
   const all = kindEntries()
   const hit = [all.text, ...all.levels, ...all.lists, ...all.cells].find((entry) => same(current, entry.kind))
   return hit?.label ?? headingName(0)

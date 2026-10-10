@@ -28,6 +28,7 @@ import {
   type MathTemplate,
 } from "@writemind/core"
 import { applyEdit, armAtNoteEnd, mathElement, openBarForWriting } from "@writemind/editor"
+import { Icon } from "./icons"
 
 /** The event the Insert > Maths... command (Ctrl+Shift+M) sends. */
 export const MATH_OPEN_EVENT = "wm:math-open"
@@ -46,7 +47,11 @@ function Preview({ source }: { source: string }) {
   return <span className="math-preview" ref={host} />
 }
 
-export function MathPalette({ view, showButton = true }: { view: EditorView | null; showButton?: boolean }) {
+/**
+ * `title`: the button's tooltip, with its key (the bar says it, from the one table). `showButton` false: the palette is there for its key (Ctrl+Shift+M, Insert ▸ Maths…) and for the bar's ⋯ menu, which
+ * opens it when the bar is too narrow for the button; it then hangs under the ⋯ button. `disabled`: no note is open.
+ */
+export function MathPalette({ view, showButton = true, disabled = false, title = "Maths" }: { view: EditorView | null; showButton?: boolean; disabled?: boolean; title?: string }) {
   const first = MATH_TEMPLATES[0]!
   const [open, setOpen] = useState(false)
   const [selected, setSelected] = useState<MathTemplate>(first)
@@ -72,7 +77,7 @@ export function MathPalette({ view, showButton = true }: { view: EditorView | nu
     // The Mac's popover starts afresh each time: the first shape, on its own line.
     choose(MATH_TEMPLATES[0]!)
     setOwnLine(true)
-    const anchor = button.current ?? document.querySelector<HTMLElement>('[data-group="maths"]')
+    const anchor = button.current ?? document.querySelector<HTMLElement>('[data-bar="more"]')
     const rect = anchor?.getBoundingClientRect()
     setAt({ left: Math.max(8, Math.min(rect?.left ?? 8, window.innerWidth - 440)), top: (rect?.bottom ?? 40) + 4 })
     setOpen(true)
@@ -241,10 +246,10 @@ export function MathPalette({ view, showButton = true }: { view: EditorView | nu
   return (
     <>
       {showButton && (
-        <button ref={button} className={`icon-button${open ? " on" : ""}`} data-math="button"
-                title={"Maths  (Ctrl+Shift+M)\nIntegrals, sums, derivatives — written as Wolfram Language"}
-                style={{ width: "auto", padding: "0 6px", fontSize: 12 }}
-                onClick={() => (open ? setOpen(false) : show())}>ƒ(x)</button>
+        <button ref={button} type="button" className={`bar-btn${open ? " on" : ""}`} data-math="button" data-bar="maths"
+                disabled={disabled} aria-label="Maths" aria-pressed={open}
+                title={title}
+                onClick={() => (open ? setOpen(false) : show())}><Icon name="math" /></button>
       )}
       {open && (
         <div className="math-pop" ref={pop} data-math="pop" role="dialog" aria-label="Maths" tabIndex={-1}
