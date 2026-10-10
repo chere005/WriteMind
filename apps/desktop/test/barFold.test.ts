@@ -6,7 +6,7 @@ import { migrateCollapsed, sectionsAway, TOOL_GROUPS } from "../src/renderer/too
 
 /**
  * The bar's fold ladder (docs/PLAN-bars-2026-10.md P1): a pure function of the width. The widths are the bar's own CSS;
- * e2e/suites/chrome/07-toolbar-fold.mjs holds the real row to them at 460 / 560 / 640 / 760.
+ * e2e/suites/chrome/12-toolbar-fold.mjs holds the real row to them at 460 / 560 / 640 / 760.
  */
 
 const ids = (level: FoldLevel, sections: BarSections = ALL_SECTIONS) => barParts(level, sections).map((part) => part.id)
