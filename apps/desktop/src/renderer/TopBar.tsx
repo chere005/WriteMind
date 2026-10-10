@@ -462,7 +462,7 @@ export function TopBar({
         return (
           <span key={id} ref={split} className="pen-split-anchor">
             <MenuButton caret icon={penTools.tool === "pen" ? "pen" : "eraser"} dataBar="pen" caretDataBar="pen-menu"
-                        on={penLit} disabled={off} items={penItems}
+                        on={penLit} disabled={off} items={penItems} live
                         onMain={() => onPenButton("button")}
                         title={penTools.tool === "pen"
                           ? tip(mode === "pen" ? "Pen (down)" : "Pen", key("penToggle"), mode === "pen"
