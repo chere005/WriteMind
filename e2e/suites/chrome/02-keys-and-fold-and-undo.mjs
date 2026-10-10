@@ -1,4 +1,4 @@
-import { js, key, menu, menuClick, ok, finish, sleep, closeAllTabs, seedNotes, reloadApp } from "../../lib/harness.mjs"
+import { js, key, menu, menuClick, ok, finish, sleep, closeAllTabs, seedNotes, reloadApp, setRendered } from "../../lib/harness.mjs"
 const J = async (expr) => JSON.parse(await js(`JSON.stringify(${expr})`))
 const view = `document.querySelector('.cm-content').cmTile.view`
 const doc = () => js(`${view}.state.doc.toString()`)
@@ -66,6 +66,8 @@ ok("and opens it", (await js(`document.querySelectorAll('.tab').length`)) === 1)
 await openHead(); await sleep(400)
 ok("Undo Drawing is greyed with nothing drawn", (await item("Edit", "Undo Drawing")).enabled === false)
 const count = () => js(`document.body.innerText.match(/(\\d+) objects?/)?.[1] ?? '0'`)
+// The page ink layer belongs to the RENDERED page (2.17.0, docs/TESTING.md): the source editor has no layer to draw on.
+await setRendered(true)
 await js(`(() => { const b = document.querySelector('[data-bar=pen]'); if (!b.classList.contains('on')) b.click() })()`); await sleep(200)
 const fire = (type, x, y, o) => js(`(() => { const el = document.elementFromPoint(${x}, ${y}); el.dispatchEvent(new PointerEvent('${type}', { bubbles: true, cancelable: true, composed: true, clientX: ${x}, clientY: ${y}, pointerId: 9, pointerType: 'pen', isPrimary: true, button: 0, buttons: ${o.buttons}, pressure: ${o.pressure} })) })()`)
 const n0 = Number(await count())
