@@ -27,7 +27,7 @@ import {
   MARKDOWN_MARKER, end, escapeLineMapped, escapeOffsets, firstCellFromBy, hiddenInText, isMarkdownMarker, isTextCell,
   positioned, type PositionedBlock,
 } from "@writemind/core"
-import { cellWritten, notebook } from "./notebook"
+import { cellWritten, itemOpenedField, notebook } from "./notebook"
 import { armSeam, armedField } from "./seams"
 import { heldCells } from "./brackets"
 
@@ -181,6 +181,8 @@ function literalTyping(tr: Transaction): Transaction | TransactionSpec | readonl
       // after it is the list's (`1. a`, Return, `b` is `2. b`, not `2\. b`). Only a line that is the whole cell's
       // first line: `words` then `2. ` is one text cell, and stays literal.
       if (isTextCell(cell.block) && cell.range.location === line.from && continuesList(line.text, cellAbove(line))) return false
+      // ...or an item a command opened a moment ago (the + menu's Dots List): what is typed after it is the list's.
+      if (isTextCell(cell.block) && cell.range.location === line.from && start.field(itemOpenedField, false) === line.from) return false
       return isTextCell(cell.block)
     }
     // On a line of its own: it joins the cell ending on the line above, or it is a new cell — plain words, unless it

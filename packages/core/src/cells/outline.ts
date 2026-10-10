@@ -289,13 +289,20 @@ export function moveSection(text: string, selection: Range, up: boolean): Edit |
   const first = up ? other : moving
   const second = up ? moving : other
   const span = range(first.location, end(second) - first.location)
+  // A section's range runs through its last cell's newline (the last one through the end of the note, whatever that holds). Swapping the
+  // ranges whole gave the newline to the wrong section: the last section moved up left "gamma words\n# Beta" glued
+  // together (no blank line), and the one that moved to the end took a stray newline. So the words are swapped and the
+  // separator between them stays what it was, and what ended the pair (a newline, or nothing) still ends it.
+  const bare = (text0: string): string => text0.replace(/\n+$/, "")
   const firstText = substring(text, first)
   const secondText = substring(text, second)
-  const gap = substring(text, range(end(first), second.location - end(first)))
-  const replacement = secondText + gap + firstText
+  const firstBare = bare(firstText)
+  const secondBare = bare(secondText)
+  const gap = firstText.slice(firstBare.length) + substring(text, range(end(first), second.location - end(first)))
+  const replacement = secondBare + gap + firstBare + secondText.slice(secondBare.length)
 
   const delta = caret - moving.location
-  const landing = up ? span.location : span.location + secondText.length + gap.length
+  const landing = up ? span.location : span.location + secondBare.length + gap.length
   const length = end(selection) <= end(moving) ? selection.length : 0
   return edit(span, replacement, range(landing + delta, length))
 }

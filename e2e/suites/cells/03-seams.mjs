@@ -76,8 +76,9 @@ const kinds = async (label) => {
   const plus = await centerOf(".wm-plus")
   if (!plus) return null
   await click(plus.x, plus.y); await sleep(250)
-  const names = await js(`[...document.querySelectorAll('#kind-menu .float-label')].map(b=>b.textContent)`)
-  if (label) { await js(`[...document.querySelectorAll('#kind-menu .float-label')].find(b=>b.textContent===${JSON.stringify(label)}).closest('button').click()`); await sleep(200) }
+  // (The + menu is the shared kind menu, a FloatingMenu: renderer/kindMenu.ts. Its labels are the Style menu's.)
+  const names = await js(`[...document.querySelectorAll('#seam-kinds .float-label')].map(b=>b.textContent)`)
+  if (label) { await js(`[...document.querySelectorAll('#seam-kinds .float-label')].find(b=>b.textContent===${JSON.stringify(label)}).closest('button').click()`); await sleep(200) }
   return names
 }
 const names = await kinds("Quote")

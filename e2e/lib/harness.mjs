@@ -22,6 +22,7 @@ import { fileURLToPath } from "node:url"
 import { connectCdp, sleep, until } from "./cdp.mjs"
 import { restartInstance, stopInstance } from "./instance.mjs"
 import { readWm, writeWm } from "./wm.mjs"
+import { macChord } from "./macKeys.mjs"
 
 export { sleep, until }
 
@@ -245,16 +246,27 @@ const keyInfo = (k, o) => {
  *   key("Enter")   key("d", { ctrl: true })   key("ArrowDown", { ctrl: true, shift: true })   key("z", { modifiers: CTRL })
  */
 export async function key(k, o = {}) {
-  const mods = modBits(o)
+  // On a Mac a chord written the Windows way is sent as that command's own Mac chord (macKeys.mjs); `{ raw: true }` sends it as written.
+  let mods = modBits(o)
+  if (process.platform === "darwin" && !o.raw) {
+    // (A script that names the physical key — Shift+7 types "&" — is looked up by that key and keeps the key it typed.)
+    const digit = /^Digit(\d)$/.exec(o.code ?? "")
+    const found = macChord(digit ? digit[1] : k, mods)
+    mods = found.mods
+    if (!digit) k = found.k
+  }
   const { vk, code } = keyInfo(k, o)
-  const chord = [[mods & CTRL, "Control", "ControlLeft", 17, CTRL], [mods & SHIFT, "Shift", "ShiftLeft", 16, SHIFT], [mods & ALT, "Alt", "AltLeft", 18, ALT]].filter((m) => m[0])
+  const chord = [[mods & CTRL, "Control", "ControlLeft", 17, CTRL], [mods & SHIFT, "Shift", "ShiftLeft", 16, SHIFT], [mods & ALT, "Alt", "AltLeft", 18, ALT], [mods & META, "Meta", "MetaLeft", 91, META]].filter((m) => m[0])
   let acc = 0
   for (const [, name, c, v, bit] of chord) { acc |= bit; await send("Input.dispatchKeyEvent", { type: "rawKeyDown", key: name, code: c, windowsVirtualKeyCode: v, modifiers: acc }) }
-  const text = o.text ?? (k === "Enter" ? "\r" : k.length === 1 && !(mods & (CTRL | ALT | META)) ? k : undefined)
+  // With Shift down a keyboard reports the capital ("D"), never "d": CodeMirror's key names read the difference (on a Mac "Ctrl-d" is
+  // its delete-forward and "Ctrl-Shift-d" the app's Duplicate Cell, and only the capital tells them apart).
+  const shifted = (mods & SHIFT) && /^[a-z]$/.test(k) ? k.toUpperCase() : k
+  const text = o.text ?? (k === "Enter" ? "\r" : k.length === 1 && !(mods & (CTRL | ALT | META)) ? shifted : undefined)
   // On a Mac the editing chords (⌘A / C / X / V) are carried out by the key event's `commands`, as AppKit sends them.
   const editing = process.platform === "darwin" && (mods & META) && !(mods & (CTRL | ALT)) ? MAC_EDITING[k.toLowerCase()] : undefined
-  await send("Input.dispatchKeyEvent", { type: text ? "keyDown" : "rawKeyDown", key: k, code, windowsVirtualKeyCode: vk, modifiers: mods, text, autoRepeat: !!o.autoRepeat, ...(editing ? { commands: [editing] } : {}) })
-  await send("Input.dispatchKeyEvent", { type: "keyUp", key: k, code, windowsVirtualKeyCode: vk, modifiers: mods })
+  await send("Input.dispatchKeyEvent", { type: text ? "keyDown" : "rawKeyDown", key: shifted, code, windowsVirtualKeyCode: vk, modifiers: mods, text, autoRepeat: !!o.autoRepeat, ...(editing ? { commands: [editing] } : {}) })
+  await send("Input.dispatchKeyEvent", { type: "keyUp", key: shifted, code, windowsVirtualKeyCode: vk, modifiers: mods })
   for (const [, name, c, v, bit] of [...chord].reverse()) { acc &= ~bit; await send("Input.dispatchKeyEvent", { type: "keyUp", key: name, code: c, windowsVirtualKeyCode: v, modifiers: acc }) }
   await sleep(o.wait ?? 80)
 }

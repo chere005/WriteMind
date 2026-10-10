@@ -8,7 +8,7 @@
 
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react"
 import { EditorView } from "@codemirror/view"
-import { columnBox, cursorSeam, DRAWING_MIME, findNextMatch, revealAt, takesPastedPicture, type InkCellPainter } from "@writemind/editor"
+import { columnBox, cursorSeam, DRAWING_MIME, findNextMatch, findStep, revealAt, takesPastedPicture, type InkCellPainter } from "@writemind/editor"
 import {
   anchorOffset, bounds as itemBounds, capturePlacedCentre, columnWidth, decodeDrawing, emptyDrawing, insertBlock, insertionPointBelow,
   languageTitle, listTitle, makeNote, newID, noTransform, parseCameraAspect, parseLink, placedCentre, PRESET_COLOURS, readDrawing,
@@ -40,6 +40,7 @@ import { LinkBanner, type LinkRequest } from "./LinkBanner"
 import { FindBar, type FindRequest } from "./FindBar"
 import { chipLine, escapeStops, modeChip } from "./modeChip"
 import { Icon, type IconName } from "./icons"
+import { findSession } from "./findSession"
 import { KeyList } from "./KeyList"
 import { Sidebar } from "./Sidebar"
 import { useOpenFound } from "./foundOpen"
@@ -1620,8 +1621,10 @@ export function App() {
         if (id === "findNext" || id === "findPrevious") {
           // With the bar away it goes on looking for the words last looked for.
           if (!finding) {
-            if (lastQuery.current.length === 0) { setFinding({ mode: "find", seed: words, tick: 1 }); return }
-            setFinding({ mode: "find", seed: lastQuery.current, tick: 1 })
+            if (findSession.query.length === 0) { setFinding({ mode: "find", seed: words, tick: 1 }); return }
+            // ⌘G with the bar away goes to the next match from the selection and opens nothing (findSession.ts: the words
+            // and the switches of the last Find).
+            findStep(view, { query: findSession.query, caseSensitive: findSession.caseSensitive, wholeWord: findSession.wholeWord }, id === "findPrevious")
             return
           }
           findNextMatch(view, id === "findPrevious")
@@ -1764,12 +1767,12 @@ export function App() {
                  }}>
               <Notebook file={current} text={loaded.text} version={loaded.version}
                         restore={viewStates.current.get(current) ?? null} rendered={rendered}
-                        markers={markers} listStyle={listStyle}
+                        markers={markers} listStyle={listStyle} codeLanguage={codeLanguage} platform={kind}
                         onChange={change} onReady={setView}
                         onViewState={onViewState} onLink={onLink} onFollow={onFollow}
                         readOnly={readOnly}
                         inkPainter={painter.current} onInsertInkCell={(offset) => insertInk(offset)}
-                        onCellsCopied={onCellsCopied} onDrawingPasted={pasteSheetCell} platform={kind} />
+                        onCellsCopied={onCellsCopied} onDrawingPasted={pasteSheetCell} />
               {/* The page drawing layer belongs to the rendered notebook: unmount it in source mode so its marks
                   are hidden and none of its pointer or keyboard handlers can take input from the Markdown editor. */}
               {rendered && <Canvas key={current ?? ""} note={current} drawing={drawing} onChange={changeDrawing} mode={mode} history={history}

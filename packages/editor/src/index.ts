@@ -9,6 +9,7 @@
 
 export { notebookState, notebookField, notebook, cellRanges, selectedRanges, applyEdit, cellWritten } from "./notebook"
 export { notebookDecorations, safeSpanStyle } from "./decorations"
+export { PLUS_CENTRE_X, PLUS_DIAMETER, PLUS_HIT, onPlusMarker, plusMarker, plusHit } from "./plusMarker"
 export { seamExtensions, armedField, armedTypeField, armSeam, setArmedType, pageSeams } from "./seams"
 export { cellBrackets, heldCells, GUTTER_WIDTH } from "./brackets"
 export { notebookKeys, wrap, heading, list, listStyleSource, quote, fence, mathsCell, tableCell, indentLines, outdentLines, textCell, markdownCell, mergeTheCell } from "./keys"
@@ -19,7 +20,7 @@ export { textCells, markerField, hiddenMarkers, plainSelection, redoWaiting } fr
 export { codeTypingKeys } from "./codeTyping"
 export { notebookTheme } from "./theme"
 export { textConventions } from "./conventions"
-export { find, findField, setFind, findCount, findNextMatch, replaceMatch, replaceEvery } from "./find"
+export { find, findField, setFind, findCount, findNextMatch, findStep, findFromSelection, replaceMatch, replaceEvery } from "./find"
 export { hiddenMarkerDeletion } from "./markerDeletion"
 export { pasteHtmlAsText, htmlToPlain, takesPastedPicture, DRAWING_MIME, drawingPasted, pasteDrawing } from "./paste"
 export {

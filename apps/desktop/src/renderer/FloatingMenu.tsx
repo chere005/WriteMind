@@ -64,6 +64,9 @@ interface Props {
   dataBar?: string
 }
 
+/** Something that is typed into: a field, or the notes (a contenteditable). */
+const takesKeys = (element: HTMLElement): boolean => element.isContentEditable || element.matches("input, textarea, select")
+
 export function FloatingMenu({ x, y, items, above, right, onClose, id, dataBar }: Props) {
   const box = useRef<HTMLDivElement>(null)
   const [at, setAt] = useState({ x, y })
@@ -109,12 +112,12 @@ export function FloatingMenu({ x, y, items, above, right, onClose, id, dataBar }
     }
   }, [onClose])
 
-  // On the way out the keyboard goes back to what had it (the notes, usually).
+  // On the way out the keyboard goes back to the notes, or to a field that had it. NOT to the button the menu was opened
+  // from: a click gives a web page's button the focus, which the Mac's buttons never take, and Escape then left the caret
+  // nowhere (typing after it went nowhere, Space opened the menu again).
   useEffect(() => () => {
     const back = was.current
-    // What had the keyboard gets it back — and when nothing did (a right-click on a bare part of the page
-    // leaves the body focused), the notes do.
-    if (back instanceof HTMLElement && back !== document.body && document.contains(back)) back.focus({ preventScroll: true })
+    if (back instanceof HTMLElement && back !== document.body && document.contains(back) && takesKeys(back)) back.focus({ preventScroll: true })
     else returnFocus()
   }, [])
 

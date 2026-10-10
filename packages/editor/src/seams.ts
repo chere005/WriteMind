@@ -17,15 +17,16 @@ import {
 import { isolateHistory } from "@codemirror/commands"
 import { Decoration, EditorView, ViewPlugin, keymap, type ViewUpdate } from "@codemirror/view"
 import {
-  between, end, firstCellFromBy, GAP_HEIGHT, onPlus, openCell, plus, seamAt, seams, armIn, type CellBox, type CellKind,
+  between, end, firstCellFromBy, GAP_HEIGHT, openCell, seamAt, seams, armIn, type CellBox, type CellKind,
   type PositionedBlock, type Range, type Seam,
 } from "@writemind/core"
 import { barCaret, sameLineOnScreen, shownBeyond, sideMove, verticalMove, type BarMove } from "./barWalk"
 import { insideHidden, revealAt } from "./fold"
 import { setHolding } from "./preview/hold"
-import { cellWritten, notebook } from "./notebook"
+import { cellWritten, itemOpened, notebook } from "./notebook"
 import { gapAt } from "./apart"
 import { renderedField } from "./rendered"
+import { PLUS_HIT, onPlusMarker, plusMarker } from "./plusMarker"
 
 /** Arm a seam by hand — the two ends of the page, which no caret can name. */
 export const armSeam = StateEffect.define<number | null>()
@@ -106,8 +107,6 @@ export const barFromField = StateField.define<number | null>({
   },
 })
 
-/** Where the note's left margin is, so the + sits outside the words. */
-export const PLUS_LEADING = 6
 /** How far (px) a press in a seam must travel before it picks cells (the Mac's CellInsertions.dragThreshold, in points). */
 const SEAM_DRAG = 10
 
@@ -282,11 +281,15 @@ export function pointerPlace(view: EditorView, target: EventTarget | null, clien
   const box = view.contentDOM.getBoundingClientRect()
   const x = clientX - box.left
   const y = clientY - box.top
-  const seam = seamAtY(view, y)
-  if (!seam) return null
   const armed = view.state.field(armedField, false) ?? null
-  if ((armed ?? seam.offset) === seam.offset && onPlus(x, y, seam, PLUS_LEADING)) return { kind: "plus", seam }
-  return { kind: "seam", seam }
+  // The marker stands in the left margin and its hit target reaches past the seam's own height (a 24 px square on the
+  // bar's line), so the seams within reach of the point are asked, not only the one it is in.
+  for (const at of [y, y - PLUS_HIT / 2, y + PLUS_HIT / 2]) {
+    const near = seamAtY(view, at)
+    if (near && (armed ?? near.offset) === near.offset && onPlusMarker(x, y, near.line)) return { kind: "plus", seam: near }
+  }
+  const seam = seamAtY(view, y)
+  return seam ? { kind: "seam", seam } : null
 }
 
 /**
@@ -422,6 +425,9 @@ class SeamLayer {
     if (place.kind === "plus") {
       event.preventDefault()
       event.stopPropagation()
+      // The bar is the cursor (docs/KEYS.md, Sean 2026-10-05): the + puts it up where it is pressed, and what the menu
+      // picks is made AT it, by the same command the key runs. Pressed on a bar that is already up it changes nothing.
+      if ((this.view.state.field(armedField, false) ?? null) !== place.seam.offset) armAt(this.view, place.seam.offset)
       this.onPlusPressed(place.seam)
       return
     }
@@ -520,14 +526,13 @@ class SeamLayer {
 
     const markedSeam = marked === armed ? armedSeam : marked === this.hovered ? hoveredSeam : null
     if (markedSeam) {
-      const rect = plus(markedSeam.line, PLUS_LEADING)
+      const rect = plusMarker(markedSeam.line)
       const dot = document.createElement("div")
       dot.className = "wm-plus"
       dot.style.left = `${rect.x}px`
       dot.style.top = `${rect.y}px`
       dot.style.width = `${rect.width}px`
       dot.style.height = `${rect.height}px`
-      dot.textContent = "+"
       this.dom.appendChild(dot)
     }
   }
@@ -556,11 +561,10 @@ const pointerCursors = EditorView.theme({
 })
 
 /** Make a cell of `kind` at the seam `offset` now, empty, with the caret in it where its words go (the + menu's choice). */
-export function openCellAt(view: EditorView, offset: number, kind: CellKind): void {
+export function openCellAt(view: EditorView, offset: number, kind: CellKind, apart = true): void {
   const at = Math.min(Math.max(offset, 0), view.state.doc.length)
   const opened = openCell(kind, view.state.doc.toString(), at, "")
-  // Making the cell is a step of its own (Ctrl+Z takes the cell back), never joined to the typing before it.
-  rewrite(view, opened.markdown, opened.caret, true)
+  rewrite(view, opened.markdown, opened.caret, apart)
 }
 
 /**
@@ -571,7 +575,8 @@ export function openCellAt(view: EditorView, offset: number, kind: CellKind): vo
 export function openBarForWriting(view: EditorView): boolean {
   if ((view.state.field(armedField, false) ?? null) === null) return false
   view.dispatch({ effects: setArmedType.of({ kind: "text" }) })
-  return openArmed(view, "")
+  // (Not apart: the caller writes the maths into the cell in the same breath, and that is one step with it.)
+  return openArmed(view, "", true, false)
 }
 
 /**
@@ -610,6 +615,8 @@ function rewrite(view: EditorView, markdown: string, caret: number, apart = fals
     userEvent: "input.type",
     // The cell is written whole by the core's rules (a text cell's first character already literal): textCells.ts
     // leaves it as it is.
+    // A cell made by a command, empty (the + menu, a key at a bar), is ONE undo step of its own: what is typed into it
+    // a moment later (CodeMirror joins input within half a second) is the next step, not part of the creation.
     annotations: apart ? [cellWritten.of(true), isolateHistory.of("full")] : cellWritten.of(true),
   })
   // The bar under a closed section stands before the next heading, and a cell written there is that section's: it
@@ -617,20 +624,25 @@ function rewrite(view: EditorView, markdown: string, caret: number, apart = fals
   // hidden", queued for the edit, leaves it where it is.)
   const head = view.state.selection.main.head
   if (revealAt(view, head)) view.dispatch({ selection: EditorSelection.cursor(head), scrollIntoView: true })
+  // A list opened empty (`- `, `* `, `1. `): the words typed after its marker are the item's, not a text cell's literal
+  // (notebook.ts `itemOpened`).
+  const line = view.state.doc.lineAt(view.state.selection.main.head)
+  if (view.state.selection.main.head === line.to && OPEN_ITEM.test(line.text)) view.dispatch({ effects: itemOpened.of(line.from) })
 }
+
+/** An item's marker and nothing else, as `openCell` writes one. */
+const OPEN_ITEM = /^\s*([-+*]|\d{1,4}[.)])\s*$/
 
 /**
  * Open the cell an armed bar stands for, with `written` already in it. `literal`: it was typed (a text cell takes it by
  * the escape rule); false for a paste, which goes in as the markdown it is.
  */
-export function openArmed(view: EditorView, written: string, literal = true): boolean {
+export function openArmed(view: EditorView, written: string, literal = true, apart = written === ""): boolean {
   const armed = view.state.field(armedField, false) ?? null
   if (armed === null) return false
   const kind = view.state.field(armedTypeField, false) ?? { kind: "text" as const }
   const opened = openCell(kind, view.state.doc.toString(), armed, written, literal)
-  // A cell made with nothing typed in it (a Style pick at the bar) is its own undo step; one opened by a character
-  // stays with the typing that follows it.
-  rewrite(view, opened.markdown, opened.caret, written.length === 0)
+  rewrite(view, opened.markdown, opened.caret, apart)
   return true
 }
 

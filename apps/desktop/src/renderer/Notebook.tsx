@@ -5,24 +5,25 @@
  * `@writemind/editor`, and every rule THAT obeys is in `@writemind/core`.
  */
 
-import { useEffect, useLayoutEffect, useRef, useState } from "react"
+import { useEffect, useRef, useState } from "react"
 import { Compartment, EditorState, StateEffect, type Extension } from "@codemirror/state"
 import { EditorView, drawSelection, rectangularSelection } from "@codemirror/view"
 import { history, historyKeymap, defaultKeymap, isolateHistory, standardKeymap } from "@codemirror/commands"
 import { keymap } from "@codemirror/view"
 import {
-  cellBrackets, folding, foldField, foldedKeys, linkClicks, linkTrigger, mathRendering, notebookDecorations, notebookKeys,
-  notebookState, notebookTheme, textConventions, pasteHtmlAsText, drawingPasted, pasteDrawing, hiddenMarkerDeletion, find, preview, rendered, renderedField, markersField, seamExtensions, openCellAt,
-  setFolds, setPreview, setRendered, setMarkers, listStyleSource, revealAt,
+  armAt, armedField, cellBrackets, folding, foldField, foldedKeys, linkClicks, linkTrigger, mathRendering, notebookDecorations, notebookKeys,
+  notebookState, notebookTheme, textConventions, pasteHtmlAsText, drawingPasted, pasteDrawing, hiddenMarkerDeletion, find, preview, rendered, renderedField, markersField, seamExtensions,
+  setFolds, setPreview, setRendered, setMarkers, listStyleSource, revealAt, PLUS_CENTRE_X, PLUS_DIAMETER,
 } from "@writemind/editor"
-import { ALL_KINDS, DEFAULT_EVALUATOR, openCell, type CellKind, type ListStyle, type Seam } from "@writemind/core"
+import { ALL_KINDS, openCell, type CodeLanguage, type ListStyle, type Seam } from "@writemind/core"
 import { textTimeline } from "./editTimeline"
 import { historyOf, stashText, takeText } from "./noteHistory"
 import { cellsCopied, evaluationCells, evalHost, inkCellPainter, pictureCells, type InkCellPainter } from "@writemind/editor"
 import { tables, textCells } from "@writemind/editor"
 import { evalHostOfApp } from "./evalHost"
 import { FloatingMenu, type MenuItem } from "./FloatingMenu"
-import { kindMenuItems, kindOfPick, type KindPick } from "./kindMenu"
+import { runEditorCommand } from "./editorCommands"
+import { kindMenuItems, type KindPick } from "./kindMenu"
 import { modChord } from "../shared/chord"
 import "./editor.css"
 
@@ -57,6 +58,8 @@ interface Props {
   markers?: boolean
   /** The style Format ▸ List and its key write (the chevron beside the list button). */
   listStyle?: ListStyle
+  /** The language Code Block's key and the + menu's Code write (the chevron beside the code button); plain by default. */
+  codeLanguage?: CodeLanguage
   /** The document changed: its words as a function (a snapshot), so a keystroke does not copy the whole note. */
   onChange(text: () => string): void
   onReady(view: EditorView): void
@@ -78,7 +81,7 @@ interface Props {
   platform?: string
 }
 
-export function Notebook({ file, text, version, restore, readOnly, rendered: showRendered, markers: showMarkers, listStyle, onChange, onReady,
+export function Notebook({ file, text, version, restore, readOnly, rendered: showRendered, markers: showMarkers, listStyle, codeLanguage, onChange, onReady,
   onViewState, onLink, onFollow, inkPainter, onInsertInkCell, onCellsCopied, onDrawingPasted, platform = "win32" }: Props) {
   const host = useRef<HTMLDivElement | null>(null)
   const view = useRef<EditorView | null>(null)
@@ -100,6 +103,8 @@ export function Notebook({ file, text, version, restore, readOnly, rendered: sho
   markersRef.current = showMarkers
   const listRef = useRef<ListStyle>(listStyle ?? "dots")
   listRef.current = listStyle ?? "dots"
+  const codeRef = useRef<CodeLanguage>(codeLanguage ?? "plain")
+  codeRef.current = codeLanguage ?? "plain"
   const painterRef = useRef(inkPainter ?? null)
   painterRef.current = inkPainter ?? null
   const insertInkRef = useRef(onInsertInkCell)
@@ -153,8 +158,10 @@ export function Notebook({ file, text, version, restore, readOnly, rendered: sho
       linkTrigger((_editor, caret) => linkRef.current?.(file, caret)),
       linkClicks((href) => followRef.current?.(file, href)),
       seamExtensions((editor, seam) => {
+        // The menu opens beside the marker, which is drawn on the bar's line in the left margin. (The content box's top
+        // already moves with the scroll: the page's own y is added to it as it is.)
         const box = editor.contentDOM.getBoundingClientRect()
-        setMenu({ x: box.left + 24, y: box.top + seam.line - editor.scrollDOM.scrollTop + 8, seam })
+        setMenu({ x: box.left + PLUS_CENTRE_X + PLUS_DIAMETER / 2 + 6, y: box.top + seam.line - 10, seam })
       }),
       // Tables: the grid in the markdown, Tab / Shift+Tab cell to cell, Return adds a row (ahead of the page's Return).
       tables,
@@ -271,23 +278,22 @@ export function Notebook({ file, text, version, restore, readOnly, rendered: sho
     setContext({ x: event.clientX, y: event.clientY, hasSelection: editor.state.selection.ranges.some((r) => !r.empty) })
   }
 
-  /** The seam's menu: the one list of kinds (kindMenu.ts), the same as the toolbar's Style menu. */
+  // A kind picked from the + menu: the bar is up where the + was pressed (the press armed it), and the cell is made there NOW,
+  // empty, the caret in it where its words go (Sean, 2026-10-05: "selecting a cell type ... should create a new cell with the
+  // cursor ready to start typing"), by THE command the key and the Style menu run (`runEditorCommand`: a kind at a bar makes
+  // the cell there, keys.ts `nameKind`). A Drawing Cell is made by the app: its line names a cell in the drawing (the bar's
+  // typing never makes one), and the pointer becomes a pen for that cell alone (inkScope.ts).
   const choose = (pick: KindPick) => {
     const editor = view.current
-    const at = menu?.seam.offset
+    const seam = menu?.seam
     setMenu(null)
-    if (!editor || at === undefined) return
-    // A Drawing Cell is made at once, by the app: its line names a cell in the drawing (the bar's typing never makes
-    // one), and the pointer becomes a pen for that cell alone (inkScope.ts).
-    if (pick.command === "insertInkCell") { insertInkRef.current?.(at); editor.focus(); return }
-    // Runnable code: whichever environment the notebook last used (Wolfram until one has been), as its own key does.
-    const kind = kindOfPick(pick) ?? { kind: "evaluation", evaluator: editor.state.facet(evalHost)?.evaluator() ?? DEFAULT_EVALUATOR } as CellKind
-    // THE CELL IS MADE NOW, empty, with the caret in it where its words go and the keyboard in the editor (Sean,
-    // 2026-10-05: "selecting a cell type ... should create a new cell with the cursor ready to start typing"). The
-    // Mac's + only names what the next character will open, with the bar still up; the port no longer waits for it.
-    openCellAt(editor, at, kind)
+    if (!editor || !seam) return
+    if ((editor.state.field(armedField, false) ?? null) !== seam.offset) armAt(editor, seam.offset)
+    if (pick.command === "insertInkCell") insertInkRef.current?.(seam.offset)
+    else runEditorCommand(editor, pick.command, { listStyle: pick.listStyle ?? listRef.current, codeLanguage: codeRef.current })
     editor.focus()
   }
+
 
   const clipboard = (command: "cut" | "copy" | "paste" | "selectAll") => {
     const editor = view.current
@@ -316,8 +322,8 @@ export function Notebook({ file, text, version, restore, readOnly, rendered: sho
                       onClose={() => setContext(null)} />
       )}
       {menu && (
-        <FloatingMenu id="kind-menu" x={menu.x} y={menu.y} items={kindMenuItems(platform, null, choose)}
-                      onClose={() => setMenu(null)} />
+        <FloatingMenu x={menu.x} y={menu.y} id="seam-kinds" onClose={() => setMenu(null)}
+                      items={kindMenuItems(platform, null, choose)} />
       )}
     </div>
   )
