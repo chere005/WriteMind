@@ -28,6 +28,10 @@ import {
   type MathTemplate,
 } from "@writemind/core"
 import { applyEdit, armAtNoteEnd, mathElement, openBarForWriting } from "@writemind/editor"
+import { usePopover } from "./usePopover"
+import { hostPlatform } from "./hostPlatform"
+import { modChord } from "../shared/chord"
+import { shown } from "../shared/commands"
 
 /** The event the Insert > Maths... command (Ctrl+Shift+M) sends. */
 export const MATH_OPEN_EVENT = "wm:math-open"
@@ -85,17 +89,6 @@ export function MathPalette({ view, showButton = true }: { view: EditorView | nu
     return () => window.removeEventListener(MATH_OPEN_EVENT, toggle)
   }, [open, show])
 
-  // Clicking anywhere else puts the palette away.
-  useEffect(() => {
-    if (!open) return
-    const away = (event: PointerEvent) => {
-      if (event.target instanceof Node && (pop.current?.contains(event.target) || button.current?.contains(event.target))) return
-      setOpen(false)
-    }
-    window.addEventListener("pointerdown", away, true)
-    return () => window.removeEventListener("pointerdown", away, true)
-  }, [open])
-
   /** The picked shape holds the keyboard (a roving tab stop): the arrows work from it. */
   const focusPicked = useCallback(() => {
     pop.current?.querySelector<HTMLElement>('[data-template][tabindex="0"]')?.focus({ preventScroll: true })
@@ -120,6 +113,10 @@ export function MathPalette({ view, showButton = true }: { view: EditorView | nu
     setOpen(false)
     if (giveBack) viewRef.current?.focus()
   }
+
+  // A press anywhere else, Escape on the window, the window blurring or resizing, and staying inside the window: the page's
+  // one popover hook (usePopover.ts). The palette places the keyboard itself (the picked shape), and Escape gives it to the note.
+  usePopover({ ref: pop, open, onClose: () => close(true), anchor: button, focus: "none" })
 
   const put = (display: boolean) => {
     const target = viewRef.current
@@ -242,7 +239,7 @@ export function MathPalette({ view, showButton = true }: { view: EditorView | nu
     <>
       {showButton && (
         <button ref={button} className={`icon-button${open ? " on" : ""}`} data-math="button"
-                title={"Maths  (Ctrl+Shift+M)\nIntegrals, sums, derivatives — written as Wolfram Language"}
+                title={`Maths  (${shown("insertMath", hostPlatform())})\nIntegrals, sums, derivatives — written as Wolfram Language`}
                 style={{ width: "auto", padding: "0 6px", fontSize: 12 }}
                 onClick={() => (open ? setOpen(false) : show())}>ƒ(x)</button>
       )}
@@ -303,7 +300,7 @@ export function MathPalette({ view, showButton = true }: { view: EditorView | nu
             <button data-insert="1" className="default" disabled={wl.trim() === ""}
                     onClick={() => put(ownLine)}>Insert</button>
           </div>
-          <div className="math-keys">Enter inserts · Ctrl+Enter the other way · Esc closes</div>
+          <div className="math-keys">Enter inserts · {modChord(hostPlatform(), "Enter")} the other way · Esc closes</div>
         </div>
       )}
     </>

@@ -17,7 +17,7 @@
 
 import { useEffect, useRef, useState } from "react"
 import { progressLine, updateDialogText, type UpdateAnswer, type UpdateDialog as Dialog, type UpdateView } from "../shared/update"
-import { returnFocus } from "./focusReturn"
+import { Modal } from "./Modal"
 import "./updateDialog.css"
 
 /** Keys this soon after the sheet appeared were meant for the note, not for it. */
@@ -55,7 +55,6 @@ function UpdateSheet({ view, dialog }: { view: UpdateView; dialog: Dialog }) {
 
   useEffect(() => {
     sheet.current?.focus()
-    return () => { window.setTimeout(returnFocus, 0) }
   }, [])
 
   const answer = (choice: UpdateAnswer) => { void window.wm.update?.answer(choice) }
@@ -69,57 +68,53 @@ function UpdateSheet({ view, dialog }: { view: UpdateView; dialog: Dialog }) {
   }
 
   return (
-    <div className="modal-backdrop" data-modal="update" onMouseDown={(event) => {
-      if (event.target === event.currentTarget && !downloading) dismiss()
-    }}>
-      <div ref={sheet} className="modal update-dialog" role="dialog" aria-modal="true" aria-label={text.title}
-           data-update={dialog.kind} tabIndex={-1}
+    <Modal hook="update" label={text.title} sheetRef={sheet} dialogData={{ "data-update": dialog.kind }}
+           onClose={dismiss}
+           // A key in the sheet's first moments was meant for the note, not for it: Escape does nothing yet.
+           onEscape={() => { if (Date.now() - shownAt.current >= ARMED_AFTER_MS) dismiss() }}
+           onBackdrop={downloading ? null : dismiss}
            onKeyDown={(event) => {
-             if (event.key !== "Escape" && event.key !== "Enter") return
              // Enter only when the sheet itself has the keyboard: a focused button or the box answers for itself.
-             if (event.key === "Enter" && event.target !== sheet.current) return
+             if (event.key !== "Enter" || event.target !== sheet.current) return
              // The sheet the launch look brought up by itself wants a deliberate answer (a click, or Tab to a button):
              // an Enter typed for the note must not start an update and a restart.
-             if (event.key === "Enter" && unasked) { event.preventDefault(); event.stopPropagation(); return }
              event.preventDefault()
              event.stopPropagation()
-             if (Date.now() - shownAt.current < ARMED_AFTER_MS) return
-             if (event.key === "Escape") dismiss()
-             else primary()
+             if (unasked || Date.now() - shownAt.current < ARMED_AFTER_MS) return
+             primary()
            }}>
-        <h3>{text.title}</h3>
-        <p data-update="message">{text.message}</p>
-        {text.detail && <p className="update-detail">{text.detail}</p>}
-        {line && (
-          <p className={line.problem ? "problem" : "update-progress"} data-update="progress" role={line.problem ? "alert" : "status"}>
-            {line.text}
-          </p>
-        )}
-        <div className="update-row">
-          {offer ? (
-            <label className="update-startup">
-              <input type="checkbox" data-update="startup" checked={startup}
-                     onChange={(event) => {
-                       const on = event.target.checked
-                       setStartup(on)
-                       void window.wm.update?.setCheckOnStartup(on)
-                     }} />
-              Check on startup
-            </label>
-          ) : <span />}
-          <div className="buttons">
-            {offer && (
-              <button data-modal="cancel" data-update="later" disabled={restarting} onClick={dismiss}>
-                {downloading ? "Cancel" : "Later"}
-              </button>
-            )}
-            <button data-modal="ok" data-update={offer ? (download ? "download" : "now") : "ok"} className="default"
-                    disabled={downloading || restarting} onClick={primary}>
-              {offer ? (download ? "Download" : "Update now") : "OK"}
+      <h3>{text.title}</h3>
+      <p data-update="message">{text.message}</p>
+      {text.detail && <p className="update-detail">{text.detail}</p>}
+      {line && (
+        <p className={line.problem ? "problem" : "update-progress"} data-update="progress" role={line.problem ? "alert" : "status"}>
+          {line.text}
+        </p>
+      )}
+      <div className="update-row">
+        {offer ? (
+          <label className="update-startup">
+            <input type="checkbox" data-update="startup" checked={startup}
+                   onChange={(event) => {
+                     const on = event.target.checked
+                     setStartup(on)
+                     void window.wm.update?.setCheckOnStartup(on)
+                   }} />
+            Check on startup
+          </label>
+        ) : <span />}
+        <div className="buttons">
+          {offer && (
+            <button data-modal="cancel" data-update="later" disabled={restarting} onClick={dismiss}>
+              {downloading ? "Cancel" : "Later"}
             </button>
-          </div>
+          )}
+          <button data-modal="ok" data-update={offer ? (download ? "download" : "now") : "ok"} className="default"
+                  disabled={downloading || restarting} onClick={primary}>
+            {offer ? (download ? "Download" : "Update now") : "OK"}
+          </button>
         </div>
       </div>
-    </div>
+    </Modal>
   )
 }

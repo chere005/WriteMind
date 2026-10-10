@@ -26,6 +26,8 @@ import { holdPictureCell, inkCellPlaces, pictureCellLine, type InkCellPlace } fr
 import { undockCell } from "./Canvas"
 import { cellInFront, openInTabletSheet } from "./cellSheets"
 import { FloatingMenu, type MenuItem } from "./FloatingMenu"
+import { hostPlatform } from "./hostPlatform"
+import { modChord } from "../shared/chord"
 
 /** `cell`: a live drawing cell's id; `file`: a docked picture's media file (one of the two is set). */
 interface Open {
@@ -152,11 +154,11 @@ export function CellMenu({ onPlace }: Props = {}) {
     : [
       open.caption ? { label: "Undock", hint: "has a caption", disabled: true, onClick: () => {} } : undock,
       "-",
-      { label: "Cut", hint: "Ctrl+X", onClick: () => { holdUnlessCovered(open.view, open.element); void window.wm.editNative("cut") } },
-      { label: "Copy", hint: "Ctrl+C", onClick: () => { holdUnlessCovered(open.view, open.element); void window.wm.editNative("copy") } },
-      { label: "Paste", hint: "Ctrl+V", onClick: () => { open.view.focus(); void window.wm.editNative("paste") } },
+      { label: "Cut", hint: modChord(hostPlatform(), "X"), onClick: () => { holdUnlessCovered(open.view, open.element); void window.wm.editNative("cut") } },
+      { label: "Copy", hint: modChord(hostPlatform(), "C"), onClick: () => { holdUnlessCovered(open.view, open.element); void window.wm.editNative("copy") } },
+      { label: "Paste", hint: modChord(hostPlatform(), "V"), onClick: () => { open.view.focus(); void window.wm.editNative("paste") } },
       "-",
-      { label: "Select All", hint: "Ctrl+A", onClick: () => {
+      { label: "Select All", hint: modChord(hostPlatform(), "A"), onClick: () => {
         open.view.focus()
         open.view.dispatch({ selection: { anchor: 0, head: open.view.state.doc.length } })
       } },

@@ -7,6 +7,11 @@
  * It takes the keyboard while it is up (Up, Down, Enter, Escape, Right/Left
  * for a submenu) and gives it back to where it was when it goes: a menu is a
  * chrome action, and the caret must be where it was afterwards.
+ *
+ * ON OPENING NO ROW IS CHOSEN (docs/PLAN-bars-2026-10.md, P6): the menu itself has the keyboard, so the first row is not
+ * painted as the answer before anything was pressed — it was, and Enter on a menu opened by a mouse click did
+ * the first row's thing. The first arrow key moves onto a row (Down the first, Up the last); Home and End go to the ends;
+ * Enter acts on the row that has the keyboard and on nothing when none does. A mouse over a row lights it as ever.
  */
 
 import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type ReactNode } from "react"
@@ -68,7 +73,8 @@ export function FloatingMenu({ x, y, items, above, onClose, id }: Props) {
     const left = Math.max(4, Math.min(x, window.innerWidth - width - 4))
     const top = above ? Math.max(4, y - height) : Math.max(4, Math.min(y, window.innerHeight - height - 4))
     setAt({ x: left, y: top })
-    element.querySelector<HTMLButtonElement>("button:not(:disabled)")?.focus({ preventScroll: true })
+    // The MENU has the keyboard, not its first row (see the header).
+    if (!element.contains(document.activeElement)) element.focus({ preventScroll: true })
   }, [x, y, above, items])
 
   useEffect(() => {
@@ -76,11 +82,21 @@ export function FloatingMenu({ x, y, items, above, onClose, id }: Props) {
       if (box.current && event.target instanceof Node && box.current.contains(event.target)) return
       onClose()
     }
+    // Escape closes it wherever the keyboard is (a click on a disabled row, the page's own focus-return): heard on the
+    // window in the capture phase, and it goes no further, so the one press does not also let go of a tool or a box.
+    const escape = (event: KeyboardEvent) => {
+      if (event.key !== "Escape" || event.isComposing) return
+      event.preventDefault()
+      event.stopPropagation()
+      onClose()
+    }
     window.addEventListener("pointerdown", away, true)
+    window.addEventListener("keydown", escape, true)
     window.addEventListener("blur", onClose)
     window.addEventListener("resize", onClose)
     return () => {
       window.removeEventListener("pointerdown", away, true)
+      window.removeEventListener("keydown", escape, true)
       window.removeEventListener("blur", onClose)
       window.removeEventListener("resize", onClose)
     }
@@ -96,15 +112,17 @@ export function FloatingMenu({ x, y, items, above, onClose, id }: Props) {
   }, [])
 
   return (
-    <div ref={box} className="float-menu" role="menu" id={id}
+    <div ref={box} className="float-menu" role="menu" id={id} tabIndex={-1}
          style={{ left: at.x, top: at.y }}
          onContextMenu={(event) => event.preventDefault()}
          onKeyDown={(event) => {
            const buttons = [...(box.current?.querySelectorAll<HTMLButtonElement>(":scope > .float-row > button:not(:disabled), :scope > .float-custom button:not(:disabled)") ?? [])]
            const index = buttons.indexOf(document.activeElement as HTMLButtonElement)
            if (event.key === "Escape") { event.preventDefault(); event.stopPropagation(); onClose() }
-           else if (event.key === "ArrowDown") { event.preventDefault(); buttons[(index + 1) % buttons.length]?.focus() }
-           else if (event.key === "ArrowUp") { event.preventDefault(); buttons[(index - 1 + buttons.length) % buttons.length]?.focus() }
+           else if (event.key === "ArrowDown") { event.preventDefault(); buttons[index < 0 ? 0 : (index + 1) % buttons.length]?.focus() }
+           else if (event.key === "ArrowUp") { event.preventDefault(); buttons[index < 0 ? buttons.length - 1 : (index - 1 + buttons.length) % buttons.length]?.focus() }
+           else if (event.key === "Home") { event.preventDefault(); buttons[0]?.focus() }
+           else if (event.key === "End") { event.preventDefault(); buttons[buttons.length - 1]?.focus() }
          }}>
       <Items items={items} onClose={onClose} />
     </div>
