@@ -130,12 +130,15 @@ an undone Move to Trash leaves the item in the Trash too, and Redo puts the file
 * **A file step's effect on the page** comes back as a list: paths that moved (tabs, caret memory and the undo history of a
   moved note follow: `followMoved`), paths that are gone (their tabs close), paths that are back (a trashed note's tab
   reopens if it was open), a notice. The tree is read again.
+* **A file step closes the typing group in progress**: CodeMirror joins typing made within half a second, and typing, a
+  rename and typing again must not become one step spanning the rename (`closeTextGroups`, called when the journal records,
+  undoes or redoes).
 * **Redo is valid only while nothing new has been done since the undo.** The page tells the journal at the first edit after
   an undo (`undo:cutRedo`), and a text redo is checked against the time of the newest recorded file step.
 * **The text history survives what happens to its note.** A rename or a move keeps the editor's undo history (the state is
   carried to the new path and rebuilt with the new path's extensions); a disk reload that did not change the text leaves
-  it alone (and one that did is a step of its own, "Undo Reload"); a closed or trashed note's history is kept with the last
-  eight closed notes, so Undo of a trash brings back the note with its Ctrl+Z.
+  it alone (and one that did is a step of its own, "Undo Edit": the words that were there come back); a closed or trashed
+  note's history is kept with the last eight closed notes, so Undo of a trash brings back the note with its Ctrl+Z.
 
 ## Edit ▸ Undo / Redo
 

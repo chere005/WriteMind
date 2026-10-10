@@ -24,7 +24,7 @@ press would run twice. Each command names its owner instead:
 | Owner | Hears it | Commands |
 |---|---|---|
 | `editor` | CodeMirror's keymap (`packages/editor/src/keys.ts`, `extras.ts`). The page stands down because the key arrives `defaultPrevented`. | the Format menu, Select Next / All Occurrences, Code Block |
-| `history` | `useUndo` (the words and the drawing share one Undo) | Undo, Redo |
+| `history` | `useUndo` (the words, the drawing and the FILE operations share one Undo: `docs/PLAN-undo.md`) | Undo, Redo |
 | `page` | `useChrome` in the page | File, View, Insert, Pen, Undo/Redo Drawing, Expand Selection, Find, Input Devices, Help |
 | `main` | `useChrome`, which hands it to the main process (dialogs, the project file) | Project menu |
 
@@ -368,8 +368,9 @@ Each side button has two jobs (Sean, 2026-10-05):
 | Eraser end | Erase strokes | — |
 | Tip + Alt | Nothing | — |
 
-Undo / Redo are the note's ONE timeline (words and drawing, the same as
-Ctrl+Z / Ctrl+Y); over the tablet sheet, its own strokes first. A double tap
+Undo / Redo are the note's words and drawing only (the pen's button never
+takes back a file step: a stylus must not rename a note back), the same as
+Ctrl+Z / Ctrl+Y minus the file steps; over the tablet sheet, its own strokes first. A double tap
 is two press-and-release of the same button without the tip touching, the
 second press within 400 ms of the first release, each press under 500 ms. A
 single tap does nothing; a button held in the air does nothing; lifting the
@@ -463,3 +464,22 @@ A press on the words lets go of the pick, which gives the keys back.
 | same | x | closes a page; the first press asks ("Close?"), the second closes it and its picture |
 | Input Devices | Ctrl+Alt+R | Refresh Device List (the other camera commands are menu items) |
 | Input Devices ▸ Aspect Ratio | menu, no key | the viewfinder's shape: Free, 1:1, 4:3, 3:4, 3:2, 2:3, 16:9, 9:16 (ticked; remembered) (Mac commit c98c067) |
+
+## Undo (2026-10-10, `docs/PLAN-undo.md`)
+
+Sean: "make sure undo is always able to undo up to 3 steps, even if it involves file changes."
+
+| Key | Does |
+|---|---|
+| Ctrl+Z (⌘Z) | takes back the NEWEST step of either kind: the open note's own newest edit (its words or its drawing) or the journal's newest FILE step (New Note, Duplicate, Rename, Move, Reorder, Move to Trash, New Section, Rename / Move / Move to Trash on a section, Clean Up, Import), by the wall clock |
+| Ctrl+Shift+Z, Ctrl+Y (⇧⌘Z; ⌘Y is the video) | brings back the one undone last; a new step of either kind (any edit of any note, any file operation) ends every redo |
+| Ctrl+Z in a text field (the rename box, Find, the sidebar's search, a label) | that field's own |
+| Ctrl+Z with a dialog up | the dialog's (the notes do not move behind it) |
+| Edit ▸ Undo / Redo | name the step the next press takes ("Undo Rename Note", "Undo Move to Trash", "Undo Typing", "Undo Drawing") and are greyed when there is none |
+
+The last THREE file steps are always undoable, and their backups (what a trash or a section's trash removed, a new note's
+content at the moment it is undone, the pictures Clean Up took out) are kept under the app's data folder until the step is
+more than three back, is superseded after an undo, or the app quits. The words keep at least 200 steps and survive a tab
+switch, a save, a rename, a move, a disk reload that did not change the text, and (for the last eight closed notes) a closed
+tab. A trashed note comes back from the backup (the item stays in the OS Trash) under its own name, or "name 2" with a
+notice when the name is taken. Typing in another tab is that tab's step; the journal is the window's.

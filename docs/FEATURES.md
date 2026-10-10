@@ -310,3 +310,12 @@ is how the code is put together.
   notebook as the image itself, between cells or inside an input; into Pages or Word it is a picture at its size. On a Mac
   the cell is there at once as a cell that makes the drawing, and as the image itself a moment later, when the engine has
   answered. Pasting it back into WriteMind is the cell and nothing else.
+
+## Undo goes through file operations too (2026-10-10, `docs/PLAN-undo.md`)
+
+Ctrl+Z / ⌘Z takes back the newest step: the open note's words or drawing, or one of the last three FILE operations (new
+note, duplicate, rename, move, reorder, move to trash, the section versions of those, Clean Up, importing a markdown file).
+Ctrl+Shift+Z brings it back. A trashed note or section is restored from a copy the app kept first (nothing is trashed if the
+copy cannot be made); the copies are deleted when the step is more than three back, after a new step follows an undo, and when
+the app quits. Edit ▸ Undo names the step. The history of a note's words survives renames, moves and closing its tab.
+

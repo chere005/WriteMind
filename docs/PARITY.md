@@ -1330,3 +1330,18 @@ and make ctrl + 10 drawing cells". **This differs from the Mac on purpose: the M
 | Keys: Ctrl+9 Maths Cell (editor keymap `Mod-9`), Ctrl+0 Drawing Cell again (page; it was Ctrl+9 on 2026-10-05). No zoom role uses Ctrl+0 (the menu has none). F1's "Cell Types" group 1 … 9 then 0; the Quick Reference's cell-type rows and a "Maths cells" feature line; KEYS.md, PLAN-text-cells.md | done | `keyList` / `keyGroups` / `welcome` / `menu` tests; e2e (Ctrl+0 makes a drawing cell, one Ctrl+Z; Insert menu accelerators read from the running app); `drawing/08`, `09`, `10` moved to Ctrl+0 and pass (61 / 61) |
 
 Not verified: Sean's own hands and notes; the Mac build (⌘9 / ⌘0 only by the shared command table and the unit tests).
+
+## Undo through file operations (port-only, 2026-10-10)
+
+The Mac has the Finder's Trash and no file-step undo; this is the port's own (Sean: "make sure undo is always able to undo up
+to 3 steps, even if it involves file changes"). Design, journal, backups and limits: `docs/PLAN-undo.md`.
+
+| Feature | Status | Evidence |
+|---|---|---|
+| Ctrl+Z / Ctrl+Shift+Z take the newest step of the open note's words or drawing and the last three file steps; Edit ▸ Undo names it | built | `test/undoSteps.test.ts` (21), `e2e/suites/undo/01-five-presses.mjs` (33), `03-text-and-file-steps.mjs` (14) |
+| New Note, Duplicate, Rename, Move, Reorder, Move to Trash, New Section, Rename / Move / Move to Trash on a section, Clean Up, Import are journalled in the main process (every surface reaches them through the same IPC) | built | `test/undoJournal.test.ts` (38: every operation undone and redone, the backups' whole life, the name taken, a failing undo, quit and launch cleanup, an order file changed meanwhile) |
+| Backups until out of scope: the oldest of six file steps is gone with its backup, only three undo | built | `e2e/suites/undo/02-six-operations.mjs` (15) |
+| The words' history survives a rename, a move, a closed tab and a trash that is undone; a disk reload that changed nothing leaves it alone, one that changed the words is a step | built | `test/undoSteps.test.ts`, `e2e/suites/undo/01`, `04-tabs-reloads-and-failures.mjs` (23) |
+| A failed undo changes nothing and says why; a name taken on restore gets a number and a notice | built | `test/undoJournal.test.ts`, `e2e/suites/undo/04` |
+| Add / Remove / Hide Folder in the project | **not journalled**: project settings, no file in the notes folder changes, each has its reverse in the Project menu | `docs/PLAN-undo.md` |
+
