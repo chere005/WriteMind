@@ -1,7 +1,7 @@
 {
   "name": "writemind",
   "private": true,
-  "version": "3.0.0",
+  "version": "3.1.0",
   "description": "WriteMind for macOS and Windows: one notebook, two platforms.",
   "workspaces": [
     "packages/*",
