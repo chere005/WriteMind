@@ -188,16 +188,16 @@ describe("ci.yml", () => {
 })
 
 describe("the Mac scripts", () => {
-  it("build-helpers.sh compiles wm-pen for arm64 and macOS 13 alone: no x86_64 slice, no lipo, no Vision helper", () => {
+  it("build-helpers.sh compiles wm-vision and wm-pen for arm64 and macOS 13 alone: no x86_64 slice, no lipo", () => {
     const sh = text("tools/build-helpers.sh")
     expect(sh).toContain('min="13.0"')
     expect(sh).toContain('-target "arm64-apple-macos$min"')
     expect(sh).toContain("tools/pen/wm-pen.swift")
+    expect(sh).toContain("tools/vision/wm-vision.swift")
     // Comments may say what is gone; the commands must not do it.
     const commands = sh.split("\n").filter((line) => !/^\s*#/.test(line)).join("\n")
     expect(commands).not.toMatch(/x86_64|lipo -create|x64/)
-    expect(commands).not.toContain("tools/vision")
-    expect(commands).not.toMatch(/swiftc[^\n]*wm-vision/)
+    expect(commands.match(/swiftc -O -target "arm64-apple-macos\$min"/g)?.length).toBe(2)
   })
 
   it("the build runs build-helpers, and the script that was build-vision is gone", () => {
@@ -207,13 +207,14 @@ describe("the Mac scripts", () => {
     expect(existsSync(path.join(root, "apps/desktop/scripts/build-vision.mjs"))).toBe(false)
   })
 
-  it("verify-mac.sh checks the signature, wm-pen's slice, every Mach-O, Info.plist and the one dmg", () => {
+  it("verify-mac.sh checks the signature, both helpers' slices, every Mach-O, Info.plist and the one dmg", () => {
     const sh = text("tools/verify-mac.sh")
     expect(sh.startsWith("#!/usr/bin/env bash\n")).toBe(true)
     for (const piece of [
       "codesign --verify --deep --strict",
       "Signature=adhoc",
       "app.asar.unpacked/out/helpers/wm-pen",
+      "app.asar.unpacked/out/helpers/wm-vision",
       "scan_macho",
       "scan_asar",
       '"$got" != "arm64"',
@@ -227,7 +228,6 @@ describe("the Mac scripts", () => {
     // Nothing of Intel's is expected anywhere: the old checks for an x64 app and an x64 dmg are gone.
     expect(sh).not.toContain("mac-x64.dmg")
     expect(sh).not.toContain("x86_64 and arm64")
-    expect(sh).not.toContain("wm-vision")
   })
 })
 
