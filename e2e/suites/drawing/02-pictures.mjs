@@ -1,7 +1,7 @@
 // Pictures on the drawing layer: paste, drop, crop box, undo through Ctrl+Z and Edit > Undo.
 import { menuClick, js, ok, finish, sleep, drag, click, key, typeText, freshNote, saved, canvasBox, shot, CTRL, waitFor } from "../../lib/harness.mjs"
 
-const file = await freshNote()
+const file = await freshNote({ rendered: true })
 const cb = await canvasBox()
 const size = { w: cb.w, h: cb.h }
 

@@ -2,7 +2,7 @@
 // question) and a pasted picture. (Was tour/t17 and t18.)
 import { ok, finish, js, sleep, freshNote, canvasBox, saved, arm, handles, click, dblclick, dragPath, line, key, typeText, shot, rectOf, clearDrawing, footer } from "../../lib/harness.mjs"
 
-const file = await freshNote()
+const file = await freshNote({ rendered: true })
 const cb = await canvasBox()
 const X = (dx) => cb.x + dx, Y = (dy) => cb.y + dy
 const items = async () => (await saved(file)).items

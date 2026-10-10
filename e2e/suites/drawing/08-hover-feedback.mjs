@@ -5,7 +5,7 @@
 // Real mouse and keys. Unit side: apps/desktop/test/drawingHover.test.ts.
 import {
   ok, finish, js, send, sleep, freshNote, canvasBox, saved, setPen, dragPath, line, click, key, shot, handles,
-  setDoc, focus, clearDrawing, CTRL,
+  setDoc, focus, clearDrawing, CTRL, MOD,
 } from "../../lib/harness.mjs"
 
 /** The mouse moved with NO button held (the harness hover() moves with the left button down: buttons 1). */
@@ -20,7 +20,7 @@ async function handDrag(pts) {
   await sleep(120)
 }
 
-const file = await freshNote()
+const file = await freshNote({ rendered: true })
 await setDoc("# Hover\n\nSome words here, with a stroke drawn over the page beside them.\n\nMore words further down.", 0)
 const cb = await canvasBox()
 const X = (dx) => cb.x + dx, Y = (dy) => cb.y + dy
@@ -116,7 +116,7 @@ if (image) {
 await clearDrawing()
 await setDoc("# Hover\n\nA drawing cell below.", 0)
 await focus(); await js(`document.querySelector('.cm-content').cmTile.view.dispatch({selection:{anchor:20}})`)
-await key("0", { modifiers: CTRL }); await sleep(600)
+await key("0", { modifiers: MOD }); await sleep(600)
 const cell = await js(`(()=>{const e=document.querySelector('.wm-inkcell canvas');if(!e)return null;const r=e.getBoundingClientRect();return JSON.stringify({x:r.x,y:r.y,w:r.width,h:r.height})})()`).then((t) => (t ? JSON.parse(t) : null))
 ok("Ctrl+0 makes a drawing cell", !!cell)
 if (cell) {

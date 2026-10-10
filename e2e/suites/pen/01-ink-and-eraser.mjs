@@ -3,7 +3,7 @@
 // pen PointerEvents on the drawing layer. (Was pen.mjs.)
 import { ok, finish, js, sleep, freshNote, setPen, canvasBox, pe, saved, handles } from "../../lib/harness.mjs"
 
-const file = await freshNote()
+const file = await freshNote({ rendered: true })
 await setPen(true)
 const info = await js(`(()=>{const c=document.querySelector('.wm-canvas');return {pe:getComputedStyle(c).pointerEvents,ta:getComputedStyle(c).touchAction}})()`)
 ok("the drawing layer takes pointer events with the pen down", info.pe !== "none", JSON.stringify(info))

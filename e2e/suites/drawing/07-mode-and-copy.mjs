@@ -1,11 +1,11 @@
 // Drawinglane-fix2: the pen / cursor mode putting the pick away, Ctrl+X on selected words, and no phantom undo step.
 // Real mouse and key events, the real editor. Unit side: apps/desktop/test/layerKeys.test.ts.
 import {
-  js, ok, finish, sleep, drag, click, key, freshNote, saved, canvasBox, arm, CTRL,
+  js, ok, finish, sleep, drag, click, key, freshNote, saved, canvasBox, arm, CTRL, MOD,
   doc, setDoc, sel, setSel, focus, handles, setPen,
 } from "../../lib/harness.mjs"
 
-const file = await freshNote()
+const file = await freshNote({ rendered: true })
 const cb = await canvasBox()
 const X = (dx) => cb.x + dx, Y = (dy) => cb.y + dy
 const shapes = async () => (await saved(file)).items.filter((i) => i.kind === "shape")
@@ -33,7 +33,7 @@ await click(X(10), Y(500)); await sleep(100)
 await click(X(360), Y(280)); await sleep(200)
 ok("the shape is picked by a click", (await handles()).length >= 3)
 await focus(); await setSel(0, 5)
-await key("x", { modifiers: CTRL }); await sleep(200)
+await key("x", { modifiers: MOD }); await sleep(200)
 ok("Ctrl+X with words selected cut the words...", (await doc()) === "", JSON.stringify(await doc()))
 ok("...and left the shape", (await shapes()).length === 1)
 

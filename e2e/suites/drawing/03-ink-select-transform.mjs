@@ -3,7 +3,7 @@
 // picks many, Ctrl+G groups, Backspace deletes, Ctrl+Z restores. (Was tour/t10 and t11.)
 import { ok, finish, js, sleep, freshNote, setPen, canvasBox, saved, handles, key, click, dragPath, line, shot, footer, CTRL } from "../../lib/harness.mjs"
 
-const file = await freshNote()
+const file = await freshNote({ rendered: true })
 const cb = await canvasBox()
 const X = (dx) => cb.x + dx, Y = (dy) => cb.y + dy
 const items = async () => (await saved(file)).items

@@ -3,7 +3,7 @@
 // at the end. (Was tour/t16.mjs.)
 import { ok, finish, js, send, sleep, freshNote, setPen, canvasBox, saved, click, dragPath, line, handles, shot } from "../../lib/harness.mjs"
 
-const file = await freshNote()
+const file = await freshNote({ rendered: true })
 try {
   await send("Emulation.setDeviceMetricsOverride", { width: 1280, height: 720, deviceScaleFactor: 1.5, mobile: false })
   await sleep(800)

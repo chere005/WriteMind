@@ -1,6 +1,6 @@
 // The pen takes over the pointer: OS cursor hidden, own cursor drawn, no mouse-like behaviour. 
 import { js, ok, finish, sleep, freshNote, pe } from "../../lib/harness.mjs"
-const file = await freshNote()
+const file = await freshNote({ rendered: true })
 await js(`localStorage.removeItem('writemind.pen')`)
 await sleep(400); await js(`document.querySelector('.cm-content').dispatchEvent(new PointerEvent('pointermove',{bubbles:true,clientX:5,clientY:5,pointerId:1,pointerType:'mouse',isPrimary:true}))`); await sleep(80)
 const active = () => js(`document.documentElement.classList.contains('pen-active')`)
