@@ -21,7 +21,7 @@ import { furnitureAt, reminderAt } from "./furniture"
 import { contentEnd, fenceLines, fencePointer, landingOffFence, onFence } from "./fences"
 import { insideHidden } from "../fold"
 import { firstCellReaching } from "../seams"
-import { cellBeside } from "../barWalk"
+import { cellBeside, lastBlock } from "../barWalk"
 import { openBlock, press } from "./field"
 import { holdingField } from "./hold"
 import { notebook } from "../notebook"
@@ -358,13 +358,14 @@ const vertical = (down: boolean): Command => (view) => {
       return true
     }
     if (down) {
-      if (last >= doc.length) {
+      // (No block on show below: the bar under the note, also when the note ends with its newline — barWalk.lastBlock.)
+      if (last >= doc.length || lastBlock(state, last + 1, false)) {
         view.dispatch({ selection: EditorSelection.cursor(doc.length), effects: armSeam.of(doc.length), scrollIntoView: true })
         return true
       }
       target = Math.min(last + 1, doc.length)
     } else {
-      if (first <= 0) {
+      if (first <= 0 || lastBlock(state, first, true)) {
         view.dispatch({ selection: EditorSelection.cursor(0), effects: armSeam.of(0), scrollIntoView: true })
         return true
       }

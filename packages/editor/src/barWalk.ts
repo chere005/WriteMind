@@ -58,6 +58,16 @@ function indexBeside(state: EditorState, offset: number, up: boolean, blanks: bo
   return i >= 0 && i < cells.length ? i : null
 }
 
+/**
+ * Whether the block ending at `last` (going down) or starting at `first` (going up) is the end block of the page: no cell on
+ * show beyond it, however many empty lines. A note that ends with its newline (every note the app saves) has one more empty
+ * line than it has cells, and the rendered page's Down took that line for a place to stand and walked onto it instead of
+ * arming the bar under the note (the markdown side's `seamBeneath` always did).
+ */
+export function lastBlock(state: EditorState, edge: number, up: boolean): boolean {
+  return cellBeside(state, edge, up, false) === null
+}
+
 /** The cell on show the caret at `head` is in (its last line's end counts), with its index; null on a line between. */
 export function cellAtCaret(state: EditorState, head: number): { cell: PositionedBlock; index: number } | null {
   const cells = notebook(state).cells
