@@ -38,13 +38,14 @@ ok("the toggle's row does not depend on the sidebar being open (y)", open.y === 
 ok("x moves only by the sidebar's own width", Math.abs((open.x - shut.x) - sidebarWidth) < 8, `${open.x} vs ${shut.x} (sidebar ${sidebarWidth})`)
 
 // ---- B. the sidebar's own bar
-const bar = await J(`(() => { const s = document.querySelector('.sidebar-bar'); const r = s.getBoundingClientRect(); return { h: r.height, right: r.right, kids: [...s.querySelectorAll('[data-bar]')].map(b => b.dataset.bar), last: [...s.querySelectorAll('button')].pop().getBoundingClientRect().right, first: s.querySelector('[data-bar]').getBoundingClientRect().left } })()`)
-ok("the sidebar bar is 44 tall", Math.round(bar.h) === 44 || Math.round(bar.h) === 45, JSON.stringify(bar))
-ok("edit, new section, markdown, video, in that order", JSON.stringify(bar.kids) === JSON.stringify(["edit", "new-section", "markdown", "video", "video-options"]), JSON.stringify(bar.kids))
-ok("right-aligned", bar.right - bar.last < 12 && bar.first > 100, JSON.stringify(bar))
+// (docs/PLAN-bars-2026-10.md P3, CHANGED: it was 44 tall and read edit · new section · markdown · video, right-aligned. It is the Mac's 36px bar now:
+// a search field, +, the pencil. New Section is in the + menu; the markdown and video buttons are the tab row's, to the right of the sidebar's button.)
+const bar = await J(`(() => { const s = document.querySelector('.sidebar-bar'); const r = s.getBoundingClientRect(); return { h: r.height, kids: [...s.querySelectorAll('[data-bar],[data-sidebar=search]')].map(b => b.dataset.bar ?? b.dataset.sidebar) } })()`)
+ok("the sidebar bar is 36 tall", Math.round(bar.h) === 36, JSON.stringify(bar))
+ok("search, +, the pencil, in that order", JSON.stringify(bar.kids) === JSON.stringify(["search", "new-note", "edit"]), JSON.stringify(bar.kids))
 const topText = await js(`document.querySelector('.top-bar').innerText`)
 ok("no rendered-page toggle or PDF button left in the text bar", !topText.includes("◧") && !topText.includes("PDF") && !topText.includes("◉"), topText)
-ok("the markdown toggle and the video switch moved to the sidebar", await js(`!!document.querySelector('.sidebar-bar [data-bar=markdown]') && !!document.querySelector('.sidebar-bar [data-bar=video]')`))
+ok("the markdown toggle and the video switch are not on the sidebar's bar", await js(`!document.querySelector('.sidebar-bar [data-bar=markdown]') && !document.querySelector('.sidebar-bar [data-bar=video]')`))
 
 // ---- C. groups, in the Mac's order, each collapsible and remembered
 const groups = await J(`[...document.querySelectorAll('.bar-group')].map(g => g.dataset.group)`)

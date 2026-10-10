@@ -84,6 +84,8 @@ export const COMMANDS: CommandDef[] = [
   // No key: Ctrl+E is Export (Sean's ⌘E, 2026-09-21).
   c("useSelectionForFind", "Use Selection for Find", "page"),
   c("jumpToSelection", "Jump to Selection", "page", "CmdOrCtrl+J"),
+  // The sidebar's search over every note of the project (docs/PLAN-bars-2026-10.md P3): opens the sidebar first when it is away.
+  c("searchNotes", "Search Notes…", "page", "CmdOrCtrl+Shift+F"),
   // View. ⌘K, ⌘T, ⌘Y, ⌘P (Sean, 2026-09-21), MOVED rather than added: two keys
   // for one action is two things to remember and one of them always the wrong one.
   c("toggleSidebar", "Hide Notes Sidebar", "page", "CmdOrCtrl+K"),

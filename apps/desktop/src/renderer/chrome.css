@@ -5,9 +5,6 @@
  * same strength this one wins.
  */
 
-/* The sidebar is 250 wide and stays that (ContentView: .frame(width: 250)). */
-.sidebar { width: 250px; flex: 0 0 250px; }
-
 /* The video's width is the divider's: --video-w is set on .app by PaneDivider.
    Until it has measured, the Mac's 420 : 720 share. Notes keep the rest. */
 .camera { flex: 0 0 var(--video-w, 37%); min-width: 280px; }
@@ -36,70 +33,6 @@
 /* While the divider is held the page does not select text under the pointer. */
 body:has(.pane-divider.dragging) { user-select: none; cursor: col-resize; }
 body:has(.pane-divider.dragging) iframe, body:has(.pane-divider.dragging) video { pointer-events: none; }
-
-/* The sidebar's footer: how many notes and folders, and the Folder menu. */
-.sidebar-footer {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  height: 28px;
-  padding: 0 12px;
-  font-size: 11px;
-  color: var(--wm-soft);
-  border-top: 1px solid var(--wm-rule);
-  position: relative;
-  flex: none;
-}
-.sidebar-footer .spacer { flex: 1; }
-.folder-button {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  padding: 2px 6px;
-  border: 0;
-  border-radius: 5px;
-  background: transparent;
-  color: var(--wm-soft);
-  font-size: 11px;
-  cursor: pointer;
-}
-.folder-button:hover, .folder-button[aria-expanded="true"] { background: var(--wm-rule); color: var(--wm-text); }
-
-/* The list when there is nothing to list. */
-.sidebar-empty {
-  flex: 1;
-  min-height: 0;
-  overflow: auto;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 10px;
-  padding: 16px;
-  text-align: center;
-  color: var(--wm-soft);
-  font-size: 12px;
-}
-.sidebar-empty svg { color: var(--wm-faint); }
-.sidebar-empty .title { font-size: 13px; }
-.sidebar-empty .path {
-  max-width: 100%;
-  overflow-wrap: anywhere;
-  color: var(--wm-faint);
-  font-size: 11px;
-}
-.sidebar-empty .why { color: var(--wm-soft); font-size: 11px; line-height: 1.4; }
-.sidebar-empty .buttons { display: flex; flex-wrap: wrap; gap: 6px; justify-content: center; }
-.sidebar-empty button {
-  padding: 4px 10px;
-  border: 1px solid var(--wm-rule);
-  border-radius: 5px;
-  background: var(--wm-page);
-  color: var(--wm-text);
-  font-size: 12px;
-  cursor: pointer;
-}
-.sidebar-empty button:hover { border-color: var(--wm-accent); color: var(--wm-accent); }
 
 /* The page's own menus: the sidebar's right-click and Folder menus. */
 .float-menu {
@@ -155,12 +88,10 @@ body:has(.pane-divider.dragging) iframe, body:has(.pane-divider.dragging) video 
 @media (prefers-color-scheme: dark) {
   :root { --wm-faint: #92929e; --wm-accent-fill: #2f6fb8; --wm-hover: #31323a; }
 }
-.icon-button.on, .note-row.open, .kind-menu button:hover, .math-foot button.default,
+.icon-button.on, .kind-menu button:hover, .math-foot button.default,
 .video-pop button:hover:not(:disabled), .context-menu button:hover:not(:disabled), .wm-style-btn.on,
 .link-banner { background: var(--wm-accent-fill); }
 .math-foot button.default, .wm-style-btn.on { border-color: var(--wm-accent-fill); }
-.note-row:hover:not(.open), .section-row:hover { background: var(--wm-hover); }
-.note-row.open .snippet, .note-row.open .count { color: rgba(255, 255, 255, 0.86); }
 .tab .close { opacity: 1; color: var(--wm-soft); }
 .tab .close:hover { color: var(--wm-text); }
 

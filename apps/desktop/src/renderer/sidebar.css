@@ -1,0 +1,259 @@
+/*
+ * THE SIDEBAR (docs/PLAN-bars-2026-10.md P3; the wireframes are docs/ui-2026-10/FinalMain.png and the sidebar panel
+ * of FinalStates.png). Everything about the notes list lives here: the 36px bar (a search field, +, the pencil), the
+ * rows with their line icons, the quiet add row, the search results, the footer and the states a list can have instead
+ * of rows. It was spread over app.css, chrome.css and editor.css; those rules went when this file came.
+ *
+ * Loaded after bars.css (main.tsx): the bar, the buttons and the menus are bars.css's; this is the list.
+ */
+
+/* The sidebar is 250 wide and stays that (ContentView: .frame(width: 250)). A plain flex child, shown or hidden —
+   never a split-view column, because the bar above it has to stay put. */
+.sidebar {
+  width: 250px;
+  flex: 0 0 250px;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  background: var(--wm-chrome);
+  border-right: 1px solid var(--wm-rule);
+}
+
+/* ---------- The bar: search · + · pencil ---------- */
+.sidebar-bar { -webkit-app-region: drag; gap: 4px; }
+.sidebar-bar > * { -webkit-app-region: no-drag; }
+/* (the macOS traffic lights sit over the left of this bar: it starts after them — bars.css .under-lights; a little less than
+   its 78px, so "Search notes" fits the field) */
+.mac .bar-row.sidebar-bar.under-lights { padding-left: 74px; }
+
+.side-search {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  height: 26px;
+  padding: 0 4px 0 7px;
+  border-radius: 7px;
+  background: var(--bar-fill);
+  color: var(--wm-faint);
+  cursor: text;
+}
+.side-search:focus-within { box-shadow: 0 0 0 2px var(--bar-tint); background: var(--wm-page); color: var(--wm-soft); }
+.side-search .wm-icon { flex: none; }
+.side-search input {
+  flex: 1 1 auto;
+  min-width: 0;
+  height: 100%;
+  padding: 0;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: var(--wm-text);
+  font: inherit;
+  font-size: 12px;
+}
+.side-search input::placeholder { color: var(--wm-faint); }
+.side-search .clear {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  border: 0;
+  border-radius: 9px;
+  background: transparent;
+  color: var(--wm-faint);
+  cursor: default;
+}
+.side-search .clear:hover { background: var(--bar-fill); color: var(--wm-text); }
+
+/* ---------- The list ---------- */
+.rows { flex: 1; min-height: 0; overflow: auto; padding: 4px 6px 8px; }
+
+.note-row, .section-row, .hit-row {
+  position: relative;
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  width: 100%;
+  padding: 5px 8px;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--wm-text);
+  text-align: left;
+  cursor: default;
+  outline: none;
+}
+.note-row:hover, .section-row:hover, .hit-row:hover { background: var(--bar-fill); }
+.note-row:focus-visible, .section-row:focus-visible, .hit-row:focus-visible { box-shadow: inset 0 0 0 2px var(--wm-accent); }
+.row-icon { flex: none; margin-top: 1px; color: var(--wm-soft); }
+.note-row .text, .hit-row .text { flex: 1; min-width: 0; }
+
+/* A title is clamped to two lines; the snippet is one. */
+.note-row .title, .hit-row .title {
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 1.25;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
+  overflow-wrap: anywhere;
+}
+.note-row .snippet, .hit-row .snippet {
+  margin-top: 1px;
+  font-size: 11.5px;
+  line-height: 1.3;
+  color: var(--wm-faint);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* The note in front: softly lit, the way the bars light a button that is on. */
+.note-row.open, .hit-row.open { background: var(--bar-tint); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--wm-accent) 38%, transparent); }
+.note-row.open .title, .hit-row.open .title { font-weight: 600; }
+.note-row.open .row-icon, .hit-row.open .row-icon { color: var(--wm-accent); }
+
+/* A section: its disclosure, its folder, its name, how many notes are in it. */
+.section-row { align-items: center; padding: 5px 8px 5px 4px; font-size: 13px; font-weight: 600; color: var(--wm-text); content-visibility: auto; contain-intrinsic-size: auto 28px; }
+.section-row .disclosure { flex: none; color: var(--wm-faint); }
+.section-row .row-icon { margin-top: 0; }
+.section-row .name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.section-row .count { flex: none; font-size: 11.5px; font-weight: 400; color: var(--wm-faint); min-width: 14px; text-align: right; }
+
+/* A row's own menu: shown while the pointer is on the row (or the menu is up), in place of a section's count. */
+.row-more {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  margin: -1px -2px -1px 0;
+  padding: 0;
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--wm-soft);
+  opacity: 0;
+  cursor: default;
+}
+.note-row:hover .row-more, .hit-row:hover .row-more, .row-more[aria-expanded="true"], .row-more:focus-visible { opacity: 1; }
+.row-more:hover { background: var(--bar-fill); color: var(--wm-text); }
+.section-row .row-more { display: none; }
+.section-row:hover .row-more, .section-row .row-more[aria-expanded="true"] { display: inline-flex; }
+.section-row:hover .count, .section-row:has(.row-more[aria-expanded="true"]) .count { display: none; }
+
+/* Edit mode: duplicate and a two-click trash on each row. */
+.row-buttons { display: inline-flex; gap: 2px; flex: none; }
+.row-button {
+  flex: none; display: inline-flex; align-items: center; justify-content: center;
+  width: 22px; height: 22px; margin: -1px 0; padding: 0; border: 0; border-radius: 5px;
+  background: transparent; color: var(--wm-soft); cursor: default;
+}
+.row-button:hover { background: var(--bar-fill); color: var(--wm-text); }
+.row-button.trash.armed, .row-button.trash.armed:hover { background: #c0392b; color: #fff; }
+
+/* The add row: one quiet row at the top of every section, a note-shaped place where the next note will land. */
+.add-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  height: 26px;
+  padding: 0 8px;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--wm-faint);
+  font-size: 12.5px;
+  text-align: left;
+  cursor: default;
+}
+.add-row:hover { background: var(--bar-fill); color: var(--wm-accent); }
+.add-row:focus-visible { box-shadow: inset 0 0 0 2px var(--wm-accent); outline: none; }
+.add-row .wm-icon { flex: none; }
+/* …and a drop target: a row dropped on it moves into that section, at the top. */
+.add-row.drop-over { background: var(--bar-tint); color: var(--wm-accent); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--wm-accent) 55%, transparent); }
+
+/* A row being dragged, and the line a dropped row would land above. */
+.note-row.dragging, .section-row.dragging { opacity: 0.4; }
+/* (inside the row: a row that is not on the page is not laid out or painted - see below - and paint containment would clip a shadow above it) */
+.note-row.drop-above { box-shadow: inset 0 2px 0 var(--wm-accent); }
+/* A list of thousands costs only the rows on show: the browser skips style, layout and paint for the rest. */
+.note-row { content-visibility: auto; contain-intrinsic-size: auto 42px; }
+.section-row.drop-into { outline: 2px solid var(--wm-accent); outline-offset: -2px; }
+.rows.drop-root { outline: 2px dashed var(--wm-accent); outline-offset: -2px; }
+
+/* ---------- Search results (they replace the tree while there is a query) ---------- */
+.results { flex: 1; min-height: 0; overflow: auto; padding: 4px 6px 8px; }
+.hit-row .where { display: flex; align-items: center; gap: 4px; margin-top: 2px; font-size: 11px; line-height: 1.3; color: var(--wm-faint); min-width: 0; }
+.hit-row .where span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.hit-row .where .wm-icon { flex: none; }
+.hit-row.active { background: var(--wm-accent-fill, var(--wm-accent)); color: #fff; }
+.hit-row.active .row-icon, .hit-row.active .snippet, .hit-row.active .where, .hit-row.active .row-more { color: rgba(255, 255, 255, 0.86); }
+.hit-row.active .row-more:hover { background: rgba(255, 255, 255, 0.22); color: #fff; }
+.hit-row.active mark { background: rgba(255, 255, 255, 0.32); }
+.results mark, .hit-row mark { padding: 0 1px; margin: 0 -1px; border-radius: 2px; background: color-mix(in srgb, var(--wm-accent) 30%, transparent); color: inherit; }
+.results .status { padding: 22px 14px; text-align: center; font-size: 12px; line-height: 1.4; color: var(--wm-faint); }
+.results .note { padding: 8px 10px 0; font-size: 11px; line-height: 1.4; color: var(--wm-faint); }
+
+/* ---------- The footer: the project and its menu, and how many notes ---------- */
+.sidebar-footer {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 36px;
+  padding: 0 6px;
+  flex: none;
+  position: relative;
+  border-top: 1px solid var(--wm-rule);
+  font-size: 12px;
+  color: var(--wm-soft);
+}
+.sidebar-footer .spacer { flex: 1; }
+.sidebar-footer .folder-button { min-width: 0; max-width: 62%; height: 26px; padding: 0 10px 0 6px; justify-content: flex-start; color: var(--wm-text); }
+.sidebar-footer .folder-button .project-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12.5px; }
+.sidebar-footer .folder-button[aria-expanded="true"] { background: var(--bar-fill); }
+.sidebar-footer .note-count { flex: none; padding-right: 6px; white-space: nowrap; }
+
+/* ---------- The list when there is nothing to list ---------- */
+.sidebar-empty {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  padding: 16px;
+  text-align: center;
+  color: var(--wm-soft);
+  font-size: 12px;
+}
+.sidebar-empty svg { color: var(--wm-faint); }
+.sidebar-empty .title { font-size: 13px; }
+.sidebar-empty .path {
+  max-width: 100%;
+  overflow-wrap: anywhere;
+  color: var(--wm-faint);
+  font-size: 11px;
+}
+.sidebar-empty .why { color: var(--wm-soft); font-size: 11px; line-height: 1.4; }
+.sidebar-empty .buttons { display: flex; flex-wrap: wrap; gap: 6px; justify-content: center; }
+.sidebar-empty button {
+  padding: 4px 10px;
+  border: 1px solid var(--wm-rule);
+  border-radius: 5px;
+  background: var(--wm-page);
+  color: var(--wm-text);
+  font-size: 12px;
+  cursor: pointer;
+}
+.sidebar-empty button:hover { border-color: var(--wm-accent); color: var(--wm-accent); }

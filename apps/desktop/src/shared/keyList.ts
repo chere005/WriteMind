@@ -23,7 +23,7 @@ export const KEY_MENUS: { menu: string; ids: string[] }[] = [
     menu: "Edit",
     ids: [
       "undo", "redo", "undoDrawing", "redoDrawing", "expandSelection", "selectNext", "selectAll",
-      "find", "findReplace", "findNext", "findPrevious", "useSelectionForFind", "jumpToSelection",
+      "find", "findReplace", "findNext", "findPrevious", "useSelectionForFind", "jumpToSelection", "searchNotes",
     ],
   },
   {

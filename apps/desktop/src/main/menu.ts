@@ -119,6 +119,8 @@ export function buildMenu(options: MenuOptions): MenuItemConstructorOptions[] {
         item("findPrevious", "Find Previous"),
         item("useSelectionForFind", "Use Selection for Find"),
         item("jumpToSelection", "Jump to Selection"),
+        SEPARATOR,
+        item("searchNotes", "Search Notes…"),
       ],
     },
   ]
