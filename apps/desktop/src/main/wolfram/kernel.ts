@@ -54,6 +54,8 @@ export interface KernelOptions {
   id: string
   /** Whether a PNG of each image is wanted too (a copy of one drawing: what other apps paste). */
   png: boolean
+  /** Apply Wolfram's RemoveBackground to generated images before the clipboard writes them as notebook cells. */
+  removeBackground?: boolean
   timeoutMs: number
   /** A job's stamp for its cache key, by job name (a picture's file's `mtimeMs:size`). */
   stamps?: ReadonlyMap<string, string>
@@ -81,7 +83,7 @@ export async function runKernel(jobs: readonly KernelJob[], options: KernelOptio
   const keys = new Map<string, string>()
   const ask: KernelJob[] = []
   for (const job of jobs) {
-    const key = jobKey(job, options.stamps?.get(job.name) ?? "")
+    const key = jobKey(job, options.stamps?.get(job.name) ?? "", options.removeBackground === true)
     keys.set(job.name, key)
     const held = recall(key)
     const wantsPng = options.png && isImage(job)
@@ -94,7 +96,11 @@ export async function runKernel(jobs: readonly KernelJob[], options: KernelOptio
   }
   if (ask.length === 0) return { answers, pngs, state: { kind: "answered" } }
 
-  const outcome = await deps.runner.wolframJob(options.id, [...ask, ...(options.png ? [{ name: "png", text: "" }] : [])], options.timeoutMs)
+  const outcome = await deps.runner.wolframJob(options.id, [
+    ...ask,
+    ...(options.png ? [{ name: "png", text: "" }] : []),
+    ...(options.removeBackground ? [{ name: "remove-background", text: "" }] : []),
+  ], options.timeoutMs)
   if (outcome.kind === "ran") {
     for (const job of ask) {
       const boxes = outcome.answers.get(`${job.name}.boxes`)

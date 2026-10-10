@@ -5,7 +5,7 @@ import path from "node:path"
 import { fileURLToPath } from "node:url"
 import { describe, expect, it } from "vitest"
 import {
-  ICON_BODY, MAC_APP_NAME, MAC_COPYRIGHT, applyMacIdentity, dockIcon, dockIconCandidates, padIntoCanvas,
+  ICON_BODY, MAC_APP_NAME, applyMacIdentity, dockIcon, dockIconCandidates, padIntoCanvas,
   type MacIdentityDeps,
 } from "../src/main/macIdentity"
 import { DEV_IDENTITY, applyDevIdentity, patchInfoPlist } from "../scripts/mac-dev-identity.mjs"
@@ -141,7 +141,6 @@ describe("the running app's identity (main/macIdentity.ts)", () => {
         setPath: (name: string, to: string) => { calls.push(`setPath ${name} ${to}`) },
         setName: (name: string) => { calls.push(`setName ${name}`) },
         getVersion: () => "0.5.0",
-        setAboutPanelOptions: (o: Record<string, string>) => { calls.push(`about ${JSON.stringify(o)}`) },
         whenReady: () => readyPromise,
         dock: { setIcon: (icon: { tag: string }) => { calls.push(`dock ${icon.tag}`) } },
       },
@@ -164,7 +163,7 @@ describe("the running app's identity (main/macIdentity.ts)", () => {
     }
   })
 
-  it("on a Mac: the profile pinned, then the name, then the About panel; a dev run's dock gets the padded logo", async () => {
+  it("on a Mac: the profile pinned, then the name (and no native About panel: About is the page's dialog); a dev run's dock gets the padded logo", async () => {
     const { deps, calls, ready } = fakeDeps("darwin", false)
     applyMacIdentity(deps)
     const profile = "/Users/sean/Library/Application Support/@writemind/desktop"
@@ -172,7 +171,6 @@ describe("the running app's identity (main/macIdentity.ts)", () => {
       "getPath userData",
       `setName ${MAC_APP_NAME}`,
       `setPath userData ${profile}`,
-      `about ${JSON.stringify({ applicationName: "WriteMind", applicationVersion: "0.5.0", version: "", copyright: MAC_COPYRIGHT })}`,
     ])
     await ready()
     expect(calls.at(-1)).toBe(`dock padded 512 ${512 * 512 * 4}`)

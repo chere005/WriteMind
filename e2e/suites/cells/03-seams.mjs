@@ -76,17 +76,18 @@ const kinds = async (label) => {
   const plus = await centerOf(".wm-plus")
   if (!plus) return null
   await click(plus.x, plus.y); await sleep(250)
-  const names = await js(`[...document.querySelectorAll('.kind-menu button')].map(b=>b.textContent)`)
-  if (label) { await js(`[...document.querySelectorAll('.kind-menu button')].find(b=>b.textContent===${JSON.stringify(label)}).click()`); await sleep(200) }
+  // (The + menu is the shared kind menu, a FloatingMenu: renderer/kindMenu.ts. Its labels are the Style menu's.)
+  const names = await js(`[...document.querySelectorAll('#seam-kinds .float-label')].map(b=>b.textContent)`)
+  if (label) { await js(`[...document.querySelectorAll('#seam-kinds .float-label')].find(b=>b.textContent===${JSON.stringify(label)}).closest('button').click()`); await sleep(200) }
   return names
 }
 const names = await kinds("Quote")
-ok("the + is drawn on the armed bar and opens the kinds", !!names && ["Text", "Markdown", "Quote", "Code Block", "Title"].every((n) => names.includes(n)), JSON.stringify(names))
+ok("the + is drawn on the armed bar and opens the kinds", !!names && ["Text", "Markdown", "Quote", "Code", "Title"].every((n) => names.includes(n)), JSON.stringify(names))
 await typeText("q")
 ok("the next thing typed is a quote cell", (await doc()) === "One\n\n> q\n\nTwo", JSON.stringify(await doc()))
 await kinds("Title"); await typeText("T")
 ok("the Title kind opens a # cell", (await doc()) === "One\n\n# T\n\nTwo", JSON.stringify(await doc()))
-await kinds("To-do List"); await typeText("t")
+await kinds("To-do"); await typeText("t")
 ok("the To-do kind opens a task", /\n\n- \[ \] t\n\n/.test(await doc()), JSON.stringify(await doc()))
 await kinds("Section"); await typeText("Heading text")
 ok("the Section kind opens a heading cell", /\n\n#+ Heading text\n\n/.test(await doc()), JSON.stringify(await doc()))

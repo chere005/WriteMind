@@ -19,13 +19,17 @@ import path from "node:path"
 import { fileURLToPath, pathToFileURL } from "node:url"
 import { capabilitiesFor, mediaFiles } from "@writemind/core"
 import {
-  createNote, createSection, duplicateNote, existing, findMedia, isProjectFolder, mediaPath, moveSection,
-  placeNote, projectTree, readDrawing, readNote, renameNote, renameSection, reorder, saveInkSnapshot, saveMedia,
-  fileChanged, forgetTrust, setExcluded, setProjectFolders, setWatched, wroteRecently, writeDrawing, writeNote,
+  adoptNoteFile, existing, findMedia, peekNoteFile, isProjectFolder, mediaPath, noteInfo,
+  projectTree, readDrawing, readNote, saveInkSnapshot, saveMedia,
+  fileChanged, forgetTrust, setExcluded, setProjectFolders, setWatched, sweepMediaCache, wroteRecently, writeDrawing, writeNote,
 } from "./notes"
+import { UndoJournal } from "./undoJournal"
+import { createUndoOps, type UndoOps } from "./undoOps"
+import { NotesSearch } from "./notesSearch"
+import { setAppVersion } from "./wmStore"
 import { pictureFiles } from "./macDrawing"
 import { rescueUnsaved } from "./rescue"
-import { findUnused, trashNoteAndDrawing, trashSectionAndDrawings, trashUnused } from "./housekeeping"
+import { findUnused } from "./housekeeping"
 import type { Held } from "../shared/housekeeping"
 import { ADD_JAPANESE_OCR, penHelper, readerFor, toolsScript, windowsOcr, winget } from "./helpers"
 import { createToolSetup } from "./toolSetup"
@@ -44,6 +48,7 @@ import { runKernel } from "./wolfram/kernel"
 import type { MediaDeps } from "./wolfram/media"
 import { writeWolframNotebook } from "./wolfram/notebookFile"
 import { copyForWolfram, validWolframCopy } from "./wolfram/clipboard"
+import { saveCopiedSvg, sweepCopiedSvgs } from "./wolfram/copiedFile"
 import { rememberWindow, windowPlacement } from "./windowMemory"
 import { installPerfProbe } from "./perfProbe"
 import { registerEval } from "./eval/ipc"
@@ -51,11 +56,18 @@ import { createLanguageStore, registerLanguages } from "./eval/languages"
 import { createProcessRunner } from "./eval/runner"
 import { placesFromProcess } from "./eval/tools"
 import { LANGUAGE_CHANNELS, LANGUAGES_FILE } from "../shared/languages"
+import { noticesFile, readAbout, registerAbout } from "./about"
 import { registerSheets } from "./sheets"
+import { registerScans } from "./scans"
 import { startUpdater, type Updater } from "./updater"
 import { UPDATE_COMMAND_IDS } from "../shared/update"
-import { takeWelcomed, welcomeOnce, welcomeWanted } from "./welcome"
-import { NOTES_FOLDER, settleNotesFolder, type Settled } from "./notesFolderMove"
+import { ensureQuickReference, quickReferencePath, welcomeOnce, welcomeWanted } from "./welcome"
+import { MOVE_STATE_FILE, NOTES_FOLDER, settleNotesFolder, type Settled } from "./notesFolderMove"
+import { conversionNotice, convertFolders, importMarkdownNote, importMdwmNote } from "./convert"
+import { consentFor } from "./convertConsent"
+import { closingByRun, conversionProgress } from "./convertProgress"
+import { OpenQueue, admit, candidates } from "./openFiles"
+import { conversionRefusal } from "./convertGuard"
 import type { Runner as EvalRunner } from "./eval/runner"
 import { MIN_WINDOW } from "../shared/layout"
 import { applyMacIdentity } from "./macIdentity"
@@ -125,8 +137,17 @@ function askPageToFlush(win: BrowserWindow, wait = 2500): Promise<void> {
 }
 let pending: ReturnType<typeof setTimeout> | null = null
 
+/**
+ * THE UNDO JOURNAL (undoJournal.ts, docs/PLAN-undo.md): the last three file operations and the backups that make them
+ * undoable. Every operation that changes a file or a folder of the notes goes through `ops`, whichever surface asked.
+ */
+let journal: UndoJournal | null = null
+let ops: UndoOps | null = null
+
 /** The open project: its folders, and the file they are saved in (if any). */
 let project: ProjectStore
+/** The notes open in the window, in tab order, as the last session write said (Save Project keeps them in the project file). */
+let openTabs: string[] = []
 const projectStateFile = (): string => path.join(app.getPath("userData"), "project.json")
 let menuState: MenuState = initialMenuState
 let lastMenu = ""
@@ -139,6 +160,8 @@ let lastMenu = ""
  */
 const folderWatch = followFolders(nodePorts, {
   event: (root, name) => {
+    // A note being written is `Name.wm.tmp` for a moment (atomic.ts): it is not a note, and the rename that follows says the rest.
+    if (name && /\.tmp$/i.test(name)) return
     // (what the tree knows of a file is kept until the watcher says it moved: see "Trusting the watcher" in notes.ts)
     if (name) fileChanged(path.join(root, name)); else forgetTrust()
     if (name && wroteRecently(path.join(root, name))) return
@@ -157,6 +180,54 @@ const folderWatch = followFolders(nodePorts, {
 function watchNotes(folders: string[]): void {
   // (a path from the other kind of machine is not a folder here: it is never watched, or `/Users/x` would be `C:\Users\x`)
   folderWatch.set(folders.filter((one) => !isForeignPath(one)))
+}
+
+// THE CONVERSION of 2.15.0's notes (.md and their .drawings) to .wm, at launch and when a folder is added to the project
+// (convert.ts): what it did is said once, in the quiet bar (renderer/FolderNotice.tsx), and in the receipt it leaves in the backup.
+const conversionNotices: string[] = []
+
+/** What the conversion's guard needs (convertGuard.ts): asked fresh each time, the move state is a file. */
+async function guardContext() {
+  const userData = app.getPath("userData")
+  const moved = await fs.readFile(path.join(userData, MOVE_STATE_FILE), "utf8")
+    .then((text) => (JSON.parse(text) as { moved?: { to?: unknown } }).moved?.to).catch(() => null)
+  return {
+    documents: app.getPath("documents"), env: process.env, settled: settledFolder, movedTo: typeof moved === "string" ? moved : null,
+  }
+}
+const refuseFolder = async (folder: string): Promise<string | null> => conversionRefusal(folder, await guardContext())
+
+/** The question for a project folder that is not the notes root (convert.ts `confirm`); a test instance's scratch folders say yes. */
+async function askToConvert(folder: string, count: number, backup: string): Promise<boolean> {
+  if (process.env.WRITEMIND_E2E) return true
+  const options: Electron.MessageBoxOptions = {
+    type: "question", buttons: ["Convert", "Leave Alone"], defaultId: 1, cancelId: 1,
+    message: `Convert ${count} ${count === 1 ? "note" : "notes"} in "${folder}" to WriteMind notes?`,
+    detail: `The originals are kept, unchanged, in ${backup}. Choosing Leave Alone leaves every file in that folder exactly as it is, and the question is not asked again.`,
+  }
+  const answer = window && !window.isDestroyed() ? await dialog.showMessageBox(window, options) : await dialog.showMessageBox(options)
+  return answer.response === 0
+}
+
+async function runConversion(): Promise<void> {
+  const progress = conversionProgress()
+  try {
+    const userData = app.getPath("userData")
+    const report = await convertFolders(project.folders.filter((one) => !isForeignPath(one)), {
+      root: notesRoot(), excluded: project.excluded, userData, appVersion: app.getVersion(),
+      refuse: refuseFolder, log: (line) => console.log(`WriteMind: ${line}`),
+      confirm: (folder, count, backup) => consentFor(userData, folder, () => askToConvert(folder, count, backup)),
+      progress: (done, total) => progress.update(done, total),
+    })
+    const said = conversionNotice(report)
+    if (said) {
+      conversionNotices.push(said)
+      window?.webContents.send("conversion:notice", said)
+    }
+  } catch (error) {
+    // Whatever went wrong, nothing was deleted (convert.ts moves only what was written and read back): the app goes on.
+    console.error("WriteMind: the conversion of the old notes stopped", error)
+  } finally { progress.close() }
 }
 
 /** The project's folders changed under the app: tell the page what is there now, and have it read the tree. */
@@ -178,8 +249,8 @@ let updater: Updater | null = null
 
 // MARK: - The application menu
 
-/** Commands that are the main process's own: dialogs and the project file. */
-const MAIN_OWNED = new RegExp(`^(about|${UPDATE_COMMAND_IDS.join("|")}|${PROJECT_COMMANDS.source.slice(2, -2)})$`)
+/** Commands that are the main process's own: dialogs and the project file. (About is the page's: AboutDialog.tsx.) */
+const MAIN_OWNED = new RegExp(`^(${UPDATE_COMMAND_IDS.join("|")}|${PROJECT_COMMANDS.source.slice(2, -2)})$`)
 
 /** End-to-end scripts cannot click a native dialog: they name the answer ahead of time. */
 let e2ePick: string | null = null
@@ -203,16 +274,10 @@ async function runCommand(id: string): Promise<void> {
   // share one history, and the page decides which is taken back.
   if (id === "undo" || id === "redo") { window?.webContents.send("edit:history", id); return }
   if (!MAIN_OWNED.test(id)) { window?.webContents.send("menu:command", id); return }
-  if (id === "about") {
-    await dialog.showMessageBox(window!, {
-      type: "info", title: "About WriteMind", message: "WriteMind", detail: `Version ${app.getVersion()}`,
-    })
-    return
-  }
   if ((UPDATE_COMMAND_IDS as readonly string[]).includes(id)) { await updater?.command(id); return }
   await runProjectCommand(id, {
     project, window: () => window, home: notesRoot, documents: () => app.getPath("documents"),
-    askOpen, askSave, changed: projectChanged,
+    askOpen, askSave, changed: projectChanged, openFiles: () => openTabs,
   })
 }
 
@@ -225,6 +290,10 @@ async function runCommand(id: string): Promise<void> {
 async function projectChanged(kind: ProjectChange): Promise<void> {
   setExcluded(project.excluded)
   setProjectFolders(project.folders)
+  // The steps name the folders of the project that was left: they go with it (as the page's undo histories do).
+  if (kind === "switch") await journal?.clear()
+  // Another project, or a folder added to this one: its old notes are converted before the tree is read.
+  if (kind !== "saved") await runConversion()
   watchNotes(project.folders)
   await project.remember(projectStateFile())
   rebuildMenu()
@@ -323,6 +392,8 @@ async function createWindow(): Promise<void> {
       if (quitting) app.quit()
     })
   })
+  // The journal belongs to a window: the page's own undo histories go with it, and so do the backups the steps kept.
+  window.on("closed", () => { void journal?.clear() })
   // The pen subsystem hears the window's own focus / visibility, and lets go when the window closes, its page dies or reloads.
   pen?.attachWindow()
 
@@ -341,6 +412,41 @@ async function createWindow(): Promise<void> {
   await ready
 }
 
+// NOTES OPENED FROM OUTSIDE (openFiles.ts): a double click on a .wm in Finder or Explorer, a .wm or .md dropped on the window.
+// A .wm opens as a tab; a .md is imported into a new .wm beside it (the original untouched) and that opens. What is asked for
+// waits here for the page (`file:take`), which takes it once its session is back; macOS says `open-file` possibly before ready.
+const openQueue = new OpenQueue()
+const askedEarly: string[] = []
+let appReady = false
+async function openFromOutside(files: string[]): Promise<void> {
+  let any = false
+  for (const file of files) {
+    // (An import that makes a new note is a step of the undo journal; one that finds its note already made is not.)
+    const out = await admit(file,
+      (markdown) => ops!.importNote(path.dirname(markdown), () => importMarkdownNote(markdown, { appVersion: app.getVersion(), log: (line) => console.log(`WriteMind: ${line}`), refuse: refuseFolder })),
+      (mdwm) => ops!.importNote(path.dirname(mdwm), () => importMdwmNote(mdwm, { appVersion: app.getVersion(), refuse: refuseFolder })))
+    if ("error" in out) {
+      console.warn(`WriteMind: ${out.error}`)
+      if (!process.env.WRITEMIND_E2E && window) await dialog.showMessageBox(window, { type: "warning", message: "WriteMind could not open that file.", detail: out.error })
+      continue
+    }
+    openQueue.push(out.file)
+    any = true
+  }
+  if (!any || !window || window.isDestroyed()) return
+  window.webContents.send("file:pending")
+  if (!process.env.WRITEMIND_OFFSCREEN) {
+    if (window.isMinimized()) window.restore()
+    window.show()
+    window.focus()
+  }
+}
+// (registered at once: macOS can deliver it before the app is ready)
+app.on("open-file", (event, file) => {
+  event.preventDefault()
+  if (appReady) void openFromOutside([file]); else askedEarly.push(file)
+})
+
 // ONE WINDOW PER PROFILE. A second launch (a double-click on a shortcut that is already running) brings the
 // first one forward instead of opening a second window on the same notes — two writers on one folder is the
 // bug `mayWrite` exists for. The lock is per user-data folder, so a test instance never meets the real app.
@@ -351,7 +457,11 @@ const gotLock = app.requestSingleInstanceLock()
 if (!gotLock) {
   app.quit()
 } else {
-  app.on("second-instance", () => {
+  app.on("second-instance", (_event, argv, workingDirectory) => {
+    // A second launch with a note on its command line (Windows and Linux hand a double-clicked .wm to a new process):
+    // the note opens in the window that is already there.
+    const named = candidates(argv, workingDirectory, app.isPackaged)
+    if (named.length > 0 && window && !window.isDestroyed()) void openFromOutside(named)
     if (process.env.WRITEMIND_OFFSCREEN) return
     // The process outlived its window (a helper window kept it): a second launch makes a new one instead of doing nothing.
     if (!window || window.isDestroyed()) { if (app.isReady()) void createWindow(); return }
@@ -362,6 +472,16 @@ if (!gotLock) {
 
 app.whenReady().then(async () => {
   if (!gotLock) return
+  setAppVersion(app.getVersion())
+  void sweepMediaCache()
+  // The undo journal: whatever a crashed run left in its backups folder is stale and goes before anything else is done.
+  journal = new UndoJournal({
+    backups: path.join(app.getPath("userData"), "undo"),
+    bin: (one) => shell.trashItem(one),
+    changed: (state) => { window?.webContents.send("undo:changed", state) },
+  })
+  await journal.sweepStale()
+  ops = createUndoOps(journal, notesRoot)
   // THE NOTES FOLDER before anything reads it (notesFolderMove.ts): the old WriteMindCross folder is moved to
   // WriteMind on the first launch after the rename, and every remembered path with it.
   settledFolder = await settleNotesFolder({
@@ -380,6 +500,9 @@ app.whenReady().then(async () => {
   await project.restore(projectStateFile())
   setExcluded(project.excluded)
   setProjectFolders(project.folders)
+  // The old notes of the project's folders become .wm files before anything reads the tree (and before the welcome note looks).
+  await runConversion()
+  ipcMain.handle("conversion:notice", () => conversionNotices.splice(0).join("\n") || null)
 
   protocol.handle("wm", async (request) => {
     const url = new URL(request.url)
@@ -435,15 +558,35 @@ app.whenReady().then(async () => {
     }
   })
   ipcMain.handle("notes:tree", () => projectTree(project.folders, notesRoot(), project.name))
-  ipcMain.handle("note:duplicate", (_event, file: string) => duplicateNote(notesRoot(), file))
+  // The sidebar's search (notesSearch.ts): the tree as the sidebar lists it, searched in batches, cancellable by its id.
+  const notesSearch = new NotesSearch()
+  ipcMain.handle("notes:search", async (_event, id: number, query: string) =>
+    notesSearch.run(Number(id), await projectTree(project.folders, notesRoot(), project.name), String(query)))
+  ipcMain.handle("notes:searchCancel", (_event, id: number) => { notesSearch.cancel(Number(id)) })
+  ipcMain.handle("note:duplicate", (_event, file: string) => ops!.duplicateNote(file))
   ipcMain.handle("note:read", (_event, file: string) => readNote(file))
+  ipcMain.handle("note:peek", (_event, file: string) => peekNoteFile(String(file)))
+  ipcMain.handle("note:adopt", (_event, file: string, token: string) => adoptNoteFile(String(file), String(token)))
+  // Whether a note may be written (a note of a newer format is read-only: SPEC-WM 1.8).
+  ipcMain.handle("note:info", (_event, file: string) => noteInfo(file))
   ipcMain.handle("note:write", (_event, file: string, text: string) => writeNote(file, text))
-  ipcMain.handle("note:create", (_event, folder: string) => createNote(folder))
-  ipcMain.handle("note:rename", (_event, file: string, title: string) => renameNote(notesRoot(), file, title))
-  // The note to the bin, and its drawing after it (housekeeping.ts): never a permanent delete.
+  ipcMain.handle("note:create", (_event, folder: string) => ops!.createNote(folder))
+  ipcMain.handle("note:rename", (_event, file: string, title: string) => ops!.renameNote(file, title))
+  // The note to the bin, drawing and pictures inside it (housekeeping.ts): never a permanent delete. A copy is kept first
+  // for Undo (undoOps.ts), and if it cannot be kept the note does not go.
   ipcMain.handle("note:trash", async (_event, file: string) => {
-    await trashNoteAndDrawing(notesRoot(), file, (one) => shell.trashItem(one))
+    await ops!.trashNote(file, (one: string) => shell.trashItem(one))
   })
+  // THE UNDO JOURNAL's three questions (docs/PLAN-undo.md): what is on top of its stacks, take one back / bring one back, and
+  // a new edit on the page ended the redo path.
+  ipcMain.handle("undo:state", () => journal!.state())
+  ipcMain.handle("undo:run", async (_event, which: string) => {
+    const out = await (which === "redo" ? journal!.redo() : journal!.undo())
+    // What an undo moved is read again by the next look at the tree, not trusted from the watcher's silence.
+    forgetTrust()
+    return out
+  })
+  ipcMain.handle("undo:cutRedo", () => journal!.cutRedo())
   // File ▸ Clean Up Unused Files… (housekeeping.ts): what is unused in the project's folders; then the bin for the
   // files the person said yes to, each looked at again first. `held` is what the window has that the disk has not.
   const heldOf = (held: Held | null | undefined): Held => ({
@@ -452,13 +595,13 @@ app.whenReady().then(async () => {
   })
   ipcMain.handle("housekeeping:scan", (_event, held: Held) => findUnused(notesRoot(), project.folders, heldOf(held)))
   ipcMain.handle("housekeeping:trash", (_event, paths: string[], held: Held) =>
-    trashUnused(notesRoot(), project.folders, Array.isArray(paths) ? paths.map(String) : [], heldOf(held),
+    ops!.trashUnused(project.folders, Array.isArray(paths) ? paths.map(String) : [], heldOf(held),
       (one) => shell.trashItem(one)))
   // Text that could not be written, kept where it can be come back to (rescue.ts).
   ipcMain.handle("note:rescue", (_event, file: string, text: string, kind?: "note" | "drawing") =>
     rescueUnsaved(app.getPath("userData"), file, text, kind === "drawing" ? "drawing" : "note"))
-  ipcMain.handle("section:create", (_event, parent: string) => createSection(parent))
-  ipcMain.handle("section:rename", (_event, folder: string, name: string) => renameSection(notesRoot(), folder, name))
+  ipcMain.handle("section:create", (_event, parent: string) => ops!.createSection(parent))
+  ipcMain.handle("section:rename", (_event, folder: string, name: string) => ops!.renameSection(folder, name))
   // A project folder is never put in the bin from the sidebar (the Mac offers it on nested sections only; the
   // right-click menu here already leaves it out), and nothing outside the project is the sidebar's to bin.
   // False says no and changes nothing.
@@ -466,24 +609,30 @@ app.whenReady().then(async () => {
     const here = path.resolve(folder).toLowerCase()
     const inside = project.folders.some((one) => here.startsWith(path.resolve(one).toLowerCase() + path.sep))
     if (isProjectFolder(folder, notesRoot()) || !inside) return false
-    // The folder to the bin, and the drawings of its notes (kept in the project folder's `.drawings`) after it.
-    await trashSectionAndDrawings(notesRoot(), folder, (one) => shell.trashItem(one))
+    // The folder to the bin, and with it every note and everything inside every note (all of it kept first, for Undo).
+    await ops!.trashSection(folder, (one: string) => shell.trashItem(one))
     return true
   })
-  ipcMain.handle("order:set", (_event, folder: string, names: string[]) =>
-    reorder(notesRoot(), folder, names))
+  ipcMain.handle("order:set", (_event, folder: string, names: string[]) => ops!.reorder(folder, names))
   ipcMain.handle("note:place", (_event, file: string, folder: string, before: string | null) =>
-    placeNote(notesRoot(), file, folder, before))
-  ipcMain.handle("section:move", (_event, folder: string, target: string) =>
-    moveSection(notesRoot(), folder, target))
+    ops!.placeNote(file, folder, before))
+  ipcMain.handle("section:move", (_event, folder: string, target: string) => ops!.moveSection(folder, target))
   // THE SESSION lives in the app's user-data folder, never beside the notes.
   // ONE SESSION PER PROJECT (ProjectSession): keyed by the project's file — null is
   // the untitled project — which the page names, so the last write of a project
   // that has just been left still lands in that project's file.
   ipcMain.handle("session:read", (_event, projectFile: string | null) =>
     readProjectSession(app.getPath("userData"), projectFile ?? null, notesRoot()))
-  ipcMain.handle("session:write", (_event, projectFile: string | null, json: string) =>
-    writeProjectSession(app.getPath("userData"), projectFile ?? null, json))
+  ipcMain.handle("session:write", (_event, projectFile: string | null, json: string) => {
+    // The tabs of the project in front, in order: what Save Project writes as its `files` (SPEC-WM 4.1).
+    if ((projectFile ?? null) === project.file) {
+      try {
+        const open = (JSON.parse(json) as { open?: { path?: unknown }[] }).open
+        if (Array.isArray(open)) openTabs = open.map((one) => one?.path).filter((one): one is string => typeof one === "string")
+      } catch { /* not a session: the tabs stay as they were */ }
+    }
+    return writeProjectSession(app.getPath("userData"), projectFile ?? null, json)
+  })
   ipcMain.handle("project:info", () => projectInfo(project))
   ipcMain.handle("path:reveal", (_event, target: string) => { shell.showItemInFolder(target) })
   ipcMain.handle("files:existing", (_event, files: string[]) => existing(files))
@@ -534,8 +683,15 @@ app.whenReady().then(async () => {
     log: path.join(app.getPath("userData"), "tools-setup.log"),
     broadcast: (report) => window?.webContents.send(LANGUAGE_CHANNELS.changed, report),
   })
+  // Help ▸ About WriteMind: the licence, the Wolfram statement and every library's licence, from out/notices.json.
+  registerAbout(ipcMain, {
+    info: () => readAbout(noticesFile(here), app.getVersion()),
+    open: (url) => shell.openExternal(url),
+  })
   // The tablet's sheets (tabs) and their ink: userData/sheets.json.
   registerSheets(ipcMain)
+  // The document camera's scanned pages (tabs): userData/scans.json and userData/scans/<id>.jpg.
+  registerScans(ipcMain)
   /** What the reader is, what it can read, and how to add Japanese - for the diagnostics. */
   ipcMain.handle("ocr:status", async () => ({
     ...(await readerFor(here)), probe: await windowsOcr(here), addJapanese: ADD_JAPANESE_OCR, busy: ocr.busy, reads: ocr.started,
@@ -630,11 +786,16 @@ app.whenReady().then(async () => {
   // A Copy or Cut of held cells with a drawing cell among them (renderer: `cellsCopied`): the clipboard written again
   // for Mathematica, in the background. A failure is a line in the log, never a dialog.
   const wolframClipboard = capabilitiesFor(process.platform).wolframClipboard
+  // A Copy Cell's SVG file (a folder of its own under one root in the temp folder): the next one sweeps the earlier away,
+  // and the start of the app the ones a day old.
+  const copiedRoot = path.join(app.getPath("temp"), "WriteMind-copied")
+  void sweepCopiedSvgs(copiedRoot, Date.now())
   ipcMain.on("wolfram:copy", (_event, value: unknown) => {
     const copy = validWolframCopy(value)
     if (!copy) return
     void copyForWolfram(copy, {
-      ...wolframFiles, removeTemp, runKernel: kernel, kinds: wolframClipboard,
+      ...wolframFiles, removeTemp, runKernel: kernel, kinds: wolframClipboard, platform: process.platform,
+      saveSvg: (svg) => saveCopiedSvg(copiedRoot, svg),
       clipboard: { readText: () => clipboard.readText(), read: () => clipboard.read(), write: (items) => clipboard.write(items as ClipboardItem[]) },
       item: (entries) => new ClipboardItem(entries),
       sleep: (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
@@ -749,8 +910,21 @@ app.whenReady().then(async () => {
   if (welcomeWanted()) {
     await welcomeOnce(notesRoot(), project.folders).catch((error) => console.error("WriteMind: no quick reference", error))
   }
-  // ...and its first open is on the rendered page: the page asks once which note was written now.
-  ipcMain.handle("welcome:take", () => takeWelcomed())
+  // It always opens on the rendered page (renderer/welcomeView.ts): the page asks where it is, and Help ▸ Quick Reference
+  // asks for it to be there and current (missing: written; out of date: rewritten, edits and all) in THIS process's notes root.
+  ipcMain.handle("quickReference:path", () => quickReferencePath(notesRoot()))
+  ipcMain.handle("quickReference:ensure", async () => (await ensureQuickReference(notesRoot())).file)
+
+  ipcMain.handle("file:take", () => openQueue.take())
+  ipcMain.handle("file:open", async (_event, file: string) => { await openFromOutside([String(file)]) })
+  appReady = true
+  // What was double-clicked to start the app (the command line on Windows and Linux, `open-file` on a Mac).
+  for (const file of [...candidates(process.argv, process.cwd(), app.isPackaged), ...askedEarly.splice(0)]) {
+    const out = await admit(file,
+      (markdown) => ops!.importNote(path.dirname(markdown), () => importMarkdownNote(markdown, { appVersion: app.getVersion(), refuse: refuseFolder })),
+      (mdwm) => ops!.importNote(path.dirname(mdwm), () => importMdwmNote(mdwm, { appVersion: app.getVersion(), refuse: refuseFolder }))).catch(() => null)
+    if (out && !("error" in out)) openQueue.push(out.file)
+  }
 
   await createWindow()
 
@@ -760,9 +934,16 @@ app.whenReady().then(async () => {
 })
 
 app.on("before-quit", () => { quitting = true; pen?.dispose(); evalRunner?.cancelAll(); void project?.remember(projectStateFile()) })
-app.on("will-quit", () => { pen?.dispose(); evalRunner?.cancelAll() })
+app.on("will-quit", () => {
+  pen?.dispose()
+  evalRunner?.cancelAll()
+  // The backups are copies of what is in the bin or still on disk: they go with the run, synchronously (will-quit cannot wait).
+  journal?.disposeSync()
+})
 
 app.on("window-all-closed", () => {
+  // (the progress window of the conversion closing itself, before the main window is made, is not the end)
+  if (closingByRun()) return
   folderWatch.stop()
   evalRunner?.cancelAll()
   if (process.platform !== "darwin") app.quit()

@@ -38,7 +38,7 @@ import { createHash } from "node:crypto"
 import path from "node:path"
 import { sessionFileName } from "@writemind/core"
 import { codeOf, writeFileAtomic } from "./atomic"
-import { NOTE_EXTENSIONS } from "./notes"
+import { LEGACY_EXTENSIONS } from "./legacyLayout"
 import { PROJECT_EXTENSION } from "./project"
 
 /** The notes folder's name in Documents, and the one it had until 2026-10-06. */
@@ -184,7 +184,7 @@ async function filesUnder(folder: string, wanted: (name: string) => boolean, bud
   return out
 }
 
-const isNoteName = (name: string): boolean => NOTE_EXTENSIONS.includes(path.extname(name).toLowerCase())
+const isNoteName = (name: string): boolean => (LEGACY_EXTENSIONS as readonly string[]).includes(path.extname(name).toLowerCase())
 const isProjectName = (name: string): boolean => name.toLowerCase().endsWith(`.${PROJECT_EXTENSION}`)
 
 /**

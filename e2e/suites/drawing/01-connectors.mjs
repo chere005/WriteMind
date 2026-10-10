@@ -1,6 +1,6 @@
 // Connector routing, segment circles, node labels, undo: the real UI, real mouse and keys.
 import { js, ok, finish, sleep, drag, click, key, typeText, freshNote, saved, canvasBox, arm, CTRL, shot } from "../../lib/harness.mjs"
-const file = await freshNote()
+const file = await freshNote({ rendered: true })
 const cb = await canvasBox()
 const X = (dx) => cb.x + dx, Y = (dy) => cb.y + dy
 const size = { w: cb.w, h: cb.h }

@@ -260,6 +260,19 @@ describe("the Out cell", () => {
     expect(outBody(evalResult({ stdout: "hi", status: 0 }))).not.toContain("[exit")
   })
 
+  /** Port-only: Node reports a program killed by a signal as no status at all, which read as "[no output]". */
+  it("says what crashed a program: a signal on the Mac, an NTSTATUS on Windows", () => {
+    expect(evalResult().signal).toBeNull()
+    expect(outBody(evalResult({ signal: "SIGSEGV" }))).toBe("[stopped by SIGSEGV (segmentation fault)]")
+    expect(outBody(evalResult({ stderr: "terminating", signal: "SIGABRT" }))).toBe("[stderr]\nterminating\n[stopped by SIGABRT (aborted)]")
+    expect(outBody(evalResult({ signal: "SIGUSR1" }))).toBe("[stopped by SIGUSR1]")
+    expect(outBody(evalResult({ status: 3221225477 }))).toBe("[exit 3221225477: access violation]")
+    // a negative status (some hosts report the NTSTATUS signed) is the same crash
+    expect(outBody(evalResult({ status: -1073741819 }))).toBe("[exit 3221225477: access violation]")
+    expect(outBody(evalResult({ status: 3221225725 }))).toBe("[exit 3221225725: stack overflow]")
+    expect(outBody(evalResult({ status: 7 }))).toBe("[exit 7]")
+  })
+
   /** Port-only: a Windows program ends its lines with CR LF, and the note's lines end with LF. */
   it("takes the carriage returns off a Windows program's lines", () => {
     expect(outBody(evalResult({ stdout: "a\r\nb\r\n", status: 0 }))).toBe("a\nb")

@@ -13,12 +13,16 @@
  * note in its tooltip, and closes without asking: its ink is the cell's, and stays in the note. Except while it holds
  * writing that has not reached the cell yet (`pending`: its note was not in front): then it asks, as a plain sheet does.
  *
- * DOCUMENT CAMERA: a stub for what is coming (scanned pages as tabs, docs/TODO.md): one "Camera" tab and a "+" that
- * says so, and nothing else.
+ * DOCUMENT CAMERA: the live tab first ("Live · FaceTime HD", the camera in use) (always there, never closed), then one tab per page scanned (scanTabs.ts:
+ * the picture, its box, corners, shape and reading, kept across restarts). "+" takes the camera's current picture (the
+ * held one when Hold image is on) into a new page and opens it; a click opens a tab, double-click renames; the x closes a
+ * page, and always asks first ("Close?", then a second click) because the picture goes with it.
  */
 
 import { useEffect, useLayoutEffect, useRef, useState } from "react"
+import { Icon } from "./icons"
 import { useCellSheet } from "./cellSheets"
+import { closeScan, openScan, renameScan, useScans } from "./scanTabs"
 import { addSheet, closeSheet, renameSheet, selectSheet, sheetHasInk, sheetPending, useSheetTabs } from "./tabletSheets"
 import "./tablet.css"
 
@@ -26,18 +30,92 @@ const stop = (event: React.SyntheticEvent) => event.stopPropagation()
 /** How long a "Close?" waits for its second click. */
 const ARMED_MS = 3000
 
-export function SheetStrip({ mode }: { mode: "tablet" | "camera" }) {
-  return mode === "tablet" ? <TabletTabs /> : <CameraTabs />
+/** What the camera pane gives its strip: "+" takes the current picture, and says why it cannot (a reason) when it cannot. */
+export interface ScanStrip {
+  onAdd(): void
+  addOff: string | null
+  /** The camera in use ("FaceTime HD"): the live tab reads "Live · FaceTime HD". Null while none runs. */
+  live?: string | null
 }
 
-function CameraTabs() {
+export function SheetStrip({ mode, scan }: { mode: "tablet" | "camera"; scan?: ScanStrip }) {
+  return mode === "tablet" ? <TabletTabs /> : <CameraTabs scan={scan} />
+}
+
+/** A "Close?" waits for its second click, and goes by itself, and at any click that is not its second. */
+function useArmed(attribute: string): [string | null, (id: string | null) => void] {
+  const [armed, setArmed] = useState<string | null>(null)
+  useEffect(() => {
+    if (!armed) return
+    const timer = window.setTimeout(() => setArmed(null), ARMED_MS)
+    const away = (event: PointerEvent) => {
+      const target = event.target as Element | null
+      if (!target?.closest?.(`[${attribute}="${armed}"]`)) setArmed(null)
+    }
+    window.addEventListener("pointerdown", away, true)
+    return () => { window.clearTimeout(timer); window.removeEventListener("pointerdown", away, true) }
+  }, [armed, attribute])
+  return [armed, setArmed]
+}
+
+/** The open tab is kept in view (the row only: nothing else may scroll). */
+function useKeepInView(row: React.RefObject<HTMLDivElement | null>, selector: string, deps: unknown[]): void {
+  useLayoutEffect(() => {
+    const strip = row.current
+    const tab = strip?.querySelector<HTMLElement>(selector)
+    if (!strip || !tab) return
+    const left = tab.offsetLeft, right = left + tab.offsetWidth
+    if (left < strip.scrollLeft) strip.scrollLeft = left
+    else if (right > strip.scrollLeft + strip.clientWidth) strip.scrollLeft = right - strip.clientWidth
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- the caller says what moves the open tab
+  }, deps)
+}
+
+function CameraTabs({ scan }: { scan?: ScanStrip }) {
+  const kept = useScans()
+  const row = useRef<HTMLDivElement | null>(null)
+  const [editing, setEditing] = useState<string | null>(null)
+  const [armed, setArmed] = useArmed("data-scan-close")
+  useKeepInView(row, `[data-scan-tab="${kept.current ?? "camera"}"]`, [kept.current, kept.pages.length])
+  const close = (id: string) => {
+    if (armed !== id) { setArmed(id); return }
+    setArmed(null)
+    closeScan(id)
+  }
+  const off = scan?.addOff ?? "There is no camera picture to keep"
   return (
     <div className="sheet-tabs" data-sheets="camera" onPointerDown={stop} onPointerUp={stop}>
-      <div className="sheet-scroll" role="tablist" aria-label="Pages">
-        <div className="sheet-tab on" role="tab" aria-selected="true" data-sheet="camera"><span className="name">Camera</span></div>
+      <div className="sheet-scroll" ref={row} role="tablist" aria-label="Pages"
+           onWheel={(event) => { if (row.current && event.deltaX === 0) row.current.scrollLeft += event.deltaY }}>
+        <div className={`sheet-tab${kept.current === null ? " on" : ""}`} role="tab" aria-selected={kept.current === null}
+             data-sheet="camera" data-scan-tab="camera" title={scan?.live ? `The live camera: ${scan.live}` : "The live camera"} onClick={() => openScan(null)}>
+          <span className="live-dot" aria-hidden />
+          <span className="name">{scan?.live ? `Live \u00B7 ${scan.live}` : "Live"}</span>
+        </div>
+        {kept.pages.map((page) => {
+          const on = page.id === kept.current
+          const asking = armed === page.id
+          return (
+            <div key={page.id} role="tab" aria-selected={on} data-scan-tab={page.id} data-scan-id={page.id}
+                 className={`sheet-tab scan${on ? " on" : ""}${asking ? " asking" : ""}`}
+                 title={`${page.name}: a page kept from the camera (double-click to rename)`}
+                 onClick={() => openScan(page.id)} onDoubleClick={() => setEditing(page.id)}>
+              {editing === page.id
+                ? <NameField name={page.name} label="Page name" onDone={(name) => { setEditing(null); if (name !== null) renameScan(page.id, name) }} />
+                : <span className="name">{page.name}</span>}
+              <button className="sheet-close" data-scan-close={page.id}
+                      aria-label={asking ? `Close ${page.name} and its picture` : `Close ${page.name}`}
+                      title={asking ? "Click again to close it, picture and all" : "Close this page (it asks first: its picture goes with it)"}
+                      onClick={(event) => { event.stopPropagation(); close(page.id) }}
+                      onDoubleClick={stop}>{asking ? "Close?" : <Icon name="close" size={10} />}</button>
+            </div>
+          )
+        })}
       </div>
-      <button className="sheet-add" data-sheet-add disabled aria-label="Add a page"
-              title="Coming: each page you scan gets its own tab">+</button>
+      {/* Outside the scrolling part: "+" is always there. */}
+      <button className="sheet-add" data-sheet-add data-scan-add disabled={!scan || scan.addOff !== null} aria-label="Keep this picture as a page"
+              title={scan && scan.addOff === null ? "Keep what the camera shows (the held picture, with Hold image) as a page of its own" : off}
+              onClick={() => scan?.onAdd()}><Icon name="plus" size={14} /></button>
     </div>
   )
 }
@@ -48,30 +126,10 @@ function TabletTabs() {
   useCellSheet()
   const row = useRef<HTMLDivElement | null>(null)
   const [editing, setEditing] = useState<string | null>(null)
-  const [armed, setArmed] = useState<string | null>(null)
+  const [armed, setArmed] = useArmed("data-sheet-close")
   const only = tabs.tabs.length <= 1
 
-  // A "Close?" goes by itself, and at any click that is not its second.
-  useEffect(() => {
-    if (!armed) return
-    const timer = window.setTimeout(() => setArmed(null), ARMED_MS)
-    const away = (event: PointerEvent) => {
-      const target = event.target as Element | null
-      if (!target?.closest?.(`[data-sheet-close="${armed}"]`)) setArmed(null)
-    }
-    window.addEventListener("pointerdown", away, true)
-    return () => { window.clearTimeout(timer); window.removeEventListener("pointerdown", away, true) }
-  }, [armed])
-
-  // The open tab is kept in view (the row only: nothing else may scroll).
-  useLayoutEffect(() => {
-    const strip = row.current
-    const tab = strip?.querySelector<HTMLElement>(`[data-sheet-id="${tabs.current}"]`)
-    if (!strip || !tab) return
-    const left = tab.offsetLeft, right = left + tab.offsetWidth
-    if (left < strip.scrollLeft) strip.scrollLeft = left
-    else if (right > strip.scrollLeft + strip.clientWidth) strip.scrollLeft = right - strip.clientWidth
-  }, [tabs.current, tabs.tabs.length])
+  useKeepInView(row, `[data-sheet-id="${tabs.current}"]`, [tabs.current, tabs.tabs.length])
 
   const close = (id: string) => {
     if (only) return
@@ -107,7 +165,7 @@ function TabletTabs() {
                       aria-label={asking ? `Close ${tab.name} and its writing` : `Close ${tab.name}`}
                       title={asking ? "Click again to close it, writing and all" : bound && sheetPending(tab.id) ? "Close this sheet (it asks first: its writing has not reached the drawing cell yet)" : bound ? "Close this sheet (the drawing cell keeps its ink)" : tab.inked ? "Close this sheet (it asks first: it has writing)" : "Close this sheet"}
                       onClick={(event) => { event.stopPropagation(); close(tab.id) }}
-                      onDoubleClick={stop}>{asking ? "Close?" : "×"}</button>
+                      onDoubleClick={stop}>{asking ? "Close?" : <Icon name="close" size={10} />}</button>
             )}
           </div>
         )
@@ -115,7 +173,7 @@ function TabletTabs() {
       </div>
       {/* Outside the scrolling part: "+" is always there. */}
       <button className="sheet-add" data-sheet-add disabled={!tabs.canAdd} aria-label="New sheet"
-              title="New sheet" onClick={() => { addSheet() }}>+</button>
+              title="New sheet" onClick={() => { addSheet() }}><Icon name="plus" size={14} /></button>
     </div>
   )
 }
@@ -124,7 +182,7 @@ function TabletTabs() {
 const leafName = (file: string): string => (file.split(/[\\/]/).pop() ?? file).replace(/\.[^.]+$/, "")
 
 /** The rename field: Enter or a click away keeps the name, Esc leaves it as it was. */
-function NameField({ name, onDone }: { name: string; onDone: (name: string | null) => void }) {
+function NameField({ name, onDone, label = "Sheet name" }: { name: string; onDone: (name: string | null) => void; label?: string }) {
   const field = useRef<HTMLInputElement | null>(null)
   const done = useRef(false)
   const finish = (value: string | null) => {
@@ -135,7 +193,7 @@ function NameField({ name, onDone }: { name: string; onDone: (name: string | nul
   useEffect(() => { field.current?.focus(); field.current?.select() }, [])
   return (
     <input ref={field} className="name-field" data-sheet-name defaultValue={name} maxLength={40} spellCheck={false}
-           aria-label="Sheet name"
+           aria-label={label}
            onClick={stop} onDoubleClick={stop}
            onKeyDown={(event) => {
              event.stopPropagation()

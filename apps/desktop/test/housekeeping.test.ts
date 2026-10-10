@@ -1,41 +1,36 @@
-// Housekeeping (main/housekeeping.ts, docs\TODO.md "Housekeeping"): a deleted note takes its drawing to the bin, and
-// File ▸ Clean Up Unused Files… offers the drawings and media nothing uses. All on scratch folder trees; the "bin" is
-// a folder of the test's own, so a file that went anywhere else (or nowhere) shows.
-import { existsSync, mkdirSync, mkdtempSync, readdirSync, renameSync, utimesSync, writeFileSync } from "node:fs"
+// Housekeeping (main/housekeeping.ts, docs\TODO.md "Housekeeping"): a deleted note takes everything with it to the bin
+// (its drawing and pictures are inside it), and File ▸ Clean Up Unused Files… offers the pictures and snapshots inside the
+// notes that nothing names. All on scratch folder trees; the "bin" is a folder of the test's own, so a file that went
+// anywhere else (or nowhere) shows.
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, renameSync, utimesSync } from "node:fs"
 import os from "node:os"
 import path from "node:path"
 import { afterEach, describe, expect, it } from "vitest"
-import { drawingPath, olderDrawingPath, setExcluded, setProjectFolders } from "../src/main/notes"
-import {
-  findUnused, SHARED_STORE_UNTIL, trashNoteAndDrawing, trashSectionAndDrawings, trashUnused,
-} from "../src/main/housekeeping"
+import { setExcluded, setProjectFolders } from "../src/main/notes"
+import { entryPath, findUnused, trashNote, trashSection, trashUnused } from "../src/main/housekeeping"
 import { cleanUpTitle, formatBytes, namesIn } from "../src/shared/housekeeping"
 import { EditorState } from "@codemirror/state"
 import { history, isolateHistory } from "@codemirror/commands"
 import { heldBy } from "../src/renderer/cleanUp"
 import { historyOf, keepOnly as keepHistory } from "../src/renderer/noteHistory"
+import { readWm, writeWm, type WmExtras } from "./wmFiles"
 
 const scratch = () => mkdtempSync(path.join(os.tmpdir(), "wm-house-"))
 const HOUR_AGO = Date.now() / 1000 - 3600
+const INK = "0b0c0d0e-1111-4222-8333-444455556666"
 
-/** A file, an hour old unless `fresh` (Clean Up never offers one changed in the last ten minutes). */
-const put = (file: string, text: string, fresh = false): string => {
-  mkdirSync(path.dirname(file), { recursive: true })
-  writeFileSync(file, text)
+/** A note, an hour old unless `fresh` (Clean Up never offers from one changed in the last ten minutes). */
+const note = (file: string, text: string, extras: WmExtras = {}, fresh = false): string => {
+  writeWm(file, text, extras)
   if (!fresh) utimesSync(file, HOUR_AGO, HOUR_AGO)
   return file
 }
-const picture = (folder: string, name: string, fresh = false) => put(path.join(folder, ".drawings", "media", name), "PNG", fresh)
 const stroke = { kind: "stroke", id: "s1", colorHex: "#000000", width: 3, points: [{ x: 0.1, y: 0.1 }], transform: { dx: 0, dy: 0, scale: 1, rotation: 0 }, group: null }
 const image = (file: string) => ({
-  kind: "image", id: `i-${file}`, file, center: { x: 0.5, y: 0.5 }, size: { width: 0.2, height: 0.2 },
-  transform: { dx: 0, dy: 0, scale: 1, rotation: 0 }, group: null,
+  kind: "image", id: `i-${file}`, file, center: { x: 0.5, y: 0.5 }, width: 0.2, aspect: 1,
+  transform: { dx: 0, dy: 0, scale: 1, rotation: 0 }, hidden: false, group: null,
 })
-const sidecarOf = (root: string, note: string, items: unknown[] = [stroke], fresh = false) =>
-  put(drawingPath(root, note), JSON.stringify({ items }), fresh)
-/** The drawing a deleted note (`relative` to the root, not on disk) left behind, under its own real name. */
-const leftBy = (root: string, relative: string, items: unknown[] = [stroke], fresh = false) =>
-  sidecarOf(root, path.join(root, relative), items, fresh)
+const drawingOf = (...items: unknown[]): string => JSON.stringify({ items })
 
 /** A bin of the test's own: what is trashed is moved there (and listed), never deleted. */
 function makeBin() {
@@ -52,216 +47,159 @@ const same = (a: string[], b: string[]) => expect([...a].map((one) => path.resol
 
 afterEach(() => { setProjectFolders([]); setExcluded([]) })
 
-describe("deleting a note takes its drawing to the bin", () => {
-  it("the note, then its sidecar, both to the bin; other notes keep theirs", async () => {
+describe("deleting a note takes everything in it to the bin", () => {
+  it("the note goes whole (drawing and pictures inside it); other notes keep theirs", async () => {
     const root = scratch()
     setProjectFolders([root])
-    const gone = put(path.join(root, "Gone.md"), "# gone\n")
-    const stays = put(path.join(root, "Stays.md"), "# stays\n")
-    const goneDrawing = sidecarOf(root, gone)
-    const staysDrawing = sidecarOf(root, stays)
+    const gone = note(path.join(root, "Gone.wm"), "# gone\n", { drawing: drawingOf(stroke), entries: { "media/a.png": "PNG" } })
+    const stays = note(path.join(root, "Stays.wm"), "# stays\n", { drawing: drawingOf(stroke) })
     const bin = makeBin()
-    const went = await trashNoteAndDrawing(root, gone, bin.trash)
-    same(bin.moved, [gone, goneDrawing])
-    same(went, [goneDrawing])
-    expect(existsSync(staysDrawing)).toBe(true)
-    expect(readdirSync(bin.folder)).toHaveLength(2)
+    await trashNote(gone, bin.trash)
+    same(bin.moved, [gone])
+    expect(existsSync(stays)).toBe(true)
+    // What went to the bin is the note as it was: put back, it has its drawing and its picture.
+    const back = readWm(path.join(bin.folder, readdirSync(bin.folder)[0]!))
+    expect(JSON.parse(back.drawing!).items).toHaveLength(1)
+    expect(back.entries["media/a.png"]!.toString()).toBe("PNG")
   })
 
-  it("a note with no drawing just goes; a note that will not go keeps its drawing too", async () => {
+  it("a note that will not go stays whole", async () => {
     const root = scratch()
     setProjectFolders([root])
-    const plain = put(path.join(root, "Plain.md"), "words\n")
-    const bin = makeBin()
-    expect(await trashNoteAndDrawing(root, plain, bin.trash)).toEqual([])
-    same(bin.moved, [plain])
-    const stuck = put(path.join(root, "Stuck.md"), "words\n")
-    const drawing = sidecarOf(root, stuck)
-    await expect(trashNoteAndDrawing(root, stuck, async () => { throw new Error("in use") })).rejects.toThrow("in use")
-    expect(existsSync(stuck) && existsSync(drawing)).toBe(true)
+    const stuck = note(path.join(root, "Stuck.wm"), "words\n", { drawing: drawingOf(stroke) })
+    await expect(trashNote(stuck, async () => { throw new Error("in use") })).rejects.toThrow("in use")
+    expect(readWm(stuck).text).toBe("words\n")
   })
 
-  it("a sidecar shared by name (the Mac's <stem>.json, two notes of one name in two sections) never goes with one of them", async () => {
+  it("a section in the bin takes every note in it, with what is inside each", async () => {
     const root = scratch()
     setProjectFolders([root])
-    const one = put(path.join(root, "A", "Notes.md"), "one\n")
-    const two = put(path.join(root, "B", "Notes.md"), "two\n")
-    const mac = put(path.join(root, ".drawings", "Notes.json"), JSON.stringify({ items: [] }))
-    const own = sidecarOf(root, two)
+    const a = note(path.join(root, "Sec", "A.wm"), "a\n", { drawing: drawingOf(stroke) })
+    note(path.join(root, "Sec", "Deep", "B.wm"), "b\n", { drawing: drawingOf(stroke) })
+    const out = note(path.join(root, "Out.wm"), "out\n", { drawing: drawingOf(stroke) })
     const bin = makeBin()
-    await trashNoteAndDrawing(root, two, bin.trash)
-    same(bin.moved, [two, own])
-    expect(existsSync(mac)).toBe(true)
-    // The last note of that name takes the Mac's file with it.
-    await trashNoteAndDrawing(root, one, bin.trash)
-    expect(existsSync(mac)).toBe(false)
-    expect(bin.moved.map((file) => path.basename(file))).toContain("Notes.json")
-  })
-
-  it("a section in the bin takes the drawings of every note in it (they live in the project folder's .drawings)", async () => {
-    const root = scratch()
-    setProjectFolders([root])
-    const a = put(path.join(root, "Sec", "A.md"), "a\n")
-    const b = put(path.join(root, "Sec", "Deep", "B.md"), "b\n")
-    const out = put(path.join(root, "Out.md"), "out\n")
-    const drawings = [sidecarOf(root, a), sidecarOf(root, b)]
-    const outDrawing = sidecarOf(root, out)
-    const bin = makeBin()
-    await trashSectionAndDrawings(root, path.join(root, "Sec"), bin.trash)
-    same(bin.moved, [path.join(root, "Sec"), ...drawings])
-    expect(existsSync(outDrawing)).toBe(true)
+    await trashSection(path.join(root, "Sec"), bin.trash)
+    same(bin.moved, [path.join(root, "Sec")])
+    expect(existsSync(a)).toBe(false)
+    expect(existsSync(out)).toBe(true)
   })
 })
 
 describe("Clean Up Unused Files…", () => {
-  it("finds the drawings of deleted notes and the media nothing names; keeps what a note or a drawing uses", async () => {
+  it("finds the pictures and snapshots inside a note that neither its words nor its drawing name; keeps what they use", async () => {
     const root = scratch()
     setProjectFolders([root])
-    const note = put(path.join(root, "Sec", "Kept.md"), "# kept\n\n![](../.drawings/media/docked.png)\n\nInline ![x](../.drawings/media/inline%20one.png) here.\n")
-    sidecarOf(root, note, [image("floating.png"), { kind: "cell", id: "0b0c0d0e-1111-4222-8333-444455556666", aspect: 0.5, items: [image("in-cell.png")] }])
-    for (const name of ["docked.png", "inline one.png", "floating.png", "in-cell.png", "ink-0b0c0d0e-1111-4222-8333-444455556666.svg"]) picture(root, name)
-    // Sean's case: four notes deleted, their sidecars stayed.
-    const orphans = ["One", "Two", "Three", "Four"].map((name) => leftBy(root, `${name}.md`))
-    const loose = [picture(root, "nobody.png"), picture(root, "ink-99999999-1111-4222-8333-444455556666.svg")]
+    const kept = note(path.join(root, "Sec", "Kept.wm"),
+      "# kept\n\n![](media/docked.png)\n\nInline ![x](media/inline%20one.png) here.\n\n![ink](snapshots/ink-" + INK + ".svg)\n", {
+        drawing: drawingOf(image("floating.png"), { kind: "cell", id: INK, aspect: 0.5, items: [image("in-cell.png")] }),
+        entries: {
+          "media/docked.png": "d", "media/inline one.png": "i", "media/floating.png": "f", "media/in-cell.png": "c",
+          [`snapshots/ink-${INK}.svg`]: "<svg/>", "media/nobody.png": "n",
+          "snapshots/ink-99999999-1111-4222-8333-444455556666.svg": "<svg/>", "legacy/sidecar.json": "{}", "extra/unknown.bin": "u",
+        },
+      })
     const scan = await findUnused(root, [root])
     expect(scan.problem).toBeNull()
-    same(scan.files.map((one) => one.path), [...orphans, ...loose])
-    expect(scan.files.slice(0, 4).every((one) => one.kind === "drawing")).toBe(true)
-    expect(scan.files.find((one) => one.path.endsWith("nobody.png"))!.relative).toBe(".drawings/media/nobody.png")
+    same(scan.files.map((one) => one.path), [entryPath(kept, "media/nobody.png"), entryPath(kept, "snapshots/ink-99999999-1111-4222-8333-444455556666.svg")])
+    expect(scan.files.every((one) => one.kind === "media")).toBe(true)
+    expect(scan.files.find((one) => one.path.endsWith("nobody.png"))!.relative).toBe("Sec/Kept.wm/media/nobody.png")
     expect(scan.bytes).toBe(scan.files.reduce((sum, one) => sum + one.size, 0))
   })
 
-  it("never offers a file changed in the last ten minutes", async () => {
+  it("never offers from a note changed in the last ten minutes", async () => {
     const root = scratch()
     setProjectFolders([root])
-    put(path.join(root, "Note.md"), "words\n")
-    leftBy(root, "Gone.md", [], true)
-    picture(root, "just-pasted.png", true)
-    const old = picture(root, "old.png")
+    note(path.join(root, "Fresh.wm"), "words\n", { entries: { "media/just-pasted.png": "x" } }, true)
+    const old = note(path.join(root, "Old.wm"), "words\n", { entries: { "media/old.png": "x" } })
     const scan = await findUnused(root, [root])
-    same(scan.files.map((one) => one.path), [old])
-    expect(scan.recent).toBe(2)
+    same(scan.files.map((one) => one.path), [entryPath(old, "media/old.png")])
+    expect(scan.recent).toBe(1)
   })
 
-  it("keeps a picture one folder of the project names from another, and the drawings of notes in hidden-from-sidebar folders", async () => {
+  it("looks in the notes of folders kept out of the sidebar, and of every folder of the project", async () => {
     const a = scratch()
     const b = scratch()
     setProjectFolders([a, b])
     setExcluded([path.join(a, "Hidden")])
-    const shared = picture(a, "shared.png")
-    put(path.join(b, "Uses.md"), "![](.drawings/media/shared.png)\n")
-    const hidden = put(path.join(a, "Hidden", "Kept out.md"), "words\n")
-    const hiddenDrawing = sidecarOf(a, hidden, [image("hidden-pic.png")])
-    picture(a, "hidden-pic.png")
+    const hidden = note(path.join(a, "Hidden", "Kept out.wm"), "words\n", { drawing: drawingOf(image("hidden-pic.png")), entries: { "media/hidden-pic.png": "h", "media/loose.png": "l" } })
+    const other = note(path.join(b, "Other.wm"), "words\n", { entries: { "media/other-loose.png": "o" } })
     const scan = await findUnused(a, [a, b])
     expect(scan.problem).toBeNull()
-    expect(scan.files.map((one) => one.path)).not.toContain(shared)
-    expect(scan.files.map((one) => one.path)).not.toContain(hiddenDrawing)
-    expect(scan.files).toEqual([])
+    same(scan.files.map((one) => one.path), [entryPath(hidden, "media/loose.png"), entryPath(other, "media/other-loose.png")])
   })
 
-  it("a drawing shared by name, or whose note's name is still in the project, is never offered", async () => {
+  it("never offers what the window holds: a picture in its unsaved words or its Undo", async () => {
     const root = scratch()
     setProjectFolders([root])
-    put(path.join(root, "A", "Notes.md"), "a\n")
-    put(path.join(root, "B", "Notes.md"), "b\n")
-    const mac = put(path.join(root, ".drawings", "Notes.json"), "{\"items\":[]}")
-    // A note moved in Explorer: its drawing's name (the old path's hash) answers to nothing, but its note is there.
-    const moved = put(path.join(root, ".drawings", "Notes-0123456789ab.json"), "{\"items\":[]}")
+    const open = note(path.join(root, "Open.wm"), "words\n", { entries: { "media/in-undo.png": "u", "media/loose.png": "l" } })
+    const scan = await findUnused(root, [root], { openNotes: [open], held: ["in-undo.png"] })
+    same(scan.files.map((one) => one.path), [entryPath(open, "media/loose.png")])
+  })
+
+  it("never offers anything from a note of a newer format (it is read-only here)", async () => {
+    const root = scratch()
+    setProjectFolders([root])
+    note(path.join(root, "Future.wm"), "words\n", { manifest: { version: 2 }, entries: { "media/loose.png": "l" } })
+    expect((await findUnused(root, [root])).files).toEqual([])
+  })
+
+  it("offers nothing when a folder of the project is not there, or a note cannot be read", async () => {
+    const root = scratch()
+    setProjectFolders([root])
+    note(path.join(root, "A.wm"), "words\n", { entries: { "media/loose.png": "l" } })
+    const missing = await findUnused(root, [root, path.join(root, "..", "not-there-at-all")])
+    expect(missing.files).toEqual([])
+    expect(missing.problem).toMatch(/not there/)
+    mkdirSync(path.join(root, "B"))
+    renameSync(path.join(root, "A.wm"), path.join(root, "B", "A.wm"))
+    const junk = path.join(root, "Broken.wm")
+    note(junk, "x")
+    const fs = await import("node:fs")
+    fs.writeFileSync(junk, "this is not an archive")
+    const unreadable = await findUnused(root, [root])
+    expect(unreadable.files).toEqual([])
+    expect(unreadable.problem).toMatch(/could not be read/)
+  })
+
+  it("the bin takes only what was said yes to and is still unused; each picture goes as a file, and out of its note", async () => {
+    const root = scratch()
+    setProjectFolders([root])
+    const target = note(path.join(root, "N.wm"), "words\n", { entries: { "media/gone.png": "GONE", "media/later.png": "later", "media/not-asked.png": "na" } })
     const scan = await findUnused(root, [root])
-    expect(scan.files.map((one) => one.path)).not.toContain(mac)
-    expect(scan.files.map((one) => one.path)).not.toContain(moved)
-    expect(scan.files).toEqual([])
-  })
-
-  it("the notes root's .drawings is shared with every project: only what is provably this project's is offered", async () => {
-    // Before 0.3 every note of every project kept its drawing in the root's .drawings, named by its absolute path.
-    const root = scratch()
-    const elsewhere = scratch()
-    const lecture = put(path.join(elsewhere, "Lecture.md"), "# lecture\n")
-    mkdirSync(path.join(root, "Sub"), { recursive: true })
-    const theirs = put(olderDrawingPath(root, lecture), JSON.stringify({ items: [image("legacy-pic.png")] }))
-    const theirPic = picture(root, "legacy-pic.png")
-    // A picture of the shared store from before 0.3 that no drawing here names: it may be another project's.
-    const oldStore = picture(root, "old-store.png")
-    const before = SHARED_STORE_UNTIL / 1000 - 86400
-    utimesSync(oldStore, before, before)
-    // This project's own: an older-named drawing of a note that was in its Sub folder, and a stray picture of now.
-    const ours = put(olderDrawingPath(root, path.join(root, "Sub", "Old.md")), JSON.stringify({ items: [stroke] }))
-    const stray = picture(root, "stray.png")
-    setProjectFolders([root])
-    const scan = await findUnused(root, [root])
-    expect(scan.problem).toBeNull()
-    same(scan.files.map((one) => one.path), [ours, stray])
-    expect(existsSync(theirs) && existsSync(theirPic) && existsSync(oldStore)).toBe(true)
-    // The same old picture in a folder that is not the root is this project's alone, and is offered.
-    const other = scratch()
-    put(path.join(other, "Note.md"), "words\n")
-    const oldThere = picture(other, "old-there.png")
-    utimesSync(oldThere, before, before)
-    setProjectFolders([other])
-    same((await findUnused(root, [other])).files.map((one) => one.path), [oldThere])
-  })
-
-  it("never offers what the window holds: an open note's drawing, a picture in its unsaved words or its Undo", async () => {
-    const root = scratch()
-    setProjectFolders([root])
-    const openGone = path.join(root, "Open but deleted.md")
-    const drawing = sidecarOf(root, openGone)
-    const inUndo = picture(root, "in-undo.png")
-    const loose = picture(root, "loose.png")
-    const scan = await findUnused(root, [root], { openNotes: [openGone], held: ["in-undo.png"] })
-    same(scan.files.map((one) => one.path), [loose])
-    expect(scan.files.map((one) => one.path)).not.toContain(drawing)
-    expect(scan.files.map((one) => one.path)).not.toContain(inUndo)
-  })
-
-  it("offers nothing when a folder of the project is not there", async () => {
-    const root = scratch()
-    setProjectFolders([root])
-    picture(root, "loose.png")
-    const scan = await findUnused(root, [root, path.join(root, "..", "not-there-at-all")])
-    expect(scan.files).toEqual([])
-    expect(scan.problem).toMatch(/not there/)
-  })
-
-  it("the bin takes only what was said yes to and is still unused, drawings first, their pictures after them", async () => {
-    const root = scratch()
-    setProjectFolders([root])
-    // A deleted note's drawing and the picture only it used: both offered, both go.
-    const orphan = leftBy(root, "Deleted.md", [image("its-pic.png")])
-    const itsPic = picture(root, "its-pic.png")
-    const later = picture(root, "named-later.png")
-    const notAsked = picture(root, "not-asked.png")
-    const scan = await findUnused(root, [root])
-    same(scan.files.map((one) => one.path), [orphan, itsPic, later, notAsked])
-    // Between the dialog and the click a note starts using one.
-    put(path.join(root, "New.md"), "![](.drawings/media/named-later.png)\n", true)
+    same(scan.files.map((one) => one.path), [entryPath(target, "media/gone.png"), entryPath(target, "media/later.png"), entryPath(target, "media/not-asked.png")])
+    // Between the dialog and the click the note starts using one: a second look sees it.
+    const fs = await import("node:fs")
+    const { loadNote, writeText } = await import("../src/main/wmStore")
+    await loadNote(target)
+    expect((await writeText(target, "words\n\n![](media/later.png)\n")).written).toBe(true)
+    fs.utimesSync(target, HOUR_AGO, HOUR_AGO)
     const bin = makeBin()
-    const result = await trashUnused(root, [root], [orphan, itsPic, later], { openNotes: [], held: [] }, bin.trash)
+    const result = await trashUnused(root, [root], [entryPath(target, "media/gone.png"), entryPath(target, "media/later.png")],
+      { openNotes: [], held: [] }, bin.trash)
     expect(result.problem).toBeNull()
-    same(result.moved, [orphan, itsPic])
-    same(bin.moved, [orphan, itsPic])
-    expect(existsSync(later) && existsSync(notAsked)).toBe(true)
-    expect(bin.moved[0]).toBe(orphan)
+    same(result.moved, [entryPath(target, "media/gone.png")])
+    // What went to the bin is a file of the picture, and the note no longer holds it.
+    expect(readFileSync(path.join(bin.folder, readdirSync(bin.folder)[0]!), "utf8")).toBe("GONE")
+    const after = readWm(target)
+    expect(Object.keys(after.entries).filter((name) => name.startsWith("media/")).sort()).toEqual(["media/later.png", "media/not-asked.png"])
+    expect(after.text).toContain("later.png")
   })
 
-  it("a drawing that will not go keeps its pictures", async () => {
+  it("a picture that will not go to the bin stays in its note", async () => {
     const root = scratch()
     setProjectFolders([root])
-    const orphan = leftBy(root, "Deleted.md", [image("its-pic.png")])
-    const itsPic = picture(root, "its-pic.png")
-    const trash = async (file: string) => { if (file === orphan) throw new Error("in use") }
-    const result = await trashUnused(root, [root], [orphan, itsPic], { openNotes: [], held: [] }, trash)
-    same(result.failed, [orphan])
+    const target = note(path.join(root, "N.wm"), "words\n", { entries: { "media/stuck.png": "S" } })
+    const result = await trashUnused(root, [root], [entryPath(target, "media/stuck.png")], { openNotes: [], held: [] },
+      async () => { throw new Error("in use") })
+    same(result.failed, [entryPath(target, "media/stuck.png")])
     expect(result.moved).toEqual([])
-    expect(existsSync(itsPic)).toBe(true)
+    expect(readWm(target).entries["media/stuck.png"]!.toString()).toBe("S")
   })
 })
 
 describe("what the window holds (renderer/cleanUp.ts)", () => {
   it("names a picture that is only in a note's Undo — its words' history and its drawing's", () => {
-    const line = "\n![](.drawings/media/only-in-undo.png)\n"
+    const line = "\n![](media/only-in-undo.png)\n"
     let state = EditorState.create({ doc: "# Note\n", extensions: [history()] })
     state = state.update({ changes: { from: state.doc.length, insert: line }, annotations: isolateHistory.of("full") }).state
     const at = state.doc.toString().indexOf(line)

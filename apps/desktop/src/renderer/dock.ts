@@ -16,7 +16,7 @@
 
 import {
   bounds, INK_PAD, shifted, dockable, inkCellFrom, inkCellMarkdown, inkCellOf, mergedInto, newInkCell, pictureMarkdown, takenOut, withInkCell,
-  type CanvasItem, type Column, type Drawing, type Point, type Rect, type Size,
+  type CanvasItem, type Column, type Drawing, type InkCell, type Point, type Rect, type Size,
 } from "@writemind/core"
 import { cellOfBox } from "./boxRow"
 import type { DrawingHistory } from "./drawingHistory"
@@ -148,6 +148,21 @@ export function insertInkCell(deps: DockDeps, offset: number, width: number): st
  */
 export function dockNewInk(deps: DockDeps, items: CanvasItem[], pane: Size, column: Column, offset: number,
   frame?: Rect | null): string | null {
+  const cell = inkCellForNewInk(items, pane, column, frame)
+  if (!cell) return null
+  const whole = deps.drawing()
+  const next = withInkCell(whole, cell)
+  const done = oneStep(deps.history.clock,
+    () => writeAhead(deps, next, inkCellMarkdown(cell.id, deps.depth), offset),
+    () => { deps.history.record(whole); deps.apply(next); return true })
+  return done ? cell.id : null
+}
+
+/**
+ * The cell `dockNewInk` makes of ink that is not on the page yet, without docking it (null: no ink, or no room). Also what
+ * Copy Cell (BoxActions.tsx) puts on the clipboard, so a pasted cell is the one Bring in as Drawing Cell would have made.
+ */
+export function inkCellForNewInk(items: CanvasItem[], pane: Size, column: Column, frame?: Rect | null): InkCell | null {
   if (items.length === 0 || !(column.width > 0) || !(pane.width > 0)) return null
   const boxed = frame
     ? cellOfBox(items, pane, { x: frame.x * pane.width, y: frame.y * pane.height, width: frame.width * pane.width, height: frame.height * pane.height }, column.width)
@@ -157,13 +172,7 @@ export function dockNewInk(deps: DockDeps, items: CanvasItem[], pane: Size, colu
   const moved = Math.abs(dx) < 1e-9 ? items : items.map((item): CanvasItem => (item.kind === "stroke"
     ? { kind: "stroke", stroke: { ...item.stroke, points: item.stroke.points.map((p) => ({ x: p.x + dx / pane.width, y: p.y })) } }
     : shifted([item], dx, 0, pane)[0]!))
-  const whole = deps.drawing()
-  const cell = boxed ?? inkCellFrom(moved, pane, column)
-  const next = withInkCell(whole, cell)
-  const done = oneStep(deps.history.clock,
-    () => writeAhead(deps, next, inkCellMarkdown(cell.id, deps.depth), offset),
-    () => { deps.history.record(whole); deps.apply(next); return true })
-  return done ? cell.id : null
+  return boxed ?? inkCellFrom(moved, pane, column)
 }
 
 /**

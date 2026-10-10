@@ -14,7 +14,7 @@
 import type { EditorView } from "@codemirror/view"
 import {
   columnWidth, floatingBands, inkCellId, inkCellOf, inkFileName, inkIdsIn, readInkSnapshot, wolframInkSvg,
-  type Drawing, type WolframMedia, type WordBreaker,
+  type Drawing, type InkCell, type WolframMedia, type WordBreaker,
 } from "@writemind/core"
 import { cellBoxes } from "@writemind/editor"
 import { wrapLines } from "./Canvas"
@@ -46,6 +46,11 @@ export function wolframMedia(view: EditorView | null, drawing: Drawing, pane: { 
   const shift = view.contentDOM.getBoundingClientRect().top - view.scrollDOM.getBoundingClientRect().top + view.scrollDOM.scrollTop
   const cells = cellBoxes(view).map((box) => ({ top: box.top + shift, offset: box.offset }))
   return { inks, bands: floatingBands(drawing, pane, cells, words), column }
+}
+
+/** One drawing cell that is in no note (Copy Cell), as the copy for Mathematica takes it: transparent, shown `shown` px wide. */
+export function copiedCellMedia(cell: InkCell, shown: number): WolframMedia {
+  return { inks: { [cell.id]: wolframInkSvg(cell, shown, words, true) }, bands: [], column: shown }
 }
 
 /**

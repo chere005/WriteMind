@@ -86,16 +86,16 @@ describe("ink cells are known by their file name alone", () => {
 })
 
 describe("the lines docking writes", () => {
-  it("writes a picture on a line of its own, with a ../ per section folder", () => {
-    expect(pictureMarkdown("a1b2.jpg")).toBe("![](.drawings/media/a1b2.jpg)")
-    expect(pictureMarkdown("a1b2.jpg", 2)).toBe("![](../../.drawings/media/a1b2.jpg)")
+  it("writes a picture on a line of its own, naming the entry of the note's container (no ../ per section any more)", () => {
+    expect(pictureMarkdown("a1b2.jpg")).toBe("![](media/a1b2.jpg)")
+    expect(pictureMarkdown("a1b2.jpg", 2)).toBe("![](media/a1b2.jpg)")
     // Alt words that would end the brackets early, or the line, are not let through.
-    expect(pictureMarkdown("a.jpg", 0, "a [cat]\non a mat")).toBe("![a cat on a mat](.drawings/media/a.jpg)")
+    expect(pictureMarkdown("a.jpg", 0, "a [cat]\non a mat")).toBe("![a cat on a mat](media/a.jpg)")
   })
 
   it("writes an ink cell's line, and both read back as what they were written for", () => {
-    expect(inkCellMarkdown(ID)).toBe(`![ink](.drawings/media/ink-${ID}.svg)`)
-    expect(inkCellMarkdown(ID, 1)).toBe(`![ink](../.drawings/media/ink-${ID}.svg)`)
+    expect(inkCellMarkdown(ID)).toBe(`![ink](snapshots/ink-${ID}.svg)`)
+    expect(inkCellMarkdown(ID, 1)).toBe(`![ink](snapshots/ink-${ID}.svg)`)
     for (const depth of [0, 1, 3]) {
       const ink = pictureLine(inkCellMarkdown(ID, depth))!
       expect(inkCellId(mediaFile(ink.path))).toBe(ID)

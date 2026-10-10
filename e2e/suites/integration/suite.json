@@ -1,0 +1,6 @@
+{
+  "description": "integration (docs/PLAN-bars-2026-10.md; Sean, 2026-10-10: \"make sure the cell behavior, moving the input cursor, search, and undo are all implemented properly.. make sure undo is always able to undo up to 3 steps, even if it involves file changes\"): the merged app driven from its NEW surfaces with real keys and the real mouse. Every step and every press of Ctrl+Z / Ctrl+Shift+Z reads the whole picture (tab in front, words, caret, keyboard, files on disk, sidebar rows, drawing objects): five steps and back, six file operations and the third-step boundary, text and file steps across two open notes, the keyboard after every menu, dialog and field, cells and the caret, search",
+  "isolation": "script",
+  "scriptTimeoutSec": 1800,
+  "timeoutSec": 7200
+}

@@ -4,11 +4,13 @@
  * in the page.
  */
 
-import { contextBridge, ipcRenderer } from "electron"
+import { contextBridge, ipcRenderer, webUtils } from "electron"
 import { PEN_CHANNELS, type PenApi } from "../shared/pen"
 import { EVAL_CHANNELS, type EvalApi } from "../shared/eval"
 import { UPDATE_CHANNELS, type UpdateApi } from "../shared/update"
 import { LANGUAGE_CHANNELS, type LanguagesApi } from "../shared/languages"
+import { ABOUT_CHANNELS, type AboutApi } from "../shared/about"
+import type { UndoOutcome, UndoState } from "../shared/undo"
 
 /** window.wm.pen: the tablet pen's feed (shared/pen.ts PenApi; every channel name is spelled once there). The E2E hooks exist only under WRITEMIND_E2E. */
 const listen = <T>(channel: string, listener: (payload: T) => void): (() => void) => {
@@ -50,7 +52,13 @@ const api = {
   update,
   capabilities: () => ipcRenderer.invoke("app:capabilities"),
   tree: () => ipcRenderer.invoke("notes:tree"),
+  searchNotes: (id: number, query: string) => ipcRenderer.invoke("notes:search", id, query),
+  cancelSearch: (id: number) => ipcRenderer.invoke("notes:searchCancel", id),
   readNote: (file: string) => ipcRenderer.invoke("note:read", file),
+  peekNote: (file: string) => ipcRenderer.invoke("note:peek", file),
+  adoptNote: (file: string, token: string) => ipcRenderer.invoke("note:adopt", file, token),
+  /** Whether the note may be written: false for a note of a newer format, which is open read-only (SPEC-WM 1.8). */
+  noteInfo: (file: string) => ipcRenderer.invoke("note:info", file),
   writeNote: (file: string, text: string) => ipcRenderer.invoke("note:write", file, text),
   createNote: (folder: string) => ipcRenderer.invoke("note:create", folder),
   renameNote: (file: string, title: string) => ipcRenderer.invoke("note:rename", file, title),
@@ -120,14 +128,45 @@ const api = {
   },
   /** The tablet pen's native feed (main/pen/*): see PenApi in shared/pen.ts. */
   pen,
-  /** The quick reference written at this launch (a new install), once; null otherwise (main/welcome.ts). */
-  welcomed: (): Promise<string | null> => ipcRenderer.invoke("welcome:take"),
+  /** Where the Quick Reference is (or will be): the notes root's `WriteMind Quick Reference.wm` (main/welcome.ts). */
+  quickReferencePath: (): Promise<string> => ipcRenderer.invoke("quickReference:path"),
+  /** Help ▸ Quick Reference: written if missing, rewritten if out of date; resolves to its path (main/welcome.ts). */
+  quickReference: (): Promise<string> => ipcRenderer.invoke("quickReference:ensure"),
   /** "Your notes stay in Documents\WriteMindCross…" once, when both notes folders are there; else null (main/notesFolderMove.ts). */
   notesFolderNotice: (): Promise<string | null> => ipcRenderer.invoke("notesFolder:notice"),
+  /** Notes asked for from outside the app (a double click in Finder or Explorer, a drop): the page takes them once. */
+  takeOpenFiles: (): Promise<string[]> => ipcRenderer.invoke("file:take"),
+  /** More were asked for while the app runs: take them. */
+  onOpenPending: (listener: () => void) => {
+    const wrapped = () => listener()
+    ipcRenderer.on("file:pending", wrapped)
+    return () => ipcRenderer.removeListener("file:pending", wrapped)
+  },
+  /** A .wm (as a tab) or a .md (imported into a new .wm beside it) by path, as a drop or an Open does. */
+  openFile: (file: string): Promise<void> => ipcRenderer.invoke("file:open", file),
+  /** The path of a file the person dropped on the window. */
+  pathOfFile: (file: File): string => webUtils.getPathForFile(file),
+  /** What the conversion of the old .md notes did at this launch (convert.ts), once; null when it did nothing. */
+  conversionNotice: (): Promise<string | null> => ipcRenderer.invoke("conversion:notice"),
+  /** The same, said while the app runs (a folder was added to the project and its old notes were converted). */
+  onConversionNotice: (listener: (text: string) => void) => {
+    const wrapped = (_event: unknown, text: string) => listener(text)
+    ipcRenderer.on("conversion:notice", wrapped)
+    return () => ipcRenderer.removeListener("conversion:notice", wrapped)
+  },
   /** The tablet's sheets (tabs) and their ink, kept in userData/sheets.json (main/sheets.ts). */
   sheets: {
     load: (): Promise<string | null> => ipcRenderer.invoke("sheets:load"),
     save: (text: string): void => ipcRenderer.send("sheets:save", text),
+  },
+  /** The document camera's scanned pages (tabs), kept in userData/scans.json and userData/scans/<id>.jpg (main/scans.ts). */
+  scans: {
+    load: (): Promise<string | null> => ipcRenderer.invoke("scans:load"),
+    save: (text: string): void => ipcRenderer.send("scans:save", text),
+    put: (id: string, bytes: Uint8Array): Promise<boolean> => ipcRenderer.invoke("scans:put", id, bytes),
+    get: (id: string): Promise<Uint8Array | null> => ipcRenderer.invoke("scans:get", id),
+    drop: (id: string): void => ipcRenderer.send("scans:drop", id),
+    sweep: (keep: string[]): void => ipcRenderer.send("scans:sweep", keep),
   },
   /** Evaluation cells (shared/eval.ts): run ONE cell, on Shift+Enter in it, and nothing else. */
   evaluate: {
@@ -150,6 +189,11 @@ const api = {
     open: (link) => ipcRenderer.invoke(LANGUAGE_CHANNELS.open, link),
     onChanged: (listener) => listen(LANGUAGE_CHANNELS.changed, listener),
   } satisfies LanguagesApi,
+  /** Help ▸ About WriteMind (shared/about.ts): the licence, the Wolfram statement and each library's licence; the project page. */
+  about: {
+    info: () => ipcRenderer.invoke(ABOUT_CHANNELS.info),
+    openProject: () => ipcRenderer.invoke(ABOUT_CHANNELS.openProject),
+  } satisfies AboutApi,
   /** End-to-end scripts only (WRITEMIND_E2E): read the menu bar and press an item. */
   ...(process.env.WRITEMIND_E2E ? {
     e2eMenu: () => ipcRenderer.invoke("e2e:menu"),
@@ -161,6 +205,16 @@ const api = {
     e2eTold: () => ipcRenderer.invoke("e2e:told"),
     e2eClipboard: (command: "read" | "save" | "restore") => ipcRenderer.invoke("e2e:clipboard", command),
   } : {}),
+  /**
+   * The undo journal of FILE steps (main/undoJournal.ts, docs/PLAN-undo.md): what is on top of its stacks, take the top one
+   * back / bring it back, and the word that a new edit ended the redo path. `onChanged` hears every change of the stacks.
+   */
+  undo: {
+    state: (): Promise<UndoState> => ipcRenderer.invoke("undo:state"),
+    run: (which: "undo" | "redo"): Promise<UndoOutcome> => ipcRenderer.invoke("undo:run", which),
+    cutRedo: (): Promise<void> => ipcRenderer.invoke("undo:cutRedo"),
+    onChanged: (listener: (state: UndoState) => void) => listen<UndoState>("undo:changed", listener),
+  },
   /** Edit ▸ Undo / Redo in the app's own menu. */
   onEdit: (listener: (which: "undo" | "redo") => void) => {
     const wrapped = (_event: unknown, which: "undo" | "redo") => listener(which)

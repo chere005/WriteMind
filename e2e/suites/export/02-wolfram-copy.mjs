@@ -66,7 +66,7 @@ try {
     await click(last.right, last.y); await sleep(150)
     await js(`${VIEW}.focus()`); await system("paste", "v"); await sleep(900)
     const after = await doc()
-    const lines = (after.match(/!\[ink\]\(\.drawings\/media\/ink-[0-9a-f-]+\.svg\)/g) ?? []).length
+    const lines = (after.match(/!\[ink\]\(snapshots\/ink-[0-9a-f-]+\.svg\)/g) ?? []).length
     ok("pasting it back is one more cell line", lines === 2 && after.length > before.length, `${lines} ink lines in ${JSON.stringify(after)}`)
     const drawing = await saved(file, () => true)
     ok("...and no floating picture beside it", drawing.items.filter((i) => i.kind !== "cell").length === floatingBefore, JSON.stringify(drawing.items.map((i) => i.kind)))

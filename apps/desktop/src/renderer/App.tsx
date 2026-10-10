@@ -8,27 +8,29 @@
 
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react"
 import { EditorView } from "@codemirror/view"
-import { columnBox, cursorSeam, findNextMatch, revealAt, takesPastedPicture, type InkCellPainter } from "@writemind/editor"
+import { columnBox, cursorSeam, DRAWING_MIME, findNextMatch, findStep, revealAt, takesPastedPicture, type InkCellPainter } from "@writemind/editor"
 import {
-  anchorOffset, bounds as itemBounds, capturePlacedCentre, decodeDrawing, emptyDrawing, insertBlock, insertionPointBelow,
+  anchorOffset, bounds as itemBounds, capturePlacedCentre, columnWidth, decodeDrawing, emptyDrawing, insertBlock, insertionPointBelow,
   languageTitle, listTitle, makeNote, newID, noTransform, parseCameraAspect, parseLink, placedCentre, PRESET_COLOURS, readDrawing,
   resolveLinkTarget, shifted, textFingerprint, writeDrawing, inkCellOf, inkFileName, inkIdsIn, visibleItems, withInkCell,
-  type CanvasItem, type CodeLanguage, type Drawing, type Evaluator, type ListStyle, type Note, type Placement,
+  type CanvasItem, type CodeLanguage, type Drawing, type Evaluator, type ListStyle, type Note, type Placement, type Rect,
 } from "@writemind/core"
 import { Canvas, clipboardDrawing, type CanvasMode } from "./Canvas"
 import { depthOf, dockNewInk, insertInkCell } from "./dock"
+import { cellOfCopied, copiedCellForShell, copiedCellOf, encodeCopiedCell, readCopiedCell, rememberCopiedCell } from "./copiedCell"
 import { scopePenTo } from "./inkScope"
 import { withSnapshots, wolframMedia } from "./wolframMedia"
 import { dockHostFor, inkPainter, shownWidth, snapshotNow, snapshotsAfterSave, snapshotsOnOpen, syncInkCells } from "./inkCells"
 import { cellSheetsSaw, setCellSheetHost } from "./cellSheets"
 import { CellMenu } from "./CellMenu"
 import { renameBoundNotes } from "./tabletSheets"
-import { NO_WELCOME, welcomeFor, welcomeStep, type WelcomeView } from "./welcomeView"
+import { QUICK_AWAY, quickStep, samePath, type QuickView } from "./welcomeView"
 import { DrawingHistory } from "./drawingHistory"
 import { useUndo } from "./useUndo"
 import { lazyText } from "./lazyText"
 import { reloadFromDisk } from "./diskReload"
 import { forgetAll, historyOf, keepOnly as keepHistory, renameNote } from "./noteHistory"
+import type { UndoOutcome } from "../shared/undo"
 import { readPictureResult } from "./ocrClient"
 import { CameraPane, type Capture } from "./CameraPane"
 import { PaneDivider } from "./PaneDivider"
@@ -36,12 +38,17 @@ import { TabBar } from "./TabBar"
 import { Notebook, type ViewState } from "./Notebook"
 import { LinkBanner, type LinkRequest } from "./LinkBanner"
 import { FindBar, type FindRequest } from "./FindBar"
+import { chipLine, escapeStops, modeChip } from "./modeChip"
+import { Icon, type IconName } from "./icons"
+import { findSession } from "./findSession"
 import { KeyList } from "./KeyList"
-import { Sidebar, SidebarBar } from "./Sidebar"
-import { TopBar, TOOL_GROUPS, type ToolGroupId } from "./TopBar"
+import { Sidebar } from "./Sidebar"
+import { useOpenFound } from "./foundOpen"
+import { TopBar, type ToolGroupId } from "./TopBar"
+import { migrateCollapsed, sectionsAway } from "./toolGroups"
 import { runEditorCommand } from "./editorCommands"
 import { useChrome } from "./useChrome"
-import { putToolsDown, usePenSettings, useSheetTools } from "./penSettings"
+import { nextPenButton, penSettings, putToolsDown, setEraser, setPenTool, usePenSettings, useSheetTools, type PenPress } from "./penSettings"
 import { usePenOnSheet } from "./tabletFocus"
 import { registerPenHandlers, runPenCommand } from "./penActions"
 import { cycleColour, stepWidth, PEN_WIDTHS } from "./penButtons"
@@ -58,6 +65,7 @@ import { NO_FOLDER_TEXT, targetFolderOf } from "./sidebarTree"
 import { UpdateDialog } from "./UpdateDialog"
 import { CleanUpDialog } from "./CleanUpDialog"
 import { heldBy } from "./cleanUp"
+import { AboutDialog } from "./AboutDialog"
 import { LanguageSetupDialog } from "./LanguageSetupDialog"
 import { setLanguageSetupOpener } from "./evalHost"
 import { FolderNotice } from "./FolderNotice"
@@ -105,6 +113,9 @@ function fingerprintOf(text: string): string {
   return print
 }
 
+/** The icon in front of what the pen is doing. */
+const MODE_ICON: Record<"placing" | "select" | "eraser" | "pen", IconName> = { placing: "shapes", select: "select", eraser: "eraser", pen: "pen" }
+
 export function App() {
   const [platform, setPlatform] = useState<Platform | null>(null)
   const [root, setRoot] = useState<Section | null>(null)
@@ -120,6 +131,10 @@ export function App() {
   const textRef = useMemo(() => lazyText(), [])
   const [saved, setSaved] = useState<Date | null>(null)
   const [stale, setStale] = useState(false)
+  // A note a NEWER WriteMind wrote (manifest.version above ours, SPEC-WM 1.8) is open read-only: nothing is saved or changed.
+  const [readOnly, setReadOnly] = useState(false)
+  const readOnlyRef = useRef(false)
+  readOnlyRef.current = readOnly
   const [view, setView] = useState<EditorView | null>(null)
   const viewRef = useRef<EditorView | null>(null)
   viewRef.current = view
@@ -131,10 +146,14 @@ export function App() {
   const [linking, setLinking] = useState<LinkRequest | null>(null)
   // Find in the note (the Mac's find bar); `lastQuery` is what Find Next goes on looking for with the bar away.
   const [finding, setFinding] = useState<FindRequest | null>(null)
+  // Search Notes (⇧⌘F) asked for the sidebar's field (the sidebar may have to open first: it takes the keyboard when it is there).
+  const [searchAsk, setSearchAsk] = useState(false)
   /** Help ▸ Keyboard Shortcuts is up (KeyList.tsx). */
   const [showKeys, setShowKeys] = useState(false)
   // File ▸ Clean Up Unused Files… (CleanUpDialog.tsx, main/housekeeping.ts).
   const [cleanUp, setCleanUp] = useState(false)
+  // Help ▸ About WriteMind (AboutDialog.tsx, main/about.ts): one dialog on every platform, the Mac's app menu included.
+  const [about, setAbout] = useState(false)
   // File ▸ Language Setup… (LanguageSetupDialog.tsx, main/eval/languages.ts), opened at a language from a cell's
   // Runs As menu (`focus`), or at the top from the menu bar.
   const [languageSetup, setLanguageSetup] = useState<{ focus: Evaluator | null } | null>(null)
@@ -145,15 +164,18 @@ export function App() {
   const lastQuery = useRef("")
   // The rendered page: the same editor with the markdown's marks put away.
   const [rendered, setRendered] = useState(false)
-  // A NEW INSTALL's quick reference opens on the rendered page, its first open only (welcomeView.ts). Before the
-  // paint, so it never shows as markdown first.
-  const [welcome, setWelcome] = useState<WelcomeView>(NO_WELCOME)
-  useEffect(() => { void window.wm.welcomed?.().then((note) => { if (note) setWelcome(welcomeFor(note)) }, () => undefined) }, [])
+  // THE QUICK REFERENCE IS ALWAYS ON THE RENDERED PAGE (welcomeView.ts): whenever it comes to the front the rendered
+  // page is put up, and when another note does the mode the other notes were in comes back. Before the paint, so it
+  // never shows as markdown first. `quickPath` is where it is (main/welcome.ts); `quickAsked` counts Help ▸ Quick Reference.
+  const [quickPath, setQuickPath] = useState<string | null>(null)
+  useEffect(() => { void window.wm.quickReferencePath?.().then(setQuickPath, () => undefined) }, [])
+  const [quick, setQuick] = useState<QuickView>(QUICK_AWAY)
+  const [quickAsked, setQuickAsked] = useState(0)
   useLayoutEffect(() => {
-    const step = welcomeStep(welcome, current, rendered)
-    if (step.state !== welcome) setWelcome(step.state)
+    const step = quickStep(quick, current, quickPath, rendered, quickAsked)
+    if (step.state !== quick) setQuick(step.state)
     if (step.rendered !== undefined) setRendered(step.rendered)
-  }, [welcome, current, rendered])
+  }, [quick, current, quickPath, rendered, quickAsked])
   // View ▸ Hide / Show Markdown Markers: a second, independent switch (the Mac keeps it in its defaults, shown by default).
   const [markers, setMarkers] = useState<boolean>(() => remembered<boolean>("markers", true))
   // BOTH PANES, EVERY LAUNCH (the Mac: "default video always to side by
@@ -170,9 +192,11 @@ export function App() {
   const [editing, setEditing] = useState(false)
   // The toolbar's sections that are put away, and what the list and code
   // buttons write — remembered, as the Mac keeps them in its defaults.
-  const [collapsedGroups, setCollapsedGroups] = useState<ToolGroupId[]>(() =>
-    remembered<string[]>("collapsedGroups", []).filter(
-      (id): id is ToolGroupId => TOOL_GROUPS.some((group) => group.id === id)))
+  // (The bar has four sections since 2026-10-10, kept as `toolSections`; what the six old ones had put away is migrated once.)
+  const [collapsedGroups, setCollapsedGroups] = useState<ToolGroupId[]>(() => {
+    const kept = remembered<unknown>("toolSections", null)
+    return kept === null ? migrateCollapsed(remembered<string[]>("collapsedGroups", [])) : sectionsAway(kept)
+  })
   const [listStyle, setListStyle] = useState<ListStyle>(() => remembered<ListStyle>("listStyle", "dots"))
   const [codeLanguage, setCodeLanguage] = useState<CodeLanguage>(() =>
     remembered<CodeLanguage>("codeLanguage", "plain"))
@@ -230,8 +254,11 @@ export function App() {
   }, [view])
 
   const lastTree = useRef("")
+  /** The tree as `reload` last read it (the state follows at the next render; an Undo that reopens a note needs it now). */
+  const treeNow = useRef<Section | null>(null)
   const reload = useCallback(async () => {
     const next = await window.wm.tree()
+    treeNow.current = next
     // A tree that has not changed is not a new tree: the sidebar keeps its
     // rows instead of re-rendering all of them after every save.
     const fingerprint = JSON.stringify(next)
@@ -251,6 +278,8 @@ export function App() {
   const openRef = useRef<string | null>(null)
   openRef.current = current
 
+  /** The tree and the open note read again (the folder watcher said something moved; a save that was refused asks it too). */
+  const reloadOpenRef = useRef<() => Promise<void>>(async () => undefined)
   useEffect(() => {
     // The notes list does not wait for the reader's probe (a PowerShell that is slow to start would hold the
     // whole sidebar for up to 20 s): what the machine can do arrives when it arrives.
@@ -260,27 +289,37 @@ export function App() {
     // something moved, and the open note is read again unless there is an
     // edit in hand that has not reached disk yet — that one is ours, and
     // the save will answer for it. (Asked again after each read: diskReload.ts.)
-    return window.wm.onNotesChanged(() => {
-      void (async () => {
-        await reload()
-        await reloadFromDisk({
-          open: () => openRef.current,
-          text: () => textRef.current,
-          wordsDirty: () => dirty.current,
-          drawingDirty: () => drawingDirty.current,
-          readNote: (file) => window.wm.readNote(file).catch(() => null),
-          readDrawing: (file) => window.wm.readDrawing(file).catch(() => null),
-          setDocument,
-          setDrawing: (sidecar) => {
-            // (A file caught half written, or one that is not a sidecar, is not the drawing: the one in hand stays.)
-            const read = decodeDrawing(sidecar)
-            if (read.damaged) return
-            const next = read.drawing
-            setDrawing((was) => (writeDrawing(was) === writeDrawing(next) ? was : next))
-          },
-        })
-      })()
-    })
+    reloadOpenRef.current = async () => {
+      await reload()
+      // The file is LOOKED at (one read of it, words and drawing together) and taken as the app's own only once it is on the page.
+      let peeked: { file: string; drawing: string | null; token: string } | null = null
+      await reloadFromDisk({
+        open: () => openRef.current,
+        text: () => textRef.current,
+        wordsDirty: () => dirty.current,
+        drawingDirty: () => drawingDirty.current,
+        readNote: async (file) => {
+          peeked = null
+          const got = await window.wm.peekNote(file).catch(() => null)
+          if (!got) return null
+          peeked = { file, drawing: got.drawing, token: got.token }
+          return got.text
+        },
+        readDrawing: async (file) => (peeked !== null && peeked.file === file ? peeked.drawing : null),
+        adopt: async (file) => {
+          if (peeked !== null && peeked.file === file) await window.wm.adoptNote(file, peeked.token).catch(() => false)
+        },
+        setDocument,
+        setDrawing: (sidecar) => {
+          // (A file caught half written, or one that is not a sidecar, is not the drawing: the one in hand stays.)
+          const read = decodeDrawing(sidecar)
+          if (read.damaged) return
+          const next = read.drawing
+          setDrawing((was) => (writeDrawing(was) === writeDrawing(next) ? was : next))
+        },
+      })
+    }
+    return window.wm.onNotesChanged(() => { void reloadOpenRef.current() })
   }, [reload, setDocument])
 
   // The text that is not in its file yet is carried by the session (hot exit): see useSession. `baseText` is the
@@ -353,7 +392,10 @@ export function App() {
     const copy = outcome === "refused" || leaving ? await keepCopy(file, text, "note") : null
     if (copy) {
       if (openRef.current === file && textRef.current === text) dirty.current = false
-      say(`Could not save ${leaf(file)}: ${why}. Your text is kept in Recovered\\${leaf(copy)}`, copy, key)
+      // ("the Recovered folder", not a path in a Windows spelling: on a Mac and on Arch it is not one. Show reveals the copy.)
+      say(`Could not save ${leaf(file)}: ${why}. Your text is kept in the Recovered folder.`, copy, key)
+      // The text is safe in Recovered: the newer file can come in now (nothing is in hand for it to replace).
+      if (outcome === "refused" && !leaving) window.setTimeout(() => { void reloadOpenRef.current() }, 0)
     } else if (leaving) {
       say(`Could not save ${leaf(file)}: ${why}. The text could not be kept either.`, null, key)
     } else {
@@ -384,7 +426,7 @@ export function App() {
       const copy = leaving ? await keepCopy(file, json, "drawing") : null
       if (copy) {
         if (openRef.current === file && writeDrawing(drawingRef.current) === json) drawingDirty.current = false
-        say(`Could not save the drawing of ${leaf(file)}: ${why}. It is kept in Recovered\\${leaf(copy)}`, copy, key)
+        say(`Could not save the drawing of ${leaf(file)}: ${why}. It is kept in the Recovered folder.`, copy, key)
       } else if (leaving) {
         say(`Could not save the drawing of ${leaf(file)}: ${why}. It could not be kept either.`, null, key)
       } else {
@@ -426,6 +468,7 @@ export function App() {
     drawingDirty.current = false
     const contents = await window.wm.readNote(note.path)
     const sidecar = await window.wm.readDrawing(note.path)
+    const info = await window.wm.noteInfo(note.path).catch(() => ({ readOnly: false }))
     // The sidecar is decoded BEFORE the note is switched (the decode cannot throw, but whatever happens in it
     // must not leave the new note on screen with the old note's drawing, which the next stroke would save into
     // the new note's file). A sidecar that is not all readable is KEPT in Recovered and said so: the next edit
@@ -445,11 +488,19 @@ export function App() {
     if (decoded.damaged) {
       const left = decoded.dropped > 0 ? ` (${decoded.dropped} object${decoded.dropped === 1 ? "" : "s"} left out)` : ""
       const where = kept
-        ? `The file is kept as it was in Recovered\\${leaf(kept)}.`
+        ? "The file is kept as it was in the Recovered folder."
         : "It could not be kept either, so the next change to the drawing replaces it."
       say(`The drawing of ${leaf(note.path)} could not be read in full${left}. ${where}`, kept, `drawing-unreadable:${note.path}`)
     }
     setStale(false)
+    setReadOnly(info.readOnly === true)
+    readOnlyRef.current = info.readOnly === true
+    if (info.readOnly === true) {
+      const why = (info as { why?: string | null }).why
+      say(why && !/newer WriteMind/.test(why)
+        ? `${leaf(note.path)} is open read-only here: ${why}.`
+        : `${leaf(note.path)} was written by a newer WriteMind, so it is open read-only here.`, null, `newer:${note.path}`)
+    }
   }, [flushNow, keepCopy, say, setDocument])
 
   // The autosave: debounced, and it never clobbers. `writeNote` asks the
@@ -458,7 +509,7 @@ export function App() {
   // an effect on the text, so typing does not render this component.
   const save = useCallback(() => {
     const file = openRef.current
-    if (!file || !dirty.current) return
+    if (!file || !dirty.current || readOnlyRef.current) return
     void (async () => {
       await writeText(file, false)
       void reload()
@@ -492,6 +543,7 @@ export function App() {
   }, [save])
 
   const changeDrawing = useCallback((next: Drawing) => {
+    if (readOnlyRef.current) return
     drawingDirty.current = true
     // At once, not at the next render: a dock writes the words and the drawing in one go, and what it wrote is
     // read back before React has drawn it (an ink cell's widget, its snapshot).
@@ -509,7 +561,13 @@ export function App() {
     history.record(drawingRef.current)
     changeDrawing(next)
   }, [changeDrawing, history])
-  useUndo({ view, history, drawing, apply: changeDrawing })
+  // ONE Undo for the words, the drawing and the FILE operations (useUndo.ts, docs/PLAN-undo.md): a file step is the journal's
+  // (main/undoJournal.ts), run by `undoFileStep` below.
+  const fileStepRef = useRef<(which: "undo" | "redo") => Promise<boolean>>(async () => false)
+  const undoLabels = useUndo({
+    view, history, drawing, platform: platform?.platform ?? null, apply: changeDrawing,
+    fileStep: (which) => fileStepRef.current(which),
+  })
 
   // INK CELLS (docs\PLAN-docking-ink-cells.md). The editor draws each cell's line as a widget and paints its canvas
   // with this one painter, from the drawing as it is now; a resize by the cell's bottom edge is one undo step.
@@ -639,7 +697,9 @@ export function App() {
     if (view) {
       const main = view.state.selection.main
       const block = view.lineBlockAt(main.head)
-      caretLine = { x: 30, y: block.top, width: pane.width - 60, height: block.height }
+      // The drawing layer's y includes the editor's top padding (readPicture subtracts it): without it the picture landed that
+      // far too high and covered the bottom of the caret's own line (the heading, when the caret was in it).
+      caretLine = { x: 30, y: block.top + view.documentPadding.top, width: pane.width - 60, height: block.height }
     }
     let centre = placedCentre({ width, height: width * aspect, pane, scroll, caretLine })
     const box = view ? view.scrollDOM.getBoundingClientRect() : null
@@ -695,7 +755,9 @@ export function App() {
     let caretLine = null as null | { x: number; y: number; width: number; height: number }
     if (view) {
       const block = view.lineBlockAt(view.state.selection.main.head)
-      caretLine = { x: 30, y: block.top, width: pane.width - 60, height: block.height }
+      // The drawing layer's y includes the editor's top padding (readPicture subtracts it): without it the picture landed that
+      // far too high and covered the bottom of the caret's own line (the heading, when the caret was in it).
+      caretLine = { x: 30, y: block.top + view.documentPadding.top, width: pane.width - 60, height: block.height }
     }
     const taken = drawingRef.current.items.flatMap((item) => (item.kind === "image" ? [item.image.center] : []))
     const centre = capturePlacedCentre({
@@ -797,6 +859,9 @@ export function App() {
       // A paste carrying WriteMind's own cells is the cells and nothing else (a drawing cell copied for Mathematica has
       // a PNG beside them, which would otherwise land as a floating picture too).
       if (!takesPastedPicture([...(event.clipboardData?.types ?? [])])) return
+      // (nor WriteMind's own copied drawing cell, which a system that shows a pasted file as only that file gives as its
+      // SVG file: `pasteSheetCell` lands it)
+      if (event.clipboardData && copiedCellOf(event.clipboardData) !== null) return
       const file = [...(event.clipboardData?.items ?? [])]
         .find((item) => item.kind === "file" && item.type.startsWith("image/"))
         ?.getAsFile()
@@ -808,10 +873,18 @@ export function App() {
     return () => window.removeEventListener("paste", paste)
   }, [addPicture])
 
-  const toggleMode = useCallback(() => {
-    setPlacing(null)
-    putToolsDown()
-    setMode((was) => (was === "pen" ? "cursor" : "pen"))
+  // THE BAR'S ONE PEN BUTTON (Sean, 2026-10-10): its click, its menu (Pen / Eraser) and ⌥⌘1 / ⌥⌘2 all end in `nextPenButton`,
+  // which says what the button is (the pen or the eraser) and whether it is on; the pen's mode is this component's.
+  const modeRef = useRef(mode)
+  modeRef.current = mode
+  const penButton = useCallback((press: PenPress) => {
+    const now = penSettings()
+    const down = modeRef.current === "pen"
+    const next = nextPenButton({ tool: now.tool, eraser: now.eraser, down }, press)
+    // The pen coming down or going up lets go of the one-gesture tools, as it always did (and drops an armed shape).
+    if (next.down !== down) { setPlacing(null); putToolsDown(); setMode(next.down ? "pen" : "cursor") }
+    setPenTool(next.tool)
+    if (next.eraser !== penSettings().eraser) setEraser(next.eraser)
   }, [])
 
   const newNote = useCallback(async (folder: string) => {
@@ -941,21 +1014,72 @@ export function App() {
   // The tablet box's "Bring in as Drawing Cell" (BoxActions.tsx): the boxed writing, landed in the pane as Bring in
   // Writing lands it, docked as a NEW drawing cell at the input cursor (the armed bar, else after the caret's cell),
   // its snapshot written at once. One Undo step in the note.
-  const dockSheetCell = useCallback((capture: Capture): boolean => {
+  const dockCapturedInk = useCallback((strokes: CanvasItem[], pane: PaneSize, frame?: Rect): boolean => {
     const editor = viewRef.current
     const file = openRef.current
-    if (!editor || !file || !dockHost || !capture.strokes || capture.strokes.length === 0) return false
+    if (!editor || !file || !dockHost || strokes.length === 0) return false
     const column = columnBox(editor)
     const left = editor.scrollDOM.getBoundingClientRect().left
     const id = dockNewInk({
       history, drawing: () => drawingRef.current, apply: changeDrawing, words: dockHost.words, depth,
       ahead: dockHost.ahead,
-    }, capture.strokes, currentPane(editor, lastPane), { left: column.left - left, width: column.width }, cursorSeam(editor.state),
-      capture.frame)
+    }, strokes, pane, { left: column.left - left, width: column.width }, cursorSeam(editor.state), frame)
     const cell = id ? inkCellOf(drawingRef.current, id) : null
     if (cell) snapshotNow(file, cell, column.width)
     return id !== null
   }, [changeDrawing, depth, dockHost, history])
+  const dockSheetCell = useCallback((capture: Capture): boolean => {
+    const editor = viewRef.current
+    if (!editor || !capture.strokes || capture.strokes.length === 0) return false
+    return dockCapturedInk(capture.strokes, currentPane(editor, lastPane), capture.frame)
+  }, [dockCapturedInk])
+  // The tablet box's "Copy Cell" (BoxActions.tsx): the same capture as Bring in as Drawing Cell, put on the clipboard as a
+  // drawing cell and left out of the note. The page's own copy event writes WriteMind's words and its custom type (the
+  // strokes, the box and the pane: `DRAWING_MIME`, which a paste in a note takes as a NEW drawing cell); the shell then
+  // adds the rest (main/wolfram/clipboard.ts `cell`: the SVG file for the other apps and Mathematica's own type). Needs no
+  // note: the cell's width is the column's, else the pane's. False when the page could not copy.
+  const copySheetCell = useCallback((capture: Capture): boolean => {
+    if (!window.wm.wolframCopy || !capture.strokes || capture.strokes.length === 0) return false
+    const editor = viewRef.current
+    const pane = currentPane(editor, lastPane)
+    const width = editor ? columnBox(editor).width : columnWidth(pane)
+    const cell = cellOfCopied({ strokes: capture.strokes, frame: capture.frame ?? null, pane }, width)
+    if (!cell) return false
+    const shell = copiedCellForShell(cell, width, depth, openRef.current)
+    const json = encodeCopiedCell({ strokes: capture.strokes, frame: capture.frame ?? null, pane })
+    let wrote = false
+    const onCopy = (event: ClipboardEvent) => {
+      if (!event.clipboardData) return
+      event.clipboardData.setData("text/plain", shell.plain)
+      event.clipboardData.setData(DRAWING_MIME, json)
+      event.preventDefault()
+      wrote = true
+    }
+    document.addEventListener("copy", onCopy, true)
+    try { document.execCommand("copy") } catch { /* no copy */ } finally { document.removeEventListener("copy", onCopy, true) }
+    if (!wrote) return false
+    rememberCopiedCell(json, shell.plain)
+    window.wm.wolframCopy(shell)
+    return true
+  }, [depth])
+  // A PASTE carrying a drawing cell copied from the tablet box: a NEW drawing cell at the caret or the armed bar, exactly as
+  // Bring in as Drawing Cell lands it (one Undo step). The editor takes it when it has the focus (packages/editor
+  // `pasteDrawing`); this window listener when it does not. The paste is never also a picture (`takesPastedPicture`).
+  const pasteSheetCell = useCallback((data: DataTransfer): boolean => {
+    const json = copiedCellOf(data)
+    if (json === null) return false
+    const copied = readCopiedCell(json)
+    if (copied) dockCapturedInk(copied.strokes, copied.pane, copied.frame ?? undefined)
+    return true
+  }, [dockCapturedInk])
+  useEffect(() => {
+    const paste = (event: ClipboardEvent) => {
+      if (!event.clipboardData || event.defaultPrevented) return
+      if (pasteSheetCell(event.clipboardData)) event.preventDefault()
+    }
+    window.addEventListener("paste", paste)
+    return () => window.removeEventListener("paste", paste)
+  }, [pasteSheetCell])
   // "None of the project's folders is there" is taken back when one is (a drive plugged in, a share back).
   useEffect(() => {
     if (problemText.current === NO_FOLDER_TEXT && project?.folders.some((one) => one.exists)) clearProblem()
@@ -968,6 +1092,42 @@ export function App() {
   })
   sessionRef.current = session
   touchBuffer.current = session.touchBuffer
+  // NOTES OPENED FROM OUTSIDE (main/openFiles.ts): a .wm double-clicked in Finder or Explorer, a .wm or .md dropped on the
+  // window (a .md has been made a .wm beside it by now). They open as tabs, the last one in front, once the session is
+  // back (so they come over the notes that were open) and whenever the shell says there is more.
+  useEffect(() => {
+    if (!session.ready) return
+    let live = true
+    const pull = () => {
+      void (async () => {
+        const files = (await window.wm.takeOpenFiles?.().catch(() => [] as string[])) ?? []
+        for (const file of files) {
+          if (!live) return
+          try {
+            const known = openList.current.find((one) => one.path === file)
+              ?? (rootRef.current ? notesIn(rootRef.current).find((one) => one.path === file) : undefined)
+            await openNoteRef.current(known ?? makeNote(file, Date.now(), await window.wm.readNote(file)))
+          } catch (error) {
+            say(`${friendly(error)}`, null, `open:${file}`)
+          }
+        }
+      })()
+    }
+    pull()
+    const stop = window.wm.onOpenPending?.(pull)
+    return () => { live = false; stop?.() }
+  }, [session.ready, say])
+  // A .wm or a .md let go on the window opens (the page's own drop, on a picture, is handled where the picture lands).
+  useEffect(() => {
+    const drop = (event: DragEvent) => {
+      const files = [...(event.dataTransfer?.files ?? [])].filter((one) => /\.(wm|mdwm|md|markdown)$/i.test(one.name))
+      if (files.length === 0 || !window.wm.pathOfFile || !window.wm.openFile) return
+      event.preventDefault()
+      for (const one of files) void window.wm.openFile(window.wm.pathOfFile(one))
+    }
+    window.addEventListener("drop", drop)
+    return () => window.removeEventListener("drop", drop)
+  }, [])
   // CLOSING THE WINDOW: the shell holds the close until this has run (main.ts `askPageToFlush`) — the note and its
   // drawing written (or kept in Recovered), and the session. A keystroke typed just before the X is on disk.
   useEffect(() => window.wm.onFlushRequest(async () => {
@@ -1043,9 +1203,12 @@ export function App() {
     const front = openRef.current
     if (front && rename(front) !== front) {
       openRef.current = rename(front)
+      // The editor is built again for the new path, from the words IN HAND (not the words that last arrived from outside
+      // the editor, which can be older): that is what lets it take its undo history along (noteHistory.ts, Notebook.tsx).
+      setDocument(textRef.current)
       setCurrent(rename(front))
     }
-  }, [])
+  }, [setDocument])
 
   const placeNote = useCallback(async (file: string, folder: string, before: string | null) => {
     await flushNow(false)
@@ -1144,13 +1307,35 @@ export function App() {
     }
   }, [])
 
+  /**
+   * Open notes that went to the bin (or were taken away by an Undo) with the note or section they were in, and whether each was
+   * the one in front: when the Undo of that puts the note back, its tab comes back (noteHistory.ts keeps its Ctrl+Z).
+   */
+  const goneOpen = useRef(new Map<string, boolean>())
+
   const trashNote = useCallback(async (note: Note) => {
+    // What is typed goes into the file FIRST, so the copy kept for Undo has it (it used to be thrown away: letGo).
+    await flushNow(false)
+    // No save while the note is on its way to the bin (a write after it would be refused as "gone" and say so).
+    const front = openRef.current === note.path
+    if (front) {
+      if (timer.current) window.clearTimeout(timer.current)
+      if (drawingTimer.current) window.clearTimeout(drawingTimer.current)
+    }
+    try {
+      await window.wm.trashNote(note.path)
+    } catch (error) {
+      // Nothing changed (a copy for Undo could not be made, or the system would not take it): the note stays, as it was.
+      if (front && dirty.current) saveRef.current()
+      say(`“${leaf(note.path).replace(/\.[^.]+$/, "")}” was not moved to the trash: ${friendly(error)}.`)
+      return
+    }
+    if (openList.current.some((one) => one.path === note.path)) goneOpen.current.set(note.path, front)
     letGo((path) => path === note.path)
-    await window.wm.trashNote(note.path)
     await close(note.path)
     lastTree.current = ""
     await reload()
-  }, [close, letGo, reload])
+  }, [close, flushNow, letGo, reload, say])
 
   const trashSection = useCallback(async (section: Section) => {
     const inside = (path: string) => path.startsWith(section.path + "/") || path.startsWith(section.path + "\\")
@@ -1161,18 +1346,28 @@ export function App() {
       if (timer.current) window.clearTimeout(timer.current)
       if (drawingTimer.current) window.clearTimeout(drawingTimer.current)
     }
-    const trashed = await window.wm.trashSection(section.path)
+    // (What is typed goes into its file first, so the copy kept for Undo has it.)
+    if (front && inside(front)) await flushNow(false)
+    let trashed = false
+    try {
+      trashed = await window.wm.trashSection(section.path)
+    } catch (error) {
+      if (front && inside(front) && dirty.current) saveRef.current()
+      say(`“${section.name}” was not moved to the trash: ${friendly(error)}.`)
+      return
+    }
     if (!trashed) {
       // A project folder (or anything outside the project) is not the sidebar's to bin: nothing changed.
       if (front && inside(front) && dirty.current) saveRef.current()
       say(`“${section.name}” is a project folder, so it was not moved to the bin. Remove Folder from Project takes it out of the project and leaves it on disk.`)
       return
     }
+    for (const note of openList.current) if (inside(note.path)) goneOpen.current.set(note.path, note.path === front)
     letGo(inside)
     await closeWhere(inside)
     lastTree.current = ""
     await reload()
-  }, [closeWhere, letGo, reload, say])
+  }, [closeWhere, flushNow, letGo, reload, say])
 
   const duplicate = useCallback(async (note: Note) => {
     await flushNow(false)
@@ -1180,6 +1375,69 @@ export function App() {
     lastTree.current = ""
     await reload()
   }, [flushNow, reload])
+
+  /**
+   * UNDO OR REDO OF A FILE STEP (main/undoJournal.ts, docs/PLAN-undo.md): what is typed is written first (the files must be
+   * what the page holds), the journal takes the step, and the page follows what it did: what moved (the tabs, their carets and
+   * their Ctrl+Z go along), what is gone (its tabs close, and are remembered), what is back (a tab that went with a trash
+   * comes back), and a notice for a name that was taken. A step that cannot be taken says why and changes nothing.
+   */
+  const undoFileStep = useCallback(async (which: "undo" | "redo"): Promise<boolean> => {
+    await flushNow(false)
+    let out: UndoOutcome
+    try {
+      out = await window.wm.undo.run(which)
+    } catch (error) {
+      say(`Could not ${which}: ${friendly(error)}.`, null, "undo")
+      return false
+    }
+    if (out.ok === null) return false
+    if (!out.ok) {
+      say(`Could not ${which} ${out.label}: ${out.why}.`, null, "undo")
+      // (a step that was dropped, or a tree that moved under it: the sidebar shows what is there)
+      lastTree.current = ""
+      await reload()
+      return false
+    }
+    clearProblem("undo")
+    const { moved, removed, restored, notices } = out.effects
+    for (const { from, to } of moved) followMoved(from, to)
+    const within = (folder: string) => (path: string) =>
+      path === folder || path.startsWith(folder + "/") || path.startsWith(folder + "\\")
+    for (const gone of removed) {
+      const inside = within(gone)
+      for (const note of openList.current) if (inside(note.path)) goneOpen.current.set(note.path, note.path === openRef.current)
+      letGo(inside)
+      await closeWhere(inside)
+    }
+    lastTree.current = ""
+    await reload()
+    // The tabs that went with what is back come back with it (under the name it came back with), the one that was in front last.
+    const reopen: { path: string; front: boolean }[] = []
+    for (const { path: landed, was } of restored) {
+      const inside = within(was)
+      for (const [old, wasFront] of [...goneOpen.current]) {
+        if (!inside(old)) continue
+        goneOpen.current.delete(old)
+        const target = landed + old.slice(was.length)
+        if (target !== old) renameNote(old, target)
+        reopen.push({ path: target, front: wasFront })
+      }
+    }
+    reopen.sort((a, b) => Number(a.front) - Number(b.front))
+    const tree = treeNow.current
+    const stay = reopen.some((one) => one.front) ? null : openRef.current
+    for (const { path } of reopen) {
+      const known = tree ? notesIn(tree).find((note) => note.path === path) : undefined
+      if (known) await openNote(known)
+    }
+    // A tab that was not in front when it went comes back behind the one that is.
+    const kept = stay ? openList.current.find((note) => note.path === stay) : undefined
+    if (kept && openRef.current !== stay) await openNote(kept)
+    for (const text of notices) tellRead(text, 9000)
+    return true
+  }, [clearProblem, closeWhere, flushNow, followMoved, letGo, openNote, reload, say, tellRead])
+  fileStepRef.current = undoFileStep
 
   // MARK: - The cameras (Input Devices)
 
@@ -1231,6 +1489,10 @@ export function App() {
     setShowEditor(!showEditor)
   }
   const targetFolder = (): string => targetFolderOf(current, root)
+  // A result of the sidebar's search opens at the first place its words are, with the Find bar on them (foundOpen.ts).
+  const openFound = useOpenFound({
+    view, current, text: () => textRef.current, openNote, finding, setFinding,
+  })
 
   // The pen's buttons and ExpressKeys, for what only this component owns: the
   // pen's colour and width and whether the pen is down (penActions.ts).
@@ -1239,12 +1501,31 @@ export function App() {
   const sheetTools = useSheetTools()
   const toolsHere = usePenOnSheet() ? sheetTools : penTools
   useEffect(() => registerPenHandlers({
-    togglePen: toggleMode,
+    togglePen: () => penButton("keyPen"),
     nextColour: () => setPenColour((now) => cycleColour(now, PRESET_COLOURS.slice(0, 4), 1)),
     prevColour: () => setPenColour((now) => cycleColour(now, PRESET_COLOURS.slice(0, 4), -1)),
     wider: () => setPenWidth((now) => stepWidth(now, PEN_WIDTHS, 1)),
     thinner: () => setPenWidth((now) => stepWidth(now, PEN_WIDTHS, -1)),
-  }), [toggleMode])
+  }), [penButton])
+
+  // HELP ▸ QUICK REFERENCE (main/welcome.ts): the note is written if it is missing and rewritten with this app's text if
+  // it is out of date (any edit to it is overwritten: it is the app's, not the person's), then opened in a tab and shown
+  // rendered (welcomeView.ts). What is typed into it and not yet written goes to the file FIRST, so the rewrite is the
+  // newer of the two and the guard has nothing to refuse.
+  const openQuickReference = useCallback(async () => {
+    const ensure = window.wm.quickReference
+    if (!ensure) return
+    try {
+      if (openRef.current && quickPath && samePath(openRef.current, quickPath)) await flushNow(false)
+      const file = await ensure()
+      setQuickPath(file)
+      await reload()
+      await openNote(makeNote(file, Date.now(), await window.wm.readNote(file)))
+      setQuickAsked((was) => was + 1)
+    } catch (error) {
+      say(`The Quick Reference could not be opened: ${friendly(error)}`, null, "quick-reference")
+    }
+  }, [flushNow, openNote, quickPath, reload, say])
 
   const run = (id: string) => {
     // Input Devices ▸ Aspect Ratio: the shape of the viewfinder (cameraSettings.ts, CameraPane's viewfinder).
@@ -1274,7 +1555,7 @@ export function App() {
         const markdown = textRef.current
         void (async () => {
           await window.wm.exportFile(current ? {
-            noteFile: current, title: title.replace(/\.(md|markdown|txt)$/i, ""),
+            noteFile: current, title: title.replace(/\.(wm|md|markdown|txt)$/i, ""),
             markdown, drawing: writeDrawing(drawingRef.current),
             // The pane the ink was placed against: its last real size when the notes pane is put away.
             pane,
@@ -1287,8 +1568,10 @@ export function App() {
       // Ctrl+P: the same writer as Pen ▸ Pen Down and the pen button.
       case "togglePen": runPenCommand("penToggle"); return
       case "keyList": setShowKeys((was) => !was); return
+      case "quickReference": void openQuickReference(); return
       case "cleanUp": setCleanUp(true); return
       case "languageSetup": setLanguageSetup({ focus: null }); return
+      case "about": setAbout(true); return
       case "undoDrawing": {
         const back = history.undo(drawingRef.current)
         if (back) changeDrawing(back)
@@ -1300,6 +1583,8 @@ export function App() {
         return
       }
       case "toggleSidebar": setShowSidebar((was) => !was); return
+      // ⇧⌘F: the sidebar's search field (the sidebar is brought back first, out of the picture's full window too).
+      case "searchNotes": setCameraFullWindow(false); setShowSidebar(true); setSearchAsk(true); return
       // Two independent switches, as on the Mac: the preview / editor mode, and whether the
       // markdown editor shows its markers (the choice is remembered; it is the editor's, so the
       // rendered page, which always puts its marks away, does not need it).
@@ -1336,8 +1621,10 @@ export function App() {
         if (id === "findNext" || id === "findPrevious") {
           // With the bar away it goes on looking for the words last looked for.
           if (!finding) {
-            if (lastQuery.current.length === 0) { setFinding({ mode: "find", seed: words, tick: 1 }); return }
-            setFinding({ mode: "find", seed: lastQuery.current, tick: 1 })
+            if (findSession.query.length === 0) { setFinding({ mode: "find", seed: words, tick: 1 }); return }
+            // ⌘G with the bar away goes to the next match from the selection and opens nothing (findSession.ts: the words
+            // and the switches of the last Find).
+            findStep(view, { query: findSession.query, caseSensitive: findSession.caseSensitive, wholeWord: findSession.wholeWord }, id === "findPrevious")
             return
           }
           findNextMatch(view, id === "findPrevious")
@@ -1363,6 +1650,8 @@ export function App() {
       markers,
       canUndoDrawing: history.canUndo,
       canRedoDrawing: history.canRedo,
+      undoLabel: undoLabels.undo,
+      redoLabel: undoLabels.redo,
       listStyle: listTitle(listStyle),
       codeLanguage: codeLanguage === "plain" ? null : languageTitle(codeLanguage),
       cameras,
@@ -1378,7 +1667,7 @@ export function App() {
   const collapseGroup = useCallback((group: ToolGroupId, away: boolean) => {
     setCollapsedGroups((was) => {
       const next = away ? [...new Set([...was, group])] : was.filter((one) => one !== group)
-      remember("collapsedGroups", next)
+      remember("toolSections", next)
       return next
     })
   }, [])
@@ -1389,6 +1678,30 @@ export function App() {
     [readPicture])
   const title = current ? current.split(/[\\/]/).pop() ?? "" : ""
 
+  // WHAT THE PEN IS DOING, in words (modeChip.ts): the footer's chip and the page's. It reads the pen state the toolbar owns
+  // (the mode, the width, the Erase and Select tools) and an armed shape, and owns none of it.
+  const chip = modeChip({ pen: mode === "pen", penWidth, eraser: penTools.eraser, selectTool: penTools.selectTool, placing })
+  const chipOn = chip !== null
+  // ESCAPE PUTS IT DOWN, as the chip says ("Esc to stop"): only when the press was nobody else's — a menu, a dialog, the
+  // layer's own pick or crop (which say so by preventing the default) have it first. Decided after the press has been
+  // through every listener, so the order they were added in does not matter.
+  useEffect(() => {
+    if (!chipOn) return
+    const key = (event: KeyboardEvent) => {
+      if (event.key !== "Escape" || event.isComposing) return
+      const target = event.target instanceof Element ? event.target : null
+      const elsewhere = target !== null && target.closest("input, textarea, select, .camera, .sidebar, .tab-bar, .modal") !== null
+      window.setTimeout(() => {
+        if (!escapeStops({ handled: event.defaultPrevented, elsewhere, on: true })) return
+        setPlacing(null)
+        setMode("cursor")
+        putToolsDown()
+      }, 0)
+    }
+    window.addEventListener("keydown", key)
+    return () => window.removeEventListener("keydown", key)
+  }, [chipOn])
+
   return (
     <div className={`app${platform?.platform === "darwin" ? " mac" : ""}${showEditor && !cameraFullWindow ? "" : " no-editor"}`}>
       {/* The picture filling the window puts the sidebar out of sight, not away: it comes back as it was. */}
@@ -1396,8 +1709,10 @@ export function App() {
         <Sidebar
           root={root}
           openNote={current}
-          editing={editing}
+          editing={editing} onEditing={setEditing}
+          newIn={targetFolder()}
           onOpen={(note) => { void openNote(note) }}
+          onOpenFound={(note, hit, typed) => openFound(note, hit, typed)}
           onNewNote={(folder) => { void newNote(folder) }}
           onNewSection={(parent) => { void newSection(parent) }}
           onPlaceNote={(file, folder, before) => { void placeNote(file, folder, before) }}
@@ -1407,53 +1722,41 @@ export function App() {
           onTrashSection={(section) => { void trashSection(section) }}
           onRenameNote={(note, name) => renameNoteTo(note, name)}
           onRenameSection={(section, name) => renameSectionTo(section, name)}
+          searchAsk={searchAsk} onSearchTaken={() => setSearchAsk(false)}
           project={project} platform={kind}
           onProjectCommand={(id) => { if (id === "cleanUp") setCleanUp(true); else void window.wm.runMain(id) }}
           onReveal={(path) => { void window.wm.reveal(path) }}
-          header={(
-            <SidebarBar
-              platform={kind}
-              editing={editing} onEditing={setEditing}
-              onNewSection={() => { void newSection(targetFolder()) }}
-              newSectionIn={targetFolder().split(/[\\/]/).pop() || "the notes folder"}
-              rendered={rendered} hasNote={hasNote}
-              onToggleRendered={() => setRendered((was) => !was)}
-              camera={showCamera} onToggleCamera={toggleCameraPane}
-              cameras={cameras} cameraId={sourceId}
-              onPickCamera={(id) => run(`camera:${id}`)}
-              onCameraOff={() => run("cameraOff")}
-              onRefreshCameras={() => { void refreshCameras() }}
-              notesPane={showEditor} onToggleNotesPane={toggleEditorPane}
-            />
-          )}
         />
       </div>)}
       <div className="pane" style={showEditor && !cameraFullWindow ? undefined : { display: "none" }}>
-        <TabBar platform={kind} open={open} current={current}
-                onSelect={(note) => { void openNote(note) }} onClose={close} onCloseOthers={closeOthers}
-                onNew={() => { void newNote(targetFolder()) }} onReveal={(path) => { void window.wm.reveal(path) }} />
-        {/* The bar is always there — the sidebar's switch is its first
-            button — and its tools wait for a note. */}
-        <TopBar view={view} platform={kind} hasNote={hasNote}
+        {/* The tab row carries the three switches — sidebar, rendered page, video — so they stay put, sidebar open or shut. */}
+        <TabBar platform={kind} open={open} current={current} root={root} hasNote={hasNote}
                 sidebar={showSidebar} onToggleSidebar={() => setShowSidebar((was) => !was)}
+                rendered={rendered} onToggleRendered={() => setRendered((was) => !was)}
+                camera={showCamera} onToggleCamera={toggleCameraPane}
+                cameras={cameras} cameraId={sourceId}
+                onPickCamera={(id) => run(`camera:${id}`)} onCameraOff={() => run("cameraOff")}
+                onRefreshCameras={() => run("cameraRefresh")}
+                notesPane={showEditor} onToggleNotesPane={toggleEditorPane}
+                onSelect={(note) => { void openNote(note) }} onClose={close} onCloseOthers={closeOthers}
+                onNew={() => { void newNote(targetFolder()) }} onReveal={(path) => { void window.wm.reveal(path) }}
+                onRename={renameNoteTo} onDuplicate={(note) => { void duplicate(note) }}
+                onMove={(note, folder) => { void placeNote(note.path, folder, null) }}
+                onTrash={(note) => { void trashNote(note) }} />
+        {/* The bar is always there and its tools wait for a note. */}
+        <TopBar view={view} platform={kind} hasNote={hasNote}
                 collapsed={collapsedGroups} onCollapse={collapseGroup}
                 listStyle={listStyle}
                 onListStyle={(style) => { setListStyle(style); remember("listStyle", style) }}
                 codeLanguage={codeLanguage}
                 onCodeLanguage={(language) => { setCodeLanguage(language); remember("codeLanguage", language) }}
                 onAddPicture={() => { void choosePicture() }}
-                mode={mode} onToggleMode={toggleMode}
+                mode={mode} onPenButton={penButton}
                 penColour={penColour} onPenColour={setPenColour}
                 penWidth={penWidth} onPenWidth={setPenWidth}
-                onPlace={arm} placing={placing} />
+                onPlace={arm} placing={placing} onCommand={run} />
         {current ? (
           <>
-            {finding && (
-              <FindBar view={view} request={finding}
-                       onQuery={(query) => { lastQuery.current = query }} onClose={() => setFinding(null)} />
-            )}
-            <LinkBanner request={linking} current={current} view={view} root={root}
-                        openNote={openNote} onLanded={landed} onDone={doneLinking} />
             <div className="stack"
                  onDragOver={(event) => { event.preventDefault() }}
                  onDrop={(event) => {
@@ -1464,33 +1767,54 @@ export function App() {
                  }}>
               <Notebook file={current} text={loaded.text} version={loaded.version}
                         restore={viewStates.current.get(current) ?? null} rendered={rendered}
-                        markers={markers} listStyle={listStyle}
+                        markers={markers} listStyle={listStyle} codeLanguage={codeLanguage} platform={kind}
                         onChange={change} onReady={setView}
                         onViewState={onViewState} onLink={onLink} onFollow={onFollow}
+                        readOnly={readOnly}
                         inkPainter={painter.current} onInsertInkCell={(offset) => insertInk(offset)}
-                        onCellsCopied={onCellsCopied} />
-              <Canvas key={current ?? ""} drawing={drawing} onChange={changeDrawing} mode={mode} history={history}
-                      colorHex={penColour} penWidth={penWidth}
-                      placing={placing} onPlaced={placed}
-                      scroller={view ? view.scrollDOM : null}
-                      onReadPicture={readOn ? onReadPicture : undefined}
-                      dock={dockHost} />
+                        onCellsCopied={onCellsCopied} onDrawingPasted={pasteSheetCell} />
+              {/* The page drawing layer belongs to the rendered notebook: unmount it in source mode so its marks
+                  are hidden and none of its pointer or keyboard handlers can take input from the Markdown editor. */}
+              {rendered && <Canvas key={current ?? ""} note={current} drawing={drawing} onChange={changeDrawing} mode={mode} history={history}
+                                   colorHex={penColour} penWidth={penWidth}
+                                   placing={placing} onPlaced={placed}
+                                   scroller={view ? view.scrollDOM : null}
+                                   onReadPicture={readOn ? onReadPicture : undefined}
+                                   dock={dockHost} />}
+              {/* Find and the link picker FLOAT over the page (docs/PLAN-bars-2026-10.md, P6): the note's top edge never moves. */}
+              <div className="float-cards">
+                {finding && (
+                  <FindBar view={view} request={finding}
+                           onQuery={(query) => { lastQuery.current = query }} onClose={() => setFinding(null)} />
+                )}
+                <LinkBanner request={linking} current={current} view={view} root={root}
+                            openNote={openNote} onLanded={landed} onDone={doneLinking} />
+              </div>
+              {/* While the pen, a tool or an armed shape is on the page says so, and how to stop it (modeChip.ts). */}
+              {chip && <div className="page-chip" data-page="mode-chip" aria-hidden="true">
+                <Icon name={MODE_ICON[chip.kind]} size={13} />{chipLine(chip)}
+              </div>}
             </div>
-            <div className="footer">
-              <span>{title}</span>
+            <div className="footer" data-footer="bar">
+              {/* Three groups (docs/PLAN-bars-2026-10.md, P6): the file · what the pen is · the counts and the save. */}
+              <span className="footer-file" title={current}>{title}</span>
+              <span className="footer-rule" aria-hidden="true" />
+              {/* The chip is a live region, present when empty, so a change of mode is heard. */}
+              <span className="mode-chip" data-footer="mode" role="status" aria-live="polite">
+                {chip && <><Icon name={MODE_ICON[chip.kind]} size={11} />{chip.text}</>}
+              </span>
               <div className="spacer" />
               {stale && <span title="The file changed under the app; nothing was overwritten (what was typed is kept in Recovered)">
                 file changed on disk — not saved
               </span>}
               {readNotice && <span data-footer="read-notice" role="status">{readNotice}</span>}
-              {mode === "pen" && <span>Pen</span>}
               {/* (What floats on the page: an ink cell's item is in the note's flow, and a picture read into words is put away.) */}
               {(() => {
                 const objects = visibleItems(drawing).length
-                return objects > 0 && <span>{objects === 1 ? "1 object" : `${objects} objects`}</span>
+                return objects > 0 && <span className="footer-count">{objects === 1 ? "1 object" : `${objects} objects`}</span>
               })()}
-              <span>{words === 1 ? "1 word" : `${words} words`}</span>
-              {saved && <span>Saved {saved.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</span>}
+              <span className="footer-count">{words === 1 ? "1 word" : `${words} words`}</span>
+              {saved && <span className="footer-saved"><Icon name="check" size={11} />Saved {saved.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</span>}
             </div>
           </>
         ) : (
@@ -1519,11 +1843,13 @@ export function App() {
       {showCamera && (
         <CameraPane
           platform={platform}
+          kind={kind}
           penColour={penColour}
           penWidth={penWidth}
           pane={currentPane(view, lastPane)}
           onCapture={(capture) => { void addCapture(capture) }}
           onDockCell={dockSheetCell}
+          onCopyCell={copySheetCell}
           // The Mac's toggleCameraPane: the notes come back and full-window is left behind with the video.
           onHide={toggleCameraPane}
           preferred={cameraPick}
@@ -1535,6 +1861,7 @@ export function App() {
           onToggleEditor={toggleEditorPane}
           onReadText={readCameraText}
           note={current}
+          noteTitle={open.find((one) => one.path === current)?.title ?? null}
           fullWindow={cameraFullWindow}
           onFullWindow={toggleCameraFullWindow}
         />
@@ -1546,6 +1873,7 @@ export function App() {
       })} />}
       {languageSetup && <LanguageSetupDialog platform={kind} capabilities={platform} focus={languageSetup.focus}
                                              onClose={() => setLanguageSetup(null)} />}
+      {about && <AboutDialog platform={kind} onClose={() => setAbout(false)} />}
       <UpdateDialog />{/* "Updates available" and Help ▸ Check for Updates…'s answers (main/updater.ts); otherwise nothing */}
       <CellMenu onPlace={arm} />
     </div>

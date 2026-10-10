@@ -9,9 +9,10 @@
 
 export { notebookState, notebookField, notebook, cellRanges, selectedRanges, applyEdit, cellWritten } from "./notebook"
 export { notebookDecorations, safeSpanStyle } from "./decorations"
+export { PLUS_CENTRE_X, PLUS_DIAMETER, PLUS_HIT, onPlusMarker, plusMarker, plusHit } from "./plusMarker"
 export { seamExtensions, armedField, armedTypeField, armSeam, setArmedType, pageSeams } from "./seams"
 export { cellBrackets, heldCells, GUTTER_WIDTH } from "./brackets"
-export { notebookKeys, wrap, heading, list, listStyleSource, quote, fence, mathsCell, indentLines, outdentLines, textCell, markdownCell, mergeTheCell } from "./keys"
+export { notebookKeys, wrap, heading, list, listStyleSource, quote, fence, mathsCell, tableCell, indentLines, outdentLines, textCell, markdownCell, mergeTheCell } from "./keys"
 // Held cells copied (the app copies their drawing cells for Mathematica too), and the cells' own clipboard type.
 export { cellsCopied, CELLS_MIME } from "./keys"
 // Text cells and markdown cells (docs/PLAN-text-cells.md): the hidden marker, literal typing, plain copy.
@@ -19,9 +20,9 @@ export { textCells, markerField, hiddenMarkers, plainSelection, redoWaiting } fr
 export { codeTypingKeys } from "./codeTyping"
 export { notebookTheme } from "./theme"
 export { textConventions } from "./conventions"
-export { find, findField, setFind, findCount, findNextMatch, replaceMatch, replaceEvery } from "./find"
+export { find, findField, setFind, findCount, findNextMatch, findStep, findFromSelection, replaceMatch, replaceEvery } from "./find"
 export { hiddenMarkerDeletion } from "./markerDeletion"
-export { pasteHtmlAsText, htmlToPlain, takesPastedPicture } from "./paste"
+export { pasteHtmlAsText, htmlToPlain, takesPastedPicture, DRAWING_MIME, drawingPasted, pasteDrawing } from "./paste"
 export {
   folding, foldField, foldSection, setFolds, foldedKeys, hiddenNow, toggleFold, foldAll, unfoldAll,
   sectionAtCaret, revealAt, foldsHiding,
@@ -48,6 +49,8 @@ export { cursorSeam, dropTargetAt, insertCellLine, removeCellLine, columnBox, sh
 export { PICTURE_LINE, pictureCellDom, lastColumnWidth } from "./pictureDom"
 // Tables (the first part of "Tables, from scratch"): the grid in the markdown, Tab between cells, Return adds a row.
 export { tables, tableKeys, tableAt, tableTabCommand, tableReturnCommand } from "./tables"
+// What kind of cell the caret is in: the toolbar's Style button (docs/PLAN-bars-2026-10.md P1).
+export { cellKindAt, watchCellKind, sameCellKind } from "./cellKind"
 export { mathRendering, mathElement, mathDOM, installMathStyles, showsSource, MATH_CSS, MATHML_NS } from "./math"
 export {
   evaluationCells, evalHost, evalField, evaluationCell, runCell, evaluatesHere, groupsIn, type EvalHost,

@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- A WriteMind Note: a ZIP archive whose first entry is `mimetype`, stored, holding the type (docs/SPEC-WM.md 1.1). -->
+<mime-info xmlns="http://www.freedesktop.org/standards/shared-mime-info">
+  <mime-type type="application/vnd.writemind.note+zip">
+    <comment>WriteMind Note</comment>
+    <sub-class-of type="application/zip"/>
+    <glob pattern="*.wm" weight="60"/>
+    <magic priority="60">
+      <match type="string" value="PK\003\004" offset="0">
+        <match type="string" value="mimetype" offset="30">
+          <match type="string" value="application/vnd.writemind.note+zip" offset="38"/>
+        </match>
+      </match>
+    </magic>
+  </mime-type>
+  <!-- A WriteMind MarkdownNote: the words of a note as a file of its own. Neither text nor markdown: a name and nothing else. -->
+  <mime-type type="application/vnd.writemind.markdownnote">
+    <comment>WriteMind MarkdownNote</comment>
+    <glob pattern="*.mdwm" weight="60"/>
+  </mime-type>
+</mime-info>

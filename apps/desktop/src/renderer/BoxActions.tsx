@@ -1,11 +1,14 @@
 /**
- * ONE slim row of three small buttons UNDER the tablet sheet's dashed box (Sean, 2026-10-05: "under the selection
+ * ONE slim row of four small buttons UNDER the tablet sheet's dashed box (Sean, 2026-10-05: "under the selection
  * box, have buttons for erase selection, bring in writing, bring in writing (straight to a docked drawing cell at or
- * after the input cursor"):
+ * after the input cursor"). In the order of the 2026-10-10 wireframe: the primary first, Erase (which destroys) last
+ * and red:
  *
- *   Erase                     the writing inside the box rubbed off the sheet (one Undo on the sheet; the box stays)
- *   Bring in Writing          what the header's Bring in ▸ Writing does with this box (floating ink in the note)
- *   Bring in as Drawing Cell  the boxed writing as a NEW drawing cell at the armed bar, else after the caret's cell
+ *   Bring in writing   what the header's Bring in ▸ Writing does with this box (floating ink in the note)
+ *   As drawing cell    the boxed writing as a NEW drawing cell at the armed bar, else after the caret's cell
+ *   Copy               the same cell on the SYSTEM CLIPBOARD, the note untouched (Sean, 2026-10-06): a drawing cell in
+ *                      WriteMind's own paste and in Mathematica, an SVG file in every other app (no note needed)
+ *   Erase              the writing inside the box rubbed off the sheet (one Undo on the sheet; the box stays)
  *
  * The row sits under the box, flips above it when the sheet has no room below, and stays inside the sheet
  * (boxRow.ts `placeRow`). It lies OUTSIDE the sheet's own element, so the mouse's clicks are the buttons' and
@@ -28,6 +31,7 @@ export interface BoxButtons {
   erase(): void | Promise<void>
   bring(): void | Promise<void>
   cell(): void | Promise<void>
+  copy(): void | Promise<void>
   /** Why the two Bring in buttons are off (a sheet bound to a drawing cell, no note open), or null when they are on. */
   bringOff: string | null
 }
@@ -39,7 +43,7 @@ interface Props extends BoxButtons {
   sheet: { x: number; y: number; width: number; height: number }
 }
 
-export function BoxActions({ box, sheet, erase, bring, cell, bringOff }: Props) {
+export function BoxActions({ box, sheet, erase, bring, cell, copy, bringOff }: Props) {
   const row = useRef<HTMLDivElement | null>(null)
   const [size, setSize] = useState<Size | null>(null)
   const [pending, setPending] = useState(false)
@@ -121,16 +125,19 @@ export function BoxActions({ box, sheet, erase, bring, cell, bringOff }: Props) 
          onPointerDown={(event) => { event.stopPropagation(); watch(event.nativeEvent) }}
          onPointerUp={(event) => event.stopPropagation()}
          onContextMenu={(event) => event.preventDefault()}>
-      <button type="button" data-box-action="erase" disabled={pending}
-              title="Rub out the writing inside the box (one Undo on the sheet brings it back)"
-              onClick={run(erase)}>Erase</button>
-      <span className="sep" aria-hidden />
-      <button type="button" data-box-action="ink" disabled={off || pending}
+      <button type="button" className="primary" data-box-action="ink" disabled={off || pending}
               title={bringOff ?? "Bring the writing inside the box into the note as strokes. The sheet keeps it."}
-              onClick={run(bring)}>{compact ? "Writing" : "Bring in Writing"}</button>
+              onClick={run(bring)}>{compact ? "Writing" : "Bring in writing"}</button>
       <button type="button" data-box-action="cell" disabled={off || pending}
               title={bringOff ?? "Bring the writing inside the box into the note as a new drawing cell: at the bar if one is up, else after the caret's cell (one Undo in the note takes it out)"}
-              onClick={run(cell)}>{compact ? "Drawing Cell" : "Bring in as Drawing Cell"}</button>
+              onClick={run(cell)}>{compact ? "Cell" : "As drawing cell"}</button>
+      <span className="sep" aria-hidden />
+      <button type="button" data-box-action="copy" disabled={pending}
+              title="Copy the writing inside the box as a drawing cell: paste it into a note (a new drawing cell at the caret), into Mathematica (the image), or into any other app (an SVG file). The note is not touched."
+              onClick={run(copy)}>Copy</button>
+      <button type="button" className="danger" data-box-action="erase" disabled={pending}
+              title="Rub out the writing inside the box (one Undo on the sheet brings it back)"
+              onClick={run(erase)}>Erase</button>
     </div>
   )
 }

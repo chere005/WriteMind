@@ -9,7 +9,7 @@
 // Everything goes through `wm.pen.e2e.inject` (pen:inject -> the manager's `inject` backend -> IPC -> the page's synthesiser), the
 // path every real backend's samples take from the manager on. Capture starts OFF under WRITEMIND_E2E; `capture(true)` turns it on.
 
-import { js, ok, sleep, until, setSelect } from "./harness.mjs"
+import { js, ok, sleep, until, setOrientation } from "./harness.mjs"
 
 /** Sheet point -> screen-frame point for `turns` quarter turns (the inverse of shared/orientation.ts screenToSheet). */
 export function sheetToScreen(p, turns) {
@@ -89,9 +89,9 @@ export async function injectStroke(points, opts = {}) {
 /** The feed is live: the inject backend is the active one. */
 export const waitLive = async (backend = "inject", ms = 6000) => until(async () => (await penState()).active === backend, ms, 80)
 
-/** Set the tablet orientation through the page's own dropdown (the sheet takes the new shape). */
+/** Set the tablet orientation through the page's own menu (the sheet takes the new shape). */
 export async function setTurns(turns) {
-  await setSelect("[data-tablet=orientation]", String(turns))
+  await setOrientation(turns)
   await sleep(350)
 }
 

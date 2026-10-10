@@ -6,20 +6,22 @@ import {
   ProjectStore, cleanPath, isForeignPath, parseProject, projectSessionFile, readProjectSession,
   stringifyProject, writeProjectSession,
 } from "../src/main/project"
-import { duplicateNote, projectTree, setExcluded } from "../src/main/notes"
+import { duplicateNote, projectTree, setExcluded, writeDrawing, readDrawing } from "../src/main/notes"
+import { loadNote } from "../src/main/wmStore"
+import { readWm, writeWm } from "./wmFiles"
 
 const scratch = () => mkdtempSync(path.join(os.tmpdir(), "wm-project-"))
 
 describe("a project is a list of folders in a JSON file", () => {
   it("reads a file written before `excluded` existed", () => {
-    expect(parseProject('{"version":1,"folders":["/a"]}')).toEqual({ version: 1, folders: ["/a"], excluded: [] })
+    expect(parseProject('{"version":1,"folders":["/a"]}')).toEqual({ version: 1, folders: ["/a"], excluded: [], files: [] })
     expect(parseProject("not json")).toBeNull()
   })
 
   it("writes sorted keys, and reads what it wrote", () => {
-    const text = stringifyProject({ version: 1, folders: ["/a", "/b"], excluded: [] })
+    const text = stringifyProject({ version: 1, folders: ["/a", "/b"], excluded: [], files: [] })
     expect(text.indexOf('"excluded"')).toBeLessThan(text.indexOf('"folders"'))
-    expect(parseProject(text)).toEqual({ version: 1, folders: ["/a", "/b"], excluded: [] })
+    expect(parseProject(text)).toEqual({ version: 1, folders: ["/a", "/b"], excluded: [], files: [] })
   })
 
   it("adds a folder once, removes all but the last, and marks the project edited", async () => {
@@ -90,8 +92,8 @@ describe("the sidebar's tree for a project", () => {
   it("is the folder's own tree for one folder, and a rootless root of folders for several", async () => {
     const home = scratch()
     const other = scratch()
-    writeFileSync(path.join(home, "one.md"), "# One")
-    writeFileSync(path.join(other, "two.md"), "# Two")
+    writeWm(path.join(home, "one.wm"), "# One")
+    writeWm(path.join(other, "two.wm"), "# Two")
     const single = await projectTree([home], home, "P")
     expect(single.path).toBe(home)
     expect(single.notes.map((note) => note.title)).toEqual(["One"])
@@ -104,8 +106,8 @@ describe("the sidebar's tree for a project", () => {
   it("keeps an excluded folder out, and leaves it on disk", async () => {
     const home = scratch()
     mkdirSync(path.join(home, "Drafts"))
-    writeFileSync(path.join(home, "Drafts", "d.md"), "# D")
-    writeFileSync(path.join(home, "a.md"), "# A")
+    writeWm(path.join(home, "Drafts", "d.wm"), "# D")
+    writeWm(path.join(home, "a.wm"), "# A")
     setExcluded([path.join(home, "Drafts")])
     try {
       const shown = await projectTree([home], home, "P")
@@ -116,19 +118,24 @@ describe("the sidebar's tree for a project", () => {
 })
 
 describe("Edit Notes > Duplicate", () => {
-  it("copies the note beside itself, with its drawing, right after it in the order", async () => {
+  it("copies the note beside itself, with its drawing and pictures, as another note (a new id), right after it in the order", async () => {
     const home = scratch()
-    writeFileSync(path.join(home, "a.md"), "# A")
-    writeFileSync(path.join(home, "b.md"), "# B")
-    const { writeDrawing, readDrawing } = await import("../src/main/notes")
-    await writeDrawing(home, path.join(home, "a.md"), '{"items":[]}')
-    const copy = await duplicateNote(home, path.join(home, "a.md"))
-    expect(path.basename(copy)).toBe("a copy.md")
-    expect(readFileSync(copy, "utf8")).toBe("# A")
-    expect(await readDrawing(home, copy)).toBe('{"items":[]}')
+    const a = writeWm(path.join(home, "a.wm"), "# A", { entries: { "media/aa.png": "png" } })
+    writeWm(path.join(home, "b.wm"), "# B")
+    await loadNote(a)
+    await writeDrawing(home, a, JSON.stringify({ items: [{ kind: "stroke", id: "s", points: [{ x: 0.1, y: 0.1 }] }] }))
+    const copy = await duplicateNote(home, a)
+    expect(path.basename(copy)).toBe("a copy.wm")
+    const made = readWm(copy)
+    const first = readWm(a)
+    expect(made.text).toBe("# A")
+    expect(JSON.parse(made.drawing!).items[0].id).toBe("s")
+    expect(made.entries["media/aa.png"]!.toString()).toBe("png")
+    expect(made.manifest.id).not.toBe(first.manifest.id)
+    expect(JSON.parse(await readDrawing(home, copy) ?? "{}").items).toHaveLength(1)
     const tree = await projectTree([home], home, "P")
     const names = tree.notes.map((note) => path.basename(note.path))
-    expect(names.indexOf("a copy.md")).toBe(names.indexOf("a.md") + 1)
+    expect(names.indexOf("a copy.wm")).toBe(names.indexOf("a.wm") + 1)
   })
 })
 
@@ -138,6 +145,9 @@ describe("a project file is the Mac's file", () => {
     expect(stringifyProject({ version: 1, folders: ["/a/notes", "/b/more notes"], excluded: [] })).toBe([
       "{",
       '  "excluded" : [',
+      "",
+      "  ],",
+      '  "files" : [',
       "",
       "  ],",
       '  "folders" : [',
@@ -152,9 +162,9 @@ describe("a project file is the Mac's file", () => {
 
   it("reads a file the Mac wrote, whatever its spacing, and the other way round", () => {
     const fromMac = '{\n  "excluded" : [\n\n  ],\n  "folders" : [\n    "/Users/s/Documents/WriteMind"\n  ],\n  "version" : 1\n}'
-    expect(parseProject(fromMac)).toEqual({ version: 1, folders: ["/Users/s/Documents/WriteMind"], excluded: [] })
+    expect(parseProject(fromMac)).toEqual({ version: 1, folders: ["/Users/s/Documents/WriteMind"], excluded: [], files: [] })
     const ours = stringifyProject({ version: 1, folders: ["/a", "/b"], excluded: ["/a/x"] })
-    expect(JSON.parse(ours)).toEqual({ version: 1, folders: ["/a", "/b"], excluded: ["/a/x"] })
+    expect(JSON.parse(ours)).toEqual({ version: 1, folders: ["/a", "/b"], excluded: ["/a/x"], files: [] })
   })
 
   it("keeps a path from the other kind of machine exactly as written, and says it is not ours", () => {
@@ -278,5 +288,73 @@ describe("a session for each project (ProjectSession)", () => {
     mkdirSync(path.join(userData, "sessions"), { recursive: true })
     writeFileSync(path.join(userData, "sessions", sessionFileName(path.resolve(root))), '{"open":["old"]}')
     expect(await readProjectSession(userData, null, root)).toBe('{"open":["old"]}')
+  })
+})
+
+// docs/SPEC-WM.md section 4 and vector 13: the project file lists `.wm` files, takes relative paths, keeps what it does not know.
+describe("vector 13: the project file's files, relative paths and unknown keys", () => {
+  it("(a) the Mac-shaped file reads with no files, and is written back with an empty `files` list", async () => {
+    const dir = scratch()
+    const file = path.join(dir, "Mac.writemind-project")
+    writeFileSync(file, '{"excluded":[],"folders":["/a"],"version":1}')
+    const store = new ProjectStore(scratch())
+    expect(await store.open(file)).toBe(true)
+    expect(store.files).toEqual([])
+    store.dirty = true
+    await store.save()
+    expect(readFileSync(file, "utf8")).toBe('{\n  "excluded" : [\n\n  ],\n  "files" : [\n\n  ],\n  "folders" : [\n    "/a"\n  ],\n  "version" : 1\n}')
+  })
+
+  it("(b) a relative file resolves against the project file's folder; a save writes x-future back and the paths relative", async () => {
+    const dir = scratch()
+    const file = path.join(dir, "proj.writemind-project")
+    writeFileSync(file, '{"x-future":{"a":1},"files":["Notes/T.wm"],"folders":["Notes"],"version":1}')
+    const store = new ProjectStore(scratch())
+    expect(await store.open(file)).toBe(true)
+    expect(store.files).toEqual([path.join(dir, "Notes", "T.wm")])
+    expect(store.folders).toEqual([path.join(dir, "Notes")])
+    store.setFiles([path.join(dir, "Notes", "T.wm"), path.join(os.tmpdir(), "Elsewhere.wm")])
+    expect(store.dirty).toBe(true)
+    await store.save()
+    const written = readFileSync(file, "utf8")
+    expect(JSON.parse(written)).toEqual({
+      "x-future": { a: 1 }, excluded: [], files: ["Notes/T.wm", path.join(os.tmpdir(), "Elsewhere.wm")], folders: ["Notes"], version: 1,
+    })
+    expect(written).toContain('"x-future" : {\n    "a" : 1\n  }')
+    // ...and read again it is the same project.
+    const again = new ProjectStore(scratch())
+    await again.open(file)
+    expect(again.files).toEqual(store.files)
+    expect(again.extra).toEqual({ "x-future": { a: 1 } })
+  })
+
+  it("(c) a path from the other kind of machine is kept as written, (d) a duplicate is listed once", async () => {
+    const dir = scratch()
+    const file = path.join(dir, "p.writemind-project")
+    const foreign = process.platform === "win32" ? "/Users/x" : "C:\\Users\\x"
+    writeFileSync(file, JSON.stringify({ version: 1, folders: [dir, dir, `${dir}${path.sep}.`, foreign], files: ["a.wm", "./a.wm"] }))
+    const store = new ProjectStore(scratch())
+    await store.open(file)
+    expect(store.folders).toEqual([dir, foreign])
+    expect(store.files).toEqual([path.join(dir, "a.wm")])
+    store.dirty = true
+    await store.save()
+    expect(parseProject(readFileSync(file, "utf8"))!.folders).toEqual([".", foreign])
+  })
+
+  it("ignores a listed file that is not a .wm (and keeps it), and a project of a newer version is shown and kept at its version", async () => {
+    const dir = scratch()
+    const file = path.join(dir, "n.writemind-project")
+    writeFileSync(file, '{"version":3,"folders":["/a"],"files":["Old.md","New.wm"],"future":true}')
+    const store = new ProjectStore(scratch())
+    await store.open(file)
+    expect(store.newer).toBe(true)
+    expect(store.notes).toEqual([path.join(dir, "New.wm")])
+    expect(store.files).toHaveLength(2)
+    await store.save()
+    expect(JSON.parse(readFileSync(file, "utf8"))).toMatchObject({ version: 3, future: true, files: ["Old.md", "New.wm"] })
+    store.newProject()
+    expect(store.newer).toBe(false)
+    expect(store.version).toBe(1)
   })
 })

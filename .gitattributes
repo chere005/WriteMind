@@ -1,0 +1,10 @@
+# One line ending everywhere: the notices check, shell scripts and the tests read bytes, and a Windows checkout would otherwise turn them into CRLF.
+* text=auto eol=lf
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.icns binary
+*.ico binary
+*.wm binary
+*.pdf binary
+*.zip binary

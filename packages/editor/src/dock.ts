@@ -46,7 +46,7 @@ export function cursorSeam(state: EditorState): number {
  * menu bar like code block etc should create a new cell with the cursor ready to start typing"). On an empty line, or
  * round a selection, `otherwise` (the block written there, or round what is selected).
  */
-export const makesCellAfter = (kind: CellKind, otherwise: Command): Command => (view) => {
+export const makesCellAfter = (kind: CellKind, otherwise: Command, apart = true): Command => (view) => {
   const state = view.state
   const main = state.selection.main
   if (!main.empty || state.selection.ranges.length !== 1) return otherwise(view)
@@ -54,7 +54,7 @@ export const makesCellAfter = (kind: CellKind, otherwise: Command): Command => (
   const cells = notebook(state).cells
   const own = cells[firstCellFromBy(cells, main.head + 1, (cell) => cell.range) - 1]
   if (!own || own.block.kind === "blank" || main.head > own.range.location + own.range.length) return otherwise(view)
-  openCellAt(view, cursorSeam(state), kind)
+  openCellAt(view, cursorSeam(state), kind, apart)
   view.focus()
   return true
 }

@@ -1,7 +1,7 @@
 // Pictures on the drawing layer: paste, drop, crop box, undo through Ctrl+Z and Edit > Undo.
 import { menuClick, js, ok, finish, sleep, drag, click, key, typeText, freshNote, saved, canvasBox, shot, CTRL, waitFor } from "../../lib/harness.mjs"
 
-const file = await freshNote()
+const file = await freshNote({ rendered: true })
 const cb = await canvasBox()
 const size = { w: cb.w, h: cb.h }
 
@@ -43,8 +43,8 @@ await shot("pic1")
 // The crop box: pick the first picture, press the scissors, drag the bottom-right corner to the middle.
 await click(cb.x + cx - w / 4, cb.y + cy - h / 4)
 await sleep(250)
-ok("crop button shown for a picked picture", await js(`!!document.querySelector('.wm-handle[title="Crop this picture"]')`))
-const scissors = JSON.parse(await js(`(() => { const r = document.querySelector('.wm-handle[title="Crop this picture"]').getBoundingClientRect(); return JSON.stringify({x: r.x + r.width/2, y: r.y + r.height/2}) })()`))
+ok("crop button shown for a picked picture", await js(`!!document.querySelector('.wm-insp [data-insp="crop"]')`))
+const scissors = JSON.parse(await js(`(() => { const r = document.querySelector('.wm-insp [data-insp="crop"]').getBoundingClientRect(); return JSON.stringify({x: r.x + r.width/2, y: r.y + r.height/2}) })()`))
 await click(scissors.x, scissors.y)
 await sleep(250)
 ok("crop box opened", await js(`!!document.querySelector('.wm-crop') && document.querySelectorAll('.wm-crop-corner').length === 4`))

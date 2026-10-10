@@ -8,9 +8,8 @@ import os from "node:os"
 import path from "node:path"
 import { afterEach, describe, expect, it } from "vitest"
 import { sessionFileName } from "@writemind/core"
-import {
-  findMedia, olderDrawingPath, readDrawing, saveInkSnapshot, saveMedia, setProjectFolders, writeDrawing,
-} from "../src/main/notes"
+import { drawingPath, olderDrawingPath } from "../src/main/legacyLayout"
+import { setProjectFolders } from "../src/main/notes"
 import {
   MOVE_STATE_FILE, keptOldNotice, movedPath, rewriteJsonText, settleNotesFolder, type SettleOptions,
 } from "../src/main/notesFolderMove"
@@ -254,38 +253,29 @@ describe("what the app remembered follows the folder", () => {
     expect(readFileSync(topProject, "utf8")).toBe(topBefore.replace(JSON.stringify(path.join(s.old, "Ideas")), JSON.stringify(path.join(s.now, "Ideas"))))
   })
 
-  it("drawings, ink cells and pictures all read back after the move (today's names and the oldest, absolute-hash ones)", async () => {
+  it("the 2.15.0 drawings, ink snapshots and pictures are all where the conversion will look for them after the move (today's names and the oldest, absolute-hash ones)", async () => {
     const s = scratch()
     const a = put(path.join(s.old, "a.md"), "# A\n")
     const b = put(path.join(s.old, "Ideas", "b.md"), "# B\n")
     const c = put(path.join(s.old, "Ideas", "Deep", "c.md"), "# C\n")
-    setProjectFolders([s.old])
-    await writeDrawing(s.old, a, drawing("#111111"))
-    const picture = await saveMedia(s.old, new Uint8Array([137, 80, 78, 71, 1, 2, 3]), ".png", b)
-    const ink = await saveInkSnapshot(s.old, b, "0f8fad5b-d9cb-469f-a165-70867728950e", "<svg xmlns='http://www.w3.org/2000/svg'/>")
-    const bDrawing = JSON.stringify({ items: [{ kind: "image", id: "i1", file: picture.file, center: { x: 0.5, y: 0.5 }, width: 0.3, aspect: 1 },
-      { kind: "cell", id: "0f8fad5b-d9cb-469f-a165-70867728950e", items: [] }] })
-    await writeDrawing(s.old, b, bDrawing)
-    put(b, `# B\n\n![ink](.drawings/media/${ink.file})\n`)
+    // Today's place: `.drawings/<stem>-<hash of the path from the folder>.json`, and the media beside it.
+    put(drawingPath(s.old, a), drawing("#111111"))
+    put(drawingPath(s.old, b), drawing("#222222"))
+    put(path.join(s.old, ".drawings", "media", "f1.png"), "png")
+    put(path.join(s.old, ".drawings", "media", "ink-0f8fad5b-d9cb-469f-a165-70867728950e.svg"), "<svg xmlns='http://www.w3.org/2000/svg'/>")
     // The oldest naming: the notes root's .drawings, hashed by the note's ABSOLUTE path.
     put(olderDrawingPath(s.old, c), drawing("#333333"))
-    setProjectFolders([])
 
     const settled = await settleNotesFolder(s.options())
     expect(settled.outcome).toBe("moved")
-    setProjectFolders([s.now])
     const at = (one: string) => path.join(s.now, path.relative(s.old, one))
-    expect(await readDrawing(s.now, at(a))).toBe(drawing("#111111"))
-    expect(await readDrawing(s.now, at(b))).toBe(bDrawing)
-    expect(await readDrawing(s.now, at(c))).toBe(drawing("#333333"))
-    expect(existsSync(olderDrawingPath(s.now, at(c)))).toBe(true)
-    const pictureFile = await findMedia(s.now, picture.file)
-    expect(pictureFile).toBe(path.join(s.now, ".drawings", "media", picture.file))
-    expect([...readFileSync(pictureFile)]).toEqual([137, 80, 78, 71, 1, 2, 3])
-    const inkFile = await findMedia(s.now, ink.file)
-    expect(inkFile).toBe(path.join(s.now, ".drawings", "media", ink.file))
-    expect(readFileSync(inkFile, "utf8")).toMatch(/^<svg/)
-    expect(statSync(path.join(s.now, ".drawings")).isDirectory()).toBe(true)
+    expect(readFileSync(drawingPath(s.now, at(a)), "utf8")).toBe(drawing("#111111"))
+    expect(readFileSync(drawingPath(s.now, at(b)), "utf8")).toBe(drawing("#222222"))
+    // (renamed to the hash of the new path, so the next read finds it)
+    expect(existsSync(olderDrawingPath(s.old, c))).toBe(false)
+    expect(readFileSync(olderDrawingPath(s.now, at(c)), "utf8")).toBe(drawing("#333333"))
+    expect(readFileSync(path.join(s.now, ".drawings", "media", "f1.png"), "utf8")).toBe("png")
+    expect(readFileSync(path.join(s.now, ".drawings", "media", "ink-0f8fad5b-d9cb-469f-a165-70867728950e.svg"), "utf8")).toMatch(/^<svg/)
     expect(existsSync(s.old)).toBe(false)
   })
 

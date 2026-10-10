@@ -1,0 +1,60 @@
+/* Help ▸ About WriteMind (AboutDialog.tsx): the shared .modal, wider; the app and the Wolfram line stay put, the
+   libraries scroll. */
+.modal.about {
+  width: min(560px, calc(100vw - 32px));
+  max-height: calc(100vh - 48px);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.modal.about .about-head { display: flex; align-items: center; gap: 14px; margin-bottom: 8px; flex: none; }
+.modal.about .about-icon { width: 56px; height: 56px; border-radius: 12px; flex: none; }
+.modal.about h3 { margin: 0; font-size: 18px; }
+.modal.about .about-version { color: var(--wm-soft); margin-top: 2px; }
+.modal.about p { margin: 0 0 8px; font-size: 12px; text-wrap: pretty; user-select: text; }
+.modal.about .about-license { margin-bottom: 4px; color: var(--wm-text); }
+.modal.about h4 { margin: 12px 0 4px; font-size: 12px; font-weight: 600; }
+.modal.about .about-wolfram { flex: none; }
+.modal.about .about-wolfram p { line-height: 1.45; }
+.modal.about .about-libraries { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+.modal.about .about-libraries h4 { flex: none; }
+.modal.about .about-list {
+  flex: 1; min-height: 120px; overflow-y: auto; margin-bottom: 12px;
+  border: 1px solid var(--wm-rule); border-radius: 6px; background: var(--wm-page);
+}
+.modal.about .about-libraries p { flex: none; margin-bottom: 12px; }
+
+.modal.about summary {
+  position: relative;
+  cursor: pointer; user-select: none; list-style: none;
+  display: grid; grid-template-columns: minmax(0, 1fr) auto auto; column-gap: 10px; row-gap: 1px; align-items: baseline;
+  padding: 5px 8px 5px 22px; font-size: 12px;
+}
+.modal.about summary::-webkit-details-marker { display: none; }
+.modal.about summary::before { content: "\25B8"; position: absolute; left: 8px; top: 6px; color: var(--wm-faint); font-size: 10px; }
+.modal.about details[open] > summary::before { content: "\25BE"; }
+.modal.about summary:focus-visible { outline: 2px solid var(--wm-accent); outline-offset: -2px; }
+.modal.about .about-library + .about-library { border-top: 1px solid var(--wm-rule); }
+.modal.about .about-library-name { font-weight: 600; overflow-wrap: anywhere; }
+.modal.about .about-library-version,
+.modal.about .about-library-license { color: var(--wm-soft); white-space: nowrap; }
+.modal.about .about-library-copyright {
+  grid-column: 1 / -1; color: var(--wm-faint); font-size: 11px;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.modal.about details[open] > summary .about-library-copyright { white-space: normal; }
+
+.modal.about .about-library-body { padding: 2px 8px 8px 22px; }
+.modal.about .about-library-url { color: var(--wm-soft); font-size: 11.5px; overflow-wrap: anywhere; user-select: text; }
+.modal.about .about-library-note { color: var(--wm-soft); font-size: 11.5px; margin-top: 3px; }
+.modal.about pre {
+  margin: 6px 0 0; padding: 8px; max-height: 260px; overflow: auto; user-select: text;
+  border: 1px solid var(--wm-rule); border-radius: 6px; background: var(--wm-code-bg); color: var(--wm-text);
+  font: 11px/1.4 ui-monospace, "Cascadia Mono", Consolas, monospace; white-space: pre-wrap; overflow-wrap: anywhere;
+}
+.modal.about .about-own { flex: none; margin-bottom: 2px; }
+.modal.about .about-own summary { display: block; padding: 2px 0; color: var(--wm-accent); font-size: 12px; }
+.modal.about .about-own summary::before { content: none; }
+.modal.about .about-own pre { max-height: 180px; }
+.modal.about .buttons { flex: none; }
+.modal.about .buttons button:first-child:not(.default) { min-width: 0; }

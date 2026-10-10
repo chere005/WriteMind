@@ -38,6 +38,31 @@ files:
   - out/**
   - package.json
 
+# THE LICENCES ride beside the app as plain files (Sean, 2026-10-07: attribution for Wolfram and for every library):
+# WriteMind's own LICENSE and THIRD-PARTY-NOTICES.md (tools/gen-notices.mjs writes it), in the app's resources folder -
+# Contents/Resources in WriteMind.app, resources\ in the Windows install and in a Linux package. The same list, with
+# each text, is out/notices.json inside the archive, which is what the About dialog reads.
+extraResources:
+  - from: ../../LICENSE
+    to: LICENSE
+  - from: ../../THIRD-PARTY-NOTICES.md
+    to: THIRD-PARTY-NOTICES.md
+# A `.wm` IS A WRITEMIND NOTE (docs/SPEC-WM.md): a double click on one in Finder or Explorer opens it here (main.ts
+# `open-file` on a Mac, the command line on Windows and Linux). Both `.wm` and `.mdwm` are associated with WriteMind;
+# `mimeType` is the type each format names, and on Linux goes into the desktop entry and the shared-mime-info file.
+# A plain `.md` can be opened from the app (it is imported into a new `.wm` beside it), but is not claimed.
+fileAssociations:
+  - ext: wm
+    name: WriteMind note
+    description: WriteMind note
+    mimeType: application/vnd.writemind.note+zip
+    role: Editor
+  - ext: mdwm
+    name: WriteMind MarkdownNote
+    description: WriteMind MarkdownNote
+    mimeType: application/vnd.writemind.markdownnote
+    role: Editor
+
 # THE HELPER MUST BE A FILE ON DISK. Everything inside an asar archive is
 # read through Electron, and nothing inside one can be executed — so the
 # macOS Vision binary is unpacked beside it, and `helpers.ts` knows to look
@@ -70,6 +95,11 @@ mac:
   identity: "Sean Cheren (2LGYTL3FSJ)"
   hardenedRuntime: true
   notarize: true
+  # Chromium's licences: Electron ships LICENSES.chromium.html beside Electron.app and electron-builder takes it away
+  # again (app-builder-lib electronMac.js), so a Mac copy would carry none. Windows and Linux keep it in the app's folder.
+  extraResources:
+    - from: ../../node_modules/electron/dist/LICENSES.chromium.html
+      to: LICENSES.chromium.html
   entitlements: ../../packaging/entitlements.mac.plist
   entitlementsInherit: ../../packaging/entitlements.mac.plist
   # ONE DMG PER CHIP, the chip in the name (WriteMind-1.0.0-mac-arm64.dmg for
@@ -85,6 +115,23 @@ mac:
   # The prompts' wording, which macOS shows verbatim. The notes live in
   # ~/Documents/WriteMind, and Documents is a folder macOS asks about.
   extendInfo:
+    # The note's own type (a ZIP archive that says what it is): Finder shows it as "WriteMind note".
+    UTExportedTypeDeclarations:
+      - UTTypeIdentifier: com.seancheren.writemind.note
+        UTTypeDescription: WriteMind note
+        UTTypeConformsTo:
+          - public.data
+          - public.zip-archive
+        UTTypeTagSpecification:
+          public.filename-extension: [wm]
+          public.mime-type: application/vnd.writemind.note+zip
+      - UTTypeIdentifier: com.seancheren.writemind.mdwm
+        UTTypeDescription: WriteMind MarkdownNote
+        UTTypeConformsTo:
+          - public.data
+        UTTypeTagSpecification:
+          public.filename-extension: [mdwm]
+          public.mime-type: application/vnd.writemind.markdownnote
     NSCameraUsageDescription: WriteMind uses the camera to take the writing off a notebook page.
     NSDocumentsFolderUsageDescription: WriteMind keeps your notes in the WriteMind folder in Documents.
 
@@ -151,13 +198,12 @@ linux:
   icon: icon.png
   synopsis: A notebook, a camera and a drawing layer over both
   description: >
-    WriteMind is a markdown notebook whose notes are plain .md files in a
-    folder, with a drawing layer over the words and a camera that takes the
-    writing off a page. Nothing here is a database and nothing rewrites a
-    file you did not type in.
+    WriteMind is a notebook whose notes are .wm files in a folder (one file
+    each: the words, the drawing and the pictures), with a drawing layer over
+    the words and a camera that takes the writing off a page.
   desktop:
     entry:
-      MimeType: text/markdown;text/plain;
+      MimeType: application/vnd.writemind.note+zip;application/vnd.writemind.markdownnote;text/markdown;
       Keywords: notes;markdown;notebook;writing;
   target:
     - target: pacman

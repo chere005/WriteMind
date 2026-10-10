@@ -35,3 +35,30 @@ export function wolframClipboardFor(platform: string): WolframClipboard {
  * second write never carries the first write's front-end cells, TIFF or PNG along beside the new ones.
  */
 export const clipboardKeeps = (type: string): boolean => type === "text/plain" || /chromium|web custom/i.test(type)
+
+/**
+ * COPY CELL (the tablet box's button, renderer/BoxActions.tsx): the drawing goes to every OTHER app as an SVG FILE, with the
+ * SVG markup beside it, and never as a PNG (it would win over the file in the apps that prefer a bitmap).
+ *
+ * ON A MAC both are raw pasteboard types in the SAME pasteboard item as the words, which is what Finder's own Copy of a file
+ * makes: `public.file-url` (its legacy `furl` and `NSFilenamesPboardType` come with it) and `public.svg-image` (measured with
+ * `osascript -e 'clipboard info'`). The standard `text/uri-list` would make a SECOND pasteboard item for the file, and a
+ * target that reads the first item sees no file.
+ * ELSEWHERE the file is `text/uri-list` (Chromium's own file-list write: CF_HDROP on Windows; not measured here) and the
+ * markup the registered `image/svg+xml` format. (The standard `image/svg+xml` entry of a ClipboardItem is dropped, measured.)
+ */
+export interface SvgClipboard {
+  /** The raw type the SVG markup goes under. */
+  svg: string
+  /** The raw type the file reference goes under; null: the standard `text/uri-list`. */
+  file: string | null
+  /** What ends the file reference's line. */
+  end: string
+}
+
+export const svgClipboardFor = (platform: string): SvgClipboard => platform === "darwin"
+  ? { svg: "public.svg-image", file: "public.file-url", end: "" }
+  : { svg: "image/svg+xml", file: null, end: "\r\n" }
+
+/** The one name the pasted SVG file has (main/wolfram/copiedFile.ts): WriteMind knows its own copy by it (renderer/copiedCell.ts). */
+export const COPIED_SVG_NAME = "Drawing.svg"

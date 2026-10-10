@@ -25,7 +25,7 @@ function fake(answered: (names: string[], png: boolean) => Record<string, string
 }
 
 const ink = (n: number, text = `<svg id="${n}"/>`): KernelJob => ({ name: `ink-${n}.svg`, text })
-const options = (over: { png?: boolean; id?: string; timeoutMs?: number; stamps?: Map<string, string> } = {}) =>
+const options = (over: { png?: boolean; removeBackground?: boolean; id?: string; timeoutMs?: number; stamps?: Map<string, string> } = {}) =>
   ({ id: "wolfram:export:1", png: false, timeoutMs: 120_000, ...over })
 
 beforeEach(() => forgetKernelAnswers())
@@ -55,6 +55,16 @@ describe("the kernel run's memory (main/wolfram/kernel.ts)", () => {
     const out = await runKernel([ink(1), ink(2)], options(), { runner })
     expect(runs[1]!.names).toEqual(["ink-2.svg"])
     expect([...out.answers.keys()]).toEqual(["ink-1.svg", "ink-2.svg"])
+  })
+
+  it("runs clipboard images through RemoveBackground and keeps those boxes out of the export cache", async () => {
+    const { runner, runs } = fake()
+    await runKernel([ink(1)], options(), { runner })
+    const copied = await runKernel([ink(1)], options({ id: "wolfram:copy", removeBackground: true }), { runner })
+    expect(runs[1]!.names).toEqual(["ink-1.svg", "remove-background"])
+    expect(copied.answers.get("ink-1.svg")).toBe("Boxes[ink-1.svg]")
+    await runKernel([ink(1)], options({ id: "wolfram:copy", removeBackground: true }), { runner })
+    expect(runs).toHaveLength(2)
   })
 
   it("a changed drawing is asked again, and so is a picture whose file changed", async () => {

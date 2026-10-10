@@ -14,6 +14,7 @@
 import type { MenuItemConstructorOptions } from "electron"
 import { CAMERA_ASPECTS, cameraAspectTitle, HEADING_LADDER, headingName } from "@writemind/core"
 import { acceleratorFor, HEADING_COMMANDS, TABLET_SOURCE, type MenuState } from "../shared/commands"
+import { menuText } from "../shared/undo"
 
 
 export interface ProjectInfo {
@@ -54,6 +55,10 @@ export function buildMenu(options: MenuOptions): MenuItemConstructorOptions[] {
       ...extra,
     }
   }
+
+  /** Undo and Redo name the step the next press takes; null (nothing to take) greys the item, undefined (not said yet) leaves it plain. */
+  const historyItem = (id: string, verb: "Undo" | "Redo", label: string | null | undefined) =>
+    item(id, label === undefined ? verb : menuText(verb, label), { enabled: label !== null })
 
   const file: MenuItemConstructorOptions[] = [
     item("newNote", "New Note"),
@@ -99,8 +104,9 @@ export function buildMenu(options: MenuOptions): MenuItemConstructorOptions[] {
   ]
 
   const edit: MenuItemConstructorOptions[] = [
-    item("undo", "Undo"),
-    item("redo", "Redo"),
+    // The step the next press takes is named ("Undo Rename Note", "Undo Typing"); with nothing to take the item is greyed.
+    historyItem("undo", "Undo", state.undoLabel),
+    historyItem("redo", "Redo", state.redoLabel),
     item("undoDrawing", "Undo Drawing", { enabled: state.canUndoDrawing }),
     item("redoDrawing", "Redo Drawing", { enabled: state.canRedoDrawing }),
     SEPARATOR,
@@ -119,6 +125,8 @@ export function buildMenu(options: MenuOptions): MenuItemConstructorOptions[] {
         item("findPrevious", "Find Previous"),
         item("useSelectionForFind", "Use Selection for Find"),
         item("jumpToSelection", "Jump to Selection"),
+        SEPARATOR,
+        item("searchNotes", "Search Notes…"),
       ],
     },
   ]
@@ -174,6 +182,7 @@ export function buildMenu(options: MenuOptions): MenuItemConstructorOptions[] {
   const insert: MenuItemConstructorOptions[] = [
     item("insertImage", "Image…", { enabled: state.hasNote }),
     item("insertTextBox", "Text Box", { enabled: state.hasNote }),
+    item("insertTable", "Table", { enabled: state.hasNote }),
     item("insertMath", "Maths…", { enabled: state.hasNote }),
     SEPARATOR,
     item("codeBlock", state.codeLanguage ? `${state.codeLanguage} Block` : "Code Block",
@@ -274,7 +283,24 @@ export function buildMenu(options: MenuOptions): MenuItemConstructorOptions[] {
     : []
 
   return [
-    ...(platform === "darwin" ? [{ role: "appMenu" as const }] : []),
+    // THE MAC'S APP MENU is `role: "appMenu"` item for item, except About: the role opens Apple's own panel, and
+    // WriteMind has ONE About dialog on every platform (AboutDialog.tsx), so the item is ours and runs "about".
+    ...(platform === "darwin"
+      ? [{
+          label: "WriteMind",
+          submenu: [
+            { id: "aboutApp", label: "About WriteMind", click: () => run("about") },
+            SEPARATOR,
+            { role: "services" as const },
+            SEPARATOR,
+            { role: "hide" as const },
+            { role: "hideOthers" as const },
+            { role: "unhide" as const },
+            SEPARATOR,
+            { role: "quit" as const },
+          ],
+        } satisfies MenuItemConstructorOptions]
+      : []),
     { label: "File", submenu: file },
     { label: "Project", submenu: projectMenu },
     { label: "Edit", submenu: edit },
@@ -287,6 +313,8 @@ export function buildMenu(options: MenuOptions): MenuItemConstructorOptions[] {
     {
       role: "help",
       submenu: [
+        // The app's own one-page reference (shared/welcome.ts): no key; written if missing, rewritten if out of date.
+        item("quickReference", "Quick Reference"),
         item("keyList", "Keyboard Shortcuts"),
         SEPARATOR,
         ...updateItems,

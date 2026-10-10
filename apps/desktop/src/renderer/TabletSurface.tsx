@@ -57,7 +57,7 @@ interface Props {
   onEdited(): void
   /** A sheet bound to an ink cell (cellSheets.ts): the cell, in FRACTIONS of the sheet. The rest is shaded and a stroke stops at its edge. */
   frame?: Rect | null
-  /** The row of buttons under the box (BoxActions.tsx): Erase, Bring in Writing, Bring in as Drawing Cell. */
+  /** The row of buttons under the box (BoxActions.tsx): Erase, Bring in Writing, Bring in as Drawing Cell, Copy Cell. */
   buttons?: BoxButtons | null
 }
 
@@ -505,7 +505,9 @@ export const TabletSurface = forwardRef<SurfaceHandle, Props>(function TabletSur
                       wrap.current?.focus({ preventScroll: true })
                     }}
                     bring={() => leaveFor(buttons.bring)}
-                    cell={() => leaveFor(buttons.cell)} />
+                    cell={() => leaveFor(buttons.cell)}
+                    // Nothing leaves the sheet: the copy is on the clipboard, not in the note.
+                    copy={() => buttons.copy()} />
       )}
     </div>
   )

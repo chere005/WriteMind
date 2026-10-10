@@ -29,11 +29,27 @@
  * its tab is behind another) its own editor state in `noteHistory.ts`.
  */
 
-import { EditorState, StateField, Transaction, type Extension } from "@codemirror/state"
+import { EditorSelection, EditorState, StateField, Transaction, type Extension } from "@codemirror/state"
 import { isolateHistory, redo, undo, undoDepth, redoDepth } from "@codemirror/commands"
 import { bounds, changedInkCells, inkCells, isHidden, itemId, type Drawing } from "@writemind/core"
 import { redoWaiting } from "@writemind/editor"
 import type { DrawingHistory } from "./drawingHistory"
+import { wallNow } from "../shared/undo"
+
+/**
+ * Told on every NEW edit of any note, words or drawing (not an Undo or Redo): the page uses it to end the journal's redo
+ * path (a new step ends every redo, file steps included: docs/PLAN-undo.md) and to keep Edit ▸ Undo's label right.
+ */
+export const editListeners = new Set<() => void>()
+
+/**
+ * A FILE STEP CLOSES THE OPEN TYPING GROUP (docs/PLAN-undo.md). CodeMirror joins typing made within half a second into one
+ * undo event; typing, a rename and typing again within that half second must not become one event that spans the rename, or
+ * Undo would take both runs of typing back after the rename. The page calls this when the journal records, undoes or redoes
+ * a step, and the next edit of every note starts a group of its own.
+ */
+let epoch = 0
+export const closeTextGroups = (): void => { epoch += 1 }
 
 /** The numbering of edits for ONE note. */
 export class EditClock {
@@ -41,6 +57,23 @@ export class EditClock {
   private edited = 0
   private counted = 0
   private shared: { stamp: number; left: number; until: number } | null = null
+  /**
+   * When each recent stamp was made (wall-clock, `wallNow`), and what to call it in Edit ▸ Undo. The journal of file steps
+   * is ordered against the words and the drawing by TIME (docs/PLAN-undo.md): the stamps order the two histories of one note
+   * among themselves, this orders a note's newest step against a file operation. Only the recent ones are kept (the
+   * histories keep a few hundred events).
+   */
+  private readonly times = new Map<number, number>()
+  private readonly labels = new Map<number, string>()
+
+  /** The wall-clock time of the edit with this stamp; 0 for one older than the clock remembers. */
+  timeOf(stamp: number): number { return this.times.get(stamp) ?? 0 }
+
+  /** What the edit with this stamp is called ("Typing", "Paste"...), or null for the default. */
+  labelOf(stamp: number): string | null { return this.labels.get(stamp) ?? null }
+
+  /** Names the edit with this stamp. */
+  name(stamp: number, label: string): void { this.labels.set(stamp, label) }
 
   /** The stamp of the newest new edit (0 before any). */
   get lastEdit(): number { return this.edited }
@@ -52,14 +85,23 @@ export class EditClock {
   edit(): number {
     this.counted += 1
     const now = typeof performance !== "undefined" ? performance.now() : Date.now()
+    let stamp: number
     if (this.shared && now < this.shared.until && this.shared.left > 0) {
       this.shared.left -= 1
       this.edited = Math.max(this.edited, this.shared.stamp)
-      return this.shared.stamp
+      stamp = this.shared.stamp
+    } else {
+      this.shared = null
+      this.edited = ++this.n
+      stamp = this.edited
     }
-    this.shared = null
-    this.edited = ++this.n
-    return this.edited
+    this.times.set(stamp, wallNow())
+    if (this.times.size > 1500) {
+      // (Maps keep their keys in the order they were first set: the oldest stamps are the first ones.)
+      for (const old of [...this.times.keys()].slice(0, 500)) { this.times.delete(old); this.labels.delete(old) }
+    }
+    for (const listener of editListeners) { try { listener() } catch { /* a listener never stops an edit */ } }
+    return stamp
   }
 
   /** A number for an Undo, to say when it happened relative to the edits. */
@@ -88,9 +130,23 @@ export class EditClock {
   endTogether(): void { this.shared = null }
 }
 
-interface Undone { stamp: number; at: number }
-/** `edits` is the clock's count of edits right after the words' own latest one. */
-interface Stamps { done: number[]; undone: Undone[]; edits: number }
+/**
+ * Where the caret was when an edit began, and where the edit left it. CodeMirror gives an Undo the first (the selection the
+ * edit started from) and a Redo whatever that selection maps to through the change — which is the end of the typed words for
+ * typing, and anywhere for an edit that sets its own caret (a cell made at the bar, a table, a section moved, the caret inside
+ * what was made): a Redo of a quote cell left the caret at the end of the cell above it, and the Undo that followed a Redo of
+ * a moved section put it at the end of the note. The words' steps remember both ends themselves
+ * (docs/PLAN-bars-2026-10.md P7: "moving the input cursor"; found by the integration suite, e2e/suites/integration).
+ */
+export interface Carets { before: EditorSelection; after: EditorSelection }
+
+/** `at` is when it was undone on the note's clock (ticks), `when` the wall-clock time of that (the journal orders by it). */
+interface Undone { stamp: number; at: number; when: number; carets: Carets | null }
+/**
+ * `edits` is the clock's count of edits right after the words' own latest one; `epoch` the file-step epoch it was made in.
+ * `carets` runs alongside `done`, one entry for each.
+ */
+interface Stamps { done: number[]; carets: (Carets | null)[]; undone: Undone[]; edits: number; epoch: number }
 
 /** One field per clock (a note), however many times the editor is made for it. */
 const fields = new WeakMap<EditClock, { field: StateField<Stamps>; extension: Extension }>()
@@ -100,7 +156,7 @@ export function textTimeline(clock: EditClock): Extension {
   const held = fields.get(clock)
   if (held) return held.extension
   const field = StateField.define<Stamps>({
-    create: () => ({ done: [], undone: [], edits: 0 }),
+    create: () => ({ done: [], carets: [], undone: [], edits: 0, epoch }),
     update(value, tr) {
       // (An undone event whose net change was nothing leaves `docChanged` false.)
       if (!tr.docChanged && !tr.isUserEvent("undo") && !tr.isUserEvent("redo")) return value
@@ -109,25 +165,35 @@ export function textTimeline(clock: EditClock): Extension {
       if (tr.isUserEvent("undo")) {
         if (value.done.length === 0) return value
         const done = value.done.slice(0, -1)
+        const carets = value.carets.slice(0, -1)
         // An event whose net change was nothing is not kept for Redo: it just goes.
         const kept = redoDepth(tr.state) > redoDepth(tr.startState)
         const undone = kept
-          ? [...value.undone, { stamp: value.done[value.done.length - 1]!, at: clock.tick() }] : value.undone
-        return reconcile({ ...value, done, undone }, tr.state)
+          ? [...value.undone, { stamp: value.done[value.done.length - 1]!, at: clock.tick(), when: wallNow(), carets: value.carets[value.carets.length - 1] ?? null }]
+          : value.undone
+        return reconcile({ ...value, done, carets, undone }, tr.state)
       }
       if (tr.isUserEvent("redo")) {
         if (value.undone.length === 0) return value
-        const done = [...value.done, value.undone[value.undone.length - 1]!.stamp]
-        return reconcile({ ...value, done, undone: value.undone.slice(0, -1) }, tr.state)
+        const top = value.undone[value.undone.length - 1]!
+        const done = [...value.done, top.stamp]
+        return reconcile({ ...value, done, carets: [...value.carets, top.carets], undone: value.undone.slice(0, -1) }, tr.state)
       }
-      // Changes the history does not keep (a mapping only) are not edits.
-      if (tr.annotation(Transaction.addToHistory) === false) return value
+      // Changes the history does not keep (a mapping only) are not edits; the carets it remembers move with the words.
+      if (tr.annotation(Transaction.addToHistory) === false) {
+        if (!tr.docChanged) return value
+        const move = (c: Carets | null): Carets | null => c && { before: c.before.map(tr.changes), after: c.after.map(tr.changes) }
+        return { ...value, carets: value.carets.map(move), undone: value.undone.map((one) => ({ ...one, carets: move(one.carets) })) }
+      }
       const stamp = clock.edit()
-      const done = after === before && value.done.length > 0
-        ? [...value.done.slice(0, -1), stamp]   // joined into the last group
-        : [...value.done, stamp]                // a group of its own
+      clock.name(stamp, labelOfEdit(tr))
+      const joined = after === before && value.done.length > 0
+      // (A group joined into the last one began where that began, and ends where this ends.)
+      const mine: Carets = { before: joined ? (value.carets[value.carets.length - 1]?.before ?? tr.startState.selection) : tr.startState.selection, after: tr.state.selection }
+      const done = joined ? [...value.done.slice(0, -1), stamp] : [...value.done, stamp]
+      const carets = joined ? [...value.carets.slice(0, -1), mine] : [...value.carets, mine]
       // A new edit empties the redo side (CodeMirror does the same).
-      return reconcile({ done, undone: [], edits: clock.edits }, tr.state)
+      return reconcile({ done, carets, undone: [], edits: clock.edits, epoch }, tr.state)
     },
   })
   const extension: Extension = [
@@ -140,7 +206,7 @@ export function textTimeline(clock: EditClock): Extension {
       if (!tr.docChanged || tr.annotation(Transaction.addToHistory) === false) return null
       if (tr.isUserEvent("undo") || tr.isUserEvent("redo")) return null
       const mine = tr.startState.field(field, false)
-      return mine && mine.edits !== clock.edits ? { annotations: isolateHistory.of("before") } : null
+      return mine && (mine.edits !== clock.edits || mine.epoch !== epoch) ? { annotations: isolateHistory.of("before") } : null
     }),
   ]
   fields.set(clock, { field, extension })
@@ -151,12 +217,12 @@ export function textTimeline(clock: EditClock): Extension {
 function reconcile(value: Stamps, state: EditorState): Stamps {
   const depth = undoDepth(state)
   const redoable = redoDepth(state)
-  let { done, undone } = value
-  const { edits } = value
-  if (done.length > depth) done = done.slice(done.length - depth)
-  while (done.length < depth) done = [0, ...done]
+  let { done, carets, undone } = value
+  const { edits, epoch: made } = value
+  if (done.length > depth) { carets = carets.slice(done.length - depth); done = done.slice(done.length - depth) }
+  while (done.length < depth) { done = [0, ...done]; carets = [null, ...carets] }
   if (undone.length > redoable) undone = undone.slice(undone.length - redoable)
-  return { done, undone, edits }
+  return { done, carets, undone, edits, epoch: made }
 }
 
 /** The stamp of the edit an Undo would take back from the words, or null. */
@@ -165,6 +231,43 @@ export function textUndoStamp(state: EditorState, clock: EditClock): number | nu
   const value = held ? state.field(held.field, false) : undefined
   if (!value || undoDepth(state) === 0) return null
   return value.done.at(-1) ?? null
+}
+
+/** The carets of the edit an Undo (the newest) or a Redo (the one undone last) would take from the words, or null. */
+function caretsOf(which: "undo" | "redo", state: EditorState, clock: EditClock): Carets | null {
+  const held = fields.get(clock)
+  const value = held ? state.field(held.field, false) : undefined
+  if (!value) return null
+  return which === "undo" ? (value.carets.at(-1) ?? null) : (value.undone.at(-1)?.carets ?? null)
+}
+
+/** Put the caret where an edit's own ends were (kept in range: the words are the words the edit knew). */
+function restoreCaret(text: TextHost, wanted: EditorSelection): void {
+  const length = text.state.doc.length
+  const ranges = wanted.ranges.map((one) => EditorSelection.range(Math.min(one.anchor, length), Math.min(one.head, length)))
+  const selection = EditorSelection.create(ranges, Math.min(wanted.mainIndex, ranges.length - 1))
+  if (selection.eq(text.state.selection)) return
+  // (Not an edit and not kept by the history: only where the caret stands.)
+  text.dispatch(text.state.update({ selection, scrollIntoView: true, userEvent: "select.history", annotations: Transaction.addToHistory.of(false) }))
+}
+
+/** What an edit of the words is called in Edit ▸ Undo: by the kind of transaction that made it. */
+function labelOfEdit(tr: Transaction): string {
+  if (tr.isUserEvent("input.paste")) return "Paste"
+  if (tr.isUserEvent("input.drop")) return "Drop"
+  if (tr.isUserEvent("delete.cut")) return "Cut"
+  if (tr.isUserEvent("input") || tr.isUserEvent("delete.backward") || tr.isUserEvent("delete.forward")) return "Typing"
+  if (tr.isUserEvent("delete")) return "Delete"
+  return "Edit"
+}
+
+/** The wall-clock time the edit a Redo would bring back to the words was undone, or null (none, or killed by a newer edit). */
+export function textRedoWhen(state: EditorState, clock: EditClock): number | null {
+  const held = fields.get(clock)
+  const value = held ? state.field(held.field, false) : undefined
+  const top = value?.undone.at(-1)
+  if (!top || redoDepth(state) === 0 || top.at <= clock.lastEdit) return null
+  return top.when
 }
 
 /** The stamp of the edit a Redo would bring back to the words, or null (none, or killed by a newer edit). */
@@ -217,22 +320,51 @@ export function stepAcross(which: "undo" | "redo", across: Across): Taken {
   return last
 }
 
-function stepOnce(which: "undo" | "redo", across: Across): Taken {
+/** Which side's edit an Undo or Redo takes (the newest stamp, or for Redo the lowest), and the stamps of both. */
+function choose(which: "undo" | "redo", across: Across) {
   const { text, history, clock } = across
   const words = text
     ? (which === "undo" ? textUndoStamp(text.state, clock) : textRedoStamp(text.state, clock)) : null
   const ink = which === "undo" ? history.undoStamp : history.redoStamp(clock)
-  if (words === null && ink === null) return null
   const takeText = words !== null && (ink === null || (which === "undo" ? words >= ink : words <= ink))
   const takeDrawing = ink !== null && (words === null || (which === "undo" ? ink >= words : ink <= words))
+  return { words, ink, takeText, takeDrawing }
+}
+
+/**
+ * The edit a press would take, as the journal of file steps needs to see it (docs/PLAN-undo.md): its wall-clock time (for an
+ * Undo, when the edit was made; for a Redo, when it was undone) and what Edit ▸ Undo calls it. Null when there is nothing.
+ */
+export function peekAcross(which: "undo" | "redo", across: Across): { at: number; label: string } | null {
+  const { clock, text, history } = across
+  const { words, ink, takeText, takeDrawing } = choose(which, across)
+  if (words === null && ink === null) return null
+  const label = takeText && takeDrawing ? "Edit" : takeText ? (clock.labelOf(words!) ?? "Typing") : "Drawing"
+  if (which === "undo") {
+    return { at: Math.max(takeText ? clock.timeOf(words!) : 0, takeDrawing ? clock.timeOf(ink!) : 0), label }
+  }
+  const whens = [takeText && text ? textRedoWhen(text.state, clock) : null, takeDrawing ? history.redoWhen(clock) : null]
+    .filter((one): one is number => one !== null)
+  return { at: whens.length > 0 ? Math.min(...whens) : 0, label }
+}
+
+function stepOnce(which: "undo" | "redo", across: Across): Taken {
+  const { text, history } = across
+  const { words, ink, takeText, takeDrawing } = choose(which, across)
+  if (words === null && ink === null) return null
   let took: Taken = null
   if (takeDrawing) {
     const next = which === "undo" ? history.undo(across.current()) : history.redo(across.current())
     if (next) { across.apply(next); took = "drawing" }
   }
   if (takeText && text) {
+    const carets = caretsOf(which, text.state, across.clock)
     const ok = (which === "undo" ? undo : redo)({ state: text.state, dispatch: (tr) => text.dispatch(tr) })
-    if (ok) took = took === "drawing" ? "both" : "text"
+    if (ok) {
+      took = took === "drawing" ? "both" : "text"
+      // An Undo leaves the caret where the edit found it, a Redo where the edit left it (CodeMirror's own rule only does so for typing).
+      if (carets) restoreCaret(text, which === "undo" ? carets.before : carets.after)
+    }
   }
   return took
 }

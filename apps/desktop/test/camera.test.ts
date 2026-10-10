@@ -46,7 +46,8 @@ describe("what a camera error says", () => {
 
   it("the placeholders for no camera selected and for an unplugged one", () => {
     expect(idleProblem().title).toBe("No camera selected")
-    expect(idleProblem().detail).toMatch(/Input Devices/)
+    // CHANGED 2026-10-10 (P6): the placeholder points at the device list under it, not at a menu elsewhere.
+    expect(idleProblem().detail).toMatch(/list below/)
     expect(unpluggedProblem().kind).toBe("unplugged")
   })
 })

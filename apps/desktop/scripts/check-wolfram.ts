@@ -151,7 +151,7 @@ async function main(): Promise<void> {
 
   // THE CLIPBOARD: one drawing cell, a heading with a drawing cell, and one with no engine.
   const ink1 = Object.keys(media.inks)[0]!
-  const inkLine = (id: string) => `![ink](.drawings/media/ink-${id}.svg)`
+  const inkLine = (id: string) => `![ink](snapshots/ink-${id}.svg)`
   const copyOf = (text: string) => {
     const only = mediaOf(text, new Set(Object.keys(media.inks))).media
     return wolframPlan(text, only, new Map(), "clipboard")

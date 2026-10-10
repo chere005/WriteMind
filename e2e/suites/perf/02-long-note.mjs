@@ -59,7 +59,7 @@ fs.mkdirSync(path.join(root, "pics"), { recursive: true })
 const icon = new URL("../../../apps/desktop/out/renderer/icon.png", import.meta.url)
 if (fs.existsSync(icon)) fs.copyFileSync(icon, path.join(root, "pics", "p.png"))
 await seedNotes({ "Big.md": BIG }, { clean: true })
-const file = await js(`[...document.querySelectorAll('.note-row')].map(r=>r.dataset.path).find(p=>p.replace(/\\\\/g,'/').endsWith('/Big.md'))`)
+const file = await js(`[...document.querySelectorAll('.note-row')].map(r=>r.dataset.path).find(p=>p.replace(/\\\\/g,'/').endsWith('/Big.wm'))`)
 async function open() {
   await closeAllTabs()
   await js(`[...document.querySelectorAll('.note-row')].find(r=>r.dataset.path===${JSON.stringify(file)})?.click()`)

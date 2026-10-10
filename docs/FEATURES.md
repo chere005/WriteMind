@@ -3,27 +3,59 @@
 The tour. [README](../README.md) is the short version; [AGENTS.md](../AGENTS.md)
 is how the code is put together.
 
-- **Notes are files.** `~/Documents/WriteMind/*.md`, one per note, readable
-  by anything. The title is the note's first `# heading`, or its file name.
+- **Notes are files.** `~/Documents/WriteMind/*.wm`, one per note: a ZIP that
+  holds the words, the drawing and the pictures (docs/SPEC-WM.md). The title is
+  the note's first `# heading`, or its file name. Notes from before (`.md` plus
+  `.drawings/`) are converted on first launch and the originals kept in a backup
+  folder.
 - **Sections are folders.** Make a section in the sidebar and it is a folder
   on disk; a folder inside it is a subsection. The section you have selected
   is where the next new note goes. Drag a note — or a whole section — into
   another one and the file really moves, so Finder agrees with the sidebar.
-- **An edit button** puts duplicate and delete on every row, and the order
-  you drag rows into is remembered.
+- **The sidebar is a 36px bar and a list.** The bar reads a search field,
+  **+** and the pencil. **+** makes a note in the open note's section; its
+  corner (or a right-click, or holding it) opens New Note / New Section. The
+  **pencil** is edit mode: duplicate and a two-click delete on every row. Rows
+  have line icons, titles that clamp to two lines, a count on each section and
+  a **⋯** on hover that opens the row's menu (Open, Rename…, Duplicate, Move to
+  ▸ indented to the tree and greying the note's own section, Reveal, Move to
+  Trash…). Each section starts with one quiet "+ New note" row — where the note
+  will land — and a row dropped on it moves into that section, at the top.
+  The order you drag rows into is remembered. The rendered and video buttons
+  are not here: they are the tab row's, beside the sidebar button.
+- **Search Notes (⇧⌘F, Ctrl+Shift+F).** Type in the sidebar's field and the
+  results replace the list: each is the note's title, the section it is in and
+  one line with the match marked. Titles come first, then the words in the
+  notes; case and accents do not matter ("cafe" finds "Café"); every folder of
+  the project is searched, `.wm` notes included, without waiting for you (the
+  reading is done off the page, cached until a note changes, and cancelled the
+  moment you type again). The arrow keys walk the results, **Enter** opens the
+  note with the caret on the first match and the Find bar on those words, and
+  **Escape** clears the field and gives the keyboard back to the notes. The key
+  opens the sidebar first when it is away.
+- **One project menu.** The project's name at the foot of the sidebar opens
+  everything the Project menu has (Add Folder, Remove Folder, Save, Save As,
+  Open, New) and the sidebar's own: Hidden Sections, Reveal, Clean Up Unused
+  Files…. The note count is beside it.
 - **A markdown editor, and a preview of it.** The bar sits over the editor
-  pane; the button on its right lights up while the preview is showing
-  (⇧⌘P). Bold, italic, underline, bullets and quote are on the left
-  (⌘B ⌘I ⌘U ⇧⌘L ⌃⌘Q); they wrap or unwrap the selection, and undo knows
-  about it.
+  pane (the rendered page's button is in the tab row, beside the sidebar's and
+  the video's). Bold, italic, underline and strikethrough are on the left
+  (⌘B ⌘I ⌘U ⇧⌘X), after the **Style** button; they wrap or unwrap the
+  selection, and undo knows about it.
+- **A Style button that says where you are.** It names the cell the caret is
+  in — Text, Title … Subsubsection, Dots, Dashes, Numbered, To-do, Quote,
+  Markdown, Code, Runnable code, Maths, Drawing — and its menu is the same
+  list the `+` between two cells opens, each with its key. Picking one runs
+  exactly what its key does: the caret ends where the key leaves it and one
+  Undo takes it back.
 - **Six heading levels, named the way you'd say them.** Title, Chapter,
   Author, Section, Subsection and Subsubsection — the Author line renders
-  italic and slightly bigger than the body text. From the `aA` menu, the
+  italic and slightly bigger than the body text. From the Style menu, the
   Format menu, or ⌘1 title, ⌘2 chapter, ⌘3 author, ⌘4–⌘6 section to
   subsubsection, ⌘7 back to body.
 - **To-do bullets.** A fourth kind of list: `- [ ]` and `- [x]`, GFM's
   own task list, so any other markdown editor reads them too. The list
-  button's chevron picks it, the `+` on the insertion bar offers it, and
+  button's menu picks it, the `+` on the insertion bar offers it, and
   Return carries the list on with a fresh empty box. On the rendered page
   the box is a control — click it and the line is ticked, struck through
   and faded; click it again and it is not. Only the box: a click on the
@@ -162,11 +194,11 @@ is how the code is put together.
   before anything is read — so a row of dots never arrives as "・・・".
 - **Lists that carry on.** Return at the end of a bullet or a numbered
   item starts the next one; Return on an empty item ends the list. The
-  chevron beside the list button picks dots, dashes or numbers — `- `, `* `
-  and `1. ` on disk, a round bullet, a dash and a number on the page.
+  list button's menu picks dots, dashes, numbers or to-dos — `- `, `* `,
+  `1. ` and `- [ ] ` on disk, a round bullet, a dash and a number on the page.
 - **Code blocks, in five languages.** The `</>` button (⌘8) fences the
-  selection or opens an empty block; its chevron tags the fence C, C++,
-  Wolfram, Python or TypeScript, and the block is coloured — in the editor
+  selection or opens an empty block; its menu tags the fence with one of ten
+  languages, and the block is coloured — in the editor
   and in the preview — by a palette that has a light and a dark half, so it
   reads either way round.
 - **Cells that run.** An evaluation cell (```` ```eval wl ````, `eval python`,
@@ -222,35 +254,60 @@ is how the code is put together.
   a cross, a query, a star, boxes, circles, triangles, arrows and lines.
   Pick one and then click where it goes: it lands the size of a line of
   writing, a green tick, a red cross and a yellow query, and the handles
-  move, size and turn it from there. Drag instead of clicking to size it as
+  size and turn it from there (drag the mark itself to move it). Drag instead of clicking to size it as
   it goes down; a line or an arrow runs from the press to the release.
 - **A folder can leave the project without leaving the disk.** Right-click
-  a folder in the sidebar: *Remove Folder from Project* hides it (Folder ▸
-  Hidden Folders brings it back); *Move to Trash* is the one that moves it.
+  a folder in the sidebar: *Remove Folder from Project* hides it (the project
+  menu's Hidden Sections brings it back); *Move to Trash* is the one that moves it.
 - **⌫ deletes what you last selected** on the drawing layer — writing, ink or
   a picture. ⌘V pastes a picture wherever you are, source or preview. A middle
   click closes a tab.
-- **Font, size and colour** for the selected text, from the T button. It
+- **Font, size and colour** for the selected text, from the **Aa** button. It
   writes a `<span style="…">`, so other markdown apps still read the note.
 - **⌘D, as in Sublime Text.** The word under the cursor, then one more
   occurrence per press, all editable at once. ⌃⌘G takes every one.
+- **Find, the link picker and the dialogs float or hold the page.** Find
+  and Replace is a card over the top right of the note (the note never
+  moves when it opens): Enter and Shift+Enter walk the matches and wrap, "1
+  of 3" says where you are, Aa / ab are match case and whole words, Esc
+  closes it with the caret back in the note on the match it was on, and
+  Replace All is one Undo. `/link` shows its picker the same way. Every
+  dialog (the key list, Rename, Move to Trash, Clean Up, About, Updates,
+  Language Setup) is one modal: the page behind it is inert, Tab goes round
+  inside it, Esc closes it and the caret returns to the notes; Move to Trash
+  starts on **Cancel**, and Enter answers only the button that has the
+  keyboard. The key list is searchable ("Search keys…") and draws its keys as
+  caps in Apple's order on a Mac. The divider between the notes and the video
+  is a visible 6px column with a grip, and takes the accent while you drag it.
 - **It opens side by side.** Every launch shows the notes and the video
   together, whatever was put away last time.
-- **Collapse what you're not using.** The notes list and the video from the
-  sidebar's header; the notes pane from the corner of the video. ⌃⌘S, ⌃⌘E,
-  ⌃⌘C.
+- **Collapse what you're not using.** The notes list, the rendered page and
+  the video each have a button at the left of the tab row, always in that
+  order, whether the sidebar is open or shut; the video button's corner
+  (or a right-click) opens its menu — Show video, the cameras, the tablet
+  sheet, Turn left / Turn right, Refresh devices, Video Only. The notes pane
+  is put away from the corner of the video. ⌃⌘S, ⌃⌘E, ⌃⌘C.
 - **Two modes over one page, and one button between them.** The drawing
   layer is there in the markdown and on the rendered page alike — the
   drawing belongs to the note, not to one way of looking at it — and the
   pen button says which mode the pane is in: press it to put the pen down
   or pick it up. With the pen **up** the notebook has the clicks: the
   words, the bars between the cells and the brackets, and the drawings are
-  things you can handle — drag one to move it, or use the buttons that
-  appear (move, turn, resize, delete). With the pen **down** it draws, and
+  things you can handle — drag one to move it. A picked one has eight
+  resize handles on its outline and a rotate dot above it, and ONE bar over
+  it (below it when there is no room above) with its name, colour, width,
+  fill, Aa, order, dock, copy and delete; a small one has a single pill with
+  turn and resize under it. A corner scales it about the opposite corner, an
+  edge of a node or a text box stretches that one way, and Delete acts on a
+  click, never on a press you let go of elsewhere. With the pen **down** it draws, and
   the pointer is a pencil over that pane and nowhere else. In either mode,
   hold **⌘ and drag** to pull a rectangle over the page: it takes
   everything it *touches*, whole or not. The mode is remembered between
-  launches and the footer names it whenever the pen is down.
+  launches and the footer names it whenever the pen, the Eraser, the Select
+  tool or an armed shape is on ("Pen · 3 px", "Eraser", "Select tool",
+  "Placing: Rectangle"; a live region, so a screen reader hears it change),
+  and a chip over the page says it too with how to stop — "Pen · 3 px · Esc
+  to stop": **Esc** puts it down, when nothing else wanted the press.
 - **Several things held as one.** Pick two or more — a marquee, or ⇧-click
   — and **⌃G** holds them together; the same key on a group you have picked
   takes it apart, and a button beside the selection says which it will do.
@@ -261,14 +318,14 @@ is how the code is put together.
   ⌃G makes one bigger group of the lot, so groups nest by swallowing
   rather than by stacking.
   The pen button itself is still the pen, on and off; its menu also picks
-  the size and the colour (a circular colour well plus six swatches). ⌘Z
+  the width and the colour (six presets and a custom one). ⌘Z
   undoes a stroke while the pen is up — ⇧⌘Z puts it back — and Undo Drawing
   sits in the Edit menu at ⌥⌘Z whatever has the keyboard.
 - **Pictures on the page.** The image button adds one, ⌘V pastes one, and
   they behave like any other object on the layer. Files live in
-  `.drawings/media/`; a note's own copies go with it when it moves and go
-  when it does.
-- **Maths, written as Wolfram Language.** The `f(x)` button opens a pane of
+  the note itself (`media/` inside its `.wm`), so they go with it when it moves
+  and go when it does.
+- **Maths, written as Wolfram Language.** The **Maths** button (Σ) opens a pane of
   shapes — integrals with their bounds (single, double and contour), sums
   and infinite series, Taylor series, limits including one-sided ones,
   ordinary, partial and mixed derivatives, grad, div, curl and the
@@ -277,7 +334,7 @@ is how the code is put together.
   Greek alphabet.
   Fill in the parts, watch it set, and insert it inline or on its own line.
   What the note holds is the WL — `Integrate[x^2, {x, 0, 1}]` — in a code
-  span or a ```wl block, so the file is still plain markdown; the preview
+  span or a ```wl block, so the words stay plain text (`note.mdwm`); the preview
   typesets it.
 - **Any camera the Mac can see.** The **Input Devices** menu in the menu bar
   lists built-in, USB, Continuity Camera and Desk View devices with a
@@ -285,15 +342,31 @@ is how the code is put together.
   camera you pick is remembered; a first launch never asks. Two buttons in
   the corner turn the picture a quarter turn either way, for a camera that
   is mounted sideways.
-- **A bar you can put away a piece at a time.** The toolbar is in
-  sections — Style, Structure, Insert, Maths, Flow Chart, Capture — and the
-  grip at the end of each one folds it down to a single icon; right-click
-  the bar for the list. Every shortcut lives in the **Format** menu, so
-  folding a section never takes its keys with it. Hovering a button names
-  it, shows its keys and says what it does.
+- **One row that always fits.** The bar over the note is a single 36px row,
+  never wrapping: Style, B I U S, Aa (font, size, colour), List, Quote, Code,
+  then the inserts as buttons of their own — Text box, Picture, Table, Maths,
+  Shapes — with Move section up / down beside them, and the pen at the right.
+  When the pane is too narrow, the inserts and the section moves go into a
+  **⋯** menu first, then list / quote / code, and the ⋯ only appears then; each
+  runs from there with its icon and key. **Customize toolbar…** (in the ⋯, or
+  a right-click on the bar) puts the four sections — Text, Blocks, Insert, Pen
+  — away and brings them back. Every shortcut lives in the **Format** menu, so
+  putting a section away never takes its keys with it. Hovering a button names
+  it, shows its key and says what it does.
+- **One pen button.** It toggles the pen (accent fill while it is down) — or
+  the eraser: its menu (the caret, a right-click, a half-second hold or the
+  down arrow) picks **Pen** or **Eraser**, which switches what the one button
+  does (⌥⌘1 and ⌥⌘2 do the same and keep the menu in step), then the
+  **colour** (six presets and a custom one) and the **width** (1 2 3 5 8 12),
+  **Pen always draws (tablet)** and the tablet's buttons and orientation.
 - **Tabs for the notes you have open.** The wheel walks along them, and the
-  button at the right-hand end lists every open note — the way back to one
-  that has scrolled off the end.
+  button at the right-hand end — a list icon and how many are open — lists
+  every open note, the one in front checked: the way back to one that has
+  scrolled off the end. The tab in front is the colour of the page and runs
+  into the toolbar under it; its × shows on it and on whichever tab the
+  pointer is over. Right-click a tab for Close, Close Other Tabs, Rename…,
+  Duplicate, Move to ▸, Reveal and Move to Trash… (the sidebar row's own
+  actions).
 
 ## Wolfram notebooks (port-only)
 
@@ -307,3 +380,12 @@ is how the code is put together.
   notebook as the image itself, between cells or inside an input; into Pages or Word it is a picture at its size. On a Mac
   the cell is there at once as a cell that makes the drawing, and as the image itself a moment later, when the engine has
   answered. Pasting it back into WriteMind is the cell and nothing else.
+
+## Undo goes through file operations too (2026-10-10, `docs/PLAN-undo.md`)
+
+Ctrl+Z / ⌘Z takes back the newest step: the open note's words or drawing, or one of the last three FILE operations (new
+note, duplicate, rename, move, reorder, move to trash, the section versions of those, Clean Up, importing a markdown file).
+Ctrl+Shift+Z brings it back. A trashed note or section is restored from a copy the app kept first (nothing is trashed if the
+copy cannot be made); the copies are deleted when the step is more than three back, after a new step follows an undo, and when
+the app quits. Edit ▸ Undo names the step. The history of a note's words survives renames, moves and closing its tab.
+

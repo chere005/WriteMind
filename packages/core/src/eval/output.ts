@@ -18,6 +18,12 @@ export interface EvalResult {
   stderr: string
   /** Null when the run never finished — a timeout, or a tool that would not start. */
   status: number | null
+  /**
+   * The signal that ended the program (`SIGSEGV`, `SIGABRT`…), when one did (port-only: Node reports a child killed
+   * by a signal as no exit status at all, which used to read as a run that printed nothing). Never set for a run the
+   * app itself cut short — that is `timedOut` or `truncated`.
+   */
+  signal?: string | null
   timedOut: boolean
   /** The output was longer than this app will put in a note. */
   truncated: boolean
@@ -26,8 +32,29 @@ export interface EvalResult {
 }
 
 export const evalResult = (fields: Partial<EvalResult> = {}): EvalResult => ({
-  stdout: "", stderr: "", status: null, timedOut: false, truncated: false, note: null, ...fields,
+  stdout: "", stderr: "", status: null, signal: null, timedOut: false, truncated: false, note: null, ...fields,
 })
+
+/** What the signals a crashed program dies of are called, in the words a person would use. */
+const SIGNAL_WORDS: Record<string, string> = {
+  SIGSEGV: "segmentation fault", SIGBUS: "bus error", SIGABRT: "aborted", SIGFPE: "arithmetic error",
+  SIGILL: "illegal instruction", SIGTRAP: "trap", SIGKILL: "killed", SIGTERM: "terminated", SIGPIPE: "broken pipe",
+}
+
+/**
+ * What Windows reports a crashed program's exit status as (an NTSTATUS, not a signal). The Mac and Linux never see
+ * one; it is only worded here, so a crash does not read as an exit code of three billion.
+ */
+const CRASH_WORDS: Record<number, string> = {
+  0xC0000005: "access violation", 0xC00000FD: "stack overflow", 0xC0000094: "integer divide by zero",
+  0xC000001D: "illegal instruction", 0xC0000409: "stack buffer overrun", 0xC0000374: "heap corruption",
+}
+
+/** `[exit 3]` for an ordinary status; a Windows crash status says what it is. */
+export function exitLine(status: number): string {
+  const word = CRASH_WORDS[status >>> 0]
+  return word ? `exit ${status >>> 0}: ${word}` : `exit ${status}`
+}
 
 /** The info string an Out cell carries. */
 export const OUT_FENCE = "out"
@@ -67,7 +94,11 @@ export function outBody(result: EvalResult): string {
   if (result.note !== null) lines.push(`[${result.note}]`)
   if (result.truncated) lines.push(`[output cut at ${OUTPUT_BYTE_LIMIT / 1024} KB]`)
   if (result.timedOut) lines.push("[timed out]")
-  if (result.status !== null && result.status !== 0) lines.push(`[exit ${result.status}]`)
+  if (result.signal) {
+    const word = SIGNAL_WORDS[result.signal]
+    lines.push(`[stopped by ${result.signal}${word ? ` (${word})` : ""}]`)
+  }
+  if (result.status !== null && result.status !== 0) lines.push(`[${exitLine(result.status)}]`)
   // An Out cell is never an empty fence: a run that printed nothing still has to look like a run that happened.
   return lines.length === 0 ? "[no output]" : lines.join("\n")
 }

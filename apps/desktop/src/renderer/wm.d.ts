@@ -27,7 +27,14 @@ declare global {
     wm: {
       capabilities(): Promise<Platform>
       tree(): Promise<Section>
+      /** The sidebar's search (main/notesSearch.ts): every note of the project, best first; `id` names it for `cancelSearch`. */
+      searchNotes(id: number, query: string): Promise<import("../shared/search").SearchOutcome>
+      cancelSearch(id: number): Promise<void>
       readNote(file: string): Promise<string>
+      /** The file's words and drawing as they are now, WITHOUT the app taking that state as its own (the watcher's look); `adoptNote` takes it. */
+      peekNote(file: string): Promise<{ text: string; drawing: string | null; token: string }>
+      adoptNote(file: string, token: string): Promise<boolean>
+      noteInfo(file: string): Promise<{ readOnly: boolean; version: number; newer: boolean; why: string | null }>
       writeNote(file: string, text: string): Promise<{ written: boolean; onDisk: string | null }>
       createNote(folder: string): Promise<string>
       renameNote(file: string, title: string): Promise<string>
@@ -78,6 +85,8 @@ declare global {
       /** Held cells with a drawing cell among them were copied (main/wolfram/clipboard.ts); absent in an old preload. */
       wolframCopy?(copy: {
         plain: string; markdown: string; media: import("@writemind/core").WolframMedia; noteFile: string | null
+        /** Copy Cell: the one drawing is also an SVG file for the other apps (and no PNG). */
+        cell?: boolean
       }): void
       duplicateNote(file: string): Promise<string>
       setMenuState(state: import("../shared/commands").MenuState): Promise<void>
@@ -93,18 +102,42 @@ declare global {
       e2eClipboard?(command: "read" | "save" | "restore"): Promise<Record<string, string> | boolean>
       /** The tablet pen's native feed (shared/pen.ts PenApi); present on every platform, `available: false` off Windows. */
       pen: import("../shared/pen").PenApi
-      /** The quick reference written at this launch (a new install), once, else null (main/welcome.ts); absent in an old preload. */
-      welcomed?(): Promise<string | null>
+      /** Where the Quick Reference is (or will be) in the notes root (main/welcome.ts); absent in an old preload. */
+      quickReferencePath?(): Promise<string>
+      /** Help ▸ Quick Reference: written if missing, rewritten if out of date; its path (main/welcome.ts); absent in an old preload. */
+      quickReference?(): Promise<string>
       /** The "your notes stay in WriteMindCross" notice, once, else null (main/notesFolderMove.ts); absent in an old preload. */
       notesFolderNotice?(): Promise<string | null>
+      /** What the conversion of the old .md notes did at this launch, once (main/convert.ts); null when it did nothing. */
+      conversionNotice?(): Promise<string | null>
+      takeOpenFiles?(): Promise<string[]>
+      onOpenPending?(listener: () => void): () => void
+      openFile?(file: string): Promise<void>
+      pathOfFile?(file: File): string
+      onConversionNotice?(listener: (text: string) => void): () => void
       /** The tablet's sheets (tabs), as text (renderer/sheetSet.ts), kept in userData/sheets.json; absent in an old preload. */
       sheets?: { load(): Promise<string | null>; save(text: string): void }
+      /** The document camera's scanned pages (renderer/scanSet.ts), kept in userData/scans.json and scans/<id>.jpg; absent in an old preload. */
+      scans?: {
+        load(): Promise<string | null>; save(text: string): void
+        put(id: string, bytes: Uint8Array): Promise<boolean>; get(id: string): Promise<Uint8Array | null>
+        drop(id: string): void; sweep(keep: string[]): void
+      }
       /** Evaluation cells (shared/eval.ts): run one cell on Shift+Enter, take a run back, where the tools are. */
       evaluate: import("../shared/eval").EvalApi
       /** Updates (shared/update.ts): the "Updates available" dialog (UpdateDialog.tsx); absent in an old preload. */
       update?: import("../shared/update").UpdateApi
       /** File ▸ Language Setup… (shared/languages.ts, LanguageSetupDialog.tsx); absent in an old preload. */
       languages?: import("../shared/languages").LanguagesApi
+      /** Help ▸ About WriteMind (shared/about.ts, AboutDialog.tsx); absent in an old preload. */
+      about?: import("../shared/about").AboutApi
+      /** The undo journal of file steps (main/undoJournal.ts, docs/PLAN-undo.md). */
+      undo: {
+        state(): Promise<import("../shared/undo").UndoState>
+        run(which: "undo" | "redo"): Promise<import("../shared/undo").UndoOutcome>
+        cutRedo(): Promise<void>
+        onChanged(listener: (state: import("../shared/undo").UndoState) => void): () => void
+      }
       onNotesChanged(listener: () => void): () => void
       onFlushRequest(listener: () => Promise<void> | void): () => void
       onEdit(listener: (which: "undo" | "redo") => void): () => void

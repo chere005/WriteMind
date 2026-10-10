@@ -4,6 +4,11 @@
  * a block (or highlight a run) and press Link Here. The anchor is written
  * into the OTHER note, the link replaces what was typed, and the note it was
  * typed in is opened again. The rules are `@writemind/core`'s `linking`.
+ *
+ * IT FLOATS over the page like the find card (docs/PLAN-bars-2026-10.md, P6; wireframe: "Link to…", the target note, Cancel,
+ * Link here): the note's top edge never moves when it goes up. It was an accent-coloured strip that pushed the whole page down,
+ * and the words of its title, which now follow the wireframe ("Link to…" and what to do, in place of the Mac's "Select section
+ * to point to"), are the one thing here that differs from LinkBanner.swift. Escape cancels, from anywhere.
  */
 
 import { useEffect, useState } from "react"
@@ -12,6 +17,7 @@ import {
   anchorIn, linkMarkdown, makeNote, stem, triggerRange, writeRich, type Note,
 } from "@writemind/core"
 import type { Section } from "./wm"
+import { Icon } from "./icons"
 
 export interface LinkRequest { file: string; caret: number }
 
@@ -61,7 +67,8 @@ export function LinkBanner({ request, current, view, root, openNote, onLanded, o
   useEffect(() => {
     setProblem(null)
     if (!request) return
-    const key = (event: KeyboardEvent) => { if (event.key === "Escape") onDone() }
+    // Escape cancels — unless something else (a menu, a dialog, the find card) already took it.
+    const key = (event: KeyboardEvent) => { if (event.key === "Escape" && !event.defaultPrevented) onDone() }
     window.addEventListener("keydown", key)
     return () => window.removeEventListener("keydown", key)
   }, [request, onDone])
@@ -74,7 +81,7 @@ export function LinkBanner({ request, current, view, root, openNote, onLanded, o
   const sourceTitle = (root ? flatten(root).find((note) => note.path === request.file)?.title : undefined)
     ?? stem(request.file)
   const detail = problem
-    ?? (isSource ? `Open the note you want to point at — from “${sourceTitle}”.`
+    ?? (isSource ? `Open the target note, click a block (or select text) — linking from “${sourceTitle}”.`
       : highlighted ? "Links to the highlighted text, and marks it in this note as linked."
       : "Links to the block the cursor is in. Highlight text first to point at just that.")
 
@@ -108,14 +115,15 @@ export function LinkBanner({ request, current, view, root, openNote, onLanded, o
   }
 
   return (
-    <div className="link-banner" role="status">
+    <div className="link-banner link-card" role="status" data-bar="link">
+      <Icon name="link" size={18} className="link-mark" />
       <span className="text">
-        <b className="title">Select section to point to</b>
+        <b className="title">Link to…</b>
         <span className="detail">{detail}</span>
       </span>
       <div className="spacer" />
       <button onClick={onDone}>Cancel</button>
-      <button className="default" disabled={isSource} onClick={() => { void complete() }}>Link Here</button>
+      <button className="default" disabled={isSource} onClick={() => { void complete() }}>Link here</button>
     </div>
   )
 }
