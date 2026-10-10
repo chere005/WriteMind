@@ -1,4 +1,4 @@
-// Pictures for the bundled-reader-versus-Vision comparison (docs/OCR-BUNDLED.md "Against Vision"), drawn with the Mac's own
+// Pictures for measuring the bundled reader (compare.ts; the "Against Vision" table in docs/OCR-BUNDLED.md was made with them), drawn with the Mac's own
 // CoreGraphics / CoreText and the handwriting-style fonts macOS ships (Bradley Hand, Snell Roundhand, Noteworthy, Marker Felt,
 // Hiragino Maru Gothic / Mincho). Nothing is downloaded. THESE ARE NOT REAL HANDWRITING: a font is one hand's letter shapes
 // repeated, so the pictures only stand for the situations (a big photo of a ruled page, cursive joins, Japanese, maths on a

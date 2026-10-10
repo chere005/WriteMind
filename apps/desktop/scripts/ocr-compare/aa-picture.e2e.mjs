@@ -1,5 +1,5 @@
-// THE DRAWING INSPECTOR'S "Aa" on a picked picture, through the bundled reader, in the real app (docs/OCR-BUNDLED.md
-// "Against Vision", integration): a picture of real handwriting (the committed fixture) is pasted, arrives picked with Aa in
+// THE DRAWING INSPECTOR'S "Aa" on a picked picture, through the bundled reader, in the real app (docs/OCR-BUNDLED.md,
+// integration): a picture of real handwriting (the committed fixture) is pasted, arrives picked with Aa in
 // its bar, the press reads it, the words land as a cell directly under the picture, and the footer says so.
 //
 //   npm run e2e -- --file apps/desktop/scripts/ocr-compare/aa-picture.e2e.mjs      (build first)
@@ -12,8 +12,8 @@ import { ok, note, finish, sleep, freshNote, js, doc, shot, waitFor, saved, key,
 const fixtures = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../test/fixtures")
 const file = await freshNote({ rendered: true })
 const caps = await js(`window.wm.capabilities()`)
-note(`capabilities: ocr ${caps.handwritingOCR}, engine ${caps.ocrEngine}, japanese ${caps.japaneseOCR}, platform ${caps.platform}`)
-ok("a reader works on this machine, so the app offers Aa", caps.handwritingOCR === true && caps.ocrEngine !== null)
+note(`capabilities: ocr ${caps.handwritingOCR}, platform ${caps.platform}`)
+ok("the reader is there, so the app offers Aa", caps.handwritingOCR === true)
 
 const paste = (name) => {
   const b64 = fs.readFileSync(path.join(fixtures, name)).toString("base64")

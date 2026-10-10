@@ -1,5 +1,4 @@
-// Every comparison picture, made ready AS THE APP MAKES IT before either reader sees it (docs/OCR-BUNDLED.md "Against
-// Vision"): the real `prepareForReading` of renderer/ocrClient.ts runs in the real app - flattened on white, no side over
+// Every comparison picture, made ready AS THE APP MAKES IT before the reader sees it (docs/OCR-BUNDLED.md): the real `prepareForReading` of renderer/ocrClient.ts runs in the real app - flattened on white, no side over
 // 3200 pixels, a printed dot grid painted out - and the PNG that would be handed to the reader is written to
 // apps/desktop/.cache/ocr-compare/prepared/<name>.png (with the ground truth beside it). compare.ts --prepared reads those.
 //

@@ -1,5 +1,5 @@
-// THE TABLET SHEET'S "Bring in writing" with a WORDS in the chart, through the bundled reader (docs/OCR-BUNDLED.md "Against
-// Vision", integration): three boxes and two arrows with a word written in each box (the skeleton of a handwriting font drawn by
+// THE TABLET SHEET'S "Bring in writing" with a WORDS in the chart, through the bundled reader (docs/OCR-BUNDLED.md,
+// integration): three boxes and two arrows with a word written in each box (the skeleton of a handwriting font drawn by
 // the e2e pen), brought in: the chart arrives as nodes AND each node is labelled by the words read inside it (wordsForChart);
 // then the sheet's Page picture is read with Aa. Not a person's pen.
 //

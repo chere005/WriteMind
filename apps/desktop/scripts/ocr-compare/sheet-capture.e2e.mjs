@@ -1,5 +1,5 @@
 // Writes text on the tablet's sheet with the app's own e2e synthetic pen and takes the sheet's PAGE picture out
-// (docs/OCR-BUNDLED.md "Against Vision"): the picture the Wacom sheet really produces, for compare.ts to read with both readers.
+// (docs/OCR-BUNDLED.md): the picture the Wacom sheet really produces, for compare.ts to read.
 //
 //   npm run e2e -- --file apps/desktop/scripts/ocr-compare/sheet-capture.e2e.mjs      (build first)
 //

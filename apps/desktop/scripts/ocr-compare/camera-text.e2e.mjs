@@ -1,6 +1,5 @@
 // @e2e video=text
-// THE CAMERA'S TEXT BOX ACTION through the bundled reader, in the real app (docs/OCR-BUNDLED.md "Against Vision",
-// integration). The fake camera plays the real handwriting fixture (e2e/lib/fixtures.mjs `text.y4m`, 640x480 grey): a box
+// THE CAMERA'S TEXT BOX ACTION through the bundled reader, in the real app (docs/OCR-BUNDLED.md, integration). The fake camera plays the real handwriting fixture (e2e/lib/fixtures.mjs `text.y4m`, 640x480 grey): a box
 // over it, "Text" in the box's row, and the words come into the note as a cell with the toast under the header saying so.
 //
 //   npm run e2e -- --file apps/desktop/scripts/ocr-compare/camera-text.e2e.mjs      (build first)
@@ -29,8 +28,8 @@ ok("a toast under the header says the text was added to the note, with how many 
 await shot("camera-text-toast")
 const added = (await doc()).slice(before.length)
 note("added to the note: " + JSON.stringify(added))
-// (the ink rules mark a word with a stroke through it ~~struck~~: at 640x480 they take the felt-tip "the" for one, with Vision's
-// reading too - compare.ts scores the words, so the marks are stripped here)
+// (the ink rules mark a word with a stroke through it ~~struck~~: at 640x480 they take the felt-tip "the" for one, whichever
+// reader read it - compare.ts scores the words, so the marks are stripped here)
 const low = added.replace(/~~|\*\*/g, "").toLowerCase()
 ok("the felt-tip words arrived in the note", /the quick brown fox/.test(low) && /jumps over the lazy dog/.test(low), added)
 ok("...and the digits", /0123456789/.test(low))
