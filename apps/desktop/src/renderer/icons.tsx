@@ -17,7 +17,6 @@ const PATHS = {
   sidebar: "<rect x=\"1.75\" y=\"3\" width=\"12.5\" height=\"10\" rx=\"1.5\"/><path d=\"M6 3v10\"/>",
   chev: "<path d=\"M4.5 6.5 8 10l3.5-3.5\"/>",
   chevr: "<path d=\"M6.5 4.5 10 8l-3.5 3.5\"/>",
-  chevl: "<path d=\"M9.5 4.5 6 8l3.5 3.5\"/>",
   search: "<circle cx=\"7\" cy=\"7\" r=\"4.25\"/><path d=\"m10.5 10.5 3.5 3.5\"/>",
   plus: "<path d=\"M8 3.5v9M3.5 8h9\"/>",
   chevu: "<path d=\"M4.5 9.5 8 6l3.5 3.5\"/>",
@@ -60,7 +59,6 @@ const PATHS = {
   close: "<path d=\"m4 4 8 8M12 4l-8 8\"/>",
   undo: "<path d=\"M5.5 5.25H10a3 3 0 0 1 0 6H6.5\"/><path d=\"m7.5 2.75-2.5 2.5 2.5 2.5\"/>",
   para: "<path d=\"M12.25 2.5H6.75a3 3 0 0 0 0 6h1.5M9.75 2.5v11M12.25 2.5v11\"/>",
-  find: "<circle cx=\"7\" cy=\"7\" r=\"4.25\"/><path d=\"m10.5 10.5 3.5 3.5\"/>",
   // The drawing layer's inspector (P5): order, a copy, delete, crop, dock into the note, and an arrow's heads and lines.
   resize: "<path d=\"M9.5 2.5h4v4M6.5 13.5h-4v-4M13.5 2.5 9 7M2.5 13.5 7 9\"/>",
   layers: "<path d=\"M8 2.5 14 5.75 8 9 2 5.75z\"/><path d=\"m2 8.5 6 3.25 6-3.25M2 11.25l6 3.25 6-3.25\"/>",
@@ -74,7 +72,6 @@ const PATHS = {
   lnsolid: "<path d=\"M2 8h12\"/>",
   lndashed: "<path d=\"M2 8h3M6.5 8h3M11 8h3\"/>",
   lndotted: "<path d=\"M2.5 8h.01M5.25 8h.01M8 8h.01M10.75 8h.01M13.5 8h.01\" stroke-width=\"2.2\"/>",
-  grip: "<circle cx=\"6\" cy=\"4\" r=\"1\" fill=\"currentColor\" stroke=\"none\"/><circle cx=\"10\" cy=\"4\" r=\"1\" fill=\"currentColor\" stroke=\"none\"/><circle cx=\"6\" cy=\"8\" r=\"1\" fill=\"currentColor\" stroke=\"none\"/><circle cx=\"10\" cy=\"8\" r=\"1\" fill=\"currentColor\" stroke=\"none\"/><circle cx=\"6\" cy=\"12\" r=\"1\" fill=\"currentColor\" stroke=\"none\"/><circle cx=\"10\" cy=\"12\" r=\"1\" fill=\"currentColor\" stroke=\"none\"/>",
 } as const
 
 export type IconName = keyof typeof PATHS

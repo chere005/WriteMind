@@ -170,8 +170,6 @@ interface Crop { id: string; rect: Rect }
 /** A node's label (or a text box's words) being typed; `on` is its surface: the page (null) or an ink cell's id. */
 interface Labelling { id: string; text: string; on: string | null }
 
-const HANDLE = 11
-
 /** The loaded picture for a file, if it has loaded (the crop reads its pixels). */
 export const loadedPicture = (file: string): HTMLImageElement | null => {
   const held = pictures.get(file)
@@ -1360,7 +1358,7 @@ export function Canvas({
     if (target instanceof Element) {
       if (target.closest(".wm-handle, .wm-insp, .wm-pill")) return "keep"
       // The brackets, the menus, a field being typed in: not the layer's.
-      if (target.closest(".wm-gutter, .wm-label-edit, .wm-textbox-edit, .kind-menu, .context-menu, .float-menu")) return null
+      if (target.closest(".wm-gutter, .wm-label-edit, .wm-textbox-edit, .float-menu")) return null
     }
     // The handles stand ON the outline, half of each outside the object: going from the object to one of them (or
     // along the outline between them) is staying on it, whatever the object under the pointer says for a moment.

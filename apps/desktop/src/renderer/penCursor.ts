@@ -43,7 +43,7 @@ let over: Element | null = null
 
 /** The note's page (words, ink, cells) and the tablet sheet: where a pen's right click never opens a menu. */
 const PAGE = ".editor, .cm-editor, .wm-canvas, .tablet-host, .tablet"
-const CHROME = ".top-bar, .sidebar, .sidebar-bar, .tab-bar, .camera-bar, .pad-strip, .footer, button, select, input, .style-pop, .video-pop, .kind-menu, .context-menu, .bar-context"
+const CHROME = ".top-bar, .sidebar, .sidebar-bar, .tab-bar, .camera-bar, .footer, button, select, input, .style-pop, .float-menu, .bar-context"
 
 function paintLook(): void {
   if (!element) return

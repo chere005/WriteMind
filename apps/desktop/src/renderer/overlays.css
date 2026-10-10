@@ -1,8 +1,8 @@
 /*
  * THE OVERLAYS (docs/PLAN-bars-2026-10.md, P6; the wireframes FinalStates.png and FinalMain.png): the cards that float over
  * the note (find and replace, the link picker, the mode chip), the divider between the notes and the video, the notes
- * footer in its three groups, and the one destructive red. Loaded after bars.css; where a rule here and one in app.css,
- * chrome.css or editor.css are the same strength this one wins.
+ * footer in its three groups, and the one destructive red. Loaded after bars.css; where a rule here and one in app.css
+ * (the footer's base) or editor.css are the same strength this one wins.
  */
 
 :root {
@@ -175,6 +175,10 @@
   background: radial-gradient(circle, var(--wm-accent) 1.3px, transparent 1.8px) center top / 4px 8px repeat-y;
   opacity: 1;
 }
+
+/* While the divider is held the page does not select text under the pointer, and the picture does not take the move. */
+body:has(.pane-divider.dragging) { user-select: none; cursor: col-resize; }
+body:has(.pane-divider.dragging) iframe, body:has(.pane-divider.dragging) video { pointer-events: none; }
 
 /* ---- The notes footer, in three groups: the file · what the pen is · the counts and the save. */
 .footer { gap: 10px; }

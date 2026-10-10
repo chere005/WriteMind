@@ -32,7 +32,6 @@ import { Icon } from "./icons"
 import { usePopover } from "./usePopover"
 import { hostPlatform } from "./hostPlatform"
 import { modChord } from "../shared/chord"
-import { shown } from "../shared/commands"
 
 /** The event the Insert > Maths... command (Ctrl+Shift+M) sends. */
 export const MATH_OPEN_EVENT = "wm:math-open"

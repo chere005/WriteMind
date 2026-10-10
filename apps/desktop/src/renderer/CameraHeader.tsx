@@ -79,7 +79,7 @@ export function CameraHeader(p: CameraProps) {
               title={p.holdTitle} disabled={p.holdOff} onClick={p.onHold}><Icon name="pause" /></button>
       <MenuButton icon="straighten" on={p.straighten} disabled={!p.pictured && !p.straighten} onMain={p.onStraighten}
                   title="Square the page up: drag the four corners onto the page's corners"
-                  items={[{ label: "Find the Page Again", icon: "find", disabled: !p.straighten || !p.pictured, onClick: p.onFindPage,
+                  items={[{ label: "Find the Page Again", icon: "search", disabled: !p.straighten || !p.pictured, onClick: p.onFindPage,
                     dataBar: "find-page" }]} />
       {!p.showEditor && (
         <button type="button" className="bar-btn label" data-pane="notes" title="Back to Side by Side: the notes and the video together again"

@@ -68,7 +68,7 @@ function UpdateSheet({ view, dialog }: { view: UpdateView; dialog: Dialog }) {
   }
 
   return (
-    <Modal hook="update" label={text.title} sheetRef={sheet} dialogData={{ "data-update": dialog.kind }}
+    <Modal hook="update" className="update-dialog" label={text.title} sheetRef={sheet} dialogData={{ "data-update": dialog.kind }}
            onClose={dismiss}
            // A key in the sheet's first moments was meant for the note, not for it: Escape does nothing yet.
            onEscape={() => { if (Date.now() - shownAt.current >= ARMED_AFTER_MS) dismiss() }}
