@@ -19,6 +19,8 @@ interface Props {
   label?: ReactNode
   /** Tooltip, and the accessible name when there is no label. */
   title: string
+  /** The accessible name when the label is not a name (a count). */
+  name?: string
   items: MenuItem[] | (() => MenuItem[])
   /** The button's own click (a split button). Without it a click opens the menu. */
   onMain?: () => void
@@ -42,7 +44,7 @@ interface Props {
 const HOLD_MS = 500
 const CORNER = 12
 
-export function MenuButton({ icon, label, title, items, onMain, on, tint, disabled, chevron, noMark, className, dataBar, menuBar, style, children }: Props) {
+export function MenuButton({ icon, label, title, name, items, onMain, on, tint, disabled, chevron, noMark, className, dataBar, menuBar, style, children }: Props) {
   const button = useRef<HTMLButtonElement>(null)
   // The menu is built when it is opened and kept: a render of the page behind it (a clock, a save) must not rebuild its
   // rows, which would take the keyboard from the row the person had moved to.
@@ -71,7 +73,7 @@ export function MenuButton({ icon, label, title, items, onMain, on, tint, disabl
   return (
     <>
       <button ref={button} type="button" className={classes} style={style} disabled={disabled} data-bar={dataBar}
-              aria-label={label === undefined ? title : undefined} title={title}
+              aria-label={name ?? (label === undefined ? title : undefined)} title={title}
               aria-haspopup="menu" aria-expanded={at !== null} aria-pressed={onMain ? !!(on || tint) : undefined}
               onPointerDown={(event) => {
                 pressedAt.current = performance.now()
