@@ -21,7 +21,7 @@ out/
 .vite/
 *.tsbuildinfo
 
-# The compiled macOS helper: built by tools/build-vision.sh, never committed
+# The compiled macOS helper: built by tools/build-helpers.sh, never committed
 apps/desktop/out/
 
 # electron-builder output

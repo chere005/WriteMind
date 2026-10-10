@@ -1,9 +1,10 @@
-// The Mac release (2026-10-05): two ad-hoc signed dmgs on the same GitHub Release as the Windows installer.
+// The Mac release (2026-10-05, Apple silicon only since 2026-10-10): one ad-hoc signed dmg on the same GitHub Release
+// as the Windows installer. Nothing built for Intel ships on a Mac.
 // What can be checked without a Mac is the configuration: electron-builder.yml's mac / dmg sections, the
 // package:mac:adhoc script, release.yml's four jobs and ci.yml's mac-package job, read as YAML (js-yaml, the copy
-// electron-builder itself brings). What only a Mac can check (the signature, the chips, the helper's slices,
-// Info.plist, the dmgs) is tools/verify-mac.sh, which both workflows run on macos-15.
-import { readFileSync } from "node:fs"
+// electron-builder itself brings). What only a Mac can check (the signature, every Mach-O's slice,
+// Info.plist, the dmg) is tools/verify-mac.sh, which both workflows run on macos-15.
+import { existsSync, readFileSync } from "node:fs"
 import path from "node:path"
 import { fileURLToPath } from "node:url"
 import { describe, expect, it } from "vitest"
@@ -32,10 +33,19 @@ const AD_HOC = ["-c.mac.identity=-", "-c.forceCodeSigning=true", "-c.mac.timesta
 describe("electron-builder.yml, the Mac", () => {
   const mac = builder.mac
 
-  it("makes a dmg (to download) and a zip (for the updater) per chip, the chip in the name", () => {
-    expect(mac.target).toEqual([{ target: "dmg", arch: ["arm64", "x64"] }, { target: "zip", arch: ["arm64", "x64"] }])
+  it("makes a dmg (to download) and a zip (for the updater) for Apple silicon alone, the chip in the name", () => {
+    // Sean, 2026-10-10: no x86 code on a Mac. A behaviour change from 3.0.0, which made an x64 dmg and zip too.
+    expect(mac.target).toEqual([{ target: "dmg", arch: ["arm64"] }, { target: "zip", arch: ["arm64"] }])
     expect(mac.artifactName).toBe("${productName}-${version}-mac-${arch}.${ext}")
     expect(mac.artifactName).toContain("${arch}")
+  })
+
+  it("packs no koffi on a Mac (the Windows pen's FFI, which carries every platform's prebuilt binary)", () => {
+    expect(mac.files).toEqual(expect.arrayContaining(["!node_modules/koffi/**", "!node_modules/@koromix/**"]))
+    // Windows keeps it: the Wintab code needs it there.
+    expect(builder.files.join("\n")).not.toContain("koffi")
+    expect(asList(builder.asarUnpack)).toContain("node_modules/koffi/**")
+    expect(desktopPkg.dependencies.koffi).toBeDefined()
   })
 
   it("writes no update info for a dmg (the zip's latest-mac.yml is the feed)", () => {
@@ -69,8 +79,9 @@ describe("electron-builder.yml, the Mac", () => {
 describe("package:mac:adhoc", () => {
   const script: string = desktopPkg.scripts["package:mac:adhoc"]
 
-  it("is both chips' dmgs, signed ad hoc, never published", () => {
-    expect(script).toContain("electron-builder --mac dmg --arm64 --x64 --publish never --config electron-builder.yml")
+  it("is the arm64 dmg alone, signed ad hoc, never published", () => {
+    expect(script).toContain("electron-builder --mac dmg --arm64 --publish never --config electron-builder.yml")
+    expect(script).not.toMatch(/--x64|--universal/)
     for (const flag of AD_HOC) expect(script).toContain(flag)
     expect(script).not.toMatch(/--publish (always|onTag|onTagOrDraft)/)
   })
@@ -104,7 +115,7 @@ describe("release.yml", () => {
     expect(run).not.toContain("-cnotmatch")
   })
 
-  it("mac builds the dmgs (signed: and the zips) with --publish never, checks them, then uploads them with gh", () => {
+  it("mac builds the arm64 dmg (signed: and the zip) with --publish never, checks it, then uploads it with gh", () => {
     const mac = jobs.mac
     const run = runs(mac)
     expect(mac["runs-on"]).toBe("macos-15")
@@ -112,7 +123,8 @@ describe("release.yml", () => {
     expect(run).toContain("npm ci")
     expect(run).toContain("npm run build")
     // Signed and notarized when the secrets are set (the Developer ID line), otherwise package:mac:adhoc's.
-    expect(run).toContain("--mac dmg zip --arm64 --x64 --publish never")
+    expect(run).toContain("--mac dmg zip --arm64 --publish never")
+    expect(run).not.toMatch(/--x64|--universal/)
     expect(run).toContain("npm run package:mac:adhoc")
     expect(run).toContain("bash tools/verify-mac.sh")
     expect(run).toContain('gh release upload "$TAG" dist-electron/*-mac-*.dmg --clobber')
@@ -123,13 +135,13 @@ describe("release.yml", () => {
     expect(run).not.toMatch(/--publish always/)
   })
 
-  it("publish waits for every file, both dmgs included, before taking the draft off", () => {
+  it("publish waits for every file, the one dmg included, before taking the draft off", () => {
     const run = runs(jobs.publish)
     expect(run).toContain('"latest.yml"')
     expect(run).toContain(".exe.blockmap")
     expect(run).toContain("WriteMind-$env:VERSION-mac-arm64.dmg")
-    expect(run).toContain("WriteMind-$env:VERSION-mac-x64.dmg")
-    expect(run.indexOf("mac-x64.dmg")).toBeLessThan(run.indexOf("--draft=false"))
+    expect(run).not.toContain("mac-x64")
+    expect(run.indexOf("mac-arm64.dmg")).toBeLessThan(run.indexOf("--draft=false"))
     expect(run).toContain("--draft=false --latest")
     expect(run).toContain("--draft=false --prerelease")
   })
@@ -148,7 +160,7 @@ describe("release.yml", () => {
 describe("ci.yml", () => {
   const job = ci.jobs["mac-package"]
 
-  it("packages and checks the Mac dmgs on main, never publishing", () => {
+  it("packages and checks the Mac arm64 dmg on main, never publishing", () => {
     expect(job["runs-on"]).toBe("macos-15")
     expect(job.if).toContain("refs/heads/main")
     expect(job.if).toContain("workflow_dispatch")
@@ -176,28 +188,46 @@ describe("ci.yml", () => {
 })
 
 describe("the Mac scripts", () => {
-  it("build-vision.sh compiles both slices for macOS 13 and joins them with lipo", () => {
-    const sh = text("tools/build-vision.sh")
+  it("build-helpers.sh compiles wm-pen for arm64 and macOS 13 alone: no x86_64 slice, no lipo, no Vision helper", () => {
+    const sh = text("tools/build-helpers.sh")
     expect(sh).toContain('min="13.0"')
-    expect(sh).toContain("for arch in arm64 x86_64")
-    expect(sh).toContain('-target "$arch-apple-macos$min"')
-    expect(sh).toContain("lipo -create")
+    expect(sh).toContain('-target "arm64-apple-macos$min"')
+    expect(sh).toContain("tools/pen/wm-pen.swift")
+    // Comments may say what is gone; the commands must not do it.
+    const commands = sh.split("\n").filter((line) => !/^\s*#/.test(line)).join("\n")
+    expect(commands).not.toMatch(/x86_64|lipo -create|x64/)
+    expect(commands).not.toContain("tools/vision")
+    expect(commands).not.toMatch(/swiftc[^\n]*wm-vision/)
   })
 
-  it("verify-mac.sh checks the signature, the helper's slices, Info.plist and both dmgs", () => {
+  it("the build runs build-helpers, and the script that was build-vision is gone", () => {
+    expect(desktopPkg.scripts.build).toContain("node scripts/build-helpers.mjs")
+    expect(text("apps/desktop/scripts/build-helpers.mjs")).toContain("tools/build-helpers.sh")
+    expect(existsSync(path.join(root, "tools/build-vision.sh"))).toBe(false)
+    expect(existsSync(path.join(root, "apps/desktop/scripts/build-vision.mjs"))).toBe(false)
+  })
+
+  it("verify-mac.sh checks the signature, wm-pen's slice, every Mach-O, Info.plist and the one dmg", () => {
     const sh = text("tools/verify-mac.sh")
     expect(sh.startsWith("#!/usr/bin/env bash\n")).toBe(true)
     for (const piece of [
       "codesign --verify --deep --strict",
       "Signature=adhoc",
-      "app.asar.unpacked/out/helpers/wm-vision",
-      '"arm64 x86_64"',
+      "app.asar.unpacked/out/helpers/wm-pen",
+      "scan_macho",
+      "scan_asar",
+      '"$got" != "arm64"',
+      "is a universal binary",
       "NSCameraUsageDescription",
       "LSMinimumSystemVersion",
-      'WriteMind-$version-mac-$arch.dmg',
-      "for arch in arm64 x64",
+      'WriteMind-$version-mac-arm64.dmg',
+      "mac-arm64) check_app",
       "exit 1",
     ]) expect(sh).toContain(piece)
+    // Nothing of Intel's is expected anywhere: the old checks for an x64 app and an x64 dmg are gone.
+    expect(sh).not.toContain("mac-x64.dmg")
+    expect(sh).not.toContain("x86_64 and arm64")
+    expect(sh).not.toContain("wm-vision")
   })
 })
 

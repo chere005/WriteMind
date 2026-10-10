@@ -7,9 +7,10 @@
 #   windows  (windows)   typecheck, unit tests, build; electron-builder makes the per-user NSIS installer and uploads it,
 #                        its .blockmap and latest.yml into that draft. latest.yml on the newest release is the feed every
 #                        installed Windows copy's updater reads (apps/desktop/src/main/updater.ts).
-#   mac      (macos-15)  build (with the universal Vision helper); electron-builder makes WriteMind-<version>-mac-arm64.dmg
-#                        and -mac-x64.dmg, AD-HOC signed (there is no Developer ID, so nothing is notarized) and never
-#                        published by electron-builder; tools/verify-mac.sh checks them; gh uploads both into the draft.
+#   mac      (macos-15)  APPLE SILICON ONLY (macos-15 runners are arm64 Macs; nothing is built for Intel): build (the
+#                        arm64 helpers), then electron-builder makes the one WriteMind-<version>-mac-arm64.dmg,
+#                        AD-HOC signed (without the Developer ID secrets nothing is notarized) and never published
+#                        by electron-builder; tools/verify-mac.sh checks it (every Mach-O arm64); gh uploads it into the draft.
 #   publish  (ubuntu)    every file is on the draft, then it is published (Latest; a version with a "-" is a pre-release).
 #
 # A failed windows or mac job leaves the release a DRAFT that no installed copy sees: fix it, then re-run the failed job
@@ -182,7 +183,7 @@ jobs:
           retention-days: 14
 
   mac:
-    name: Mac dmgs (signed and notarized when the secrets are set) into the draft
+    name: Mac dmg, Apple silicon (signed and notarized when the secrets are set) into the draft
     needs: prepare
     runs-on: macos-15
     # Apple's notary can queue a submission for an hour or more (2.8.0 and 2.9.0 ran out of 45 minutes waiting on it).
@@ -190,7 +191,7 @@ jobs:
     env:
       VERSION: ${{ needs.prepare.outputs.version }}
       # Developer ID signing and notarization, from the repo's secrets (docs/MAC-SESSION.md). Without CSC_LINK the
-      # job falls back to the ad-hoc dmgs of 1.0.0.
+      # job falls back to the ad-hoc dmg of 1.0.0.
       CSC_LINK: ${{ secrets.CSC_LINK }}
       CSC_KEY_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}
       APPLE_API_KEY_P8: ${{ secrets.APPLE_API_KEY_P8 }}
@@ -222,24 +223,24 @@ jobs:
           node-version: 24
           cache: npm
       - run: npm ci
-      - name: Build (the Vision helper universal, tools/build-vision.sh)
+      - name: Build (the arm64 helpers, tools/build-helpers.sh)
         run: npm run build
 
-      - name: The two dmgs, not published by electron-builder
+      - name: The arm64 dmg, not published by electron-builder
         working-directory: apps/desktop
         run: |
           if [ "${WRITEMIND_MAC_SIGNED:-}" = 1 ]; then
-            "$GITHUB_WORKSPACE/node_modules/.bin/electron-builder" --mac dmg zip --arm64 --x64 --publish never --config electron-builder.yml
+            "$GITHUB_WORKSPACE/node_modules/.bin/electron-builder" --mac dmg zip --arm64 --publish never --config electron-builder.yml
           else
             # The same line as apps/desktop's package:mac:adhoc (ci.yml's mac-package job runs that script on main).
             npm run package:mac:adhoc
           fi
 
-      - name: Check them (signature, chips, helper, Info.plist, the dmgs)
+      - name: Check it (signature, every Mach-O arm64, helpers, Info.plist, the dmg)
         run: bash tools/verify-mac.sh
 
       # Signed: the zips and latest-mac.yml too, which a Mac copy's updater installs from (an ad-hoc build makes none).
-      - name: The dmgs (and, signed, the zips and latest-mac.yml), uploaded to the draft release
+      - name: The dmg (and, signed, the zip and latest-mac.yml), uploaded to the draft release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
@@ -250,7 +251,7 @@ jobs:
             gh release upload "$TAG" dist-electron/*-mac-*.zip dist-electron/*-mac-*.zip.blockmap dist-electron/latest-mac.yml --clobber
           fi
 
-      - name: The dmgs as a build artifact too
+      - name: The dmg as a build artifact too
         if: always()
         uses: actions/upload-artifact@v4
         with:
@@ -280,9 +281,9 @@ jobs:
           if (-not ($names -contains "latest.yml")) { $missing += "latest.yml" }
           if (-not ($names | Where-Object { $_ -like "*$env:VERSION*.exe" })) { $missing += "the installer (.exe)" }
           if (-not ($names | Where-Object { $_ -like "*$env:VERSION*.exe.blockmap" })) { $missing += "the .blockmap" }
-          foreach ($dmg in @("WriteMind-$env:VERSION-mac-arm64.dmg", "WriteMind-$env:VERSION-mac-x64.dmg")) {
-            if (-not ($names -contains $dmg)) { $missing += $dmg }
-          }
+          # The ONE dmg: Apple silicon only, nothing is built for Intel.
+          $dmg = "WriteMind-$env:VERSION-mac-arm64.dmg"
+          if (-not ($names -contains $dmg)) { $missing += $dmg }
           if ($missing.Count -gt 0) {
             Write-Output "::error title=Release incomplete::Missing $($missing -join ', '); the release stays a draft."
             exit 1

@@ -1,9 +1,10 @@
 # The TypeScript port on Windows: typecheck, unit tests, build; then the end-to-end suites (allowed to fail for
 # now: they drive the real app, and they publish their report and screenshots either way).
 # On pushes to main (and a manual run), the Mac package too: macos-15 typechecks, runs the unit tests (they must pass
-# there as well), and builds the two ad-hoc dmgs exactly as a release
-# would (apps/desktop's package:mac:adhoc), checks them with tools/verify-mac.sh and keeps them as an artifact for 14
-# days. It never publishes anything; releases are .github/workflows/release.yml's.
+# there as well), and builds the one ad-hoc dmg exactly as a release
+# would (apps/desktop's package:mac:adhoc), checks it with tools/verify-mac.sh (every Mach-O arm64) and keeps it as an
+# artifact for 14 days. APPLE SILICON ONLY: macos-15 is an Apple silicon (arm64) runner, and nothing is built for Intel.
+# It never publishes anything; releases are .github/workflows/release.yml's.
 # The Swift side of the repo is the macOS app's reference copy and is built and tested on a Mac, not here.
 name: CI
 
@@ -68,7 +69,7 @@ jobs:
           retention-days: 14
 
   mac-package:
-    name: Mac dmgs (ad hoc, never published)
+    name: Mac dmg, Apple silicon (ad hoc, never published)
     if: github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && github.ref == 'refs/heads/main')
     runs-on: macos-15
     timeout-minutes: 45
@@ -91,16 +92,16 @@ jobs:
       # They block here too: the seven that took Windows paths for granted now use this system's own (2026-10-05).
       - name: Unit tests
         run: npm test
-      - name: Build (the Vision helper universal, tools/build-vision.sh)
+      - name: Build (the arm64 tablet helper, tools/build-helpers.sh)
         run: npm run build
-      - name: The two dmgs, signed ad hoc
+      - name: The arm64 dmg, signed ad hoc
         run: npm -w @writemind/desktop run package:mac:adhoc
-      - name: Check them (signature, chips, helper, Info.plist, the dmgs)
+      - name: Check it (signature, every Mach-O arm64, helpers, Info.plist, the dmg)
         run: bash tools/verify-mac.sh
-      - name: The dmgs as an artifact
+      - name: The dmg as an artifact
         uses: actions/upload-artifact@v4
         with:
-          name: writemind-mac-dmgs
+          name: writemind-mac-dmg
           path: dist-electron/*-mac-*.dmg
           if-no-files-found: error
           retention-days: 14
