@@ -33,6 +33,13 @@ swept. Results go to `e2e/.results/<timestamp>/` (git-ignored): `report.txt` (re
 (also appended to `$GITHUB_STEP_SUMMARY` in CI), `logs/<suite>/<script>.log` (everything the script printed) and
 `shots/` (screenshots; **look at them**). `e2e/.results/latest.*` is the last run.
 
+### Writing a script that draws, or presses a command key
+
+* The page ink layer (`.wm-canvas`) belongs to the RENDERED page (2.17.0): a script that draws starts with
+  `freshNote({ rendered: true })` (or `setRendered(true)` after a reload).
+* The command key of the machine is `MOD` (⌘ on a Mac, Ctrl elsewhere); a Mac editing chord (⌘A / C / X / V) is carried
+  by the key event's `commands`, as AppKit sends it. Redo is Ctrl+Shift+Z on every platform (Ctrl+Y is not a Mac key).
+
 ### What the runner does for you
 
 For each suite it starts an isolated, offscreen instance of the built app and runs the suite's scripts in name order
@@ -60,7 +67,7 @@ against it, each as its own node process:
 | `smoke` | the app starts offscreen, makes a note, takes typing |
 | `cells` | brackets on their cells, hold / extend / add / remove, move / duplicate / delete, clipboard, typing over a run, dragging a held bracket; the seams between cells (hover, click, Enter, Escape, arrows, the + menu and its kinds) |
 | `editor` | typing and the formatting keys, list continuation, undo; the code highlighter, the T popover, the rendered page; folding; `/link`; sidebar drag and drop; session restart (restarts the app); the right-click menu; pointer selection, to-do boxes |
-| `drawing` | connectors and routing, labels, undo; pictures (paste, drop, crop, Edit ▸ Undo); pen ink, pick / move / resize / turn / group; text boxes and marks; a 1.5x display; hover feedback, shapes / arrows / text boxes in drawing cells, Undock (08-10) |
+| `drawing` | connectors and routing, labels, undo; pictures (paste, drop, crop, Edit ▸ Undo); pen ink, pick / move / resize / turn / group; text boxes and marks; a 1.5x display; hover feedback, shapes / arrows / text boxes in drawing cells, Undock (08-10), the handles round a picked object and the one inspector over it (11) |
 | `export` | File ▸ Export… ▸ Wolfram Notebook (with the real engine when this machine has one, and with a stand-in that never answers), and a copied drawing cell on the system clipboard (Mac), pasted back: `export/01`, `02`. The engine half of the fixture: `node node_modules/vite-node/vite-node.mjs apps/desktop/scripts/check-wolfram.ts` |
 | `pen` | stroke with pressure, eraser end, barrel button; the bar and the pen chip; every pen button action and the ExpressKeys; the pen cursor; palm rejection and finger scroll |
 | `maths` | the palette, insertion inline / as a block, typesetting (MathML), source back on click |
