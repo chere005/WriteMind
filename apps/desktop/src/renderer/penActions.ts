@@ -28,7 +28,7 @@
  */
 
 import { echoed, inContact, noTap, resolvePress, tapStep, PEN_COMMANDS, type Phase, type PenAction, type PenCommandAction, type PressLike, type TapState } from "./penButtons"
-import { penNear, penSettings, setEraser, setPenDraws, setSelectTool, setSheetEraser, setSheetSelect, sheetTools } from "./penSettings"
+import { penNear, penSettings, pressEraseKey, setPenDraws, setSelectTool, setSheetEraser, setSheetSelect, sheetTools } from "./penSettings"
 import { penOnSheet, tabletUndo } from "./tabletFocus"
 import { penGate } from "./penGate"
 
@@ -96,7 +96,8 @@ function toggleTool(which: "erase" | "select"): void {
     return
   }
   const now = penSettings()
-  if (which === "erase") setEraser(!now.eraser)
+  // The eraser is the bar's one pen button when it is on, so the key and the menu go through the button's own step.
+  if (which === "erase") pressEraseKey()
   else setSelectTool(!now.selectTool)
 }
 
