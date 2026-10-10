@@ -2,8 +2,11 @@
 //   chart.y4m  - a flowchart drawn on white paper, filling the frame
 //   tilted.y4m - a page seen in perspective on a mid-grey desk (a thick border and a cross on it)
 //   moving.y4m - paper with some writing and a block that steps along the bottom (Hold image)
+//   text.y4m   - REAL handwriting (the OCR fixture, a felt-tip print and a biro scrawl) as the frame, for the Text reader
 import fs from "node:fs"
 import path from "node:path"
+import { fileURLToPath } from "node:url"
+import { readPngGray, resizeGray } from "./pngGray.mjs"
 const W = 640, H = 480
 
 class Gray {
@@ -60,7 +63,7 @@ function y4mFrames(file, grays, fps) {
 /** Write chart.y4m, tilted.y4m and tilted-quad.json into `dir`; returns their paths. */
 export function makeVideoFixtures(dir) {
 fs.mkdirSync(dir, { recursive: true })
-const out = { chart: path.join(dir, "chart.y4m"), tilted: path.join(dir, "tilted.y4m"), tiltedQuad: path.join(dir, "tilted-quad.json"), moving: path.join(dir, "moving.y4m") }
+const out = { chart: path.join(dir, "chart.y4m"), tilted: path.join(dir, "tilted.y4m"), tiltedQuad: path.join(dir, "tilted-quad.json"), moving: path.join(dir, "moving.y4m"), text: path.join(dir, "text.y4m") }
 {
   const g = new Gray(W, H, 235)
   g.box(60, 40, 150, 70, 4, 25)               // top box
@@ -139,6 +142,18 @@ const out = { chart: path.join(dir, "chart.y4m"), tilted: path.join(dir, "tilted
     frames.push(g)
   }
   y4mFrames(out.moving, frames, 5)
+}
+
+// 4. Real writing for the camera's Text action (apps/desktop/scripts/ocr-compare/camera-text.e2e.mjs): the handwriting
+//    fixture (a public-domain scan: a felt-tip print and a biro scrawl) scaled to the frame's height, grey, on a grey desk.
+{
+  const picture = readPngGray(path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../apps/desktop/test/fixtures/ocr-handwriting.png"))
+  const scale = H / picture.height
+  const fitted = resizeGray(picture, Math.round(picture.width * scale), H)
+  const g = new Gray(W, H, 200)
+  const left = Math.round((W - fitted.width) / 2)
+  for (let y = 0; y < H; y++) for (let x = 0; x < fitted.width; x++) g.d[y * W + left + x] = fitted.gray[y * fitted.width + x]
+  y4m(out.text, g)
 }
 return out
 }

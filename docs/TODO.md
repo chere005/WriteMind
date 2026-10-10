@@ -47,9 +47,12 @@ To do on the Mac:
    Fix it on main's side first, then merge.
 3. **`tools/verify-mac.sh` does not check for the OCR files**: the onnxruntime-web `.wasm` and the model `.onnx`
    files unpacked from the asar. Add the check.
-4. **Read on a real Mac and compare with Vision** on the same pictures: a notebook page under the camera at full
-   resolution, a Wacom sheet, cursive, Japanese handwriting. Vision may beat it on a Mac. Decide whether the
-   bundled reader stays first there or only fills in where Vision is missing.
+4. ~~**Read on a real Mac and compare with Vision**~~ Done 2026-10-10 (docs/OCR-BUNDLED.md "Against Vision"): the bundled reader
+   STAYS FIRST on a Mac (mixed data on one real hand and fonts: Vision a handful of characters ahead on English handwriting, the
+   bundled reader ahead on Japanese and maths); the order is one table, `OCR_ORDER` in `main/helpers.ts`, and
+   `WRITEMIND_OCR_ORDER=vision` tries Vision first. Also fixed: `wm-vision` read Japanese as noise (en-US only). Still wanted: a
+   real Wacom sheet, a real notebook photo and real Japanese handwriting read both ways (`ocr-compare/compare.ts` takes any
+   `.png` with a `.txt` beside it).
 5. **Linux:** untested.
 6. **Maths:** no formula recogniser is shipped; linear maths ("x = 2y + 1") already comes through. The candidate
    is Pix2Text MFR 1.5 (MIT, ~120 MB fp32, outputs LaTeX, which needs a LaTeX → Wolfram step). It is too big

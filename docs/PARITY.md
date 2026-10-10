@@ -570,7 +570,7 @@ reading a fixture), and the e2e scripts in `C:\CLAUDIO\agents\e2e\ocr\` (`aa.mjs
 
 | Feature | Status |
 |---|---|
-| A reader on Windows: `Windows.Media.Ocr` through `helpers/wm-ocr.ps1`, no install for the profile's languages; capability = a probe that works (`readerFor`); order Vision, Windows, tesseract | built; `capabilities.ocrEngine` / `japaneseOCR` say which and whether Japanese |
+| A reader on Windows: `Windows.Media.Ocr` through `helpers/wm-ocr.ps1`, no install for the profile's languages; capability = a probe that works (`readerFor`); order: the table `OCR_ORDER` (bundled, Vision, Windows, tesseract; since `ocr-bundled`) | built; `capabilities.ocrEngine` / `japaneseOCR` say which and whether Japanese |
 | Aa handle on a picture, Windows: lines in reading order, a dot grid painted out first, put in the note as a cell UNDER the picture, the picture stays (the Swift `readText`; was: at the caret, picture hidden), a "Reading..." / "Read N lines" / "No text could be read in that picture." line in the footer, the result dropped (reader aborted) if another note is opened meanwhile, the prepared upright canvas always sent (EXIF-turned photos and transparent PNGs read) | built, e2e (Arial / Times / Courier / Segoe Print, 4 lines in ~0.1-0.5 s) |
 | ...a word with a line through it as `~~struck~~`, a ringed word as `**bold**`, a drawn arrow as `→` (inline between two readings, or on a line of its own), a box at the head of a line as `- [ ]` / `- [x]`, a line of algebra as `` `wl:...` `` | built (ported `HandwritingMarks` + `TextRecognition.compose`), e2e on drawn pictures |
 | Japanese: Japanese first when installed and kept only if it found any, per-character words put back together, no spaces between kana/kanji | built, **UNVERIFIED on a real engine** (this Windows has no Japanese OCR; `ocr.test.ts` draws a Japanese picture and reads it on a machine that has it) |
@@ -581,6 +581,23 @@ reading a fixture), and the e2e scripts in `C:\CLAUDIO\agents\e2e\ocr\` (`aa.mjs
 | Reading order by BAND (`sameBand`), and neighbours a line-height and a half apart are one line (the engine splits "pay    rent today" into three lines; the Mac's middle-to-middle sort would too) | built (a port improvement; Vision's lines never needed it) |
 | Finding the page by itself | built since (see "The camera, beyond OCR (c2-camera-parity)": `capture/findPage.ts`) |
 | Real pen handwriting through this engine | **weaker than Vision** (a printed-text engine); not measurable here without Sean's hand |
+
+## The bundled reader against Vision, on a Mac (ocr-compare, 2026-10-10)
+
+The full measured table, how it was made and what it cannot say: `docs/OCR-BUNDLED.md` "Against Vision". Evidence:
+`apps/desktop/scripts/ocr-compare/` (`compare.ts` reads every picture with both readers through `readWords`; `make-pictures.swift`
+draws the made pictures with the Mac's own handwriting-style fonts; `sheet-capture.e2e.mjs` writes on the tablet sheet with the
+e2e pen and takes its Page picture; `prepare-pictures.e2e.mjs` runs the real `prepareForReading` in the real app),
+`apps/desktop/test/ocrOrder.test.ts` (the order table and its fallbacks, with stand-in readers on every platform and the real Vision
+helper where it is built).
+
+| Feature | Status |
+|---|---|
+| Which reader is first is one table, `OCR_ORDER` (bundled, Vision, Windows, tesseract), and a reader that fails stands aside for the next; `WRITEMIND_OCR_ORDER=vision,bundled` flips it without a rebuild | built, `ocrOrder.test.ts` |
+| **The bundled reader stays first on a Mac** (the data is mixed: Vision a handful of characters ahead on the one real English hand, 1.8% against 3.6% of 111; the bundled reader ahead on Japanese, 0% against 12%, and on maths on a line, 21% against 39%; a tie on printed, felt-tip, cursive-font, a 3000x4000 notebook-page photo, a struck word; 0.3 s against 0.55-0.9 s on a small picture, 1.3 s against 1.0 s on a 2400x3200 page) | decided 2026-10-10 on ONE real hand and fonts: no real Wacom sheet, notebook photo or Japanese handwriting was available to read both ways |
+| Vision reads Japanese again: `wm-vision text` asked for en-US only (a Mac read the Japanese fixture 88% wrong while `readerFor` said it could read Japanese); it now tries ja-JP first and keeps it only when it found Japanese, as `Camera/TextRecognition.swift` `readBest` does, and takes languages | fixed, `ocrOrder.test.ts` (against the built helper) |
+| Reading nothing at all (no bundled files, no Vision, no tesseract, e.g. a Linux machine): `capabilitiesFor` says `handwritingOCR: false`, and the page shows no Aa on a picture and no Text in the camera's box | built, `capabilities.test.ts`, `ocrOrder.test.ts` |
+| One behaviour change: with the bundled reader failing and nothing behind it, `readWords` throws (the page says the reader failed) where it used to return an empty reading | changed, `bundledOcr.test.ts` |
 
 ## The rendered page: Write in the preview (e1-preview, 2026-10-03)
 
