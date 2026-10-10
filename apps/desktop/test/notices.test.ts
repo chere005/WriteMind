@@ -56,6 +56,28 @@ describe("THIRD-PARTY-NOTICES.md", () => {
     expect(names.filter((name: string) => name.startsWith("@koromix/koffi-"))).toHaveLength(1)
   })
 
+  it("names the bundled text reader: onnxruntime-web (MIT) and the PP-OCRv5 models (Apache-2.0), with their licence texts", () => {
+    const find = (name: string) => made.notices.libraries.find((one: { name: string }) => one.name === name)
+    for (const name of ["onnxruntime-web", "onnxruntime-common"]) {
+      const one = find(name)
+      expect(one, name).toBeDefined()
+      expect(one.license).toBe("MIT")
+      expect(one.text).toContain("Permission is hereby granted")
+      expect(one.text).toContain("Microsoft Corporation")
+    }
+    const models = find("PaddleOCR PP-OCRv5 mobile models")
+    expect(models.license).toBe("Apache-2.0")
+    expect(models.text).toContain("Apache License")
+    expect(models.text).toContain("Version 2.0, January 2004")
+    expect(models.text).toContain("END OF TERMS AND CONDITIONS")
+    // Every file the build copies into the app is named, so a new model cannot ship without being mentioned here.
+    const manifest = JSON.parse(readFileSync(path.join(root, "apps/desktop/scripts/ocr-models.json"), "utf8")) as { models: { file: string }[] }
+    for (const model of manifest.models) expect(models.note, model.file).toContain(model.file)
+    // The files that reach the user: the markdown, and the notices.json the About dialog reads.
+    expect(committed).toContain("onnxruntime-web")
+    expect(committed).toContain("PaddleOCR PP-OCRv5 mobile models")
+  })
+
   it("starts with Wolfram, and says what Sean asked it to say", () => {
     const headings = [...committed.matchAll(/^## (.+)$/gm)].map((m) => m[1])
     expect(headings[0]).toBe("Wolfram")

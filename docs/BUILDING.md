@@ -30,7 +30,10 @@ npm run notices      # rewrites THIRD-PARTY-NOTICES.md from package-lock.json an
 `tools/gen-notices.mjs` writes `THIRD-PARTY-NOTICES.md` (the Wolfram statement,
 WriteMind's own licence, then every library that ships with its licence text).
 Run it after any dependency change; a unit test fails while the file is stale
-or a shipped package has no licence text. The build also writes
+or a shipped package has no licence text. The bundled OCR reader's parts are not production dependencies,
+so the generator names them itself (`bundledReader()`: onnxruntime-web and -common, MIT, and the PP-OCRv5
+models, Apache-2.0, text in `tools/licenses/Apache-2.0.txt`); a new model or runtime file in the build has to be
+added there. The build also writes
 `out/notices.json` from the same generator, which Help ▸ About WriteMind reads.
 Packages carry `LICENSE` and `THIRD-PARTY-NOTICES.md` in the app's resources
 folder (`extraResources` in `electron-builder.yml`, plus Chromium's
