@@ -509,11 +509,14 @@ export async function pickCamera() {
 }
 export const tabletBox = async () => JSON.parse(await js(`(()=>{const b=document.querySelector('.camera .tablet').getBoundingClientRect();return JSON.stringify({x:b.x,y:b.y,w:b.width,h:b.height})})()`))
 /**
- * Open the menu of a bar button (a right-click opens every MenuButton's menu, split or not) and click its item by
- * `data-bar`. The video pane's header keeps its menus in MenuButtons, so a script drives them the way a person does.
+ * Open the menu of a bar button and click its item by `data-bar`, the way a person does. A SPLIT button (the Undo, Bring in
+ * and Zoom of the video header: its click does its own job, `aria-pressed` is set) opens its menu on a right-click; a button
+ * that only opens a menu (Paper, Orientation) opens it on a plain click, and leaves the right-click to the bar around it
+ * (MenuButton, 2026-10-10: in the page's bar that is Customize toolbar...).
  */
 export async function pickFromMenu(buttonSelector, itemBar) {
-  await js(`document.querySelector(${JSON.stringify(buttonSelector)}).dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true }))`)
+  const how = `(() => { const b = document.querySelector(${JSON.stringify(buttonSelector)}); if (b.hasAttribute('aria-pressed')) b.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true })); else b.click() })()`
+  await js(how)
   await waitFor(`!!document.querySelector('.float-menu [data-bar=${itemBar}]')`)
   await js(`document.querySelector('.float-menu [data-bar=${itemBar}]').click()`)
   await sleep(150)
