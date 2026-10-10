@@ -22,7 +22,7 @@ import {
   isClosed, isNode, isRouted, nudged, pressureScale, placedCenter, reconnect, reordered, restyled,
   segmentMidpoints, shifted, strokeCurve, TEXT_BOX, textBoxAspect, textBoxHeight, readableInk,
   indexAt, isHidden, itemId, itemTransform, newID, noTransform, placedItem, polylines, rectFrom,
-  removing, route, scaleFactor, stillPicked, strokesSwept, toggle, toggled, transformed, whole, withTransform,
+  removing, route, stillPicked, strokesSwept, toggle, toggled, transformed, whole, withTransform,
   cellFrame, dockable, inkCellOf, toPage, withInkCell, INK_PAD, undockedInk, undockedPicture, inkFileName,
   type CanvasItem, type Column, type ConnectorItem, type Drawing, type InkCell, type ItemTransform, type Order,
   type Placement, type Measure, type Point, type Rect, type ShapeKind, type Size, type StylePatch,
@@ -31,7 +31,16 @@ import type { EditorView } from "@codemirror/view"
 import { inkCellPlaces, pictureCellLine, repaintInkCells, type DropTarget } from "@writemind/editor"
 import type { DrawingHistory } from "./drawingHistory"
 import { dockedAsCell, dockInto, undockLine, type DockDeps, type Words } from "./dock"
-import { StyleBar } from "./StyleBar"
+import { Inspector } from "./Inspector"
+import { Icon } from "./icons"
+import {
+  edgesFor, handleAt, handleCursor, handleLayout, handleTitle, outward, resizeBy, stretchedDrawing, stretches,
+  OUTLINE_PAD, PILL_REACH, PILL_SPACING, ROTATE_REACH,
+  type Edge, type HandleId, type HandleLayout, type RingId,
+} from "./handles"
+import {
+  BAR_HEIGHT, estimatedWidth, inspectorPlan, inspectorSpot, pointBox, sideAwayFrom, wantsRing, type Control,
+} from "./inspectorRules"
 import { penSettings, usePenSettings } from "./penSettings"
 import { holdBegins, inContact, insideBox, penLifted, resolvePress, slotOf } from "./penButtons"
 import { registerPenHandlers } from "./penActions"
@@ -142,7 +151,10 @@ type Gesture =
   | { kind: "placing"; from: Point; to: Point }
   /** An arrow being drawn from one thing to another (the arrow tool, or ⌥ from a node). */
   | { kind: "connecting"; from: Point; to: Point; node: string | null }
-  | { kind: "scaling"; from: Point; pivot: Point; snapshot: Map<string, ItemTransform>; base: Drawing }
+  /** A resize handle: `handle` says which, `box` is the selection's box on the surface as the press found it (the anchor is worked out from it). */
+  | { kind: "scaling"; from: Point; handle: RingId | "pill-resize"; box: Rect; snapshot: Map<string, ItemTransform>; base: Drawing }
+  /** An edge handle of a node or a text box: the edge moves, the opposite one stays (handles.ts `stretchedItem`). */
+  | { kind: "stretching"; id: string; edge: Edge; from: Point; base: Drawing }
   | { kind: "rotating"; from: number; pivot: Point; snapshot: Map<string, ItemTransform>; base: Drawing }
   | { kind: "segment"; id: string; index: number; vertical: boolean; base: Drawing }
   | { kind: "cropping"; corner: number }
@@ -349,8 +361,16 @@ export function Canvas({
   const lastPress = useRef<{ at: number; id: string } | null>(null)
   /** A text box's editing counts as ONE undo: whether this session has taken its snapshot. */
   const openBox = useRef(false)
-  /** The style bar (colour, width, fill, heads, order) is up under the selection. */
-  const [styling, setStyling] = useState(false)
+  /**
+   * The arrow just drawn (its id): the inspector over it is the heads row alone, anchored at its end (Sean's wireframe:
+   * the arrow tool no longer opens the whole inspector over the node it has just joined). Any other pick, a press on
+   * the arrow itself or Escape makes it the whole bar.
+   */
+  const [compact, setCompact] = useState<string | null>(null)
+  /** Which of the inspector's popovers is open (its control), if any. */
+  const [pop, setPop] = useState<Control | null>(null)
+  /** The inspector's measured size, so it can be stood where it fits. */
+  const [barSize, setBarSize] = useState<Size | null>(null)
   /** Enter on an open crop box: set up below, where the crop is. */
   const confirmCrop = useRef<() => void>(() => {})
 
@@ -414,12 +434,12 @@ export function Canvas({
 
   const latest = useRef({
     drawing, selection, gesture, placing, mode, size, colorHex, penWidth, onChange, onPlaced, box,
-    crop, styling, pick, pickLayer, dock,
+    crop, compact, pop, pick, pickLayer, dock,
   })
   latest.current = {
     ...latest.current,
     drawing, selection, gesture, placing, mode, size, colorHex, penWidth, onChange, onPlaced, box,
-    crop, styling, pick, pickLayer, dock,
+    crop, compact, pop, pick, pickLayer, dock,
   }
 
   /**
@@ -461,7 +481,7 @@ export function Canvas({
     onChange(next)
   }, [drawing, size, onChange])
 
-  // The pen / cursor mode changing, or a tool being armed, puts the layer's pick, crop box, style bar and label
+  // The pen / cursor mode changing, or a tool being armed, puts the layer's pick, crop box, inspector and label
   // away (the Mac does the same): the handles of a picked shape no longer stay up once the pen goes down.
   const toolArmed_ = placing !== null
   const modeSeen = useRef({ mode, armed: toolArmed_ })
@@ -469,11 +489,18 @@ export function Canvas({
     const was = modeSeen.current
     modeSeen.current = { mode, armed: toolArmed_ }
     if (was.mode === mode && (was.armed || !toolArmed_)) return
-    setSelection(new Set()); setCrop(null); setStyling(false); setLabelling(null); setHover(null)
+    setSelection(new Set()); setCrop(null); setCompact(null); setPop(null); setLabelling(null); setHover(null)
   }, [mode, toolArmed_])
 
   useEffect(() => { onSelectionChanged?.(selection.size) }, [selection, onSelectionChanged])
-  useEffect(() => { if (selection.size === 0) setStyling(false) }, [selection])
+  // The compact bar belongs to the arrow it was drawn for, and a popover to the pick it was opened on.
+  const pickKey = useMemo(() => [...selection].sort().join(","), [selection])
+  useEffect(() => {
+    if (selection.size === 0) setCompact(null)
+    else if (compact !== null && !(selection.size === 1 && selection.has(compact))) setCompact(null)
+    setPop(null)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pickKey])
 
   // Objects the app has just put on the layer (a pasted or dropped picture, a
   // capture) arrive picked up, with the handles on them, as a shape does.
@@ -901,6 +928,9 @@ export function Canvas({
     overlayReset.current = true
     gestureWhole.current = latest.current.drawing
     setHover(null)
+    setPop(null)
+    // A press on the arrow itself asks for the whole bar.
+    if (next.kind === "moving") setCompact(null)
     setGesture(next)
   }, [setHover])
 
@@ -1077,7 +1107,7 @@ export function Canvas({
     const scoped = scopeSays === "draw"
     if (press.kind === "erase" && (pen || event.button === 0)
       && !(event.target instanceof Element
-        && event.target.closest(".wm-handle, .wm-style-bar, .wm-label-edit, .wm-textbox-edit, .wm-gutter"))) {
+        && event.target.closest(".wm-handle, .wm-insp, .wm-pill, .wm-crop-bar, .wm-label-edit, .wm-textbox-edit, .wm-gutter"))) {
       event.preventDefault(); event.stopPropagation()
       const held = latest.current.drawing
       capture(event)
@@ -1098,7 +1128,7 @@ export function Canvas({
     // the selection, and unmounts the very button that was being pressed.
     // Every handle's own press then never ran at all.
     if (event.target instanceof Element
-      && event.target.closest(".wm-handle, .wm-style-bar, .wm-label-edit, .wm-textbox-edit, .wm-crop")) return
+      && event.target.closest(".wm-handle, .wm-insp, .wm-pill, .wm-crop-bar, .wm-label-edit, .wm-textbox-edit, .wm-crop")) return
     // PAN: the pen's hand button turns the page, as a finger does.
     if (press.kind === "pan") {
       event.preventDefault(); event.stopPropagation()
@@ -1315,6 +1345,8 @@ export function Canvas({
    * nothing (put away after a moment, so a handle beside the object can still be reached), null when a press here
    * would not pick at all (`hoverWanted`).
    */
+  /** The faint handles now on screen (set by the render): a pointer near one of them keeps what they stand round. */
+  const keepLayout = useRef<HandleLayout | null>(null)
   const hoverAt = (event: PointerEvent): Hover | "keep" | "none" | null => {
     const now = latest.current
     const settings = penSettings()
@@ -1326,10 +1358,14 @@ export function Canvas({
     })) return null
     const target = event.target
     if (target instanceof Element) {
-      if (target.closest(".wm-handle, .wm-style-bar")) return "keep"
+      if (target.closest(".wm-handle, .wm-insp, .wm-pill")) return "keep"
       // The brackets, the menus, a field being typed in: not the layer's.
       if (target.closest(".wm-gutter, .wm-label-edit, .wm-textbox-edit, .kind-menu, .context-menu, .float-menu")) return null
     }
+    // The handles stand ON the outline, half of each outside the object: going from the object to one of them (or
+    // along the outline between them) is staying on it, whatever the object under the pointer says for a moment.
+    const near = keepLayout.current
+    if (near && handleAt(near, docOn(pageSurface(), event), 12) !== null) return "keep"
     const within = scrollerRef.current
     const place = within ? inkCellPlaces.at(event.clientX, event.clientY, within) : null
     // A cell the pointer is a pen for (inkScope.ts) draws at a press: nothing there is what a click would take.
@@ -1512,10 +1548,17 @@ export function Canvas({
           break
         }
         case "scaling": {
-          const factor = scaleFactor(g.from, point, g.pivot)
+          // The anchor stays put (the opposite corner, or the middle of the opposite edge): handles.ts `resizeBy`.
+          const { pivot, factor } = resizeBy(g.handle, g.box, g.from, point)
           later(() => publishOn(s, edited(g.base, g.snapshot,
             (item, original) => transformed(item, original,
-              { scale: factor, pivot: g.pivot, size }))))
+              { scale: factor, pivot, size }))))
+          break
+        }
+        case "stretching": {
+          // The edge goes where the pointer goes along its own axis; the opposite edge does not move.
+          const grow = outward(g.edge, g.from, point)
+          later(() => publishOn(s, { items: stretchedDrawing(g.base.items, g.id, g.edge, grow, size, measureTextBox) }))
           break
         }
         case "rotating": {
@@ -1611,8 +1654,8 @@ export function Canvas({
           }
           change({ items: [...held.items, { kind: "connector", connector }] }, s)
           setSelection(new Set([connector.id]), s.cell)
-          // The bar that comes up once an arrow is drawn: its heads and its line.
-          setStyling(true)
+          // The bar that comes up once an arrow is drawn: its heads and its line, at its end (not the whole inspector).
+          setCompact(connector.id)
         }
       } else if (g.kind === "placing" && now.placing) {
         // A line from the palette runs from the press to the release and is attached to NOTHING (the Mac's
@@ -1638,7 +1681,7 @@ export function Canvas({
         } else if (item) {
           change({ items: [...held.items, item] }, s)
           setSelection(new Set([itemId(item)]), s.cell)
-          if (item.kind === "connector") setStyling(true)
+          if (item.kind === "connector") setCompact(item.connector.id)
         }
         now.onPlaced()
         // The palette has done its job: the keys go back to the notebook, as on the Mac where the popover closes
@@ -1649,7 +1692,7 @@ export function Canvas({
           focused.blur()
           scroller?.querySelector<HTMLElement>(".cm-content")?.focus({ preventScroll: true })
         }
-      } else if (g.kind === "moving" || g.kind === "scaling" || g.kind === "rotating"
+      } else if (g.kind === "moving" || g.kind === "scaling" || g.kind === "stretching" || g.kind === "rotating"
         || g.kind === "segment") {
         // The move already went through `onChange` as it happened; this is
         // the one that lands on the undo stack — and only when it moved. (The WHOLE drawing as it began: in a
@@ -1764,9 +1807,13 @@ export function Canvas({
         setGesture(null)
         return
       }
+      // (The inspector's popover closes itself on Escape first and stops the key; this is the belt.)
+      if (event.key === "Escape" && latest.current.pop) { setPop(null); return }
       if (event.key === "Escape" && latest.current.crop) { setCrop(null); return }
-      if (event.key === "Escape" && latest.current.styling) {
-        setStyling(false)
+      if (event.key === "Escape" && latest.current.compact) {
+        // The heads row is the arrow's moment (just drawn): Escape puts it, and the pick, away.
+        setCompact(null)
+        setSelection(new Set())
         // A tool armed at the same time is put away too: one Escape, not two.
         if (latest.current.placing) onPlaced()
         return
@@ -1941,21 +1988,8 @@ export function Canvas({
     return () => element.classList.remove("wm-hover-grab")
   }, [faint])
 
-  // The handles stand at the corners of the selection, but a thin selection (a
-  // flat stroke, a short line) would stack three 22-point buttons on top of one
-  // another; they are spread to a box at least this big, and the pivot stays put.
-  // Across the top there are three (turn, move, delete) and across the bottom up
-  // to four (group, crop, style, resize), each 22 wide: a tick one line of text
-  // across needs a box well wider than it is tall to keep them apart.
-  const MIN_SPAN_X = 96, MIN_SPAN_Y = 34
-  const hb = chromeBox ? {
-    x: chromeBox.x - Math.max(0, (MIN_SPAN_X - chromeBox.width) / 2),
-    y: chromeBox.y - Math.max(0, (MIN_SPAN_Y - chromeBox.height) / 2),
-    width: Math.max(chromeBox.width, MIN_SPAN_X),
-    height: Math.max(chromeBox.height, MIN_SPAN_Y),
-  } : null
   // The pick is on the page, or in one ink cell (its own items): crop and read are the page's only; docking is FROM
-  // the page. Every other handle (turn, resize, delete, move, group, style, a routed line's circles) works in a cell.
+  // the page. Every other control (turn, resize, delete, group, order, a routed line's circles) works in a cell.
   const onPage = chromeOn === null
   const grouping = toggle(chromeIds, chromeLayer.items)
   /** A press on a faint handle: what it stands round becomes the pick (the Mac's handleDrag: `selection = [hovered]`). */
@@ -1971,106 +2005,65 @@ export function Canvas({
     return s
   }
   const docks = onPage && dock !== undefined && dockable(drawing, chromeIds) !== null
-  // The style bar sits under the selection, or over it when there is no room.
-  const barSpot = hb ? (() => {
-    const wide = 340, tall = 176
-    const left = Math.round(Math.min(Math.max(hb.x, 8), Math.max(size.width - wide - 8, 8)))
-    const below = hb.y + hb.height - scroll + 40
-    const top = below + tall <= size.height ? below : Math.max(hb.y - scroll - tall - 34, 8)
-    return { left, top: Math.round(Math.min(Math.max(top, 8), Math.max(size.height - tall, 8))) }
-  })() : null
-  // A handle stays on the pane: an object at the edge of the view (or half
-  // scrolled off it) keeps every button within reach, as on the Mac, where
-  // they are clamped 14 points in.
-  const spot = (x: number, y: number, scrolled: number) => at(
-    Math.min(Math.max(x, 2), Math.max(size.width - 24, 2)),
-    Math.min(Math.max(y - scrolled, 2), Math.max(size.height - 24, 2)) + scrolled, scrolled)
+  const chromeItems = chromeLayer.items.filter((item) => chromeIds.has(itemId(item)))
+
+  // THE RING: eight handles on the dashed outline and a rotate dot on a stem above it, or one pill for a small object
+  // (handles.ts). A pick of arrows alone has neither (an arrow has its ends and its circles). While a picture is being
+  // cropped the crop box's own corners are the handles.
+  const view: Rect = { x: 0, y: scroll, width: size.width, height: size.height }
+  const layout: HandleLayout | null = chromeBox && wantsRing(chromeItems)
+    ? handleLayout(chromeBox, { view, edges: edgesFor(chromeItems) }) : null
+  // What the hover looks at as the pointer goes to a handle that stands half outside the object (see `hoverAt`).
+  keepLayout.current = faint ? layout : null
+
+  /** A press on one of the ring's (or the pill's) handles: it begins the gesture it stands for. */
+  const grab = (id: HandleId) => (event: React.PointerEvent) => {
+    event.preventDefault(); event.stopPropagation()
+    if (!chromeBox) return
+    adopt()
+    const s = fromHandle()
+    if (!s) return
+    // The selection's box and the press, in the surface's own px.
+    const local: Rect = { x: chromeBox.x - s.origin.x, y: chromeBox.y - s.origin.y, width: chromeBox.width, height: chromeBox.height }
+    const from = doc(event.nativeEvent)
+    const snapshot = snapshotOf(chromeLayer, chromeIds)
+    if (id === "rotate" || id === "pill-turn") {
+      const pivot = { x: local.x + local.width / 2, y: local.y + local.height / 2 }
+      start({ kind: "rotating", from: angleAbout(from, pivot), pivot, snapshot, base: chromeLayer }, event.pointerId)
+      return
+    }
+    if (id.length === 1 && stretches(chromeItems, id as Edge)) {
+      start({ kind: "stretching", id: itemId(chromeItems[0]!), edge: id as Edge, from, base: chromeLayer }, event.pointerId)
+      return
+    }
+    start({ kind: "scaling", from, handle: id as RingId | "pill-resize", box: local, snapshot, base: chromeLayer }, event.pointerId)
+  }
+  // A handle stays on the pane: an object at the edge of the view (or half scrolled off it) keeps every button within
+  // reach, as on the Mac, where they are clamped 14 points in (`handleLayout` does it, given `view`).
   const hoveredPicture = faint && hoverItem !== undefined && !hoverHandles(hoverItem)
-  const handles = chromeBox && hb && !gesture && chromeIds.size > 0 && !hoveredPicture ? (
+  const handles = chromeBox && !gesture && chromeIds.size > 0 && !hoveredPicture ? (
     <>
-      <button className="wm-handle" style={spot(hb.x - HANDLE, hb.y - HANDLE, scroll)}
-              title="Turn"
-              onPointerDown={(event) => {
-                event.preventDefault(); event.stopPropagation()
-                adopt()
-                const s = fromHandle()
-                if (!s) return
-                const pivot = { x: chromeBox.x + chromeBox.width / 2 - s.origin.x, y: chromeBox.y + chromeBox.height / 2 - s.origin.y }
-                start({
-                  kind: "rotating",
-                  from: angleAbout(doc(event.nativeEvent), pivot),
-                  pivot,
-                  snapshot: snapshotOf(chromeLayer, chromeIds),
-                  base: chromeLayer,
-                }, event.pointerId)
-              }}>⟳</button>
-      <button className="wm-handle" style={spot(hb.x + hb.width, hb.y + hb.height, scroll)}
-              title="Resize"
-              onPointerDown={(event) => {
-                event.preventDefault(); event.stopPropagation()
-                adopt()
-                const s = fromHandle()
-                if (!s) return
-                const pivot = { x: chromeBox.x + chromeBox.width / 2 - s.origin.x, y: chromeBox.y + chromeBox.height / 2 - s.origin.y }
-                start({
-                  kind: "scaling",
-                  from: doc(event.nativeEvent),
-                  pivot,
-                  snapshot: snapshotOf(chromeLayer, chromeIds),
-                  base: chromeLayer,
-                }, event.pointerId)
-              }}>⤡</button>
-      <button className="wm-handle" style={spot(hb.x + hb.width, hb.y - HANDLE, scroll)}
-              title="Delete"
-              onPointerDown={(event) => {
-                event.preventDefault(); event.stopPropagation()
-                const s = chromeSurface()
-                if (s) change(removing(chromeLayer, chromeIds), s)
-                setSelection(new Set())
-                setHover(null)
-              }}>✕</button>
-      {/* Dock what is picked into the note: a click puts it at the cursor (the armed bar, else after the caret's
-          cell); a drag shows the bar under the pointer and puts it where it is let go, or INTO an ink cell. */}
-      {docks && (
-        <button className="wm-handle wm-dock" data-handle="dock"
-                // Just outside the right edge, half way down: clear of Delete and Resize even on a flat stroke.
-                style={spot(hb.x + hb.width + 2 * HANDLE + 4, hb.y + hb.height / 2 - HANDLE, scroll)}
-                title="Dock into the note (click: at the cursor; drag: where you let go)"
-                onPointerDown={(event) => {
-                  event.preventDefault(); event.stopPropagation()
-                  adopt()
-                  surfaceRef.current = pageSurface()
-                  const at_ = { x: event.clientX, y: event.clientY }
-                  start({
-                    kind: "docking", ids: new Set(chromeIds), from: at_, to: at_, scroll: scrollRef.current,
-                    dragging: false, target: null,
-                  }, event.pointerId)
-                }}>⤵</button>
+      {layout && crop === null && (
+        <>
+          {layout.stem && (
+            <div className="wm-stem" style={{ ...at(layout.stem.x, layout.stem.y1, scroll), height: Math.max(0, Math.round(layout.stem.y2 - layout.stem.y1)) }} />
+          )}
+          {layout.kind === "pill" && (() => {
+            const [turn, resize] = layout.spots
+            const wide = PILL_SPACING + 26 + 6
+            return <div className="wm-pill" style={{ ...at((turn!.x + resize!.x) / 2 - wide / 2, turn!.y - 14, scroll), width: wide }} />
+          })()}
+          {layout.spots.map((spot) => (
+            <button key={spot.id} type="button" data-handle={spot.id} title={handleTitle(spot.id)}
+                    className={`wm-handle${spot.id === "rotate" ? " wm-turn" : spot.id.startsWith("pill-") ? " wm-pillbtn" : " wm-grab"}`}
+                    style={{ ...at(spot.x, spot.y, scroll), cursor: handleCursor(spot.id) }}
+                    onPointerDown={grab(spot.id)}>
+              {spot.id === "pill-turn" && <Icon name="rotate" size={14} />}
+              {spot.id === "pill-resize" && <Icon name="resize" size={14} />}
+            </button>
+          ))}
+        </>
       )}
-      {onPage && !faint && onReadPicture && selection.size === 1 && (() => {
-        const only = drawing.items.find((item) => itemId(item) === [...selection][0])
-        if (!only || only.kind !== "image") return null
-        return (
-          <button className="wm-handle wm-handle-wide" style={spot(hb.x - HANDLE, hb.y + hb.height / 2, scroll)}
-                  title="Read the words out of this picture"
-                  onPointerDown={(event) => {
-                    event.preventDefault(); event.stopPropagation()
-                    onReadPicture(only.image.file, only.image.id)
-                  }}>Aa</button>
-        )
-      })()}
-      {onPage && !faint && selection.size === 1 && (() => {
-        const only = drawing.items.find((item) => itemId(item) === [...selection][0])
-        if (!only || only.kind !== "image") return null
-        return (
-          <button className="wm-handle" title="Crop this picture"
-                  style={spot(hb.x + hb.width / 2 - HANDLE, hb.y + hb.height, scroll)}
-                  onPointerDown={(event) => {
-                    event.preventDefault(); event.stopPropagation()
-                    setCrop({ id: only.image.id, rect: { x: 0, y: 0, width: 1, height: 1 } })
-                  }}>✂</button>
-        )
-      })()}
       {/* The circle on each segment of a routed line: drag it and the segment
           goes with the pointer, the line routed again around it (on the page, or in its cell). */}
       {chromeFrame && chromeLayer.items.flatMap((item) => {
@@ -2095,51 +2088,88 @@ export function Canvas({
                   }} />
         ))
       })}
-      {/* Hold what is picked together, or take it apart: the button says which
-          it will do, and ⌃G does the same. */}
-      {grouping !== "nothing" && (
-        <button className="wm-handle wm-handle-group" data-group={grouping}
-                style={spot(hb.x + hb.width / 2 - HANDLE / 2 + 18, hb.y + hb.height, scroll)}
-                title={grouping === "ungroup" ? "Ungroup these (⌃G does too)" : "Group these (⌃G does too)"}
-                onPointerDown={(event) => {
-                  event.preventDefault(); event.stopPropagation()
-                  const s = chromeSurface()
-                  const next = s ? toggled(chromeIds, chromeLayer.items) : null
-                  setHover(null)
-                  if (next && s) {
-                    change({ items: next }, s)
-                    // The handles go round the whole of what is held at once.
-                    setSelection(whole(chromeIds, next), s.cell)
-                  }
-                }}>{grouping === "ungroup" ? "Ungroup" : "Group"}</button>
-      )}
-      {/* Dragging the ink moves it too, but a thin stroke is a small target and a
-          picture under the pointer is not obviously draggable: a button says so. */}
-      <button className="wm-handle" data-handle="move"
-              style={spot(hb.x + hb.width / 2 - HANDLE, hb.y - HANDLE, scroll)}
-              title="Drag to move"
-              onPointerDown={(event) => {
-                event.preventDefault(); event.stopPropagation()
-                adopt()
-                if (!fromHandle()) return
-                start({ kind: "moving", from: doc(event.nativeEvent), snapshot: snapshotOf(chromeLayer, chromeIds), base: chromeLayer }, event.pointerId)
-              }}>✥</button>
-      {/* Colour, width, fill, an arrow's heads and line, the order, a copy. */}
-      <button className={`wm-handle${styling && !faint ? " wm-handle-on" : ""}`} data-handle="style"
-              style={spot(hb.x - HANDLE, hb.y + hb.height, scroll)}
-              title="Colour, width, heads and line"
-              onPointerDown={(event) => {
-                event.preventDefault(); event.stopPropagation()
-                if (faint) { adopt(); setStyling(true); return }
-                setStyling((was) => !was)
-              }}>◐</button>
-      {styling && !faint && barSpot && (
-        <StyleBar items={pickLayer.items.filter((item) => selection.has(itemId(item)))}
-                  left={barSpot.left} top={barSpot.top}
-                  onPatch={applyStyle} onOrder={orderSelection} onDuplicate={duplicate}
-                  onClose={() => setStyling(false)} />
-      )}
     </>
+  ) : null
+
+  // MARK: - The inspector
+
+  /** What the bar does, on the pick (a press is cancelled before it reaches here: see Inspector.tsx). */
+  const pickedItems = pickLayer.items.filter((item) => selection.has(itemId(item)))
+  const compactOn = compact !== null && selection.size === 1 && selection.has(compact)
+  const deletePicked = () => {
+    const s = pickedRef.current()
+    if (s) change(removing(latest.current.pickLayer, latest.current.selection), s)
+    setSelection(new Set())
+    setHover(null)
+  }
+  const groupPicked = () => {
+    const s = pickedRef.current()
+    const next = s ? toggled(latest.current.selection, latest.current.pickLayer.items) : null
+    setHover(null)
+    if (next && s) {
+      change({ items: next }, s)
+      // The handles go round the whole of what is held at once.
+      setSelection(whole(latest.current.selection, next), s.cell)
+    }
+  }
+  const plan = inspectorPlan(pickedItems, {
+    docks, reads: onReadPicture !== undefined && onPage, grouping, editing: crop !== null || labelling !== null, compact: compactOn,
+  })
+  /** Where the bar stands: over the object, under it when there is no room above, kept on the pane (inspectorRules.ts). */
+  const barSpot = (() => {
+    if (!box || plan.groups.length === 0 || faint) return null
+    const bar = barSize ?? { width: estimatedWidth(plan), height: BAR_HEIGHT }
+    const only = pickedItems[0]
+    if (compactOn && only?.kind === "connector" && chromeFrame) {
+      // An arrow just drawn: its heads row at the arrow's end, on the side the arrow does not come from.
+      const points = pixelRoute(only.connector, chromeFrame.size).map((p) => applyMatrix(only, chromeFrame.size, p))
+      const toPane = (p: Point): Point => ({ x: chromeFrame.origin.x + p.x, y: chromeFrame.origin.y + p.y - scroll })
+      const end = toPane(points[points.length - 1]!), start_ = toPane(points[0]!)
+      // It must not lie on the arrow, nor on the nodes it joins: a bar on the node just joined was in the way of the
+      // next press (the node moves by a drag of its body).
+      const layerNow = chromeLayer
+      const held_ = new Set([only.connector.startNode, only.connector.endNode].filter((id): id is string => id !== null))
+      const around = layerNow.items.filter((item) => held_.has(itemId(item)) || item === only)
+        .map((item) => bounds(item, chromeFrame.size))
+        .map((r) => ({ x: chromeFrame.origin.x + r.x - 4, y: chromeFrame.origin.y + r.y - scroll - 4, width: r.width + 8, height: r.height + 8 }))
+      return inspectorSpot({ target: pointBox(end), bar, pane: size, prefer: sideAwayFrom(start_, end), avoid: around, alternatives: true })
+    }
+    const ring = layout?.kind === "ring"
+    return inspectorSpot({
+      target: { x: box.x, y: box.y - scroll, width: box.width, height: box.height }, bar, pane: size,
+      reserveAbove: ring ? OUTLINE_PAD + ROTATE_REACH + 8 : OUTLINE_PAD + 4,
+      // (While a picture is cropped its own two buttons stand under it: the bar clears them.)
+      reserveBelow: (layout?.kind === "pill" ? OUTLINE_PAD + PILL_REACH + 16 : OUTLINE_PAD + 6) + (crop !== null ? 42 : 0),
+    })
+  })()
+  const inspector = barSpot && !gesture && chromeIds.size > 0 && !faint ? (
+    <Inspector plan={plan} items={pickedItems} left={barSpot.left} top={barSpot.top}
+               pop={pop} onPop={setPop} grouping={grouping}
+               onPatch={applyStyle} onOrder={orderSelection} onDuplicate={duplicate} onDelete={deletePicked} onGroup={groupPicked}
+               onLabel={() => {
+                 const only = pickedItems[0]
+                 if (only?.kind !== "shape") return
+                 openBox.current = false
+                 setLabelling({ id: only.shape.id, text: only.shape.label, on: pick.on })
+               }}
+               onCrop={() => {
+                 const only = pickedItems[0]
+                 if (only?.kind === "image") setCrop({ id: only.image.id, rect: { x: 0, y: 0, width: 1, height: 1 } })
+               }}
+               onRead={() => {
+                 const only = pickedItems[0]
+                 if (only?.kind === "image") onReadPicture?.(only.image.file, only.image.id)
+               }}
+               onDockPress={(event) => {
+                 event.preventDefault(); event.stopPropagation()
+                 surfaceRef.current = pageSurface()
+                 const at_ = { x: event.clientX, y: event.clientY }
+                 start({
+                   kind: "docking", ids: new Set(chromeIds), from: at_, to: at_, scroll: scrollRef.current,
+                   dragging: false, target: null,
+                 }, event.pointerId)
+               }}
+               onMeasure={(measured) => setBarSize((was) => was && was.width === measured.width && was.height === measured.height ? was : measured)} />
   ) : null
   /** The outline round what a click would take: faint and dashed (the pick's own box is on the ink canvas). */
   const hoverOutline = faint && hoverBox ? (
@@ -2339,10 +2369,10 @@ export function Canvas({
         </div>
         <div className="wm-crop-bar"
              style={{ left: Math.round(outer.x + outer.width / 2 - 36), top: Math.round(outer.y + outer.height - scroll + 6) }}>
-          <button className="wm-handle wm-crop-ok" title="Keep this part"
-                  onPointerDown={(event) => { event.preventDefault(); event.stopPropagation(); void applyCrop() }}>✓</button>
-          <button className="wm-handle wm-crop-cancel" title="Leave the picture as it is"
-                  onPointerDown={(event) => { event.preventDefault(); event.stopPropagation(); setCrop(null) }}>✕</button>
+          <button className="wm-crop-btn wm-crop-ok" title="Keep this part" aria-label="Keep this part"
+                  onPointerDown={(event) => { event.preventDefault(); event.stopPropagation(); void applyCrop() }}><Icon name="check" /></button>
+          <button className="wm-crop-btn wm-crop-cancel" title="Leave the picture as it is" aria-label="Leave the picture as it is"
+                  onPointerDown={(event) => { event.preventDefault(); event.stopPropagation(); setCrop(null) }}><Icon name="close" /></button>
         </div>
       </>
     )
@@ -2365,6 +2395,7 @@ export function Canvas({
       <div className={`wm-handles${faint ? " wm-handles-faint" : ""}`}>
         {hoverOutline}
         {handles}
+        {inspector}
         {labelEditor}
         {boxEditor}
         {cropEditor}

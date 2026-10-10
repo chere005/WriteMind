@@ -440,9 +440,9 @@ A press on the words lets go of the pick, which gives the keys back.
 | Ctrl+C / Ctrl+X / Ctrl+V | copy / cut / paste the picked objects (a paste lands 16 points down and right; from another note it is brought into view) |
 | Ctrl+G | group / ungroup (the Mac's ⌃G) |
 | Backspace / Delete | delete the picked objects |
-| Esc | closes the style bar (and puts an armed tool away), then lets go of the pick |
+| Esc | closes the inspector's open popover (colour, width, fill, order) and nothing else; else, on the heads row an arrow's drawing brings up, puts it, the pick and an armed tool away; else closes a crop box; else lets go of the pick (and puts an armed tool away) |
 | Alt+drag from a node | draws an attached arrow (the Mac's ⌥-drag) |
-| Shift while turning | 15 degree steps |
+| Shift while turning (the rotate dot) | 15 degree steps |
 | Ctrl+drag | the marquee (the Mac's ⌘-drag) |
 
 ## The divider, the menus and the tabs (chrome)

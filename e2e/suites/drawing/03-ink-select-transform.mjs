@@ -3,7 +3,7 @@
 // picks many, Ctrl+G groups, Backspace deletes, Ctrl+Z restores. (Was tour/t10 and t11.)
 import { ok, finish, js, sleep, freshNote, setPen, canvasBox, saved, handles, key, click, dragPath, line, shot, footer, CTRL } from "../../lib/harness.mjs"
 
-const file = await freshNote()
+const file = await freshNote({ rendered: true })
 const cb = await canvasBox()
 const X = (dx) => cb.x + dx, Y = (dy) => cb.y + dy
 const items = async () => (await saved(file)).items
@@ -42,7 +42,7 @@ const afterMove = await strokes()
 const moved = afterMove.filter((x, i) => JSON.stringify(x.transform ?? null) !== JSON.stringify(before[i]))
 ok("dragging the picked stroke moves exactly one stroke", moved.length === 1, `${moved.length} changed`)
 hs = await handles()
-const resize = hs.find((h) => h.t === "Resize")
+const resize = hs.find((h) => h.h === "se")   // (a corner: the selection scales about the opposite corner)
 const w0 = (() => { const xs = hs.map((h) => h.x); return Math.max(...xs) - Math.min(...xs) })()
 await dragPath(line([resize.x, resize.y], [resize.x + 100, resize.y + 60], 15)); await sleep(200)
 hs = await handles()
@@ -62,8 +62,8 @@ await dragPath(line([X(60), Y(120)], [X(cb.w - 80), Y(cb.h - 120)], 20), { modif
 hs = await handles()
 ok("a Ctrl-drag marquee over everything picks all three", hs.length >= 3, JSON.stringify(hs.map((h) => h.t)))
 // the row of buttons under the picked ink: the palette (◐) on the left, Group to its right, the pill fitting its word
-const row = JSON.parse(await js(`(()=>{const q=(sel)=>{const b=document.querySelector(sel);if(!b)return null;const r=b.getBoundingClientRect();return {x:r.x,w:r.width,sw:b.scrollWidth,cw:b.clientWidth}};return JSON.stringify({style:q('[data-handle=style]'),group:q('.wm-handle-group')})})()`))
-ok("the palette is left of the Group button (Sean, 2026-10-06)", row.style && row.group && row.style.x < row.group.x, JSON.stringify(row))
+const row = JSON.parse(await js(`(()=>{const q=(sel)=>{const b=document.querySelector(sel);if(!b)return null;const r=b.getBoundingClientRect();return {x:r.x,w:r.width,sw:b.scrollWidth,cw:b.clientWidth}};return JSON.stringify({order:q('[data-insp=order]'),group:q('[data-insp=group]'),copy:q('[data-insp=duplicate]'),del:q('[data-insp=delete]'),name:document.querySelector('[data-insp=name]')?.textContent})})()`))
+ok("the inspector over several objects has Group, then order, copy and delete (Sean, 2026-10-10: one bar)", row.group && row.order && row.copy && row.del && row.group.x < row.order.x && row.order.x < row.copy.x && row.copy.x < row.del.x && row.name === "3 objects", JSON.stringify(row))
 ok("the Group button fits around its word (wider than a 22 px circle, the word inside it)", row.group && row.group.w > 30 && row.group.sw <= row.group.cw, JSON.stringify(row.group))
 await shot("group-row")
 await key("g", { ctrl: true }); await sleep(250)

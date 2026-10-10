@@ -177,8 +177,8 @@ export async function seedNotes(files, { reload = true, clean = false } = {}) {
 // Input: real events through the browser's own input pipeline
 // ---------------------------------------------------------------------------------------------------------------
 export const CTRL = 2, SHIFT = 8, ALT = 1, META = 4
-/** The platform's command modifier as `key` options: ⌘ on a Mac, Ctrl elsewhere (the app's `CmdOrCtrl`). */
-export const MOD = process.platform === "darwin" ? { meta: true } : { ctrl: true }
+/** The command key of THIS machine (CmdOrCtrl): ⌘ on a Mac, Ctrl elsewhere. A script that tests a command asks for it. */
+export const MOD = process.platform === "darwin" ? META : CTRL
 const modBits = (o = {}) => (o.modifiers ?? 0) | (o.ctrl ? CTRL : 0) | (o.shift ? SHIFT : 0) | (o.alt ? ALT : 0) | (o.meta ? META : 0)
 
 export const mouse = (type, x, y, o = {}) => send("Input.dispatchMouseEvent", {
@@ -225,6 +225,7 @@ export const line = (a, b, n = 12) => Array.from({ length: n + 1 }, (_, i) => [a
 export const seg = (x0, y0, x1, y1, n = 10) => line([x0, y0], [x1, y1], n)
 export const rectPts = (x, y, w, h, n = 8) => [...seg(x, y, x + w, y, n), ...seg(x + w, y, x + w, y + h, n).slice(1), ...seg(x + w, y + h, x, y + h, n).slice(1), ...seg(x, y + h, x, y, n).slice(1)]
 
+const MAC_EDITING = { a: "selectAll", c: "copy", x: "cut", v: "paste" }
 const VK = {
   Enter: 13, Backspace: 8, Tab: 9, Escape: 27, Delete: 46, Insert: 45, " ": 32, Space: 32,
   ArrowLeft: 37, ArrowUp: 38, ArrowRight: 39, ArrowDown: 40, Home: 36, End: 35, PageUp: 33, PageDown: 34,
@@ -249,8 +250,10 @@ export async function key(k, o = {}) {
   const chord = [[mods & CTRL, "Control", "ControlLeft", 17, CTRL], [mods & SHIFT, "Shift", "ShiftLeft", 16, SHIFT], [mods & ALT, "Alt", "AltLeft", 18, ALT]].filter((m) => m[0])
   let acc = 0
   for (const [, name, c, v, bit] of chord) { acc |= bit; await send("Input.dispatchKeyEvent", { type: "rawKeyDown", key: name, code: c, windowsVirtualKeyCode: v, modifiers: acc }) }
-  const text = o.text ?? (k === "Enter" ? "\r" : k.length === 1 && !(mods & (CTRL | ALT)) ? k : undefined)
-  await send("Input.dispatchKeyEvent", { type: text ? "keyDown" : "rawKeyDown", key: k, code, windowsVirtualKeyCode: vk, modifiers: mods, text, autoRepeat: !!o.autoRepeat })
+  const text = o.text ?? (k === "Enter" ? "\r" : k.length === 1 && !(mods & (CTRL | ALT | META)) ? k : undefined)
+  // On a Mac the editing chords (⌘A / C / X / V) are carried out by the key event's `commands`, as AppKit sends them.
+  const editing = process.platform === "darwin" && (mods & META) && !(mods & (CTRL | ALT)) ? MAC_EDITING[k.toLowerCase()] : undefined
+  await send("Input.dispatchKeyEvent", { type: text ? "keyDown" : "rawKeyDown", key: k, code, windowsVirtualKeyCode: vk, modifiers: mods, text, autoRepeat: !!o.autoRepeat, ...(editing ? { commands: [editing] } : {}) })
   await send("Input.dispatchKeyEvent", { type: "keyUp", key: k, code, windowsVirtualKeyCode: vk, modifiers: mods })
   for (const [, name, c, v, bit] of [...chord].reverse()) { acc &= ~bit; await send("Input.dispatchKeyEvent", { type: "keyUp", key: name, code: c, windowsVirtualKeyCode: v, modifiers: acc }) }
   await sleep(o.wait ?? 80)
@@ -391,8 +394,11 @@ export async function pickCodeLanguage(language) {
 }
 
 // ---- drawings (drawing.json inside a note)
-/** A fresh note, open, with the pen up. Returns its path. */
-export async function freshNote({ video = false } = {}) {
+/**
+ * A fresh note, open, with the pen up. Returns its path. `rendered`: the page ink layer (`.wm-canvas`) belongs to the
+ * rendered page (2.17.0), so a script that draws asks for it; the others keep the source editor they always had.
+ */
+export async function freshNote({ video = false, rendered = false } = {}) {
   await waitFor(`!!window.wm`)
   // The video pane may start open; editor and drawing tests want the whole width unless they ask for it.
   if (!video && (await js(`!!document.querySelector('.camera')`))) { await js(`document.querySelector('[data-bar=video]')?.click()`); await sleep(300) }
@@ -401,6 +407,7 @@ export async function freshNote({ video = false } = {}) {
   await sleep(900)
   const name = file.split(/[\\/]/).pop().replace(/\.wm$/, "")
   await js(`(() => { const r=[...document.querySelectorAll('.note-row')]; const m=r.find(x=>x.dataset.path===${JSON.stringify(file)})||r.find(x=>x.textContent.includes(${JSON.stringify(name)}))||r[0]; m.click() })()`)
+  if (rendered) { await waitFor(`!!document.querySelector('.cm-editor')`); await setRendered(true) }
   await waitFor(`!!document.querySelector('.wm-canvas')`)
   await setPen(false)
   await sleep(500)
@@ -437,7 +444,7 @@ export const arm = async (value) => {
   if (!done) await key("Escape")
   return done
 }
-export const handles = async () => JSON.parse(await js(`JSON.stringify([...document.querySelectorAll('.wm-handle')].map(h=>{const r=h.getBoundingClientRect();return {t:h.title,x:r.x+r.width/2,y:r.y+r.height/2,w:r.width}}))`))
+export const handles = async () => JSON.parse(await js(`JSON.stringify([...document.querySelectorAll('.wm-handle')].map(h=>{const r=h.getBoundingClientRect();return {t:h.title,h:h.dataset.handle||null,x:r.x+r.width/2,y:r.y+r.height/2,w:r.width}}))`))
 /** Select everything on the drawing layer with a Ctrl-drag marquee and delete it. */
 export async function clearDrawing() {
   await setPen(false)

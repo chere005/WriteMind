@@ -7,7 +7,7 @@
 import { readWm } from "../../lib/wm.mjs"
 import {
   ok, finish, js, send, sleep, freshNote, saved, arm, line, dragPath, rightClick, key, shot, handles, setDoc, focus,
-  canvasBox, noteFileExists, CTRL,
+  canvasBox, noteFileExists, CTRL, MOD, centerOf,
 } from "../../lib/harness.mjs"
 
 const hover = (x, y) => send("Input.dispatchMouseEvent", { type: "mouseMoved", x, y, button: "none", buttons: 0 })
@@ -31,11 +31,11 @@ const near = (a, b, px = 3) => a && b && ["x0", "y0", "x1", "y1"].every((k) => M
 const menuItems = async () => JSON.parse(await js(`JSON.stringify([...document.querySelectorAll('#cell-menu button')].map(b=>b.textContent.trim()))`))
 const choose = (label) => js(`[...document.querySelectorAll('#cell-menu button')].find(b=>b.textContent.trim().startsWith(${JSON.stringify(label)}))?.click()`)
 
-const file = await freshNote()
+const file = await freshNote({ rendered: true })
 const WORDS = "# Undock\n\nAbove the cell.\n\nBelow the cell."
 await setDoc(WORDS, 0)
 await focus(); await js(`${VIEW}.dispatch({selection:{anchor:25}})`)
-await key("0", { modifiers: CTRL }); await sleep(700)
+await key("0", { modifiers: MOD }); await sleep(700)
 let c = await cellBox()
 ok("a drawing cell", !!c)
 // The pointer is a pen for the new cell: a stroke in it; then a rectangle from the top bar.
@@ -77,7 +77,7 @@ ok("...the cell is back with both objects, and nothing floats", d.items.find((i)
   && !d.items.some((i) => i.kind === "stroke" || i.kind === "shape"), JSON.stringify(d.items.map((i) => i.kind)))
 await sleep(300)
 ok("...drawn in its cell again", near(await inkBox(".wm-inkcell canvas"), shown))
-await key("y", { modifiers: CTRL }); await sleep(700)
+await key("z", { modifiers: CTRL | 8 }); await sleep(700)
 d = await saved(file, (x) => !x.items.some((i) => i.kind === "cell"))
 ok("Ctrl+Y: undocked again", (await text()) === WORDS && d.items.filter((i) => i.kind !== "cell").length === 2)
 await key("z", { modifiers: CTRL }); await sleep(700)
@@ -86,7 +86,7 @@ await key("z", { modifiers: CTRL }); await sleep(700)
 await setDoc(WORDS, 25); await sleep(300)
 await js(`(async()=>{const c=document.createElement('canvas');c.width=320;c.height=180;const x=c.getContext('2d');x.fillStyle='#d94';x.fillRect(0,0,320,180);x.fillStyle='#246';x.fillRect(40,40,120,90);const blob=await new Promise(r=>c.toBlob(r,'image/png'));const dt=new DataTransfer();dt.items.add(new File([blob],'p.png',{type:'image/png'}));document.dispatchEvent(new ClipboardEvent('paste',{clipboardData:dt,bubbles:true,cancelable:true}))})()`)
 await sleep(1300)
-const dock = (await handles()).find((h) => /^Dock/.test(h.t))
+const dock = await centerOf('.wm-insp [data-insp="dock"]')   // (the dock control is in the inspector now)
 ok("a pasted picture, picked, with the dock handle", !!dock)
 if (dock) {
   await focus(); await js(`${VIEW}.dispatch({selection:{anchor:25}})`)

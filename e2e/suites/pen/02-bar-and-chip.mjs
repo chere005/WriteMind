@@ -5,7 +5,7 @@ import { reloadApp, ok, finish, js, sleep, freshNote, setPen, penIsDown, pe, pre
 
 await js(`localStorage.clear()`)
 await reloadApp()          // a pen seen earlier in this app is remembered; start as a new one
-const file = await freshNote()
+const file = await freshNote({ rendered: true })
 const wraps = await js(`JSON.stringify([...document.querySelectorAll('.top-bar button, .top-bar select')].filter(b=>b.getBoundingClientRect().height>37).map(b=>b.title||b.textContent))`)
 ok("no top-bar button is taller than a row (no wrapped labels)", wraps === "[]", wraps)
 

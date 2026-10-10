@@ -5,7 +5,7 @@
 // Real mouse and keys. Unit side: apps/desktop/test/drawingHover.test.ts.
 import {
   ok, finish, js, send, sleep, freshNote, canvasBox, saved, setPen, dragPath, line, click, key, shot, handles,
-  setDoc, focus, clearDrawing, CTRL,
+  setDoc, focus, clearDrawing, CTRL, MOD,
 } from "../../lib/harness.mjs"
 
 /** The mouse moved with NO button held (the harness hover() moves with the left button down: buttons 1). */
@@ -20,7 +20,7 @@ async function handDrag(pts) {
   await sleep(120)
 }
 
-const file = await freshNote()
+const file = await freshNote({ rendered: true })
 await setDoc("# Hover\n\nSome words here, with a stroke drawn over the page beside them.\n\nMore words further down.", 0)
 const cb = await canvasBox()
 const X = (dx) => cb.x + dx, Y = (dy) => cb.y + dy
@@ -67,8 +67,8 @@ ok("moving off it puts the outline and the handles away", !s.box && s.handles ==
 
 // ---- back on it, then on to a handle: they stay, and a drag on one picks and moves the stroke
 await glide([X(1000), Y(620)], [X(620), Y(345)]); await sleep(250)
-const grip = (await handles()).find((h) => /move/i.test(h.t))
-ok("a faint 'Drag to move' handle", !!grip)
+const grip = (await handles()).find((h) => h.h === "se")   // (2026-10-10: the move disc is gone; a handle of the ring)
+ok("a faint resize handle", !!grip)
 if (grip) {
   await glide([X(620), Y(345)], [grip.x, grip.y], 5); await sleep(400)
   s = await state()
@@ -77,7 +77,7 @@ if (grip) {
   await handDrag(line([grip.x, grip.y], [grip.x + 40, grip.y + 120], 10)); await sleep(300)
   d = await saved(file, (x) => x.items.some((i) => i.id === stroke.id && i.transform?.dy > 0))
   const moved = d.items.find((i) => i.id === stroke.id)
-  ok("a drag on a faint handle moves the object", moved?.transform && moved.transform.dy > 0.05, JSON.stringify(moved?.transform))
+  ok("a drag on a faint handle picks the object and scales it", moved?.transform && moved.transform.scale > 1.05, JSON.stringify(moved?.transform))
   s = await state()
   ok("...and picks it: its handles are the pick's now, at full strength", !s.faint && !s.box && s.handles >= 4, JSON.stringify(s))
   await shot("picked-by-handle")
@@ -116,7 +116,7 @@ if (image) {
 await clearDrawing()
 await setDoc("# Hover\n\nA drawing cell below.", 0)
 await focus(); await js(`document.querySelector('.cm-content').cmTile.view.dispatch({selection:{anchor:20}})`)
-await key("0", { modifiers: CTRL }); await sleep(600)
+await key("0", { modifiers: MOD }); await sleep(600)
 const cell = await js(`(()=>{const e=document.querySelector('.wm-inkcell canvas');if(!e)return null;const r=e.getBoundingClientRect();return JSON.stringify({x:r.x,y:r.y,w:r.width,h:r.height})})()`).then((t) => (t ? JSON.parse(t) : null))
 ok("Ctrl+0 makes a drawing cell", !!cell)
 if (cell) {

@@ -3,11 +3,11 @@
 // letter of the note), a pick that is gone does not swallow keys, typing ends a pick, Enter confirms a crop,
 // and a cancelled label does not swallow the next one. Unit side: apps/desktop/test/layerKeys.test.ts.
 import {
-  js, ok, finish, sleep, drag, click, dblclick, key, typeText, freshNote, saved, canvasBox, arm, CTRL, SHIFT,
+  js, ok, finish, sleep, drag, click, dblclick, key, typeText, freshNote, saved, canvasBox, arm, CTRL, MOD, SHIFT,
   doc, setDoc, sel, setSel, focus, handles, shot, waitFor, press, line, send,
 } from "../../lib/harness.mjs"
 
-const file = await freshNote()
+const file = await freshNote({ rendered: true })
 const cb = await canvasBox()
 const X = (dx) => cb.x + dx, Y = (dy) => cb.y + dy
 const items = async () => (await saved(file)).items
@@ -113,10 +113,10 @@ ok("and the very next Ctrl+Z takes THAT back (no dead drawing entry in the way)"
 // 4. The words win once they are selected: click a shape, Ctrl+A in the note, Ctrl+X cuts the TEXT.
 await setDoc("some words", 10); await focus()
 await place()
-await key("a", { modifiers: CTRL })
+await key("a", { modifiers: MOD })
 ok("Ctrl+A in the note selects the words", JSON.stringify(await sel()) === "[0,10]" || JSON.stringify(await sel()) === "[10,0]", JSON.stringify(await sel()))
 ok("...and lets go of the shape", (await handleCount()) === 0)
-await key("x", { modifiers: CTRL })
+await key("x", { modifiers: MOD })
 ok("Ctrl+X cuts the words", (await doc()) === "", JSON.stringify(await doc()))
 ok("...and leaves the shape", (await shapes()).length === 1)
 await key("z", { modifiers: CTRL })
@@ -131,7 +131,7 @@ await key("ArrowRight"); await key("ArrowRight", { shift: true }); await key("Ar
 const at1 = (await shapes())[0].transform
 ok("arrows nudge the picked shape", at1.dx > at0.dx && at1.dy > at0.dy, JSON.stringify([at0, at1]))
 ok("...and the caret in the note did not move", (await caret()) === 3, String(await caret()))
-await key("x", { modifiers: CTRL })
+await key("x", { modifiers: MOD })
 ok("Ctrl+X cuts the picked object", (await shapes()).length === 0 && (await doc()) === "abcdef", JSON.stringify(await doc()))
 
 // ---------------------------------------------------------------------------------------------------------------
@@ -206,8 +206,8 @@ await setDoc("Crop enter", 10); await focus()
 await pasteQuad()
 let pic = (await items()).find((i) => i.kind === "image")
 ok("a pasted picture is on the layer", !!pic)
-ok("...and arrives picked, with a crop button", await js(`!!document.querySelector('.wm-handle[title="Crop this picture"]')`))
-let c = await centre('.wm-handle[title="Crop this picture"]')
+ok("...and arrives picked, with a crop button", await js(`!!document.querySelector('.wm-insp [data-insp="crop"]')`))
+let c = await centre('.wm-insp [data-insp="crop"]')
 await click(c.x, c.y)
 await sleep(250)
 ok("the crop box opens", await js(`!!document.querySelector('.wm-crop')`))
@@ -227,7 +227,7 @@ await click(X(cb.w / 2), Y(cb.h - 40)); await sleep(100)
 pic = (await items()).find((i) => i.kind === "image")
 const cxy = { x: pic.center.x * cb.w, y: pic.center.y * cb.h }
 await click(X(cxy.x), Y(cxy.y)); await sleep(200)
-c = await centre('.wm-handle[title="Crop this picture"]')
+c = await centre('.wm-insp [data-insp="crop"]')
 await click(c.x, c.y); await sleep(250)
 ok("the crop box opens again", await js(`!!document.querySelector('.wm-crop')`))
 await focus()
@@ -237,7 +237,7 @@ ok("...and leaves the picture alone", (await items()).find((i) => i.kind === "im
 
 // A box left open stays with its own note.
 await click(X(cxy.x), Y(cxy.y)); await sleep(200)
-c = await centre('.wm-handle[title="Crop this picture"]')
+c = await centre('.wm-insp [data-insp="crop"]')
 await click(c.x, c.y); await sleep(250)
 ok("a crop box is open", await js(`!!document.querySelector('.wm-crop')`))
 await js(`(() => { const r = [...document.querySelectorAll('.note-row')].find(x => x.dataset.path === ${JSON.stringify(second)}); r?.click() })()`)

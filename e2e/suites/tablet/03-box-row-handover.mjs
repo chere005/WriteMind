@@ -14,7 +14,7 @@ import { feedConfig, inject, sample, sheetStrokes, strokeSamples } from "../../l
 
 await js(`localStorage.removeItem('writemind.pen')`)
 await noGrab()
-const file = await freshNote({ video: true })
+const file = await freshNote({ video: true, rendered: true })
 await showVideoPane()
 await pickTablet()
 await setOrientation(0); await sleep(350)   // the feed's samples land on the sheet as given

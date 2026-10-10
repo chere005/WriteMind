@@ -1,8 +1,8 @@
 // The tablet as a source for the video pane: write, box, chart, page, undo, erase. 
-import { hover, pickFromMenu, press, noGrab, penHover, js, ok, finish, sleep, freshNote, saved, key, CTRL, ALT, mouse, pe, penStroke, seg, rectPts, tabletBox, pickTablet, barBtn, takeBtn, shot, waitFor } from "../../lib/harness.mjs"
+import { hover, pickFromMenu, setSelect, press, noGrab, penHover, js, ok, finish, sleep, freshNote, saved, key, CTRL, MOD, ALT, mouse, pe, penStroke, seg, rectPts, tabletBox, pickTablet, barBtn, takeBtn, shot, waitFor } from "../../lib/harness.mjs"
 
 await noGrab()
-const file = await freshNote({ video: true })
+const file = await freshNote({ video: true, rendered: true })
 await js(`!document.querySelector('.camera') && [...document.querySelectorAll('button')].find(b => b.dataset.bar === 'video')?.click()`)
 await waitFor(`!!document.querySelector('.camera')`)
 await pickTablet()
@@ -115,12 +115,12 @@ ok("...and the footer line says which pen button rubs out", /hold button 1 to er
 await penStroke(seg(X + 40, Y + 200, X + 200, Y + 200, 14))
 const drawn = await px()
 await js(`document.querySelector('.cm-content').focus()`)
-await key("2", { modifiers: CTRL | ALT })
+await key("2", { modifiers: MOD | ALT })
 ok("the pen's Erase Tool (Ctrl+Alt+2) turns the sheet's eraser on, and the hint says how to put it down", /Erasing: touch a stroke \(Erase Tool, Ctrl\+Alt\+2/.test(await hint()), await hint())
 await pe("pointerdown", X + 120, Y + 203, { pressure: 0.4 }); await pe("pointermove", X + 125, Y + 203); await pe("pointerup", X + 125, Y + 203, { buttons: 0 })
 await sleep(120)
 ok("...and it rubs out the stroke under the pen", (await px()) === 0 && drawn > 100)
-await key("2", { modifiers: CTRL | ALT })
+await key("2", { modifiers: MOD | ALT })
 ok("Ctrl+Alt+2 again puts it down", !/Erasing/.test(await hint()), await hint())
 await penStroke(seg(X + 40, Y + 220, X + 200, Y + 220, 14))
 const keep = await px()

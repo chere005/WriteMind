@@ -170,32 +170,61 @@ button { font: inherit; color: inherit; }
 .wm-canvas canvas { position: absolute; left: 0; top: 0; }
 .wm-handles { position: absolute; inset: 0; pointer-events: none; }
 
+/* THE HANDLES round a picked object (Canvas.tsx, handles.ts; Sean's wireframe, 2026-10-10): eight small white squares
+   with an accent edge ON the dashed outline and an accent dot on a stem above it. The button is the target (18 px,
+   centred on the point it is given); the mark is drawn inside it. A small object has one pill under it instead. */
 .wm-handle {
   pointer-events: auto;
   position: absolute;
-  width: 22px;
-  height: 22px;
+  width: 18px;
+  height: 18px;
+  margin: -9px 0 0 -9px;
   padding: 0;
-  border-radius: 50%;
-  border: 1px solid var(--wm-rule);
-  background: var(--wm-chrome);
-  color: var(--wm-soft);
-  font-size: 11px;
-  line-height: 1;
+  border: 0;
+  background: transparent;
   cursor: pointer;
-  box-shadow: 0 1px 4px var(--wm-shadow);
+  display: grid;
+  place-items: center;
 }
-.wm-handle:hover { color: var(--wm-accent); border-color: var(--wm-accent); }
-.wm-handle-wide { width: 28px; border-radius: 11px; }
+.wm-handle::after {
+  content: "";
+  box-sizing: border-box;
+  width: 9px;
+  height: 9px;
+  border-radius: 2px;
+  background: #fff;
+  border: 1.5px solid var(--wm-accent);
+  box-shadow: 0 0 0 0.5px rgba(0, 0, 0, 0.2);
+}
+.wm-handle:hover::after { background: var(--wm-accent); }
+.wm-handle.wm-turn::after { width: 10px; height: 10px; border-radius: 50%; background: var(--wm-accent); border-color: #fff; }
+.wm-stem { position: absolute; width: 0; border-left: 1.5px solid var(--wm-accent); margin-left: -0.75px; pointer-events: none; }
+/* The pill of a small object: its two buttons (turn, resize) side by side below it. */
+.wm-pill {
+  position: absolute;
+  box-sizing: border-box;
+  height: 28px;
+  border-radius: 14px;
+  background: var(--wm-chrome);
+  border: 1px solid var(--wm-rule);
+  box-shadow: 0 1px 6px var(--wm-shadow);
+  pointer-events: none;
+}
+.wm-handle.wm-pillbtn { width: 26px; height: 26px; margin: -13px 0 0 -13px; border-radius: 13px; color: var(--wm-text); }
+.wm-handle.wm-pillbtn::after { display: none; }
+.wm-handle.wm-pillbtn:hover { color: var(--wm-accent); }
 /* The circle on a segment of a routed line. */
-.wm-segment {
+.wm-handle.wm-segment {
   width: 12px;
   height: 12px;
+  margin: 0;
+  border-radius: 50%;
   background: var(--wm-accent);
-  border-color: #fff;
+  border: 1px solid #fff;
   opacity: 0.85;
 }
-.wm-segment:hover { opacity: 1; }
+.wm-handle.wm-segment::after { display: none; }
+.wm-handle.wm-segment:hover { opacity: 1; }
 /* What a click would take, shown before the click (Canvas.tsx `hover`, the Mac's hovered object): a faint dashed
    outline, and its handles dimmed until the pointer is on one. Over it the pointer is an open hand. */
 .wm-hover-box {
@@ -205,7 +234,7 @@ button { font: inherit; color: inherit; }
   border: 1px dashed color-mix(in srgb, var(--wm-accent) 60%, transparent);
   border-radius: 2px;
 }
-.wm-handles-faint .wm-handle { opacity: 0.45; }
+.wm-handles-faint .wm-handle, .wm-handles-faint .wm-stem, .wm-handles-faint .wm-pill { opacity: 0.45; }
 .wm-handles-faint .wm-handle:hover { opacity: 1; }
 .wm-hover-grab .cm-editor, .wm-hover-grab .cm-editor * { cursor: grab !important; }
 
@@ -245,8 +274,10 @@ button { font: inherit; color: inherit; }
   pointer-events: auto;
   cursor: crosshair;
 }
-.wm-crop-bar { position: absolute; display: flex; gap: 6px; pointer-events: none; }
-.wm-crop-bar .wm-handle { position: static; }
+.wm-crop-bar { position: absolute; display: flex; gap: 4px; padding: 2px; border-radius: 9px; background: var(--wm-chrome); border: 1px solid var(--wm-rule); box-shadow: 0 2px 10px var(--wm-shadow); pointer-events: auto; }
+.wm-crop-btn { width: 28px; height: 28px; padding: 0; border: 0; border-radius: 6px; background: transparent; color: var(--wm-text); display: grid; place-items: center; cursor: default; }
+.wm-crop-btn:hover { background: color-mix(in srgb, var(--wm-text) 9%, transparent); }
+.wm-crop-ok { color: var(--wm-accent); }
 
 .swatch {
   width: 13px;

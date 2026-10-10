@@ -6,7 +6,7 @@
 import { readWm } from "../../lib/wm.mjs"
 import {
   ok, finish, js, send, sleep, freshNote, saved, arm, line, click, dblclick, rightClick, key, typeText, shot,
-  handles, setDoc, focus, readNoteFile, CTRL,
+  handles, setDoc, focus, readNoteFile, CTRL, MOD,
 } from "../../lib/harness.mjs"
 
 /** The mouse moved with no button held, and a drag as a hand makes it (the pointer arrives first, then presses). */
@@ -24,10 +24,10 @@ const cellBox = async () => JSON.parse(await js(`(()=>{const e=document.querySel
 const cellInk = () => js(`(()=>{const c=document.querySelector('.wm-inkcell canvas');if(!c||!c.width)return 0;const d=c.getContext('2d').getImageData(0,0,c.width,c.height).data;let n=0;for(let i=3;i<d.length;i+=4)if(d[i]>40)n++;return n})()`)
 const cellOf = (drawing) => drawing.items.find((i) => i.kind === "cell")
 
-const file = await freshNote()
+const file = await freshNote({ rendered: true })
 await setDoc("# Cells\n\nA drawing cell below.", 0)
 await focus(); await js(`document.querySelector('.cm-content').cmTile.view.dispatch({selection:{anchor:20}})`)
-await key("0", { modifiers: CTRL }); await sleep(700)
+await key("0", { modifiers: MOD }); await sleep(700)
 await key("Escape"); await sleep(150)
 let c = await cellBox()
 ok("a drawing cell (Ctrl+0)", !!c, JSON.stringify(c))
@@ -101,10 +101,10 @@ ok("...and its shapes, arrow and text box with it (the cell's items are untouche
 ok("...still drawn in it", Math.abs((await cellInk()) - inkBefore) < inkBefore * 0.05, JSON.stringify([inkBefore, await cellInk()]))
 
 // ---- 7. the rendered page draws the same cell
-await key("t", { modifiers: CTRL }); await sleep(800)
+await key("t", { modifiers: MOD }); await sleep(800)
 ok("the rendered page draws them too (the same cell canvas)", (await cellInk()) > inkBefore * 0.9, String(await cellInk()))
 await shot("rendered-page")
-await key("t", { modifiers: CTRL }); await sleep(600)
+await key("t", { modifiers: MOD }); await sleep(600)
 
 // ---- 8. the cell's ink file (its snapshot, what other viewers and the export show) holds them
 await sleep(800)
