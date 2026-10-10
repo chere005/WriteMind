@@ -1,19 +1,71 @@
-/* The camera pane: the picture, the box dragged on it, the stand-ins for a picture that is not there. */
+/*
+  The video pane: a 36px header, a strip of tabs, the picture (or the tablet's sheet) in what is left, and ONE footer
+  line (docs/PLAN-bars-2026-10.md P4; the wireframes in docs/ui-2026-10/). Stacked, not laid over each other: the
+  picture is letterboxed in what is left under a header that never moves, so the sheet's top never jumps and nothing
+  the header does can land on it. Dark in both themes, as the pane always was; the letterbox stays black.
+*/
+
+/* (div.camera: app.css and chrome.css are loaded after this file and give .camera its old centred column.) */
+div.camera {
+  /* The pane's own palette (the bars' tokens, bars.css, pointed at a dark ground). */
+  --cam-bar: #1e1e20;
+  --cam-ink: #e8e8ea;
+  --cam-faint: rgba(255, 255, 255, 0.58);
+  --cam-hair: rgba(255, 255, 255, 0.09);
+  --bar-strip: var(--cam-bar);
+  --bar-icon: var(--cam-ink);
+  --bar-fill: rgba(255, 255, 255, 0.13);
+  --bar-tint: rgba(255, 255, 255, 0.18);
+  display: flex; flex-direction: column; align-items: stretch; justify-content: flex-start; gap: 0;
+  background: #000; color: var(--cam-ink); overflow: hidden;
+}
+.camera .camera-head { background: var(--cam-bar); color: var(--cam-ink); }
+.camera .camera-head .bar-btn:disabled { opacity: 0.38; }
+.camera .camera-head .bar-btn.dim { opacity: 0.38; }
+.camera .camera-head .bar-btn.dim:hover { background: var(--bar-fill); }
+/* Bring in: the one primary, filled. */
+.camera .bar-btn.primary { background: var(--wm-accent-fill, var(--wm-accent)); color: #fff; padding: 0 12px 0 11px; font-weight: 600; }
+.camera .bar-btn.primary:hover:not(:disabled) { background: var(--wm-accent-fill, var(--wm-accent)); filter: brightness(1.1); }
+.camera .bar-btn.primary:disabled { opacity: 0.4; background: var(--wm-accent-fill, var(--wm-accent)); }
+.camera .camera-head .bar-seg > .bar-btn { padding: 0 8px; font-size: 12px; }
+.camera .camera-head .bar-seg > .bar-btn:has(.wm-icon) { padding: 0 5px; }
+.camera .camera-head .bar-label-text { font-size: 12px; }
+
+/* The picture's area: everything between the strip and the footer. The pen's tablet maps onto the sheet in here and
+   onto nothing else. */
+.camera .camera-body { position: relative; flex: 1 1 auto; min-height: 0; background: #000; overflow: hidden; touch-action: none; }
+.camera:focus { outline: none; }
+
+/* The footer: one standing line and one fact, the notes pane's footer (24px, 11px) in the pane's dark. */
+.camera .camera-foot {
+  display: flex; align-items: center; gap: 12px; flex: none; height: 24px; box-sizing: border-box; padding: 0 12px;
+  font-size: 11px; color: var(--cam-faint); background: var(--cam-bar); border-top: 1px solid var(--cam-hair);
+}
+.camera .camera-foot .line { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.camera .camera-foot .fact { flex: none; white-space: nowrap; color: var(--cam-ink); opacity: 0.85; }
+
+/* What an action just did, under the header's right edge; it goes by itself. */
+.camera .toast {
+  position: absolute; z-index: 6; top: 10px; right: 10px; max-width: calc(100% - 20px); box-sizing: border-box;
+  padding: 5px 12px; border-radius: 14px; font-size: 12px; font-weight: 600; line-height: 1.3; pointer-events: none;
+  background: rgba(36, 36, 40, 0.94); color: var(--cam-ink); box-shadow: 0 2px 10px rgba(0, 0, 0, 0.4);
+}
+.camera .toast.ok { background: #1e5e33; color: #d9f5e0; }
+.camera .toast.error { background: #8e2b22; color: #ffe0dc; }
 
 /* The viewfinder: the pane, or the shape picked in Input Devices > Aspect Ratio centred in it. The picture, the box
    and the corners are laid out inside it. A shaped one has the pane's black round it, the same black as the
    letterbox bars, so a chosen shape looks like the picture and not like a window with a hole in it. */
 .camera .viewfinder { position: absolute; }
-.camera.shaped { background: #000; }
 
-/* The picture fills the window (double-click it): a faint way out over the top-left corner, and the corner's own
-   buttons step aside for it. The app's window only, never the display. */
+/* The picture fills the WINDOW (double-click it): a faint way out over the top-left corner of the picture. The app's
+   window only, never the display. On a Mac the header clears the window's traffic lights, which float over it. */
 .camera.full-window { border-left: 0; }
-.camera.full-window .camera-top { left: 52px; }
+.mac .camera.full-window .camera-head { padding-left: 78px; }
 .camera .full-window-exit {
   position: absolute; z-index: 5; top: 10px; left: 12px; width: 28px; height: 28px; padding: 0; border-radius: 50%;
   border: 1px solid rgba(255, 255, 255, 0.3); background: rgba(0, 0, 0, 0.35); color: rgba(255, 255, 255, 0.9);
-  font-size: 12px; font-weight: 600; line-height: 26px; text-align: center; cursor: pointer;
+  display: inline-flex; align-items: center; justify-content: center; cursor: pointer;
 }
 .camera .full-window-exit:hover { background: rgba(0, 0, 0, 0.6); }
 
@@ -24,80 +76,67 @@
   position: absolute; left: 50%; top: 50%; max-width: none; object-fit: contain; background: #000;
   transform-origin: 50% 50%;
 }
-.camera.zooming { cursor: crosshair; }
+.camera.zooming .camera-body { cursor: crosshair; }
 /* Hold image: the still in the video's place (sized and turned like it in CameraPane), the video playing on under it. */
 .camera .stage canvas.still, .camera .stage canvas.page-still { position: absolute; left: 50%; top: 50%; transform-origin: 50% 50%; }
-/* The pane takes the keyboard when its picture is clicked (Esc lets go of a held picture); no ring round the picture. */
-.camera:focus { outline: none; }
-/* Held reads as pressed (sunk in); a pointer still resting on it after letting go must not look held, so its hover is quieter. */
-.camera .camera-corner [data-camera="hold"]:hover:not(.on):not(:disabled) { background: rgba(255, 255, 255, 0.2); }
-.camera .camera-corner [data-camera="hold"].on { box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.55); }
+/* A held picture is framed and says so. */
+.camera .held-frame { position: absolute; inset: 0; z-index: 2; box-sizing: border-box; border: 2px solid var(--wm-accent); pointer-events: none; }
+.camera .held-badge {
+  position: absolute; z-index: 3; top: 10px; left: 50%; transform: translateX(-50%); display: inline-flex; align-items: center; gap: 5px;
+  padding: 3px 10px; border-radius: 999px; background: rgba(0, 0, 0, 0.72); color: #fff; font-size: 11px; font-weight: 600;
+  pointer-events: none; white-space: nowrap;
+}
 /* A pen drags the box too: nothing in here is for the browser to pan. */
 .camera { touch-action: none; }
 
-/* A box dragged over the picture: what is outside it is dimmed (the Mac's even-odd fill) and its edge is dashed. */
+/* A box dragged over the picture: what is outside it is dimmed (the Mac's even-odd fill), its edge is dashed in the
+   accent, its four corners are the tablet's own handles. */
 .camera .box-clip { position: absolute; inset: 0; overflow: hidden; pointer-events: none; z-index: 1; }
 .camera .box-clip .box {
-  position: absolute; background: transparent; border: 1.5px dashed #fff;
+  position: absolute; box-sizing: border-box; background: transparent; border: 1.5px dashed var(--wm-accent);
   box-shadow: 0 0 0 9999px rgba(0, 0, 0, 0.45);
 }
-.camera .box-clip .box.zoom { border-color: var(--wm-accent); }
+.camera .box-clip .box.zoom { border-color: #fff; }
+.camera .box-clip .box .handle {
+  position: absolute; width: 10px; height: 10px; box-sizing: border-box; margin: -5px 0 0 -5px; pointer-events: auto; touch-action: none;
+  background: #fff; border: 1.5px solid var(--wm-accent); border-radius: 2px;
+}
+.camera .box .handle[data-handle="nw"] { left: 0; top: 0; cursor: nwse-resize; }
+.camera .box .handle[data-handle="ne"] { left: 100%; top: 0; cursor: nesw-resize; }
+.camera .box .handle[data-handle="sw"] { left: 0; top: 100%; cursor: nesw-resize; }
+.camera .box .handle[data-handle="se"] { left: 100%; top: 100%; cursor: nwse-resize; }
 
-/* What can be done with a box: three buttons, not a sentence about a button somewhere else. */
-.camera .box-choices {
-  position: absolute; z-index: 4; display: flex; gap: 6px; transform: translate(-50%, -50%);
-}
-.camera .box-choices button {
-  border: 1px solid rgba(255, 255, 255, 0.28); border-radius: 999px; background: rgba(0, 0, 0, 0.62);
-  color: #fff; font-size: 12px; font-weight: 600; padding: 5px 10px; cursor: pointer;
-}
-.camera .box-choices button:hover:not(:disabled) { background: var(--wm-accent); }
-.camera .box-choices button:disabled { opacity: 0.6; cursor: default; }
+/* What can be done with a box: the sheet's own row (tablet.css .box-actions), Writing | Image | Text | clear. */
+.camera .box-choices { position: absolute; z-index: 4; transform: translate(-50%, -50%); }
 
 .camera .zoom-hint {
-  position: absolute; z-index: 4; top: 44px; left: 50%; transform: translateX(-50%);
-  background: rgba(0, 0, 0, 0.55); color: #fff; font-size: 12.5px; padding: 6px 12px; border-radius: 999px;
-  pointer-events: none;
+  position: absolute; z-index: 4; top: 10px; left: 50%; transform: translateX(-50%);
+  background: rgba(0, 0, 0, 0.62); color: #fff; font-size: 12.5px; padding: 6px 12px; border-radius: 999px;
+  pointer-events: none; white-space: nowrap;
 }
 
-/* The top row: the corner (turning the picture, zooming it, the way back to the notes) on the left and the bar on the right. */
-.camera .camera-top {
-  position: absolute; z-index: 3; top: 8px; left: 8px; right: 8px; display: flex; flex-wrap: wrap; gap: 4px;
-  justify-content: space-between; align-items: flex-start; pointer-events: none;
-}
-.camera .camera-top > * { pointer-events: auto; }
-.camera .camera-top .camera-bar { position: static; margin-left: auto; }
-.camera .camera-corner { display: flex; gap: 4px; flex-wrap: wrap; }
-.camera .camera-corner .icon-button { background: rgba(0, 0, 0, 0.45); color: #e8e8ea; }
-.camera .camera-corner .icon-button:hover:not(:disabled) { background: var(--wm-accent); }
-.camera .camera-corner .icon-button:disabled { opacity: 0.45; }
-.camera .camera-corner .icon-button.on { background: var(--wm-accent); color: #fff; }
-
-/* The camera's name, the Mac's capsule: first on the line under the picture. */
-.camera .note .camera-name {
-  display: block; width: fit-content; max-width: 90%; margin: 0 auto 4px; font-size: 11px; color: #e8e8ea;
-  background: rgba(0, 0, 0, 0.5); padding: 3px 10px; border-radius: 999px;
-  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
-}
-.camera .note .camera-name .held-word { color: var(--wm-accent); font-weight: 600; margin-right: 6px; }
-
-/* No picture: no camera selected, access off, unavailable. */
+/* No picture: no source chosen, access off, unavailable. The pane asks what it should show, with a card per way. */
 .camera .placeholder {
   position: absolute; inset: 0; z-index: 1; display: flex; flex-direction: column; align-items: center;
-  justify-content: center; gap: 8px; padding: 24px; text-align: center; color: #c9c9d0; overflow: auto;
+  justify-content: center; gap: 6px; padding: 20px 16px; text-align: center; color: #c9c9d0; overflow: auto;
 }
-.camera .placeholder .glyph { font-size: 38px; opacity: 0.6; }
-.camera .placeholder .title { font-size: 15px; color: #fff; }
-.camera .placeholder .detail { font-size: 12.5px; max-width: 320px; color: rgba(255, 255, 255, 0.7); }
-.camera .placeholder .device-list {
-  display: flex; flex-direction: column; gap: 4px; margin-top: 8px; min-width: 200px; max-width: 320px;
+.camera .placeholder .title { font-size: 16px; font-weight: 500; color: #fff; }
+.camera .placeholder .detail { font-size: 12.5px; max-width: 320px; color: rgba(255, 255, 255, 0.62); }
+.camera .placeholder .none { font-size: 12px; color: rgba(255, 255, 255, 0.55); padding: 4px; }
+.camera .placeholder .source-cards { display: flex; flex-wrap: wrap; justify-content: center; gap: 10px; margin-top: 16px; max-width: 360px; }
+.camera .placeholder .source-card {
+  display: flex; flex-direction: column; align-items: center; gap: 3px; width: 150px; box-sizing: border-box; padding: 14px 10px 12px;
+  border: 1px solid rgba(255, 255, 255, 0.16); border-radius: 10px; background: rgba(255, 255, 255, 0.07); color: #e8e8ea;
+  cursor: pointer; font: inherit;
 }
-.camera .placeholder .device-list button {
-  border: 1px solid rgba(255, 255, 255, 0.18); border-radius: 6px; background: rgba(255, 255, 255, 0.08);
-  color: #e8e8ea; font-size: 12.5px; padding: 6px 10px; cursor: pointer; text-align: center;
-}
-.camera .placeholder .device-list button:hover { background: var(--wm-accent); color: #fff; }
-.camera .placeholder .device-list .none { font-size: 12px; color: rgba(255, 255, 255, 0.55); padding: 4px; }
+.camera .placeholder .source-card:hover { background: rgba(255, 255, 255, 0.14); border-color: rgba(255, 255, 255, 0.3); }
+.camera .placeholder .source-card:focus-visible, .camera .placeholder .source-links button:focus-visible { outline: 2px solid var(--wm-accent); outline-offset: 2px; }
+.camera .placeholder .source-card .wm-icon { margin-bottom: 4px; opacity: 0.85; }
+.camera .placeholder .source-card .name { font-size: 12.5px; font-weight: 600; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.camera .placeholder .source-card .sub { font-size: 11.5px; color: rgba(255, 255, 255, 0.55); }
+.camera .placeholder .source-links { display: flex; gap: 22px; margin-top: 14px; }
+.camera .placeholder .source-links button { border: 0; background: transparent; color: rgba(255, 255, 255, 0.7); font: inherit; font-size: 12.5px; cursor: pointer; padding: 3px 2px; }
+.camera .placeholder .source-links button:hover { color: #fff; text-decoration: underline; }
 
 .camera .starting { position: absolute; inset: 0; z-index: 1; display: flex; align-items: center; justify-content: center; pointer-events: none; }
 .camera .spinner {

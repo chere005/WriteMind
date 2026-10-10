@@ -150,7 +150,8 @@ describe("the feature list is true to the source", () => {
   const read = (rel: string) => readFileSync(path.join(ROOT, rel), "utf8")
   const features = (lead: string) => WELCOME_FEATURES.find((one) => one.startsWith(`**${lead}:**`))!
   const menu = read("apps/desktop/src/main/menu.ts")
-  const camera = read("apps/desktop/src/renderer/CameraPane.tsx")
+  const camera = read("apps/desktop/src/renderer/CameraHeader.tsx")
+  const strip = read("apps/desktop/src/renderer/SheetStrip.tsx")
   const box = read("apps/desktop/src/renderer/BoxActions.tsx")
 
   it("every key it names is a chord of the command it means (or the editor's Shift+Enter)", () => {
@@ -199,14 +200,14 @@ describe("the feature list is true to the source", () => {
 
   it("the buttons it names are on the panes it names them on", () => {
     // the video pane's header and box
-    for (const label of [">Writing</button>", ">Page</button>", ">Raw</button>"]) expect(camera, label).toContain(label)
-    expect(features("Video pane")).toContain("Writing, Page and Raw")
-    expect(camera).toContain("data-camera=\"page\"")
-    expect(camera).toMatch(/"\+"|>\+</)
+    // (the segmented control's labels are data in CameraHeader.tsx, 2026-10-10: "Page" is renamed Image)
+    for (const label of ["label: \"Writing\"", "label: \"Image\"", "label: \"Raw\""]) expect(camera, label).toContain(label)
+    expect(features("Video pane")).toContain("Writing, Image and Raw")
+    expect(strip).toContain("data-scan-add")
     // the tablet box's row
-    expect(box).toContain("Bring in as Drawing Cell")
-    expect(box).toContain("Copy Cell")
-    expect(features("Wacom tablet")).toContain("Bring in as Drawing Cell")
+    expect(box).toContain("As drawing cell")
+    expect(box).toContain("Copy")
+    expect(features("Wacom tablet")).toContain("As drawing cell")
     // the dock handle
     expect(read("apps/desktop/src/renderer/Canvas.tsx")).toContain(">⤵</button>")
     expect(features("Drawing")).toContain("⤵")

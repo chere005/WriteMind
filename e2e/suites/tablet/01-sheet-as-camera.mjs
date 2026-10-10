@@ -1,5 +1,5 @@
 // The tablet as a source for the video pane: write, box, chart, page, undo, erase. 
-import { hover, setSelect, press, noGrab, penHover, js, ok, finish, sleep, freshNote, saved, key, CTRL, ALT, mouse, pe, penStroke, seg, rectPts, tabletBox, pickTablet, barBtn, takeBtn, shot, waitFor } from "../../lib/harness.mjs"
+import { hover, pickFromMenu, press, noGrab, penHover, js, ok, finish, sleep, freshNote, saved, key, CTRL, ALT, mouse, pe, penStroke, seg, rectPts, tabletBox, pickTablet, barBtn, takeBtn, shot, waitFor } from "../../lib/harness.mjs"
 
 await noGrab()
 const file = await freshNote({ video: true })
@@ -88,7 +88,7 @@ ok("two arrows read, attached to nodes", conns.length === 2 && conns.every(c => 
 ok("the strokes came too", added.some(i => i.kind === "stroke"))
 const maxStrokeY = Math.max(...added.filter(i => i.kind === "stroke").flatMap(s => s.points.map(p => p.y)))
 ok("the chart lands under the writing", shapes.length > 0 && shapes.every(s => s.center.y > maxStrokeY - 0.02), `${shapes.map(s => s.center.y.toFixed(2))} vs ${maxStrokeY.toFixed(2)}`)
-ok("the pane says it read a chart", /flow chart/i.test(await js(`document.querySelector('.camera .note').textContent`)))
+ok("the pane says it read a chart (a toast under the header)", /flow chart/i.test(await js(`document.querySelector('.camera [data-toast]')?.textContent ?? ''`)))
 await shot("chart-note")
 await js(`document.querySelector('.cm-content').focus()`)
 await mouse("mouseMoved", 300, 60, { buttons: 0 })
@@ -100,7 +100,7 @@ ok("one Ctrl+Z takes the strokes and the chart back together", d.items.length ==
 await barBtn("clear")
 await penStroke(seg(X + 40, Y + 80, X + 200, Y + 140, 14))
 const n0 = (await saved(file)).items.length
-await takeBtn("Bring the sheet in")
+await pickFromMenu(".camera-bar [data-capture=ink]", "bring-page")
 d = await saved(file)
 const pic = d.items.filter(i => i.kind === "image")
 ok("Page brings one picture", pic.length === 1 && d.items.length === n0 + 1, JSON.stringify(d.items.map(i => i.kind)))
@@ -109,9 +109,9 @@ ok("and the picture file exists", pic.length === 1 && await js(`new Promise(r =>
 // 6. ERASE: no Erase button on the bar (Sean, 2026-10-05: "remove the erase button from the wacom menu bar"); the
 // pen's Erase Tool toggle (Ctrl+Alt+2 with the pen last over the sheet) still erases there, then the side button.
 await barBtn("clear")
-const hint = () => js(`document.querySelector('.camera .note').textContent`)
+const hint = () => js(`document.querySelector('.camera [data-camera=status-line]').textContent`)
 ok("the sheet's bar has no Erase button", await js(`!document.querySelector('[data-tablet=erase]') && ![...document.querySelectorAll('.camera-bar button')].some(b => b.textContent.trim() === 'Erase')`))
-ok("...and the hint says which pen button rubs out", /hold its first button to rub out/.test(await hint()), await hint())
+ok("...and the footer line says which pen button rubs out", /hold button 1 to erase/.test(await hint()), await hint())
 await penStroke(seg(X + 40, Y + 200, X + 200, Y + 200, 14))
 const drawn = await px()
 await js(`document.querySelector('.cm-content').focus()`)

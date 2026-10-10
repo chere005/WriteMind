@@ -687,7 +687,9 @@ export function App() {
     if (view) {
       const main = view.state.selection.main
       const block = view.lineBlockAt(main.head)
-      caretLine = { x: 30, y: block.top, width: pane.width - 60, height: block.height }
+      // The drawing layer's y includes the editor's top padding (readPicture subtracts it): without it the picture landed that
+      // far too high and covered the bottom of the caret's own line (the heading, when the caret was in it).
+      caretLine = { x: 30, y: block.top + view.documentPadding.top, width: pane.width - 60, height: block.height }
     }
     let centre = placedCentre({ width, height: width * aspect, pane, scroll, caretLine })
     const box = view ? view.scrollDOM.getBoundingClientRect() : null
@@ -743,7 +745,9 @@ export function App() {
     let caretLine = null as null | { x: number; y: number; width: number; height: number }
     if (view) {
       const block = view.lineBlockAt(view.state.selection.main.head)
-      caretLine = { x: 30, y: block.top, width: pane.width - 60, height: block.height }
+      // The drawing layer's y includes the editor's top padding (readPicture subtracts it): without it the picture landed that
+      // far too high and covered the bottom of the caret's own line (the heading, when the caret was in it).
+      caretLine = { x: 30, y: block.top + view.documentPadding.top, width: pane.width - 60, height: block.height }
     }
     const taken = drawingRef.current.items.flatMap((item) => (item.kind === "image" ? [item.image.center] : []))
     const centre = capturePlacedCentre({
@@ -1783,6 +1787,7 @@ export function App() {
       {showCamera && (
         <CameraPane
           platform={platform}
+          kind={kind}
           penColour={penColour}
           penWidth={penWidth}
           pane={currentPane(view, lastPane)}
@@ -1800,6 +1805,7 @@ export function App() {
           onToggleEditor={toggleEditorPane}
           onReadText={readCameraText}
           note={current}
+          noteTitle={open.find((one) => one.path === current)?.title ?? null}
           fullWindow={cameraFullWindow}
           onFullWindow={toggleCameraFullWindow}
         />

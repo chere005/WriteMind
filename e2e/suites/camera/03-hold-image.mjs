@@ -12,7 +12,7 @@ const file = await freshNote({ video: true })
 await showVideoPane()
 await pickCamera()
 const live = await waitFor(`(() => { const v = document.querySelector('.camera video'); return v && v.videoWidth > 0 && v.readyState >= 2 })()`, 15000)
-ok("the (fake) camera is delivering frames", live, await js(`document.querySelector('.camera .trouble')?.textContent ?? ''`))
+ok("the (fake) camera is delivering frames", live, await js(`document.querySelector('.camera [data-toast=error]')?.textContent ?? ''`))
 if (!live) finish()
 await sleep(600)
 
@@ -82,7 +82,7 @@ await waitFor(`!document.querySelector('.camera .box-clip .box')`, 15000)
 await sleep(300)
 const all = (await saved(file)).items
 ok("Writing from the box on the held frame came in", all.filter((i) => i.kind === "image").length === 3,
-  JSON.stringify(all.map((i) => i.kind)) + " " + (await js(`(document.querySelector('.camera .trouble')?.textContent ?? '') + ' | ' + document.querySelector('.camera .note').innerText`)))
+  JSON.stringify(all.map((i) => i.kind)) + " " + (await js(`(document.querySelector('.camera [data-toast=error]')?.textContent ?? '') + ' | ' + document.querySelector('.camera [data-camera=status]').innerText`)))
 await shot("held-writing")
 ok("the picture stays held after a capture", (await state()).pressed === "true")
 

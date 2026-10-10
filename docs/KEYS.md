@@ -313,15 +313,21 @@ source under the menu; Ctrl/Cmd-click is the drawing layer's, as on words.
 - **⌫ Erase** (toolbar pen group): touch a stroke on the note's page to rub
   it out; picking the ✎ pen, Ctrl+P or a shape tool turns it off.
 - **Erase / Select on the sheet**: the SHEET's own pair (one for every sheet
-  tab, not remembered). Select is a toggle in the sheet's header; Erase has no
-  header button (Sean, 2026-10-05): hold the pen's first button to rub out,
-  use the box row's Erase, or the Erase Tool toggle below. Nothing done in the
-  notebook turns them off, and they never light the toolbar's ⌫ / ⬚. Select
-  makes the pen pull the dashed box, as the mouse does.
-- **The box's row** (under the dashed box; the pen's tap clicks it): **Erase** | **Bring in Writing** | **Bring in as Drawing Cell** |
-  **Copy Cell** ("Copy" when the row is wider than the sheet). Copy Cell puts the boxed writing on the system clipboard as a drawing
-  cell and leaves the note alone: Ctrl+V in a note lands it as a new drawing cell at the caret (or the armed bar), in Mathematica it
-  pastes as the image, in every other app as an SVG file.
+  tab, not remembered). Neither has a header button (Sean, 2026-10-05 Erase,
+  2026-10-06 Select): hold the pen's first button to rub out, use the box row's
+  Erase, or the Erase Tool toggle below; Select is the pen's Select Tool toggle
+  or its lower button held. Nothing done in the notebook turns them off, and
+  they never light the toolbar's pen. Select makes the pen pull the dashed
+  box, as the mouse does.
+- **The sheet's header** (one 36px row, 2026-10-10): **Paper** (kind, spacing, colour; the menu stays up while you try them),
+  **Tablet orientation** (an icon menu, the current one ticked), **Undo** (the sheet's last stroke; its corner menu has **Clear the
+  Sheet**) ... **Bring in** (the one filled button: it brings the writing in the way it was last asked to; its menu is **Writing**
+  / **As Drawing Cell** / **Sheet as Picture**: a pick brings it in at once, and Writing / As Drawing Cell become what the button
+  does next, remembered) and ✕. A menu on a header button opens from its corner triangle, a right-click, a half-second hold or Down.
+- **The box's row** (under the dashed box; the pen's tap clicks it): **Bring in writing** | **As drawing cell** | **Copy** | **Erase**
+  (the primary first, Erase last and red; the short labels Writing / Cell when the row is wider than the sheet). Copy puts the boxed
+  writing on the system clipboard as a drawing cell and leaves the note alone: Ctrl+V in a note lands it as a new drawing cell at the
+  caret (or the armed bar), in Mathematica it pastes as the image, in every other app as an SVG file.
 - **Erase Tool / Select Tool** by the pen (a double tap set to "Erase tool
   on/off" / "Select tool on/off", or the ExpressKey Ctrl+Alt+2 / Ctrl+Alt+3, or
   the Pen menu) toggle the tools of the surface the pen is over, or was last
@@ -341,7 +347,7 @@ types it, nothing happens; remap it to Send Writing (Ctrl+Alt+W).
   sheet, or, if Wintab is not delivering, the window's own pen events. No overlay, no hook, no mouse clip; the mouse keeps working.
 - **Esc** never lets go of the tablet: on the sheet it only clears the dashed box (or closes a menu). Putting another window in front,
   minimising, switching to a camera, hiding the pane or quitting lets go.
-- **Tablet orientation** dropdown (sheet pane header, Pen popover): Match tablet / Landscape
+- **Tablet orientation** (an icon menu in the sheet's header, a dropdown in the Pen popover): Match tablet / Landscape
   (0°) / Portrait (90° clockwise) / Landscape flipped (180°) / Portrait flipped (270°), remembered.
 
 ## Pen buttons and ExpressKeys (port-only)
@@ -446,7 +452,7 @@ A press on the words lets go of the pick, which gives the keys back.
 | Divider between the notes and the video (when it has the keyboard: Tab to it) | Left / Right | the video 24 px wider / narrower |
 | same | Home, or double-click | back to the Mac default share (720 : 420) |
 | A sidebar or tab menu, the video button's menu, the open-notes list, the Folder menu | Up / Down, Enter, Escape, Right / Left | move, choose, close, open / close a submenu; the caret returns to the notes |
-| The font-and-colour popover, the Pen popover (the Pen chip), the sheet's Paper menu | Escape, or a click anywhere else | close |
+| The font-and-colour popover, the Pen popover (the Pen chip), the video pane's header menus (Paper, orientation, Undo, Bring in, Zoom, Straighten) | Escape, or a click anywhere else | close |
 | Ctrl+K / Ctrl+Shift+Y | | Hide or Show the sidebar / the video (the notes pane: View menu, no key; never both panes) |
 | A tab | middle click | closes it |
 | A tab | right-click | Close, Close Other Tabs, Rename…, Duplicate, Move to ▸, Reveal, Move to Trash… |
@@ -458,7 +464,10 @@ A press on the words lets go of the pick, which gives the keys back.
 
 | Where | Key | Does |
 |---|---|---|
+| The header (one 36px row; the source is chosen in the video menu, not here) | click | turn left / turn right (a page has its own turn), **Zoom** (lit with its magnification while a box is set; its corner menu: Zoom to a Box, Original Size), **Hold** (lit while held), **Straighten** (its corner menu: Find the Page Again), then **Writing \| Image \| Raw** (the one last taken is lifted) and ✕. In a pane under ~340px the three takes show their icons |
 | The viewfinder | drag | a dashed box over the part to bring in (with a pen too) |
+| the box | drag a corner | resizes it about the opposite corner; the row under it is **Writing \| Image \| Text \| ✕** (Writing or Image lifted as in the header) |
+| The footer / a toast | | the footer is one standing line ("Page found · drag a box for a part") and the picture's size; what an action just did ("✓ Writing added to Demo note") or why it could not appears under the header's right edge and goes by itself |
 | same | click | one click puts the box away; with no box, it draws a box round the whole picture (the gesture the double-click used to be) |
 | same | double-click | the picture fills the WINDOW (sidebar and notes out of sight; never the display, never full screen); double-click again, or the faint ✕ over its top-left corner, to come back. Hiding the video leaves it too. Not remembered across a launch (Mac commit 0edfc08) |
 | same | Esc | puts the box away, and lets go of Resize by Square when it is armed |

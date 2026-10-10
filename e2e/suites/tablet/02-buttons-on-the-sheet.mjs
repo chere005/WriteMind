@@ -3,14 +3,14 @@
 // air does its double-tap job (upper: Undo, lower: Redo), which over the sheet takes back the sheet's OWN strokes; a
 // single tap or a press held in the air does nothing, and no context menu opens. Twice: with synthetic DOM pen events, and through the native feed (the
 // `inject` backend: samples -> manager -> IPC -> the page's synthesiser, the path Wintab's samples take).
-import { js, ok, finish, sleep, freshNote, pe, penStroke, seg, tabletBox, pickTablet, showVideoPane, noGrab, waitFor, shot, setSelect } from "../../lib/harness.mjs"
+import { js, ok, finish, sleep, freshNote, pe, penStroke, seg, tabletBox, pickTablet, showVideoPane, noGrab, waitFor, shot, setOrientation } from "../../lib/harness.mjs"
 
 await js(`localStorage.removeItem('writemind.pen')`)
 await noGrab()
 await freshNote({ video: true })
 await showVideoPane()
 await pickTablet()
-await setSelect("[data-tablet=orientation]", "0"); await sleep(350)   // the feed's samples land on the sheet as given
+await setOrientation(0); await sleep(350)   // the feed's samples land on the sheet as given
 const t = await tabletBox()
 const X = t.x, Y = t.y
 const count = () => js(`window.__wmSheet.strokes.length`)

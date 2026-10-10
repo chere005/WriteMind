@@ -174,22 +174,6 @@ button { font: inherit; color: inherit; }
   min-width: 260px;
 }
 .camera video { width: 100%; height: 100%; object-fit: contain; background: #000; }
-.camera .camera-bar {
-  position: absolute;
-  top: 8px;
-  right: 8px;
-  display: flex;
-  gap: 4px;
-}
-.camera .note {
-  position: absolute;
-  bottom: 10px;
-  left: 0;
-  right: 0;
-  text-align: center;
-  font-size: 11px;
-  color: #8a8a92;
-}
 .camera .box {
   position: absolute;
   border: 1.5px dashed var(--wm-accent);
@@ -359,19 +343,6 @@ button { font: inherit; color: inherit; }
 }
 .save-problem button:hover { background: rgba(255, 255, 255, 0.36); }
 
-.camera .trouble {
-  position: absolute;
-  bottom: 30px; /* above the note line, never under the header (which wraps in a narrow pane) */
-  z-index: 3;
-  pointer-events: none;
-  left: 0;
-  right: 0;
-  text-align: center;
-  font-size: 11px;
-  color: #e8a0a0;
-}
-.camera-bar .icon-button { background: rgba(0, 0, 0, 0.45); color: #e8e8ea; }
-.camera-bar .icon-button:hover { background: var(--wm-accent); }
 
 /* The page's four corners over the viewfinder ("Straighten"). */
 .camera .quad { position: absolute; inset: 0; pointer-events: none; }
@@ -535,8 +506,6 @@ select.chevron option { color: var(--wm-text); background: var(--wm-chrome); }
 
 /* The tablet as a source for the video pane: a sheet of dotted notebook paper. */
 
-.camera .note { pointer-events: none; z-index: 2; }
-.camera-bar { z-index: 3; flex-wrap: wrap; justify-content: flex-end; max-width: 100%; }
 
 /* The pen has taken over the pointer: no OS arrow, our own cursor instead (penCursor.ts). */
 html.pen-active, html.pen-active * { cursor: none !important; }

@@ -43,8 +43,8 @@ export const WELCOME_FEATURES: string[] = [
   "**Drawing:** pen ink, shapes, arrows, text boxes and pictures float over the note; the ⤵ handle docks them into it as cells. Ctrl+0 makes a drawing cell.",
   "**Runnable cells:** Python, Wolfram, C, C++ and Rust, each with its icon and In[n] / Out[n]; Shift+Enter runs one.",
   "**Language Setup:** File ▸ Language Setup… shows which program runs each language, tests it, lets you choose another and helps you get a missing one.",
-  "**Video pane:** a document camera: its box and the Writing, Page and Raw buttons bring a page in as ink or a picture; + keeps each scanned page as a tab.",
-  "**Wacom tablet:** Input Devices ▸ Tablet makes the video pane sheets (tabs) to write on; Writing, Page and the box's Bring in as Drawing Cell take them into the note.",
+  "**Video pane:** a document camera: its box and the Writing, Image and Raw buttons bring a page in as ink or a picture; + keeps each scanned page as a tab.",
+  "**Wacom tablet:** Input Devices ▸ Tablet makes the video pane sheets (tabs) to write on; Bring in and the box's As drawing cell take them into the note.",
   "**Mathematica:** File ▸ Export… ▸ Wolfram Notebook writes a `.nb`; with a Wolfram Engine, a copied drawing cell pastes into a notebook as a transparent image.",
   "**Wacom pen buttons:**\n" +
     "  - First button (Middle Click): hold to erase strokes, double-tap to undo.\n" +

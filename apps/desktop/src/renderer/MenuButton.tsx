@@ -37,6 +37,8 @@ interface Props {
   dataBar?: string
   /** Test hook on the menu this button opens (`data-bar` of the floating menu). */
   menuBar?: string
+  /** More test hooks, `data-<name>`: `{ tablet: "undo" }` is `data-tablet="undo"` (the video pane's buttons keep theirs). */
+  data?: Record<string, string>
   style?: React.CSSProperties
   children?: ReactNode
 }
@@ -44,7 +46,7 @@ interface Props {
 const HOLD_MS = 500
 const CORNER = 12
 
-export function MenuButton({ icon, label, title, name, items, onMain, on, tint, disabled, chevron, noMark, className, dataBar, menuBar, style, children }: Props) {
+export function MenuButton({ icon, label, title, name, items, onMain, on, tint, disabled, chevron, noMark, className, dataBar, menuBar, data, style, children }: Props) {
   const button = useRef<HTMLButtonElement>(null)
   // The menu is built when it is opened and kept: a render of the page behind it (a clock, a save) must not rebuild its
   // rows, which would take the keyboard from the row the person had moved to.
@@ -73,6 +75,7 @@ export function MenuButton({ icon, label, title, name, items, onMain, on, tint, 
   return (
     <>
       <button ref={button} type="button" className={classes} style={style} disabled={disabled} data-bar={dataBar}
+              {...Object.fromEntries(Object.entries(data ?? {}).map(([key, value]) => [`data-${key}`, value]))}
               aria-label={name ?? (label === undefined ? title : undefined)} title={title}
               aria-haspopup="menu" aria-expanded={at !== null} aria-pressed={onMain ? !!(on || tint) : undefined}
               onPointerDown={(event) => {
