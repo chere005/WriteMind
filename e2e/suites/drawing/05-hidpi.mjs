@@ -21,10 +21,11 @@ try {
   await setPen(false)
   await click(cb.x + 300, cb.y + 200); await sleep(250)
   const hs = await handles()
-  ok("a click on the stroke picks it", hs.length >= 3, JSON.stringify(hs.map((h) => h.t)))
+  ok("a click on the stroke picks it", hs.length >= 2, JSON.stringify(hs.map((h) => h.t)))
   const xs = hs.map((h) => h.x), ys = hs.map((h) => h.y)
-  ok("its handles stand around the stroke (not scaled away from it)",
-    Math.min(...xs) < cb.x + 150 + 40 && Math.max(...xs) > cb.x + 450 - 40 && Math.min(...ys) < cb.y + 200 + 30 && Math.max(...ys) > cb.y + 200 - 30,
+  // A flat stroke is a small object on one side: it gets ONE PILL (turn, resize) under its middle, not a ring (2026-10-10).
+  ok("its pill stands under the stroke's middle (not scaled away from it)",
+    Math.abs((Math.min(...xs) + Math.max(...xs)) / 2 - (cb.x + 300)) < 30 && Math.min(...ys) > cb.y + 200 && Math.max(...ys) < cb.y + 200 + 60,
     JSON.stringify({ xs: [Math.min(...xs), Math.max(...xs)], ys: [Math.min(...ys), Math.max(...ys)], stroke: [cb.x + 150, cb.x + 450, cb.y + 200] }))
   await shot("hidpi-handles")
 

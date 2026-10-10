@@ -73,6 +73,21 @@ export function defaultAspect(kind: ShapeKind): number {
 export const PRESET_COLOURS = ["#F2542D", "#F5B700", "#2FBF71", "#2D7DD2", "#8E44AD", "#1C1C1E"]
 
 /**
+ * THE ONE WIDTH LADDER (Sean's wireframes, 2026-10-10): the pen's menu and the inspector over a picked object offer
+ * the same six widths, drawn to scale, next to the same six swatches above. (The old style bar had its own ten.) A
+ * width an object already has that is off the ladder (an arrow drawn at 1.5) is shown as itself and kept until it is
+ * changed; `nearestWidth` is how a menu says which rung is closest.
+ */
+export const WIDTH_LADDER = [1, 2, 3, 5, 8, 12]
+
+/** The ladder's rung closest to a width (the lower one on a tie): which entry of the menu to mark. */
+export function nearestWidth(width: number): number {
+  let best = WIDTH_LADDER[0]!
+  for (const rung of WIDTH_LADDER) if (Math.abs(rung - width) < Math.abs(best - width)) best = rung
+  return best
+}
+
+/**
  * The colour the mark MEANS, whatever the pen is holding — a tick is green,
  * a cross is red and a query is yellow, because a tick in the pen's black
  * beside a red cross says nothing. Null is "the pen's": a node is the note's

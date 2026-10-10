@@ -7,7 +7,7 @@
 import { readWm } from "../../lib/wm.mjs"
 import {
   ok, finish, js, send, sleep, freshNote, saved, arm, line, dragPath, rightClick, key, shot, handles, setDoc, focus,
-  canvasBox, noteFileExists, CTRL, MOD,
+  canvasBox, noteFileExists, CTRL, MOD, centerOf,
 } from "../../lib/harness.mjs"
 
 const hover = (x, y) => send("Input.dispatchMouseEvent", { type: "mouseMoved", x, y, button: "none", buttons: 0 })
@@ -86,7 +86,7 @@ await key("z", { modifiers: CTRL }); await sleep(700)
 await setDoc(WORDS, 25); await sleep(300)
 await js(`(async()=>{const c=document.createElement('canvas');c.width=320;c.height=180;const x=c.getContext('2d');x.fillStyle='#d94';x.fillRect(0,0,320,180);x.fillStyle='#246';x.fillRect(40,40,120,90);const blob=await new Promise(r=>c.toBlob(r,'image/png'));const dt=new DataTransfer();dt.items.add(new File([blob],'p.png',{type:'image/png'}));document.dispatchEvent(new ClipboardEvent('paste',{clipboardData:dt,bubbles:true,cancelable:true}))})()`)
 await sleep(1300)
-const dock = (await handles()).find((h) => /^Dock/.test(h.t))
+const dock = await centerOf('.wm-insp [data-insp="dock"]')   // (the dock control is in the inspector now)
 ok("a pasted picture, picked, with the dock handle", !!dock)
 if (dock) {
   await focus(); await js(`${VIEW}.dispatch({selection:{anchor:25}})`)

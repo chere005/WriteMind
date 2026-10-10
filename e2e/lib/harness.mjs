@@ -413,7 +413,7 @@ export const arm = (value) => js(`(()=>{
   if(!s) return null;
   const set=Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype,'value').set;set.call(s,${JSON.stringify(value)});
   s.dispatchEvent(new Event('change',{bubbles:true}));return true})()`)
-export const handles = async () => JSON.parse(await js(`JSON.stringify([...document.querySelectorAll('.wm-handle')].map(h=>{const r=h.getBoundingClientRect();return {t:h.title,x:r.x+r.width/2,y:r.y+r.height/2,w:r.width}}))`))
+export const handles = async () => JSON.parse(await js(`JSON.stringify([...document.querySelectorAll('.wm-handle')].map(h=>{const r=h.getBoundingClientRect();return {t:h.title,h:h.dataset.handle||null,x:r.x+r.width/2,y:r.y+r.height/2,w:r.width}}))`))
 /** Select everything on the drawing layer with a Ctrl-drag marquee and delete it. */
 export async function clearDrawing() {
   await setPen(false)

@@ -67,8 +67,8 @@ ok("moving off it puts the outline and the handles away", !s.box && s.handles ==
 
 // ---- back on it, then on to a handle: they stay, and a drag on one picks and moves the stroke
 await glide([X(1000), Y(620)], [X(620), Y(345)]); await sleep(250)
-const grip = (await handles()).find((h) => /move/i.test(h.t))
-ok("a faint 'Drag to move' handle", !!grip)
+const grip = (await handles()).find((h) => h.h === "se")   // (2026-10-10: the move disc is gone; a handle of the ring)
+ok("a faint resize handle", !!grip)
 if (grip) {
   await glide([X(620), Y(345)], [grip.x, grip.y], 5); await sleep(400)
   s = await state()
@@ -77,7 +77,7 @@ if (grip) {
   await handDrag(line([grip.x, grip.y], [grip.x + 40, grip.y + 120], 10)); await sleep(300)
   d = await saved(file, (x) => x.items.some((i) => i.id === stroke.id && i.transform?.dy > 0))
   const moved = d.items.find((i) => i.id === stroke.id)
-  ok("a drag on a faint handle moves the object", moved?.transform && moved.transform.dy > 0.05, JSON.stringify(moved?.transform))
+  ok("a drag on a faint handle picks the object and scales it", moved?.transform && moved.transform.scale > 1.05, JSON.stringify(moved?.transform))
   s = await state()
   ok("...and picks it: its handles are the pick's now, at full strength", !s.faint && !s.box && s.handles >= 4, JSON.stringify(s))
   await shot("picked-by-handle")

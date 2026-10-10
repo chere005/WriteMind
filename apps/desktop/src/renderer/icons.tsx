@@ -55,6 +55,20 @@ const PATHS = {
   undo: "<path d=\"M5.5 5.25H10a3 3 0 0 1 0 6H6.5\"/><path d=\"m7.5 2.75-2.5 2.5 2.5 2.5\"/>",
   para: "<path d=\"M12.25 2.5H6.75a3 3 0 0 0 0 6h1.5M9.75 2.5v11M12.25 2.5v11\"/>",
   find: "<circle cx=\"7\" cy=\"7\" r=\"4.25\"/><path d=\"m10.5 10.5 3.5 3.5\"/>",
+  // The drawing layer's inspector (P5): order, a copy, delete, crop, dock into the note, and an arrow's heads and lines.
+  resize: "<path d=\"M9.5 2.5h4v4M6.5 13.5h-4v-4M13.5 2.5 9 7M2.5 13.5 7 9\"/>",
+  layers: "<path d=\"M8 2.5 14 5.75 8 9 2 5.75z\"/><path d=\"m2 8.5 6 3.25 6-3.25M2 11.25l6 3.25 6-3.25\"/>",
+  copy: "<rect x=\"5.5\" y=\"5.5\" width=\"8\" height=\"8\" rx=\"1.5\"/><path d=\"M10.5 3.75a1.5 1.5 0 0 0-1.5-1.5H3.75a1.5 1.5 0 0 0-1.5 1.5V9a1.5 1.5 0 0 0 1.5 1.5\"/>",
+  trash: "<path d=\"M2.75 4.5h10.5M6.25 4.5V3h3.5v1.5M4.25 4.5l.6 8.75h6.3l.6-8.75M6.75 7v4M9.25 7v4\"/>",
+  crop: "<path d=\"M4.5 1.75v9.75h9.75M1.75 4.5h9.75v9.75\"/>",
+  dockin: "<path d=\"M8 2.25v8M4.75 7.5 8 10.75l3.25-3.25M3 13.5h10\"/>",
+  headnoneL: "<path d=\"M3.5 8h9.5M3.5 5.25v5.5\"/>",
+  headnoneR: "<path d=\"M3 8h9.5M12.5 5.25v5.5\"/>",
+  headL: "<path d=\"M13 8H3.5M6.75 4.75 3.5 8l3.25 3.25\"/>",
+  headR: "<path d=\"M3 8h9.5M9.25 4.75 12.5 8l-3.25 3.25\"/>",
+  lnsolid: "<path d=\"M2 8h12\"/>",
+  lndashed: "<path d=\"M2 8h3M6.5 8h3M11 8h3\"/>",
+  lndotted: "<path d=\"M2.5 8h.01M5.25 8h.01M8 8h.01M10.75 8h.01M13.5 8h.01\" stroke-width=\"2.2\"/>",
   grip: "<circle cx=\"6\" cy=\"4\" r=\"1\" fill=\"currentColor\" stroke=\"none\"/><circle cx=\"10\" cy=\"4\" r=\"1\" fill=\"currentColor\" stroke=\"none\"/><circle cx=\"6\" cy=\"8\" r=\"1\" fill=\"currentColor\" stroke=\"none\"/><circle cx=\"10\" cy=\"8\" r=\"1\" fill=\"currentColor\" stroke=\"none\"/><circle cx=\"6\" cy=\"12\" r=\"1\" fill=\"currentColor\" stroke=\"none\"/><circle cx=\"10\" cy=\"12\" r=\"1\" fill=\"currentColor\" stroke=\"none\"/>",
 } as const
 
