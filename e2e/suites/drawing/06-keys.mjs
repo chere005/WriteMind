@@ -56,9 +56,9 @@ ok("a click on the shape picks it", (await handleCount()) >= 3)
 await key("Backspace")
 ok("Backspace on a clicked shape removes only the shape", (await shapes()).length === 0 && (await doc()) === "hello", JSON.stringify(await doc()))
 
-// The REAL flow: the palette is a <select> and keeps the focus after a choice. Placing hands it back to the notebook.
+// The REAL flow: the palette is a menu button and may keep the focus after a choice. Placing hands it back to the notebook.
 await setDoc("hello", 5)
-await js(`(() => { const s = [...document.querySelectorAll('select')].find(s => /^Shapes/.test(s.title||'')); s.focus() })()`)
+await js(`document.querySelector('[data-bar=shapes]').focus()`)
 await place()
 const where = await js(`document.activeElement?.className || document.activeElement?.tagName`)
 ok("placing from the palette hands the keys back to the notebook", /cm-content/.test(where), where)

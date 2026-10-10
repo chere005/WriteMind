@@ -177,6 +177,8 @@ export async function seedNotes(files, { reload = true, clean = false } = {}) {
 // Input: real events through the browser's own input pipeline
 // ---------------------------------------------------------------------------------------------------------------
 export const CTRL = 2, SHIFT = 8, ALT = 1, META = 4
+/** The platform's command modifier as `key` options: ⌘ on a Mac, Ctrl elsewhere (the app's `CmdOrCtrl`). */
+export const MOD = process.platform === "darwin" ? { meta: true } : { ctrl: true }
 const modBits = (o = {}) => (o.modifiers ?? 0) | (o.ctrl ? CTRL : 0) | (o.shift ? SHIFT : 0) | (o.alt ? ALT : 0) | (o.meta ? META : 0)
 
 export const mouse = (type, x, y, o = {}) => send("Input.dispatchMouseEvent", {
@@ -355,12 +357,36 @@ export async function openNote(name) {
 export const noteRows = () => js(`[...document.querySelectorAll('.note-row')].map(r=>r.dataset.path)`)
 
 // ---- the pen button of the top bar
-const penButton = `[...document.querySelectorAll('button')].find(b=>/^(Draw over|Put the pen|Pick up)/i.test(b.title||'')||b.textContent==='✎')`
+// The bar's ONE pen button (Sean, 2026-10-10): lit while the pen is down (or, when the button is the eraser, while it erases).
+const penButton = `document.querySelector('[data-bar=pen]')`
 export const penIsDown = () => js(`(()=>{const b=${penButton};return !!b&&b.classList.contains('on')})()`)
 /** Put the pen down (true: it draws) or up (false: the cursor/mouse). */
 export async function setPen(want) {
   if ((await penIsDown()) === want) return
   await js(`${penButton}?.click()`)
+  await sleep(250)
+}
+
+/** Open the pen button's menu from its caret (Pen / Eraser, colour, width, the tablet). */
+export async function penMenu() {
+  await js(`document.querySelector('[data-bar=pen-menu]').click()`)
+  await sleep(150)
+}
+/** The pen button is the eraser (its tool), and whether that eraser is on. */
+export const eraserState = () => js(`(()=>{const b=document.querySelector('[data-bar=pen]');return {tool:/^Eraser/.test(b.title)?'eraser':'pen',lit:b.classList.contains('on')}})()`)
+/** Turn the notebook's Erase tool on or off through the bar: the menu's Eraser the first time, then the button itself. */
+export async function setEraserTool(want) {
+  const now = await eraserState()
+  if (now.tool === 'eraser' && now.lit === want) return
+  if (want && now.tool !== 'eraser') { await penMenu(); await js(`document.querySelector('.float-menu [data-bar=erase]').click()`) }
+  else await js(`document.querySelector('[data-bar=pen]').click()`)
+  await sleep(200)
+}
+/** Pick a language for the Code button from its menu (its right-click), which also writes a block of it. */
+export async function pickCodeLanguage(language) {
+  await js(`document.querySelector('[data-bar=code]').dispatchEvent(new MouseEvent('contextmenu',{bubbles:true,cancelable:true}))`)
+  await sleep(150)
+  await js(`document.querySelector('.float-menu [data-bar="code-${language}"]').click()`)
   await sleep(250)
 }
 
@@ -397,13 +423,20 @@ export const saved = async (file, until = null, ms = 5000) => {
   }
 }
 export const canvasBox = async () => JSON.parse(await js(`(()=>{const b=document.querySelector('.wm-canvas').getBoundingClientRect();return JSON.stringify({x:b.x,y:b.y,w:b.width,h:b.height})})()`))
-/** Pick an Insert-menu entry (a shape, "arrow"...) so the next drag places it. */
-export const arm = (value) => js(`(()=>{
-  const sels=[...document.querySelectorAll('select')].filter(s=>/^(Shapes|Marks)/.test(s.title||''));
-  const s=sels.find(s=>[...s.options].some(o=>o.value===${JSON.stringify(value)}));
-  if(!s) return null;
-  const set=Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype,'value').set;set.call(s,${JSON.stringify(value)});
-  s.dispatchEvent(new Event('change',{bubbles:true}));return true})()`)
+/**
+ * Arm a placement from the bar: a shape kind ("rectangle", "check"...), "arrow" / "both" / "line", "tool" (the arrow tool) from
+ * the Shapes menu, or "text" (the Text box button), so the next drag places it. Returns null when there is no such entry.
+ */
+export const arm = async (value) => {
+  if (value === "text") return js(`(()=>{const b=document.querySelector('[data-bar=textbox]');if(!b)return null;b.click();return true})()`)
+  const opened = await js(`(()=>{const b=document.querySelector('[data-bar=shapes]');if(!b)return false;b.click();return true})()`)
+  if (!opened) return null
+  await sleep(120)
+  const hook = `shape-${value}`
+  const done = await js(`(()=>{const r=document.querySelector('.float-menu [data-bar="${hook}"]');if(!r)return null;r.click();return true})()`)
+  if (!done) await key("Escape")
+  return done
+}
 export const handles = async () => JSON.parse(await js(`JSON.stringify([...document.querySelectorAll('.wm-handle')].map(h=>{const r=h.getBoundingClientRect();return {t:h.title,x:r.x+r.width/2,y:r.y+r.height/2,w:r.width}}))`))
 /** Select everything on the drawing layer with a Ctrl-drag marquee and delete it. */
 export async function clearDrawing() {

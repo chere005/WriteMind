@@ -1,0 +1,169 @@
+// THE PEN: ONE BUTTON AND ITS MENU (docs/PLAN-bars-2026-10.md P1; Sean, 2026-10-10: "i only need a pen enabled and disabled
+// button.. and a dropdown to choose between pen or eraser (which switches the mode of the single button).. [colour and
+// width] should be under this dropdown"). The main button toggles its tool (accent fill while down, or the eraser); the
+// caret, a right-click, a half-second hold or ArrowDown open the menu: Pen / Eraser (checked, with their keys), Colour,
+// Width, Pen always draws, and the tablet's sheet. The keys (Alt+Cmd/Ctrl+1 / 2) and the menu and the button stay in step.
+import {
+  ok, finish, freshNote, js, sleep, shot, clickEl, centerOf, rightClick, mouse, hover, key, MOD, setRendered, setInput, saved,
+  canvasBox, drag, eraserState, penMenu, menu,
+} from "../../lib/harness.mjs"
+
+await js(`localStorage.clear()`)
+await js(`location.reload()`); await sleep(1500)
+const file = await freshNote()
+await setRendered(true)
+const lit = () => js(`document.querySelector('[data-bar=pen]').classList.contains('on')`)
+const isEraser = async () => (await eraserState()).tool === "eraser"
+const stored = () => js(`JSON.parse(localStorage.getItem('writemind.pen') || '{}')`)
+const menuRows = () => js(`JSON.stringify([...document.querySelectorAll('.float-menu button')].map(b => [b.dataset.bar ?? '', (b.querySelector('.float-label')?.textContent ?? b.getAttribute('aria-label') ?? '').trim(), b.querySelector('.hint')?.textContent ?? '', b.getAttribute('aria-checked') ?? b.getAttribute('aria-pressed') ?? '']))`).then(JSON.parse)
+const menuOpen = () => js(`!!document.querySelector('.float-menu')`)
+const focusIsNotes = () => js(`document.activeElement?.classList.contains('cm-content') ?? false`)
+const mac = await js(`navigator.userAgent.includes('Mac')`)
+const chord = (digit) => key(String(digit), { ...MOD, alt: true })
+const closeMenu = async () => { if (await menuOpen()) { await key("Escape"); await sleep(250) } }
+
+// ---- the bar has no Select button, colour well, swatch strip, width select or ink dot any more
+ok("no Select button, colour well, swatch strip or width select on the bar", await js(`!document.querySelector('.top-bar [data-bar=select], .top-bar [data-bar=erase], .top-bar select, .top-bar .swatch, .top-bar input[type=color]:not(.pen-colour)')`))
+ok("the pen is one split button: the main button and a caret", await js(`!!document.querySelector('.bar-split > [data-bar=pen]') && !!document.querySelector('.bar-split > [data-bar=pen-menu]')`))
+ok("it starts as the pen, not down", !(await isEraser()) && !(await lit()))
+ok("its tooltip names the key of this machine", await js(`(()=>{const t=document.querySelector('[data-bar=pen]').title;return ${mac} ? /Cmd\\+Alt\\+1/.test(t) && !/Ctrl/.test(t) : /Ctrl\\+Alt\\+1/.test(t)})()`))
+await shot("pen-up")
+
+// ---- the main button toggles the pen: accent fill while down
+await clickEl('[data-bar=pen]'); await sleep(250)
+ok("a click puts the pen down: the button is lit (accent fill across both halves)", (await lit()) && await js(`document.querySelector('.top-bar .bar-split').classList.contains('on') && document.querySelector('[data-bar=pen]').getAttribute('aria-pressed')==='true'`))
+ok("and the pen's mode is on (the page footer says so)", /Pen/.test(await js(`document.querySelector('.footer').innerText`)))
+await shot("pen-down")
+await clickEl('[data-bar=pen]'); await sleep(250)
+ok("a second click puts it up", !(await lit()))
+
+// ---- four ways into the menu
+await clickEl('[data-bar=pen-menu]'); await sleep(250)
+ok("the caret opens the menu", await menuOpen())
+const rows = await menuRows()
+ok("Pen and Eraser first, Pen checked, each with its key", rows[0][1] === "Pen" && rows[0][3] === "true" && rows[1][1] === "Eraser" && rows[1][3] === "false" && rows[0][2] === (mac ? "Cmd+Alt+1" : "Ctrl+Alt+1") && rows[1][2] === (mac ? "Cmd+Alt+2" : "Ctrl+Alt+2"), JSON.stringify(rows.slice(0, 2)))
+ok("then Colour (the six presets and a custom colour) and Width (1 2 3 5 8 12)", rows.filter((r) => r[0].startsWith("colour-")).length === 7 && rows.filter((r) => r[0].startsWith("width-")).map((r) => r[0]).join() === "width-1,width-2,width-3,width-5,width-8,width-12", JSON.stringify(rows.map((r) => r[0])))
+ok("then Pen always draws (tablet) and Tablet buttons and orientation…", rows.some((r) => r[1] === "Pen always draws (tablet)") && rows.some((r) => /^Tablet buttons and orientation/.test(r[1])))
+await shot("pen-menu")
+const above = await js(`(()=>{const m=document.querySelector('.float-menu').getBoundingClientRect(), b=document.querySelector('.top-bar .bar-split').getBoundingClientRect();return {mr:m.right,br:b.right,mt:m.top,bb:b.bottom,w:innerWidth}})()`)
+ok("the menu hangs under the pen, right-aligned, on screen", above.mt >= above.bb && above.mr <= above.w && Math.abs(above.mr - above.br) < 14, JSON.stringify(above))
+await key("Escape"); await sleep(250)
+ok("Escape closes it", !(await menuOpen()))
+ok("and the keyboard is the notes'", await focusIsNotes())
+
+const c = await centerOf('[data-bar=pen]')
+await rightClick(c.x, c.y)
+ok("a right-click on the pen opens the menu (not the Customize card)", (await menuOpen()) && !(await js(`!!document.querySelector('.bar-context')`)))
+await closeMenu()
+await hover(c.x, c.y)
+await mouse("mousePressed", c.x, c.y); await sleep(700)
+ok("a half-second hold opens it", await menuOpen())
+await mouse("mouseReleased", c.x, c.y); await sleep(200)
+ok("and the release does not also toggle the pen", !(await lit()))
+await closeMenu()
+await js(`document.querySelector('[data-bar=pen]').focus()`)
+await key("ArrowDown"); await sleep(250)
+ok("ArrowDown on the focused button opens it", await menuOpen())
+await key("Escape"); await sleep(250)
+await clickEl('[data-bar=pen-menu]'); await sleep(200)
+await clickEl('[data-bar=pen-menu]'); await sleep(250)
+ok("the caret again closes it (it does not flicker back open)", !(await menuOpen()))
+
+// ---- choosing Eraser: the same button, now erasing
+await penMenu()
+await clickEl('.float-menu [data-bar=erase]'); await sleep(300)
+ok("Eraser makes the button the eraser, lit", (await isEraser()) && (await lit()))
+ok("the menu closed, the keyboard is the notes'", !(await menuOpen()) && await focusIsNotes())
+ok("the tool is remembered with the pen's other settings", (await stored()).tool === "eraser")
+ok("the Pen menu of the application shows Erase Tool on", (await menu()).find((t) => t.label === "Pen").submenu.find((i) => i.label === "Erase Tool").checked === true)
+await shot("eraser-on")
+await clickEl('[data-bar=pen]'); await sleep(250)
+ok("a click on the eraser button turns the eraser off (it stays the eraser)", (await isEraser()) && !(await lit()))
+await clickEl('[data-bar=pen]'); await sleep(250)
+ok("and on again", (await isEraser()) && (await lit()))
+await penMenu()
+const eraserRows = await menuRows()
+ok("the menu now ticks Eraser", eraserRows[1][3] === "true" && eraserRows[0][3] === "false")
+await clickEl('.float-menu [data-bar=pen-pen]'); await sleep(300)
+ok("Pen makes it the pen again and puts the pen down; the eraser is let go", !(await isEraser()) && (await lit()))
+await clickEl('[data-bar=pen]'); await sleep(250)
+ok("a click puts the pen up", !(await lit()))
+
+// ---- the keys keep the button and the menu in step
+await js(`document.querySelector('.cm-content').focus()`)
+await chord(2); await sleep(250)
+ok("Alt+Cmd/Ctrl+2 sets the tool to the eraser and turns it on", (await isEraser()) && (await lit()))
+await chord(2); await sleep(250)
+ok("again turns it off", (await isEraser()) && !(await lit()))
+await chord(1); await sleep(250)
+ok("Alt+Cmd/Ctrl+1 sets it to the pen and puts it down", !(await isEraser()) && (await lit()))
+await chord(1); await sleep(250)
+ok("again puts it up", !(await isEraser()) && !(await lit()))
+await chord(2); await sleep(250)
+await chord(1); await sleep(250)
+ok("the pen key from the eraser lets the eraser go", !(await isEraser()) && (await lit()) && (await menu()).find((t) => t.label === "Pen").submenu.find((i) => i.label === "Erase Tool").checked === false)
+await chord(1); await sleep(250)
+
+// ---- the remembered tool comes back after a launch (not on)
+await clickEl('[data-bar=pen-menu]'); await sleep(200)
+await clickEl('.float-menu [data-bar=erase]'); await sleep(250)
+await js(`location.reload()`); await sleep(2500)
+await js(`document.querySelector('.note-row')?.click()`); await sleep(900)
+await setRendered(true)
+ok("after a reload the button is still the eraser, and not erasing", (await isEraser()) && !(await lit()))
+await clickEl('[data-bar=pen-menu]'); await sleep(200)
+await clickEl('.float-menu [data-bar=pen-pen]'); await sleep(250)
+await clickEl('[data-bar=pen]'); await sleep(250)
+
+// ---- colour and width: under the dropdown, current ringed, the menu stays up for both
+await penMenu()
+ok("the default colour (blue) is the ringed one", await js(`document.querySelector('.float-menu [data-bar=colour-2d7dd2]').getAttribute('aria-pressed')==='true'`))
+await clickEl('.float-menu [data-bar=colour-f2542d]'); await sleep(250)
+ok("a swatch sets the pen's colour", (await js(`document.querySelector('.pen-colour').value`)) === "#f2542d" && (await js(`JSON.parse(localStorage.getItem('writemind.penColour'))`)).toLowerCase() === "#f2542d")
+ok("the menu stays up and the red one is ringed", (await menuOpen()) && await js(`document.querySelector('.float-menu [data-bar=colour-f2542d]').getAttribute('aria-pressed')==='true' && document.querySelector('.float-menu [data-bar=colour-2d7dd2]').getAttribute('aria-pressed')==='false'`))
+ok("and the menu still has the keyboard (the swatch is not thrown back to the first row)", await js(`document.activeElement?.closest('.float-menu') !== null`))
+ok("width 3 is the marked one", await js(`document.querySelector('.float-menu [data-bar=width-3]').getAttribute('aria-pressed')==='true'`))
+await clickEl('.float-menu [data-bar=width-8]'); await sleep(250)
+ok("a width dot sets the pen's width", (await js(`JSON.parse(localStorage.getItem('writemind.penWidth'))`)) === 8 && await js(`document.querySelector('.float-menu [data-bar=width-8]').getAttribute('aria-pressed')==='true'`))
+const dots = await js(`JSON.stringify([...document.querySelectorAll('.float-menu .pen-width i')].map(i => Math.round(i.getBoundingClientRect().width)))`).then(JSON.parse)
+ok("the dots are drawn to scale (each no smaller than the one before)", dots.every((w, i) => i === 0 || w >= dots[i - 1]) && dots[0] < dots.at(-1), JSON.stringify(dots))
+await shot("colour-width")
+await setInput('.pen-colour', '#123456'); await sleep(250)
+ok("a custom colour (the rainbow ring's picker) sets the colour and rings the ring", (await js(`JSON.parse(localStorage.getItem('writemind.penColour'))`)).toLowerCase() === "#123456" && await js(`document.querySelector('.float-menu [data-bar=colour-custom]').getAttribute('aria-pressed')==='true'`))
+await clickEl('.float-menu [data-bar=colour-f2542d]'); await sleep(150)
+
+// ---- Pen always draws is a switch, and the menu stays up for it
+const before = (await stored()).penDraws
+await clickEl('.float-menu [data-bar=pen-always]'); await sleep(250)
+ok("the switch flips Pen always draws and the menu stays", (await stored()).penDraws === !before && (await menuOpen()))
+await clickEl('.float-menu [data-bar=pen-always]'); await sleep(250)
+ok("and flips back", (await stored()).penDraws === before)
+await closeMenu()
+await chord(8); await sleep(250)
+ok("Alt+Cmd/Ctrl+8 flips it too (the key and the switch are one setting)", (await stored()).penDraws === !before)
+await chord(8); await sleep(250)
+
+// ---- the pen draws with what the menu chose
+await clickEl('[data-bar=pen]'); await sleep(250)
+const box = await canvasBox()
+await drag(box.x + 300, box.y + 200, box.x + 420, box.y + 230, { steps: 10 })
+const d = await saved(file, (x) => x.items.some((i) => i.kind === "stroke"))
+const stroke = d.items.find((i) => i.kind === "stroke")
+ok("a stroke drawn after the menu's choices has its colour and width", stroke && String(stroke.colorHex ?? stroke.color).toLowerCase() === "#f2542d" && Math.abs((stroke.width ?? 0) - 8) < 0.6, JSON.stringify(stroke && { c: stroke.colorHex ?? stroke.color, w: stroke.width }))
+await clickEl('[data-bar=pen]'); await sleep(250)
+
+// ---- the tablet's row: the old Wacom chip
+await penMenu()
+ok("the tablet row carries the old chip's hook and a dot for what the pen has been seen to do", await js(`!!document.querySelector('.float-menu [data-pen=chip].pen-none .pen-dot')`))
+await clickEl('.float-menu [data-pen=chip]'); await sleep(300)
+ok("it opens the tablet sheet (its hooks stay: buttons and map-sheet) and closes the menu", await js(`!document.querySelector('.float-menu') && !!document.querySelector('.pen-pop [data-pen=buttons]') && !!document.querySelector('.pen-pop [data-pen=map-sheet]')`))
+await key("Escape"); await sleep(250)
+ok("Escape closes the sheet and the keyboard is the notes'", !(await js(`!!document.querySelector('.pen-pop')`)) && await focusIsNotes())
+await penMenu(); await clickEl('.float-menu [data-pen=chip]'); await sleep(300)
+await clickEl('.footer'); await sleep(250)
+ok("a click anywhere else closes the sheet too", !(await js(`!!document.querySelector('.pen-pop')`)))
+
+// ---- no note: the pen greys
+await js(`document.querySelectorAll('.tab .close').forEach((b) => b.click())`); await sleep(700)
+ok("with no note open the pen and its caret grey", await js(`document.querySelector('[data-bar=pen]').disabled && document.querySelector('[data-bar=pen-menu]').disabled`))
+finish()

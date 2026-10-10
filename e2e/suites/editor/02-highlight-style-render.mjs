@@ -1,6 +1,6 @@
 // The code highlighter, the Lang select, font / size / colour spans (the T popover), the rendered page, and
 // the cell / seam arrow-key walk. (Was wm/features.mjs.)
-import { setRendered, ok, finish, js, sleep, freshNote, setDoc, doc, setSel, key, typeText, click, shot, lineTexts, press, armed, pick } from "../../lib/harness.mjs"
+import { setRendered, ok, finish, js, sleep, freshNote, setDoc, doc, setSel, key, typeText, click, shot, lineTexts, press, armed, pick, pickCodeLanguage } from "../../lib/harness.mjs"
 
 await freshNote()
 const tokens = (cls) => js(`[...document.querySelectorAll('.${cls}')].map(e=>e.textContent)`)
@@ -26,19 +26,18 @@ await shot("highlight")
 
 // ---- the code-language chevron picks the language of the next fenced block
 await setDoc("")
-await pick("Code Language", "rust")
-await press("[data-bar=code]")
-await sleep(300)
+await pickCodeLanguage("rust")
 await typeText("fn main() {}")
 await sleep(300)
-ok("the Code Language chevron tags the fence the button writes", (await doc()).startsWith("```rust\n"), JSON.stringify(await doc()))
+ok("the Code button's menu tags the fence it writes (and writes one)", (await doc()).startsWith("```rust\n"), JSON.stringify(await doc()))
 ok("and the block is coloured", (await tokens("wm-tok-keyword")).includes("fn"))
-await pick("Code Language", "plain")
+await js(`document.querySelector('[data-bar=code]').dispatchEvent(new MouseEvent('contextmenu',{bubbles:true,cancelable:true}))`); await sleep(150)
+await js(`document.querySelector('.float-menu [data-bar="code-plain"]').click()`); await sleep(250)
 
 // ---- font, size, colour: a <span style> around the selection (the T popover)
 await setDoc("at dawn")
 await js(`${V}.dispatch({selection:{anchor:3,head:7}})`)
-const tButton = `[...document.querySelectorAll('.top-bar .icon-button')].find(b=>b.textContent==='T')`
+const tButton = `document.querySelector('[data-bar=font]')`
 await js(`${tButton}.click()`); await sleep(200)
 await js(`(()=>{const boxes=document.querySelector('.style-pop').querySelectorAll('input[type=checkbox]');[boxes[1],boxes[2]].forEach(b=>b.click())})()`)
 await sleep(100)

@@ -4,7 +4,7 @@
 // Select / double-tap Redo, upper = hold Erase strokes / double-tap Undo. A single tap does nothing, a press held in
 // the air does nothing, and no context menu opens over the page while a pen button is in use. (penButtons.ts,
 // penActions.ts)
-import { js, send, ok, finish, sleep, freshNote, saved, waitFor, pe, reloadApp, mouse } from "../../lib/harness.mjs"
+import { js, send, ok, finish, sleep, freshNote, saved, waitFor, pe, reloadApp, mouse, penMenu, eraserState, menu, setRendered, key } from "../../lib/harness.mjs"
 
 const file = await freshNote()
 await js(`localStorage.removeItem('writemind.pen')`)
@@ -12,6 +12,7 @@ await reloadApp()
 const name = file.split(/[\\/]/).pop().replace(/\.wm$/, "")
 const reopen = async () => {
   await js(`(() => { const r=[...document.querySelectorAll('.note-row')]; const m=r.find(x=>x.textContent.includes(${JSON.stringify(name)}))||r[0]; m.click() })()`)
+  await setRendered(true)
   await waitFor(`!!document.querySelector('.wm-canvas')`); await sleep(600)
 }
 await reopen()
@@ -66,16 +67,22 @@ const inkDrag = async (which, from, to) => {
   await pe("pointerup", to[0], to[1], { button: BTN[which], buttons: 0, pressure: 0 })
   await sleep(150)
 }
-const openPop = async () => { if (!(await js(`!!document.querySelector('.pen-pop')`))) { await js(`document.querySelector("[data-pen=chip]").click()`); await sleep(120) } }
+// The tablet sheet (the old Wacom chip's popover): the last row of the pen menu opens it.
+const openPop = async () => { if (!(await js(`!!document.querySelector('.pen-pop')`))) { await penMenu(); await js(`document.querySelector("[data-pen=chip]").click()`); await sleep(150) } }
 const setting = async (sel, action) => {
   await openPop()
   await js(`(() => { const s = document.querySelector("[data-pen=${sel}]"); Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype,"value").set.call(s, ${JSON.stringify(action)}); s.dispatchEvent(new Event("change",{bubbles:true})) })()`)
   await sleep(40)
 }
-const closePop = async () => { await js(`document.querySelector('.pen-pop') && document.querySelector('[data-pen=chip]').click()`); await sleep(60) }
+const closePop = async () => { if (await js(`!!document.querySelector('.pen-pop')`)) { await key("Escape"); await sleep(100) } }
 const colour = () => js(`document.querySelector('.pen-colour').value`)
-const width = () => js(`document.querySelector('select[title="Pen width"]').value`)
-const pressed = (bar) => js(`document.querySelector('[data-bar=${bar}]').getAttribute('aria-pressed')`)
+const width = () => js(`JSON.parse(localStorage.getItem('writemind.penWidth'))`)
+// Erase is the pen button when it is the eraser and lit; Select has no button (⌥⌘3, the page's chip says so): the Pen menu's check.
+const pressed = async (bar) => {
+  if (bar === "erase") { const s = await eraserState(); return String(s.tool === "eraser" && s.lit) }
+  const item = (await menu()).find((t) => t.label === "Pen").submenu.find((i) => i.label === "Select Tool")
+  return String(item.checked)
+}
 const stored = () => js(`JSON.parse(localStorage.getItem('writemind.pen')||'{}')`)
 const columns = () => js(`['lower','upper','eraser','tipAlt'].map(k=>{const h=document.querySelector('[data-pen=btn-'+k+']');const d=document.querySelector('[data-pen=dbl-'+k+']');return k+':'+(h?h.value:'?')+'/'+(d?d.value:'-')}).join(' ')`)
 /** The lower button's hold (Select): a marquee from a to b. */
@@ -249,7 +256,7 @@ const dd = (await stored()).penDraws
 await chord("8", "Digit8", 56, CTRL | ALT)
 ok("Ctrl+Alt+8 toggles Pen always draws", (await stored()).penDraws === !dd)
 await chord("8", "Digit8", 56, CTRL | ALT)
-const penOn = () => js(`[...document.querySelectorAll('button')].find(b=>b.textContent==='✎').classList.contains('on')`)
+const penOn = () => js(`document.querySelector('[data-bar=pen]').classList.contains('on')`)
 const p0 = await penOn()
 await chord("1", "Digit1", 49, CTRL | ALT)
 ok("Ctrl+Alt+1 puts the pen down / up", (await penOn()) === !p0)
