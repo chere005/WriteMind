@@ -227,7 +227,8 @@ await reloadApp()
 await reopen()
 
 // ---- ExpressKeys: real key events through the browser's input pipeline
-const CTRL = 2, ALT = 1
+// (The command key of this machine: ⌘ on a Mac, Ctrl elsewhere — the table's `CmdOrCtrl`; the suite sent Ctrl on a Mac, which is no key there.)
+const CTRL = process.platform === "darwin" ? 4 : 2, ALT = 1
 const chord = async (k, code, vk, mods, extra = {}) => {
   await send("Input.dispatchKeyEvent", { type: "rawKeyDown", key: k, code, windowsVirtualKeyCode: vk, modifiers: mods, ...extra })
   await send("Input.dispatchKeyEvent", { type: "keyUp", key: k, code, windowsVirtualKeyCode: vk, modifiers: mods })

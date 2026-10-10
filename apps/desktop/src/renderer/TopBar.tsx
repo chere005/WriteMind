@@ -441,7 +441,7 @@ export function TopBar({
                     onClick={() => onPlace(armedText ? null : { kind: "shape", shape: "text" })} />
       case "picture":
         return <Btn key={id} icon="image" dataBar="picture" disabled={off} onClick={onAddPicture}
-                    title={tip("Picture…", key("insertImage"), `Add a picture (${key("paste") || "paste"} pastes one, and so does a drop)`)} />
+                    title={tip("Picture…", key("insertImage"), "Add a picture — pasting one works too, and so does a drop")} />
       case "table":
         return <Btn key={id} icon="table" dataBar="table" disabled={off} onClick={run("insertTable")}
                     title={tip("Table", key("insertTable"), "A table of two columns — Tab goes cell to cell, Return adds a row")} />

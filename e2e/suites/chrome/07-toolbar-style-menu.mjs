@@ -2,7 +2,7 @@
 // in the dropdown for style, pressing the keystroke"). The button names the caret's cell; its menu is the list the seam's +
 // opens, each entry with its key. Picking runs the command exactly as its key does: the caret ends where the key leaves it,
 // ONE Ctrl/Cmd+Z takes it back, and the keyboard is the notes' again. Real mouse on the bar, real keys.
-import { ok, finish, freshNote, setDoc, setSel, doc, sel, js, sleep, clickEl, key, shot, MOD, armed } from "../../lib/harness.mjs"
+import { closeAllTabs, waitFor, ok, finish, freshNote, setDoc, setSel, doc, sel, js, sleep, clickEl, key, shot, MOD, armed } from "../../lib/harness.mjs"
 
 await freshNote()
 const START = "alpha\n\nbeta words here\n\ngamma"
@@ -112,6 +112,7 @@ await key("z", MOD); await sleep(250)
 ok("one undo takes the cell back", (await doc()) === "alpha\n\nbeta", JSON.stringify(await doc()))
 
 // ---- with no note open the button greys
-await js(`document.querySelector('.tab .close')?.click()`); await sleep(600)
+await closeAllTabs()
+await waitFor(`!!document.querySelector('[data-bar=style]')?.disabled`, 6000).catch(() => {})
 ok("with no note open the Style button stays and greys", await js(`!!document.querySelector('[data-bar=style]')?.disabled`))
 finish()

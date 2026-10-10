@@ -76,7 +76,8 @@ export function PenSheet({ at, onClose }: { at: SheetPlace; onClose(): void }) {
   }, [onClose])
   const where: CSSProperties = { position: "fixed", top: at.top, right: at.right, left: "auto", maxHeight: `calc(100vh - ${at.top + 8}px)` }
   return (
-    <div ref={pop} className="style-pop pen-pop" data-pen="sheet" style={{ width: 400, ...where }} onMouseDown={(event) => event.stopPropagation()}>
+    <div ref={pop} className="pen-pop" data-pen="sheet" style={{ width: 400, ...where }}
+         onMouseDown={(event) => event.stopPropagation()} onContextMenu={(event) => event.stopPropagation()}>
       <p>{WORDS[settings.seen]}</p>
       <label>
         <input type="checkbox" checked={settings.penDraws}

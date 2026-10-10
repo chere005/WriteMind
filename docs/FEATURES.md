@@ -15,18 +15,24 @@ is how the code is put together.
 - **An edit button** puts duplicate and delete on every row, and the order
   you drag rows into is remembered.
 - **A markdown editor, and a preview of it.** The bar sits over the editor
-  pane; the button on its right lights up while the preview is showing
-  (⇧⌘P). Bold, italic, underline, bullets and quote are on the left
-  (⌘B ⌘I ⌘U ⇧⌘L ⌃⌘Q); they wrap or unwrap the selection, and undo knows
-  about it.
+  pane (the rendered page's button is in the tab row, beside the sidebar's and
+  the video's). Bold, italic, underline and strikethrough are on the left
+  (⌘B ⌘I ⌘U ⇧⌘X), after the **Style** button; they wrap or unwrap the
+  selection, and undo knows about it.
+- **A Style button that says where you are.** It names the cell the caret is
+  in — Text, Title … Subsubsection, Dots, Dashes, Numbered, To-do, Quote,
+  Markdown, Code, Runnable code, Maths, Drawing — and its menu is the same
+  list the `+` between two cells opens, each with its key. Picking one runs
+  exactly what its key does: the caret ends where the key leaves it and one
+  Undo takes it back.
 - **Six heading levels, named the way you'd say them.** Title, Chapter,
   Author, Section, Subsection and Subsubsection — the Author line renders
-  italic and slightly bigger than the body text. From the `aA` menu, the
+  italic and slightly bigger than the body text. From the Style menu, the
   Format menu, or ⌘1 title, ⌘2 chapter, ⌘3 author, ⌘4–⌘6 section to
   subsubsection, ⌘7 back to body.
 - **To-do bullets.** A fourth kind of list: `- [ ]` and `- [x]`, GFM's
   own task list, so any other markdown editor reads them too. The list
-  button's chevron picks it, the `+` on the insertion bar offers it, and
+  button's menu picks it, the `+` on the insertion bar offers it, and
   Return carries the list on with a fresh empty box. On the rendered page
   the box is a control — click it and the line is ticked, struck through
   and faded; click it again and it is not. Only the box: a click on the
@@ -165,11 +171,11 @@ is how the code is put together.
   before anything is read — so a row of dots never arrives as "・・・".
 - **Lists that carry on.** Return at the end of a bullet or a numbered
   item starts the next one; Return on an empty item ends the list. The
-  chevron beside the list button picks dots, dashes or numbers — `- `, `* `
-  and `1. ` on disk, a round bullet, a dash and a number on the page.
+  list button's menu picks dots, dashes, numbers or to-dos — `- `, `* `,
+  `1. ` and `- [ ] ` on disk, a round bullet, a dash and a number on the page.
 - **Code blocks, in five languages.** The `</>` button (⌘8) fences the
-  selection or opens an empty block; its chevron tags the fence C, C++,
-  Wolfram, Python or TypeScript, and the block is coloured — in the editor
+  selection or opens an empty block; its menu tags the fence with one of ten
+  languages, and the block is coloured — in the editor
   and in the preview — by a palette that has a light and a dark half, so it
   reads either way round.
 - **Cells that run.** An evaluation cell (```` ```eval wl ````, `eval python`,
@@ -288,12 +294,23 @@ is how the code is put together.
   camera you pick is remembered; a first launch never asks. Two buttons in
   the corner turn the picture a quarter turn either way, for a camera that
   is mounted sideways.
-- **A bar you can put away a piece at a time.** The toolbar is in
-  sections — Style, Structure, Insert, Maths, Flow Chart, Capture — and the
-  grip at the end of each one folds it down to a single icon; right-click
-  the bar for the list. Every shortcut lives in the **Format** menu, so
-  folding a section never takes its keys with it. Hovering a button names
-  it, shows its keys and says what it does.
+- **One row that always fits.** The bar over the note is a single 36px row,
+  never wrapping: Style, B I U S, Aa (font, size, colour), List, Quote, Code,
+  then the inserts as buttons of their own — Text box, Picture, Table, Maths,
+  Shapes — with Move section up / down beside them, and the pen at the right.
+  When the pane is too narrow, the inserts and the section moves go into a
+  **⋯** menu first, then list / quote / code, and the ⋯ only appears then; each
+  runs from there with its icon and key. **Customize toolbar…** (in the ⋯, or
+  a right-click on the bar) puts the four sections — Text, Blocks, Insert, Pen
+  — away and brings them back. Every shortcut lives in the **Format** menu, so
+  putting a section away never takes its keys with it. Hovering a button names
+  it, shows its key and says what it does.
+- **One pen button.** It toggles the pen (accent fill while it is down) — or
+  the eraser: its menu (the caret, a right-click, a half-second hold or the
+  down arrow) picks **Pen** or **Eraser**, which switches what the one button
+  does (⌥⌘1 and ⌥⌘2 do the same and keep the menu in step), then the
+  **colour** (six presets and a custom one) and the **width** (1 2 3 5 8 12),
+  **Pen always draws (tablet)** and the tablet's buttons and orientation.
 - **Tabs for the notes you have open.** The wheel walks along them, and the
   button at the right-hand end lists every open note — the way back to one
   that has scrolled off the end.

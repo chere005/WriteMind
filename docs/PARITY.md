@@ -1330,3 +1330,21 @@ and make ctrl + 10 drawing cells". **This differs from the Mac on purpose: the M
 | Keys: Ctrl+9 Maths Cell (editor keymap `Mod-9`), Ctrl+0 Drawing Cell again (page; it was Ctrl+9 on 2026-10-05). No zoom role uses Ctrl+0 (the menu has none). F1's "Cell Types" group 1 … 9 then 0; the Quick Reference's cell-type rows and a "Maths cells" feature line; KEYS.md, PLAN-text-cells.md | done | `keyList` / `keyGroups` / `welcome` / `menu` tests; e2e (Ctrl+0 makes a drawing cell, one Ctrl+Z; Insert menu accelerators read from the running app); `drawing/08`, `09`, `10` moved to Ctrl+0 and pass (61 / 61) |
 
 Not verified: Sean's own hands and notes; the Mac build (⌘9 / ⌘0 only by the shared command table and the unit tests).
+
+## The bar over the note, rebuilt (2026-10-10, docs/PLAN-bars-2026-10.md P1)
+
+Sean's audit of 2.16.0, turned into wireframes (`docs/ui-2026-10/`): the Mac's `TopBar.swift` is the reference for what is on
+the bar, the port's own shape (one 36px row, a fold ladder, the pen as one split button) is what the wireframes ask for.
+**This differs from the Mac's bar on purpose**: six collapsible sections with grips, a Select button, a colour well, a swatch
+strip and a width select, the chevron beside the list and code buttons, the maths and the shapes as drop-downs of a bar group.
+
+| Feature | Status | Evidence |
+|---|---|---|
+| ONE 36px row (`.bar-row.page`), never wrapping, never clipping at any width from 460px up; Style · B I U S · Aa · List · Quote · Code · Text box · Picture · Table · Maths · Shapes · Move section up / down · pen · ⋯ | done | `e2e/suites/chrome/09-toolbar-fold.mjs` (every width 460…1100, the exact pixel each level starts) |
+| The fold ladder is a pure function of the width and of the sections shown: inserts + moves into ⋯, then list / quote / code, then the Style button's word; the ⋯ appears only then, holds what folded with icons and keys under "Moved here for width", and Customize toolbar… | done; **differs from the plan's text** (the plan folds the Style word before the blocks and rounds to 700 / 630 / 560 / 460; the wireframe it calls the spec shows the 460px pane with the Style word and the blocks in the ⋯) | `apps/desktop/test/barFold.test.ts` (16), chrome/09 |
+| Style button: the caret's cell kind (`cellKindAt` / `watchCellKind` in `packages/editor`, an observer told only of a change of kind; at an armed bar, the kind the bar will open) and the menu of `kindMenuItems`, each pick running its key's command: the caret where the key leaves it, ONE undo, the keyboard back in the notes | done | `packages/editor/test/cellKind.test.ts`, `packages/core/test/tableCells.test.ts`; `chrome/07-toolbar-style-menu.mjs` (114 checks: every kind, the caret, the undo, an armed bar) |
+| Table (`insertTable`, core `tableBlock`): an empty two-column table, a header and two body rows, a cell of its own after the caret's (on an empty line or at a bar where it is), the caret in the first header cell, one undo; Insert ▸ Table, no key | done | `tableCells.test.ts`, `cellKind.test.ts`, `menu.test.ts`; chrome/10 |
+| A cell made with nothing typed in it (the + menu, a Style pick at a bar, Table) is its own undo step, never joined to the typing before it | done | `cellKind.test.ts`; chrome/07 |
+| The pen is ONE split button: toggles its tool; its menu (caret, right-click, half-second hold, ArrowDown) picks Pen or Eraser (which switches the button, and turns it on), the colour (six presets + custom, current ringed), the width (1 2 3 5 8 12 drawn to scale), Pen always draws (⌥⌘8) and the tablet's sheet (the old chip's row, hooks kept); ⌥⌘1 / ⌥⌘2 keep the button, the menu and the application menu in step; the tool is remembered, the eraser is never on at launch | done | `apps/desktop/test/penTool.test.ts` (16), `chrome/08-toolbar-pen.mjs` (51 checks) |
+| The sidebar's switch left this bar (the tab row's, P2); the six collapsible sections, their grips, the Select button (⌥⌘3 stays), the colour well, swatches, width select and ink dot are gone; the sections are Text, Blocks, Insert, Pen, remembered as `toolSections` and migrated once from the six | done | `barFold.test.ts` (migration), `chrome/01-bars-keys-menu.mjs` |
+| Every tooltip names this machine's key (`shown`), none a hand-typed Ctrl | done | chrome/10 |

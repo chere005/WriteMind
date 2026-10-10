@@ -106,7 +106,8 @@ export function FloatingMenu({ x, y, items, above, right, onClose, id }: Props) 
   return (
     <div ref={box} className="float-menu" role="menu" id={id}
          style={{ left: at.x, top: at.y }}
-         onContextMenu={(event) => event.preventDefault()}
+         // (Not the bar's own right-click either: a menu hangs under the bar it was opened from, inside its React tree.)
+         onContextMenu={(event) => { event.preventDefault(); event.stopPropagation() }}
          onKeyDown={(event) => {
            const buttons = [...(box.current?.querySelectorAll<HTMLButtonElement>(":scope > .float-row > button:not(:disabled), :scope > .float-custom button:not(:disabled)") ?? [])]
            const index = buttons.indexOf(document.activeElement as HTMLButtonElement)
