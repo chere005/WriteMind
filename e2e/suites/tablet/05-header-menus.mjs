@@ -2,7 +2,7 @@
 // (Paper, orientation, Undo ... Bring in, close) that never wraps or clips at 438 and 280px, never sits on the sheet (the
 // sheet is letterboxed in what is left under it and its top never jumps), menus that open from the button and close on
 // Escape / click-away, the footer's one line and its fact, the sheet's tab strip.
-import { js, ok, finish, sleep, freshNote, key, noGrab, pickTablet, showVideoPane, tabletBox, waitFor, rectOf, shot, penStroke, seg, pickFromMenu, setOrientation, click } from "../../lib/harness.mjs"
+import { js, ok, finish, sleep, freshNote, key, noGrab, pickTablet, showVideoPane, tabletBox, waitFor, rectOf, shot, penStroke, seg, pickFromMenu, setOrientation, click, setDoc, focus, rightClick, menuClick } from "../../lib/harness.mjs"
 
 await noGrab()
 await freshNote({ video: true })
@@ -93,5 +93,26 @@ ok("Bring in is on with a note open", await js(`!document.querySelector('[data-c
 
 // 7. the sheet's strip
 ok("the strip has Sheet 1 and a +", await js(`document.querySelector('.sheet-tabs [data-sheet-id]').textContent.trim() === 'Sheet 1' && !!document.querySelector('.sheet-tabs [data-sheet-add]')`))
+
+// 8. a sheet BOUND to a drawing cell (right-click the cell > Open in Tablet Sheet): its tab says so, Bring in is off, the
+// footer says whose cell it is
+await setDoc("# Cells\n\nA drawing cell below.", 0)
+await focus(); await js(`document.querySelector('.cm-content').cmTile.view.dispatch({selection:{anchor:20}})`)
+await menuClick("insertInkCell"); await sleep(800)   // (the key is Cmd+0 on a Mac, Ctrl+0 elsewhere)
+await key("Escape"); await sleep(150)
+const cell = JSON.parse(await js(`(() => { const e = document.querySelector('.wm-inkcell canvas'); if (!e) return 'null'; const r = e.getBoundingClientRect(); return JSON.stringify({ x: r.x, y: r.y, w: r.width, h: r.height }) })()`))
+ok("a drawing cell (Ctrl+0)", !!cell)
+if (cell) {
+  await rightClick(cell.x + cell.w / 2, cell.y + cell.h / 2); await sleep(250)
+  await js(`[...document.querySelectorAll('#cell-menu button')].find((b) => b.textContent.trim().startsWith('Open in Tablet Sheet')).click()`)
+  await waitFor(`!!document.querySelector('.sheet-tab.bound')`, 5000)
+  await sleep(300)
+  const tab = await js(`JSON.stringify({ name: document.querySelector('.sheet-tab.bound .name').textContent, mark: getComputedStyle(document.querySelector('.sheet-tab.bound .name'), '::before').content })`).then(JSON.parse)
+  ok("the bound sheet's tab is named for its note's drawing, with the \u25A3 mark", /Drawing$/.test(tab.name) && tab.mark.includes("\u25A3"), JSON.stringify(tab))
+  ok("Bring in is off on it (the cell is the note's already)", await js(`document.querySelector('[data-capture=ink]').disabled`))
+  ok("the footer says whose drawing cell it is", /^Drawing cell of /.test((await status()).line ?? ""), JSON.stringify(await status()))
+  ok("its header is still 36px and whole at 280px", await (async () => { await width(280); const h = await head(); await width(438); return h.h === 36 && h.rows === 1 && h.inside && h.scroll <= h.client })())
+  await shot("tablet-bound")
+}
 await shot("tablet-done")
 finish()
