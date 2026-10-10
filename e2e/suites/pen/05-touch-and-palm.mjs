@@ -3,7 +3,7 @@
 import { reloadApp, ok, finish, js, send, sleep, freshNote, setDoc, sel, setSel, focus, setPen, touch, mouse, hover, VIEW, lineBoxes, rectOf } from "../../lib/harness.mjs"
 
 await reloadApp()      // the pen the last script used must not still be "near"
-await freshNote()
+await freshNote({ rendered: true })
 await send("Emulation.setFocusEmulationEnabled", { enabled: true })
 const long = Array.from({ length: 60 }, (_, i) => "Paragraph number " + i).join("\n\n")
 await setDoc(long); await focus(); await sleep(300)

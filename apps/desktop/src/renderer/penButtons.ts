@@ -38,6 +38,8 @@
  * have a hold action only.
  */
 
+import { WIDTH_LADDER } from "@writemind/core"
+
 export type HoldAction = "select" | "add" | "erase" | "pan" | "none"
 export type TapAction =
   | "undo" | "redo" | "toggleErase" | "toggleSelect"
@@ -421,7 +423,8 @@ export const echoed = (event: PressLike, echoBits: number): PressLike =>
 
 // MARK: - Cycling colours and widths
 
-export const PEN_WIDTHS = [1, 2, 3, 5, 8, 12]
+/** The pen's widths: the one ladder the inspector over a picked object offers too (core `WIDTH_LADDER`). */
+export const PEN_WIDTHS = WIDTH_LADDER
 
 /** The next (or previous) colour in `presets`; one not in the list starts from the first. */
 export function cycleColour(current: string, presets: string[], direction: 1 | -1 = 1): string {

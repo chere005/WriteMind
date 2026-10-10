@@ -5,22 +5,26 @@
  * `@writemind/editor`, and every rule THAT obeys is in `@writemind/core`.
  */
 
-import { useEffect, useLayoutEffect, useRef, useState } from "react"
-import { Compartment, EditorState, type Extension, type StateEffect } from "@codemirror/state"
+import { useEffect, useRef, useState } from "react"
+import { Compartment, EditorState, StateEffect, type Extension } from "@codemirror/state"
 import { EditorView, drawSelection, rectangularSelection } from "@codemirror/view"
-import { history, historyKeymap, defaultKeymap, standardKeymap } from "@codemirror/commands"
+import { history, historyKeymap, defaultKeymap, isolateHistory, standardKeymap } from "@codemirror/commands"
 import { keymap } from "@codemirror/view"
 import {
-  cellBrackets, folding, foldField, foldedKeys, linkClicks, linkTrigger, mathRendering, notebookDecorations, notebookKeys,
-  notebookState, notebookTheme, textConventions, pasteHtmlAsText, drawingPasted, pasteDrawing, hiddenMarkerDeletion, find, preview, rendered, renderedField, markersField, seamExtensions, openCellAt,
-  setFolds, setPreview, setRendered, setMarkers, listStyleSource, revealAt,
+  armAt, armedField, cellBrackets, folding, foldField, foldedKeys, linkClicks, linkTrigger, mathRendering, notebookDecorations, notebookKeys,
+  notebookState, notebookTheme, textConventions, pasteHtmlAsText, drawingPasted, pasteDrawing, hiddenMarkerDeletion, find, preview, rendered, renderedField, markersField, seamExtensions,
+  setFolds, setPreview, setRendered, setMarkers, listStyleSource, revealAt, PLUS_CENTRE_X, PLUS_DIAMETER,
 } from "@writemind/editor"
-import { ALL_KINDS, KIND_GROUPS, kindName, openCell, type CellKind, type ListStyle, type Seam } from "@writemind/core"
+import { ALL_KINDS, openCell, type CodeLanguage, type ListStyle, type Seam } from "@writemind/core"
 import { textTimeline } from "./editTimeline"
 import { historyOf, stashText, takeText } from "./noteHistory"
 import { cellsCopied, evaluationCells, evalHost, inkCellPainter, pictureCells, type InkCellPainter } from "@writemind/editor"
 import { tables, textCells } from "@writemind/editor"
 import { evalHostOfApp } from "./evalHost"
+import { FloatingMenu, type MenuItem } from "./FloatingMenu"
+import { runEditorCommand } from "./editorCommands"
+import { kindMenuItems, type KindPick } from "./kindMenu"
+import { modChord } from "../shared/chord"
 import "./editor.css"
 
 export interface NotebookHandle { view: EditorView | null }
@@ -54,6 +58,8 @@ interface Props {
   markers?: boolean
   /** The style Format ▸ List and its key write (the chevron beside the list button). */
   listStyle?: ListStyle
+  /** The language Code Block's key and the + menu's Code write (the chevron beside the code button); plain by default. */
+  codeLanguage?: CodeLanguage
   /** The document changed: its words as a function (a snapshot), so a keystroke does not copy the whole note. */
   onChange(text: () => string): void
   onReady(view: EditorView): void
@@ -71,10 +77,12 @@ interface Props {
   onCellsCopied?(copy: { markdown: string; plain: string }): void
   /** A paste of a drawing cell copied from the tablet box (Copy Cell; packages/editor paste.ts): true when it is one, and landed. */
   onDrawingPasted?(data: DataTransfer): boolean
+  /** This machine's platform, for the keys the menus print ("Cmd+X" on a Mac, "Ctrl+X" elsewhere). */
+  platform?: string
 }
 
-export function Notebook({ file, text, version, restore, readOnly, rendered: showRendered, markers: showMarkers, listStyle, onChange, onReady,
-  onViewState, onLink, onFollow, inkPainter, onInsertInkCell, onCellsCopied, onDrawingPasted }: Props) {
+export function Notebook({ file, text, version, restore, readOnly, rendered: showRendered, markers: showMarkers, listStyle, codeLanguage, onChange, onReady,
+  onViewState, onLink, onFollow, inkPainter, onInsertInkCell, onCellsCopied, onDrawingPasted, platform = "win32" }: Props) {
   const host = useRef<HTMLDivElement | null>(null)
   const view = useRef<EditorView | null>(null)
   const latest = useRef(onChange)
@@ -95,6 +103,8 @@ export function Notebook({ file, text, version, restore, readOnly, rendered: sho
   markersRef.current = showMarkers
   const listRef = useRef<ListStyle>(listStyle ?? "dots")
   listRef.current = listStyle ?? "dots"
+  const codeRef = useRef<CodeLanguage>(codeLanguage ?? "plain")
+  codeRef.current = codeLanguage ?? "plain"
   const painterRef = useRef(inkPainter ?? null)
   painterRef.current = inkPainter ?? null
   const insertInkRef = useRef(onInsertInkCell)
@@ -114,14 +124,13 @@ export function Notebook({ file, text, version, restore, readOnly, rendered: sho
   // The right-click menu: Windows has no native one in this shell, and a page
   // you cannot right-click Copy/Paste on feels broken on that platform.
   const [context, setContext] = useState<{ x: number; y: number; hasSelection: boolean } | null>(null)
-  const menuBox = useRef<HTMLDivElement | null>(null)
-  const contextBox = useRef<HTMLDivElement | null>(null)
 
   useEffect(() => {
     if (!host.current) return
     const extensions: Extension[] = [
       readOnlySwitch.of(EditorState.readOnly.of(readOnlyRef.current)),
-      history(),
+      // (Sean, 2026-10-10: Undo reaches back at least 200 steps of typing; CodeMirror keeps between this and twice it.)
+      history({ minDepth: 200 }),
       // Every edit of the words is numbered on the note's clock, so one Undo
       // can take back the words and the drawing in the order they were made.
       textTimeline(historyOf(file).clock),
@@ -149,8 +158,10 @@ export function Notebook({ file, text, version, restore, readOnly, rendered: sho
       linkTrigger((_editor, caret) => linkRef.current?.(file, caret)),
       linkClicks((href) => followRef.current?.(file, href)),
       seamExtensions((editor, seam) => {
+        // The menu opens beside the marker, which is drawn on the bar's line in the left margin. (The content box's top
+        // already moves with the scroll: the page's own y is added to it as it is.)
         const box = editor.contentDOM.getBoundingClientRect()
-        setMenu({ x: box.left + 24, y: box.top + seam.line - editor.scrollDOM.scrollTop + 8, seam })
+        setMenu({ x: box.left + PLUS_CENTRE_X + PLUS_DIAMETER / 2 + 6, y: box.top + seam.line - 10, seam })
       }),
       // Tables: the grid in the markdown, Tab / Shift+Tab cell to cell, Return adds a row (ahead of the page's Return).
       tables,
@@ -182,9 +193,11 @@ export function Notebook({ file, text, version, restore, readOnly, rendered: sho
         }
       }),
     ]
+    // A note coming back to the front finds its undo where it was left — under the same name or a new one (a rename or a move
+    // carries it: noteHistory.ts). The state that was put aside is given THIS path's extensions (the closures name `file`).
+    const aside = takeText(file, text)
     const editor = new EditorView({
-      // A note coming back to the front finds its undo where it was left.
-      state: takeText(file, text) ?? EditorState.create({ doc: text, extensions }),
+      state: aside ? aside.update({ effects: StateEffect.reconfigure.of(extensions) }).state : EditorState.create({ doc: text, extensions }),
       parent: host.current,
     })
     // A note coming back where it was left: its closed sections, and its caret.
@@ -220,7 +233,10 @@ export function Notebook({ file, text, version, restore, readOnly, rendered: sho
     const editor = view.current
     if (!editor) return
     if (editor.state.doc.length === text.length && editor.state.doc.toString() === text) return
-    editor.dispatch({ changes: { from: 0, to: editor.state.doc.length, insert: text } })
+    // Its own undo step, never joined to typing: Undo brings the words that were there back ("Undo Edit"). Not an edit that
+    // was not wanted: the same words arriving again change nothing (the early return above), so a reload that did not change
+    // the text leaves the note's history alone.
+    editor.dispatch({ changes: { from: 0, to: editor.state.doc.length, insert: text }, annotations: isolateHistory.of("full") })
     // `version` is a dependency on purpose: the same words arriving twice
     // are still an instruction to replace what is in the editor.
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -249,45 +265,6 @@ export function Notebook({ file, text, version, restore, readOnly, rendered: sho
     if (editor.state.field(markersField) !== want) editor.dispatch({ effects: setMarkers.of(want) })
   }, [showMarkers, file])
 
-  // Escape puts either menu away and gives the keyboard back to the page.
-  useEffect(() => {
-    if (!menu && !context) return
-    const away = (event: KeyboardEvent) => {
-      if (event.key !== "Escape") return
-      event.preventDefault()
-      setMenu(null)
-      setContext(null)
-      view.current?.focus()
-    }
-    const click = (event: MouseEvent) => {
-      if (event.target instanceof Element && event.target.closest(".kind-menu, .context-menu")) return
-      setMenu(null)
-      setContext(null)
-    }
-    window.addEventListener("keydown", away, true)
-    window.addEventListener("mousedown", click, true)
-    const blur = () => { setMenu(null); setContext(null) }
-    window.addEventListener("blur", blur)
-    return () => {
-      window.removeEventListener("keydown", away, true)
-      window.removeEventListener("mousedown", click, true)
-      window.removeEventListener("blur", blur)
-    }
-  }, [menu, context])
-
-  // A menu opened near the bottom or right edge is moved back inside the window
-  // rather than cut off by it.
-  useLayoutEffect(() => {
-    for (const [box, at] of [[menuBox.current, menu], [contextBox.current, context]] as const) {
-      if (!box || !at) continue
-      const rect = box.getBoundingClientRect()
-      const top = Math.max(4, Math.min(at.y, window.innerHeight - rect.height - 6))
-      const left = Math.max(4, Math.min(at.x, window.innerWidth - rect.width - 6))
-      box.style.top = `${top}px`
-      box.style.left = `${left}px`
-    }
-  }, [menu, context])
-
   const showContext = (event: React.MouseEvent) => {
     const editor = view.current
     if (!editor || !(event.target instanceof Element) || !event.target.closest(".cm-content")) return
@@ -301,6 +278,23 @@ export function Notebook({ file, text, version, restore, readOnly, rendered: sho
     setContext({ x: event.clientX, y: event.clientY, hasSelection: editor.state.selection.ranges.some((r) => !r.empty) })
   }
 
+  // A kind picked from the + menu: the bar is up where the + was pressed (the press armed it), and the cell is made there NOW,
+  // empty, the caret in it where its words go (Sean, 2026-10-05: "selecting a cell type ... should create a new cell with the
+  // cursor ready to start typing"), by THE command the key and the Style menu run (`runEditorCommand`: a kind at a bar makes
+  // the cell there, keys.ts `nameKind`). A Drawing Cell is made by the app: its line names a cell in the drawing (the bar's
+  // typing never makes one), and the pointer becomes a pen for that cell alone (inkScope.ts).
+  const choose = (pick: KindPick) => {
+    const editor = view.current
+    const seam = menu?.seam
+    setMenu(null)
+    if (!editor || !seam) return
+    if ((editor.state.field(armedField, false) ?? null) !== seam.offset) armAt(editor, seam.offset)
+    if (pick.command === "insertInkCell") insertInkRef.current?.(seam.offset)
+    else runEditorCommand(editor, pick.command, { listStyle: pick.listStyle ?? listRef.current, codeLanguage: codeRef.current })
+    editor.focus()
+  }
+
+
   const clipboard = (command: "cut" | "copy" | "paste" | "selectAll") => {
     const editor = view.current
     setContext(null)
@@ -311,44 +305,25 @@ export function Notebook({ file, text, version, restore, readOnly, rendered: sho
     void window.wm.editNative(command)
   }
 
-  const choose = (kind: CellKind) => {
-    const editor = view.current
-    if (!editor || !menu) return
-    setMenu(null)
-    // A Drawing Cell is made at once, by the app: its line names a cell in the drawing (the bar's typing never makes
-    // one), and the pointer becomes a pen for that cell alone (inkScope.ts).
-    if (kind.kind === "ink") { insertInkRef.current?.(menu.seam.offset); editor.focus(); return }
-    // THE CELL IS MADE NOW, empty, with the caret in it where its words go and the keyboard in the editor (Sean,
-    // 2026-10-05: "selecting a cell type ... should create a new cell with the cursor ready to start typing"). The
-    // Mac's + only names what the next character will open, with the bar still up; the port no longer waits for it.
-    openCellAt(editor, menu.seam.offset, kind)
-    editor.focus()
-  }
+  const contextItems = (hasSelection: boolean): MenuItem[] => [
+    { label: "Cut", hint: modChord(platform, "X"), disabled: !hasSelection, onClick: () => clipboard("cut") },
+    { label: "Copy", hint: modChord(platform, "C"), disabled: !hasSelection, onClick: () => clipboard("copy") },
+    { label: "Paste", hint: modChord(platform, "V"), onClick: () => clipboard("paste") },
+    "-",
+    { label: "Select All", hint: modChord(platform, "A"), onClick: () => clipboard("selectAll") },
+  ]
 
   return (
     <div className="editor" ref={host} onMouseDown={() => menu && setMenu(null)} onContextMenu={showContext}>
+      {/* Both menus are the page's FloatingMenu: the arrow keys, Escape, a press elsewhere, the window's edge and the
+          keyboard handed back are its own (docs/PLAN-bars-2026-10.md, P6; they were two hand-made boxes with half of that each). */}
       {context && (
-        <div className="context-menu" ref={contextBox} style={{ left: context.x, top: context.y }}
-             onMouseDown={(event) => event.stopPropagation()}>
-          <button disabled={!context.hasSelection} onClick={() => clipboard("cut")}>Cut<kbd>Ctrl+X</kbd></button>
-          <button disabled={!context.hasSelection} onClick={() => clipboard("copy")}>Copy<kbd>Ctrl+C</kbd></button>
-          <button onClick={() => clipboard("paste")}>Paste<kbd>Ctrl+V</kbd></button>
-          <hr />
-          <button onClick={() => clipboard("selectAll")}>Select All<kbd>Ctrl+A</kbd></button>
-        </div>
+        <FloatingMenu id="context-menu" x={context.x} y={context.y} items={contextItems(context.hasSelection)}
+                      onClose={() => setContext(null)} />
       )}
       {menu && (
-        <div className="kind-menu" ref={menuBox} style={{ left: menu.x, top: menu.y }}
-             onMouseDown={(event) => event.stopPropagation()}>
-          {KIND_GROUPS.map((group, index) => (
-            <div key={index}>
-              {index > 0 && <hr />}
-              {group.map((kind) => (
-                <button key={kindName(kind)} onClick={() => choose(kind)}>{kindName(kind)}</button>
-              ))}
-            </div>
-          ))}
-        </div>
+        <FloatingMenu x={menu.x} y={menu.y} id="seam-kinds" onClose={() => setMenu(null)}
+                      items={kindMenuItems(platform, null, choose)} />
       )}
     </div>
   )

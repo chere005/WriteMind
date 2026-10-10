@@ -9,7 +9,8 @@
 #                        installed Windows copy's updater reads (apps/desktop/src/main/updater.ts).
 #   mac      (macos-15)  build (with the universal Vision helper); electron-builder makes WriteMind-<version>-mac-arm64.dmg
 #                        and -mac-x64.dmg, AD-HOC signed (there is no Developer ID, so nothing is notarized) and never
-#                        published by electron-builder; tools/verify-mac.sh checks them; gh uploads both into the draft.
+#                        published by electron-builder; tools/verify-mac.sh checks them (the bundled OCR reader's files
+#                        unpacked from the asar included); gh uploads both into the draft.
 #   publish  (ubuntu)    every file is on the draft, then it is published (Latest; a version with a "-" is a pre-release).
 #
 # A failed windows or mac job leaves the release a DRAFT that no installed copy sees: fix it, then re-run the failed job
@@ -124,6 +125,8 @@ jobs:
       VERSION: ${{ needs.prepare.outputs.version }}
       # No certificate yet: build unsigned rather than look for one.
       CSC_IDENTITY_AUTO_DISCOVERY: "false"
+      # The build fails rather than ship without the bundled reader (apps/desktop/scripts/fetch-ocr-models.mjs).
+      WM_REQUIRE_OCR_MODELS: "1"
     defaults:
       run:
         shell: pwsh
@@ -137,6 +140,16 @@ jobs:
           node-version: 24
           cache: npm
       - run: npm ci
+      # The bundled reader's models (docs/OCR-BUNDLED.md): pinned, sha256-checked, cached between runs; a release never
+      # ships without them (WM_REQUIRE_OCR_MODELS makes the build fail rather than leave them out).
+      - uses: actions/cache@v4
+        with:
+          path: apps/desktop/.cache/ocr-models
+          key: ocr-models-${{ hashFiles('apps/desktop/scripts/ocr-models.json') }}
+      - name: Bundled reader models
+        run: node apps/desktop/scripts/fetch-ocr-models.mjs
+        env:
+          WM_REQUIRE_OCR_MODELS: "1"
       - name: Typecheck
         run: npm run typecheck
       - name: Unit tests
@@ -196,6 +209,8 @@ jobs:
       APPLE_API_KEY_P8: ${{ secrets.APPLE_API_KEY_P8 }}
       APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
       APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
+      # The build fails rather than ship without the bundled reader (apps/desktop/scripts/fetch-ocr-models.mjs).
+      WM_REQUIRE_OCR_MODELS: "1"
     defaults:
       run:
         shell: bash
@@ -222,6 +237,16 @@ jobs:
           node-version: 24
           cache: npm
       - run: npm ci
+      # The bundled reader's models (docs/OCR-BUNDLED.md): pinned, sha256-checked, cached between runs; a release never
+      # ships without them (WM_REQUIRE_OCR_MODELS makes the build fail rather than leave them out).
+      - uses: actions/cache@v4
+        with:
+          path: apps/desktop/.cache/ocr-models
+          key: ocr-models-${{ hashFiles('apps/desktop/scripts/ocr-models.json') }}
+      - name: Bundled reader models
+        run: node apps/desktop/scripts/fetch-ocr-models.mjs
+        env:
+          WM_REQUIRE_OCR_MODELS: "1"
       - name: Build (the Vision helper universal, tools/build-vision.sh)
         run: npm run build
 
@@ -235,7 +260,7 @@ jobs:
             npm run package:mac:adhoc
           fi
 
-      - name: Check them (signature, chips, helper, Info.plist, the dmgs)
+      - name: Check them (signature, chips, helper, bundled reader, Info.plist, the dmgs)
         run: bash tools/verify-mac.sh
 
       # Signed: the zips and latest-mac.yml too, which a Mac copy's updater installs from (an ad-hoc build makes none).

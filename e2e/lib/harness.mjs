@@ -22,6 +22,7 @@ import { fileURLToPath } from "node:url"
 import { connectCdp, sleep, until } from "./cdp.mjs"
 import { restartInstance, stopInstance } from "./instance.mjs"
 import { readWm, writeWm } from "./wm.mjs"
+import { macChord } from "./macKeys.mjs"
 
 export { sleep, until }
 
@@ -177,6 +178,8 @@ export async function seedNotes(files, { reload = true, clean = false } = {}) {
 // Input: real events through the browser's own input pipeline
 // ---------------------------------------------------------------------------------------------------------------
 export const CTRL = 2, SHIFT = 8, ALT = 1, META = 4
+/** The command key of THIS machine (CmdOrCtrl): ⌘ on a Mac, Ctrl elsewhere. A script that tests a command asks for it. */
+export const MOD = process.platform === "darwin" ? META : CTRL
 const modBits = (o = {}) => (o.modifiers ?? 0) | (o.ctrl ? CTRL : 0) | (o.shift ? SHIFT : 0) | (o.alt ? ALT : 0) | (o.meta ? META : 0)
 
 export const mouse = (type, x, y, o = {}) => send("Input.dispatchMouseEvent", {
@@ -223,6 +226,7 @@ export const line = (a, b, n = 12) => Array.from({ length: n + 1 }, (_, i) => [a
 export const seg = (x0, y0, x1, y1, n = 10) => line([x0, y0], [x1, y1], n)
 export const rectPts = (x, y, w, h, n = 8) => [...seg(x, y, x + w, y, n), ...seg(x + w, y, x + w, y + h, n).slice(1), ...seg(x + w, y + h, x, y + h, n).slice(1), ...seg(x, y + h, x, y, n).slice(1)]
 
+const MAC_EDITING = { a: "selectAll", c: "copy", x: "cut", v: "paste" }
 const VK = {
   Enter: 13, Backspace: 8, Tab: 9, Escape: 27, Delete: 46, Insert: 45, " ": 32, Space: 32,
   ArrowLeft: 37, ArrowUp: 38, ArrowRight: 39, ArrowDown: 40, Home: 36, End: 35, PageUp: 33, PageDown: 34,
@@ -242,14 +246,27 @@ const keyInfo = (k, o) => {
  *   key("Enter")   key("d", { ctrl: true })   key("ArrowDown", { ctrl: true, shift: true })   key("z", { modifiers: CTRL })
  */
 export async function key(k, o = {}) {
-  const mods = modBits(o)
+  // On a Mac a chord written the Windows way is sent as that command's own Mac chord (macKeys.mjs); `{ raw: true }` sends it as written.
+  let mods = modBits(o)
+  if (process.platform === "darwin" && !o.raw) {
+    // (A script that names the physical key — Shift+7 types "&" — is looked up by that key and keeps the key it typed.)
+    const digit = /^Digit(\d)$/.exec(o.code ?? "")
+    const found = macChord(digit ? digit[1] : k, mods)
+    mods = found.mods
+    if (!digit) k = found.k
+  }
   const { vk, code } = keyInfo(k, o)
-  const chord = [[mods & CTRL, "Control", "ControlLeft", 17, CTRL], [mods & SHIFT, "Shift", "ShiftLeft", 16, SHIFT], [mods & ALT, "Alt", "AltLeft", 18, ALT]].filter((m) => m[0])
+  const chord = [[mods & CTRL, "Control", "ControlLeft", 17, CTRL], [mods & SHIFT, "Shift", "ShiftLeft", 16, SHIFT], [mods & ALT, "Alt", "AltLeft", 18, ALT], [mods & META, "Meta", "MetaLeft", 91, META]].filter((m) => m[0])
   let acc = 0
   for (const [, name, c, v, bit] of chord) { acc |= bit; await send("Input.dispatchKeyEvent", { type: "rawKeyDown", key: name, code: c, windowsVirtualKeyCode: v, modifiers: acc }) }
-  const text = o.text ?? (k === "Enter" ? "\r" : k.length === 1 && !(mods & (CTRL | ALT)) ? k : undefined)
-  await send("Input.dispatchKeyEvent", { type: text ? "keyDown" : "rawKeyDown", key: k, code, windowsVirtualKeyCode: vk, modifiers: mods, text, autoRepeat: !!o.autoRepeat })
-  await send("Input.dispatchKeyEvent", { type: "keyUp", key: k, code, windowsVirtualKeyCode: vk, modifiers: mods })
+  // With Shift down a keyboard reports the capital ("D"), never "d": CodeMirror's key names read the difference (on a Mac "Ctrl-d" is
+  // its delete-forward and "Ctrl-Shift-d" the app's Duplicate Cell, and only the capital tells them apart).
+  const shifted = (mods & SHIFT) && /^[a-z]$/.test(k) ? k.toUpperCase() : k
+  const text = o.text ?? (k === "Enter" ? "\r" : k.length === 1 && !(mods & (CTRL | ALT | META)) ? shifted : undefined)
+  // On a Mac the editing chords (⌘A / C / X / V) are carried out by the key event's `commands`, as AppKit sends them.
+  const editing = process.platform === "darwin" && (mods & META) && !(mods & (CTRL | ALT)) ? MAC_EDITING[k.toLowerCase()] : undefined
+  await send("Input.dispatchKeyEvent", { type: text ? "keyDown" : "rawKeyDown", key: shifted, code, windowsVirtualKeyCode: vk, modifiers: mods, text, autoRepeat: !!o.autoRepeat, ...(editing ? { commands: [editing] } : {}) })
+  await send("Input.dispatchKeyEvent", { type: "keyUp", key: shifted, code, windowsVirtualKeyCode: vk, modifiers: mods })
   for (const [, name, c, v, bit] of [...chord].reverse()) { acc &= ~bit; await send("Input.dispatchKeyEvent", { type: "keyUp", key: name, code: c, windowsVirtualKeyCode: v, modifiers: acc }) }
   await sleep(o.wait ?? 80)
 }
@@ -355,7 +372,8 @@ export async function openNote(name) {
 export const noteRows = () => js(`[...document.querySelectorAll('.note-row')].map(r=>r.dataset.path)`)
 
 // ---- the pen button of the top bar
-const penButton = `[...document.querySelectorAll('button')].find(b=>/^(Draw over|Put the pen|Pick up)/i.test(b.title||'')||b.textContent==='✎')`
+// The bar's ONE pen button (Sean, 2026-10-10): lit while the pen is down (or, when the button is the eraser, while it erases).
+const penButton = `document.querySelector('[data-bar=pen]')`
 export const penIsDown = () => js(`(()=>{const b=${penButton};return !!b&&b.classList.contains('on')})()`)
 /** Put the pen down (true: it draws) or up (false: the cursor/mouse). */
 export async function setPen(want) {
@@ -364,9 +382,35 @@ export async function setPen(want) {
   await sleep(250)
 }
 
+/** Open the pen button's menu from its caret (Pen / Eraser, colour, width, the tablet). */
+export async function penMenu() {
+  await js(`document.querySelector('[data-bar=pen-menu]').click()`)
+  await sleep(150)
+}
+/** The pen button is the eraser (its tool), and whether that eraser is on. */
+export const eraserState = () => js(`(()=>{const b=document.querySelector('[data-bar=pen]');return {tool:/^Eraser/.test(b.title)?'eraser':'pen',lit:b.classList.contains('on')}})()`)
+/** Turn the notebook's Erase tool on or off through the bar: the menu's Eraser the first time, then the button itself. */
+export async function setEraserTool(want) {
+  const now = await eraserState()
+  if (now.tool === 'eraser' && now.lit === want) return
+  if (want && now.tool !== 'eraser') { await penMenu(); await js(`document.querySelector('.float-menu [data-bar=erase]').click()`) }
+  else await js(`document.querySelector('[data-bar=pen]').click()`)
+  await sleep(200)
+}
+/** Pick a language for the Code button from its menu (its right-click), which also writes a block of it. */
+export async function pickCodeLanguage(language) {
+  await js(`document.querySelector('[data-bar=code]').dispatchEvent(new MouseEvent('contextmenu',{bubbles:true,cancelable:true}))`)
+  await sleep(150)
+  await js(`document.querySelector('.float-menu [data-bar="code-${language}"]').click()`)
+  await sleep(250)
+}
+
 // ---- drawings (drawing.json inside a note)
-/** A fresh note, open, with the pen up. Returns its path. */
-export async function freshNote({ video = false } = {}) {
+/**
+ * A fresh note, open, with the pen up. Returns its path. `rendered`: the page ink layer (`.wm-canvas`) belongs to the
+ * rendered page (2.17.0), so a script that draws asks for it; the others keep the source editor they always had.
+ */
+export async function freshNote({ video = false, rendered = false } = {}) {
   await waitFor(`!!window.wm`)
   // The video pane may start open; editor and drawing tests want the whole width unless they ask for it.
   if (!video && (await js(`!!document.querySelector('.camera')`))) { await js(`document.querySelector('[data-bar=video]')?.click()`); await sleep(300) }
@@ -375,6 +419,7 @@ export async function freshNote({ video = false } = {}) {
   await sleep(900)
   const name = file.split(/[\\/]/).pop().replace(/\.wm$/, "")
   await js(`(() => { const r=[...document.querySelectorAll('.note-row')]; const m=r.find(x=>x.dataset.path===${JSON.stringify(file)})||r.find(x=>x.textContent.includes(${JSON.stringify(name)}))||r[0]; m.click() })()`)
+  if (rendered) { await waitFor(`!!document.querySelector('.cm-editor')`); await setRendered(true) }
   await waitFor(`!!document.querySelector('.wm-canvas')`)
   await setPen(false)
   await sleep(500)
@@ -397,14 +442,21 @@ export const saved = async (file, until = null, ms = 5000) => {
   }
 }
 export const canvasBox = async () => JSON.parse(await js(`(()=>{const b=document.querySelector('.wm-canvas').getBoundingClientRect();return JSON.stringify({x:b.x,y:b.y,w:b.width,h:b.height})})()`))
-/** Pick an Insert-menu entry (a shape, "arrow"...) so the next drag places it. */
-export const arm = (value) => js(`(()=>{
-  const sels=[...document.querySelectorAll('select')].filter(s=>/^(Shapes|Marks)/.test(s.title||''));
-  const s=sels.find(s=>[...s.options].some(o=>o.value===${JSON.stringify(value)}));
-  if(!s) return null;
-  const set=Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype,'value').set;set.call(s,${JSON.stringify(value)});
-  s.dispatchEvent(new Event('change',{bubbles:true}));return true})()`)
-export const handles = async () => JSON.parse(await js(`JSON.stringify([...document.querySelectorAll('.wm-handle')].map(h=>{const r=h.getBoundingClientRect();return {t:h.title,x:r.x+r.width/2,y:r.y+r.height/2,w:r.width}}))`))
+/**
+ * Arm a placement from the bar: a shape kind ("rectangle", "check"...), "arrow" / "both" / "line", "tool" (the arrow tool) from
+ * the Shapes menu, or "text" (the Text box button), so the next drag places it. Returns null when there is no such entry.
+ */
+export const arm = async (value) => {
+  if (value === "text") return js(`(()=>{const b=document.querySelector('[data-bar=textbox]');if(!b)return null;b.click();return true})()`)
+  const opened = await js(`(()=>{const b=document.querySelector('[data-bar=shapes]');if(!b)return false;b.click();return true})()`)
+  if (!opened) return null
+  await sleep(120)
+  const hook = `shape-${value}`
+  const done = await js(`(()=>{const r=document.querySelector('.float-menu [data-bar="${hook}"]');if(!r)return null;r.click();return true})()`)
+  if (!done) await key("Escape")
+  return done
+}
+export const handles = async () => JSON.parse(await js(`JSON.stringify([...document.querySelectorAll('.wm-handle')].map(h=>{const r=h.getBoundingClientRect();return {t:h.title,h:h.dataset.handle||null,x:r.x+r.width/2,y:r.y+r.height/2,w:r.width}}))`))
 /** Select everything on the drawing layer with a Ctrl-drag marquee and delete it. */
 export async function clearDrawing() {
   await setPen(false)
@@ -429,22 +481,54 @@ export async function showVideoPane() {
   await js(`!document.querySelector('.camera') && document.querySelector('[data-bar=video]')?.click()`)
   await waitFor(`!!document.querySelector('.camera')`)
 }
+/**
+ * Open the video button's menu in the tab row the way a person does: a right-click on the button (its corner and a held
+ * press do the same; a plain click shows or hides the pane). The menu is `[data-bar=video-options]`; its rows carry
+ * `video-show`, `video-source` (one per camera), `video-tablet`, `video-off`, `video-turn-left`, `video-turn-right`,
+ * `video-refresh` and `video-only`.
+ */
+export async function openVideoMenu() {
+  if (await js(`!!document.querySelector('[data-bar=video-options]')`)) return
+  const at = await centerOf("[data-bar=video]")
+  if (!at) throw new Error("no video button")
+  await rightClick(at.x, at.y)
+  await waitFor(`!!document.querySelector('[data-bar=video-options]')`)
+  await sleep(100)
+}
 /** Choose the pen tablet as the video pane's source. */
 export async function pickTablet() {
-  await js(`document.querySelector('[data-bar=video-options]').click()`)
-  await sleep(150)
-  await js(`document.querySelector('.video-pop [data-source=tablet]').click()`)
+  await openVideoMenu()
+  await js(`document.querySelector('[data-bar=video-tablet]').click()`)
   await waitFor(`!!document.querySelector('.camera .tablet')`)
   await sleep(300)
 }
 /** Choose the (fake) camera as the video pane's source. */
 export async function pickCamera() {
-  await js(`document.querySelector('[data-bar=video-options]').click()`)
-  await sleep(150)
-  await js(`document.querySelector('.video-pop button:not([data-source])').click()`)
+  await openVideoMenu()
+  await js(`document.querySelector('[data-bar=video-source]').click()`)
 }
 export const tabletBox = async () => JSON.parse(await js(`(()=>{const b=document.querySelector('.camera .tablet').getBoundingClientRect();return JSON.stringify({x:b.x,y:b.y,w:b.width,h:b.height})})()`))
-export const barBtn = (k) => js(`document.querySelector('.camera-bar [data-tablet=${k}]').click()`)
+/**
+ * Open the menu of a bar button and click its item by `data-bar`, the way a person does. A SPLIT button (the Undo, Bring in
+ * and Zoom of the video header: its click does its own job, `aria-pressed` is set) opens its menu on a right-click; a button
+ * that only opens a menu (Paper, Orientation) opens it on a plain click, and leaves the right-click to the bar around it
+ * (MenuButton, 2026-10-10: in the page's bar that is Customize toolbar...).
+ */
+export async function pickFromMenu(buttonSelector, itemBar) {
+  const how = `(() => { const b = document.querySelector(${JSON.stringify(buttonSelector)}); if (b.hasAttribute('aria-pressed')) b.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true })); else b.click() })()`
+  await js(how)
+  await waitFor(`!!document.querySelector('.float-menu [data-bar=${itemBar}]')`)
+  await js(`document.querySelector('.float-menu [data-bar=${itemBar}]').click()`)
+  await sleep(150)
+}
+/** Wipe the sheet: the Undo button's menu, "Clear the Sheet". */
+export const clearSheet = () => pickFromMenu(".camera-bar [data-tablet=undo]", "clear")
+/** Turn the tablet (0..3, Orientation): the header's orientation menu when the sheet is up, else the Pen menu's dropdown. */
+export async function setOrientation(turns) {
+  if (await js(`!!document.querySelector('.camera-bar [data-tablet=orientation-menu]')`)) await pickFromMenu(".camera-bar [data-tablet=orientation-menu]", `orientation-${turns}`)
+  else await setSelect("[data-tablet=orientation]", String(turns))
+}
+export const barBtn = (k) => (k === "clear" ? clearSheet() : js(`document.querySelector('.camera-bar [data-tablet=${k}]').click()`))
 export const takeBtn = (title) => js(`[...document.querySelectorAll('.camera-bar button')].find(b=>b.title.startsWith(${JSON.stringify(title)})).click()`)
 
 // ---- restarting the whole app (same profile, same notes), e.g. to check that a session comes back
@@ -498,7 +582,7 @@ export async function closeAllTabs() {
   }
 }
 
-/** Switch the rendered page on or off with the sidebar's markdown button and wait until it has really changed. */
+/** Switch the rendered page on or off with the tab row's rendered button and wait until it has really changed. */
 export async function setRendered(want) {
   const is = () => js(`document.querySelector('.cm-editor')?.classList.contains('wm-rendered') ?? false`)
   if ((await is()) !== want) await js(`document.querySelector('[data-bar=markdown]')?.click()`)

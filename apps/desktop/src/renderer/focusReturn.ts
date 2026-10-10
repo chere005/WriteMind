@@ -15,11 +15,15 @@
 /** The notebook's editable surface. */
 const EDITOR = ".cm-content"
 
-/** Where a click is chrome: the bars, the tab row, the sidebar and the page's own menus. */
-const CHROME = ".sidebar, .tab-bar, .top-bar, .footer, .float-menu, .context-menu, .link-banner"
+/**
+ * Where a click is chrome: the bars, the tab row, the sidebar and the page's own menus. The video pane's header is a
+ * `.bar-row` too but is the VIDEO PANE'S ("a click on the video pane is the video pane's", below): Esc right after
+ * pressing Hold image lets the held picture go, which needs the keyboard to stay in that pane (2026-10-05).
+ */
+const CHROME = ".sidebar, .tab-bar, .top-bar, .bar-row:not(.camera-head), .footer, .float-menu, .link-card"
 
 /** A popup that is up has the keyboard until it goes: the maths palette picks a shape with the arrows, a menu moves with them. */
-const POPUPS = ".float-menu, .context-menu, .math-pop, .style-pop, .kind-menu, .video-pop, .bar-context, .modal"
+const POPUPS = ".float-menu, .math-pop, .style-pop, .bar-context, .modal"
 
 /** Something that is typed into, other than the notebook. */
 function takesTyping(element: Element | null): boolean {
@@ -75,7 +79,7 @@ export function closePopovers(except?: Element | null): boolean {
 export function watchChromeFocus(): () => void {
   const escape = (event: KeyboardEvent) => {
     if (event.key !== "Escape" || event.defaultPrevented) return
-    if (document.querySelector(".float-menu, .context-menu")) return
+    if (document.querySelector(".float-menu")) return
     if (closePopovers()) { event.preventDefault(); returnFocusSoon() }
   }
   // Only the font-and-colour popover has no click-away of its own (the pen's sits in .pen-menu and has).

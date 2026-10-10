@@ -127,6 +127,10 @@ export async function startInstance(o) {
     "--disable-backgrounding-occluded-windows",
     ...(o.video ? ["--use-fake-device-for-media-stream", "--use-fake-ui-for-media-stream", `--use-file-for-fake-video-capture=${o.video}`] : []),
     ...(process.platform === "linux" ? ["--no-sandbox"] : []),
+    // A Mac's scroll bar is an overlay drawn over the right 15 px of the page once it has scrolled, and it takes the press before the
+    // bracket column under it (a Windows scroll bar takes layout space and is never over the gutter): a bracket click after a scroll
+    // reached the scroll bar, and the suites that scroll then click the brackets failed there for no reason of the app's.
+    ...(process.platform === "darwin" ? ["--hide-scrollbars"] : []),
     ...(process.env.WM_E2E_ARGS ? process.env.WM_E2E_ARGS.split(/\s+/).filter(Boolean) : []),
     ...(o.args ?? []),
   ]

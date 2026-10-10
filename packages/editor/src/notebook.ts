@@ -8,7 +8,7 @@
  * did on the Mac: the model is the same, the measuring is not.
  */
 
-import { Annotation, StateField, type ChangeSet, type EditorState, type Extension } from "@codemirror/state"
+import { Annotation, StateEffect, StateField, type ChangeSet, type EditorState, type Extension } from "@codemirror/state"
 import { EditorView } from "@codemirror/view"
 import { isolateHistory } from "@codemirror/commands"
 import {
@@ -59,6 +59,30 @@ export const notebook = (state: EditorState): Notebook => state.field(notebookFi
  */
 export const cellWritten = Annotation.define<boolean>()
 
+/**
+ * AN ITEM THE APP OPENED, not one that was typed. A list made by a command (the + menu, the Style menu, Ctrl+Shift+L at
+ * a bar) is written as its marker and nothing else (`- `, `1. `), which the parser reads as a paragraph, so a text cell
+ * of its own, and what is typed in a text cell is literal: the first word typed after the marker came out as `\- word`
+ * (docs/PLAN-bars-2026-10.md (a), found 2026-10-10). The command says which line it opened (`itemOpened`), and the next
+ * thing typed at the end of that line is the list's: the field is the start of that line, mapped through edits, and
+ * is let go by any edit and by the caret leaving the line.
+ */
+export const itemOpened = StateEffect.define<number>()
+
+export const itemOpenedField = StateField.define<number | null>({
+  create: () => null,
+  update(value, transaction) {
+    for (const effect of transaction.effects) if (effect.is(itemOpened)) return effect.value
+    if (value === null) return null
+    // (An edit puts it away: the character typed after the marker is read by the rule in the same transaction, from the
+    // state BEFORE it, so the marker is still the open item then.)
+    if (transaction.docChanged) return null
+    if (!transaction.selection) return value
+    const head = transaction.state.selection.main
+    return head.empty && transaction.state.doc.lineAt(head.head).from === value ? value : null
+  },
+})
+
 /** The cells' ranges, which is what every selection rule wants. */
 export const cellRanges = (state: EditorState): Range[] =>
   notebook(state).cells.map((cell) => cell.range)
@@ -98,4 +122,4 @@ export function applyEdit(view: EditorView, change: {
   view.focus()
 }
 
-export const notebookState: Extension = [notebookField]
+export const notebookState: Extension = [notebookField, itemOpenedField]

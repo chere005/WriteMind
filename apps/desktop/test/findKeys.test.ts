@@ -16,6 +16,14 @@ describe("the find keys", () => {
     expect(commandForKey(press("j", { ctrl: true }), "win32")?.id).toBe("jumpToSelection")
   })
 
+  // The sidebar's search over every note (docs/PLAN-bars-2026-10.md P3): Find's chord with Shift.
+  it("Ctrl+Shift+F searches the notes (⇧⌘F on a Mac), and plain Ctrl+F is still Find", () => {
+    expect(commandForKey(press("f", { ctrl: true, shift: true }), "win32")?.id).toBe("searchNotes")
+    expect(commandForKey(press("f", { ctrl: true }), "win32")?.id).toBe("find")
+    expect(shown("searchNotes", "win32")).toBe("Ctrl+Shift+F")
+    expect(shown("searchNotes", "darwin")).toBe("Cmd+Shift+F")
+  })
+
   it("F3 / Shift+F3 are Find Next / Previous on a PC, the Mac's own keys on a Mac", () => {
     expect(commandForKey(press("F3"), "win32")?.id).toBe("findNext")
     expect(commandForKey(press("F3", { shift: true }), "win32")?.id).toBe("findPrevious")

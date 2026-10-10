@@ -24,6 +24,42 @@ process and writes the answer under it, Ctrl+Shift+8 makes one (Ctrl+9 until 202
 `docs/TESTING.md`). A new install opens on `WriteMind Quick Reference.wm` (once per notes folder,
 `main/welcome.ts`; PARITY "The Quick Reference"); Help ▸ Quick Reference opens it on any install, always rendered.
 
+## Bundled OCR: handed to the Mac session (branch `ocr-bundled`, 2026-10-06)
+
+Sean, 2026-10-06: "the mac agent will take over ocr work". The work is on branch `ocr-bundled`, never on main
+until Sean says. Merge origin/main into it now and then (main wins conflicts) and push the branch.
+`docs/OCR-BUNDLED.md` is the design: PaddleOCR PP-OCRv5 mobile on onnxruntime-web (WASM), models fetched at build
+time by `apps/desktop/scripts/fetch-ocr-models.mjs`, pinned with SHA-256 in `ocr-models.json`. The reader is used
+first on every platform, and Vision / Windows OCR / tesseract are the fallback.
+
+Done and tested on Windows:
+- 20 tests in `apps/desktop/test/bundledOcr.test.ts`: CTC decoding, line finding, box orientation, input sizing,
+  the Japanese-pass rule, PNG decoding, the reader order and the fallback, cancel through the OCR service, and
+  real reads of the three fixtures (printed English, handwriting, Japanese).
+- The full `npm test` (2452), the typecheck, and the camera and tablet e2e suites (124 checks) pass.
+- A scratch e2e in the real app reports engine "bundled".
+- The branch's Windows CI is green.
+
+Done on the Mac, 2026-10-10 (branch `agent/ocr-package`): the build with the models, both ad-hoc dmgs,
+`tools/verify-mac.sh` (now checking the OCR files), the packaged apps (arm64 and x64) reading the three fixtures with
+engine "bundled", the sizes (the dmg grows 28.3 MiB), the one notices generator; `notesFolderMove` passes on the Mac
+(main had already fixed it). The numbers are in `docs/OCR-BUNDLED.md`.
+
+Done on the Mac too (compare lane): the comparison with Apple Vision, `docs/OCR-BUNDLED.md` "Against Vision": the bundled reader
+STAYS FIRST on a Mac (mixed data on one real hand and fonts: Vision a handful of characters ahead on English handwriting, the
+bundled reader ahead on Japanese and maths); the order is one table, `OCR_ORDER` in `main/helpers.ts`, and
+`WRITEMIND_OCR_ORDER=vision` tries Vision first. Also fixed: `wm-vision` read Japanese as noise (en-US only).
+
+To do:
+1. **The Mac CI job** (`mac-package`, and release.yml's `mac`) has not run with the models: push the branch or dispatch
+   ci.yml and get it green. The same steps pass by hand on a Mac.
+2. **A real hand on the Mac:** a real Wacom sheet, a real notebook photo and real Japanese handwriting read both ways
+   (`apps/desktop/scripts/ocr-compare/compare.ts` takes any `.png` with a `.txt` beside it); flip `OCR_ORDER` if Vision wins there.
+3. **Linux:** untested.
+4. **Maths:** no formula recogniser is shipped; linear maths ("x = 2y + 1") already comes through. The candidate
+   is Pix2Text MFR 1.5 (MIT, ~120 MB fp32, outputs LaTeX, which needs a LaTeX → Wolfram step). It is too big
+   unless int8 quantisation keeps its handwriting accuracy. Measure before shipping.
+
 ## Next, Sean's backlog (2026-10-05)
 
 Sean, 2026-10-05: "keep note of those remaining potential todos". **v1.0.0** is the first real release (the

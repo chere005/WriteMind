@@ -84,6 +84,8 @@ export const COMMANDS: CommandDef[] = [
   // No key: Ctrl+E is Export (Sean's ⌘E, 2026-09-21).
   c("useSelectionForFind", "Use Selection for Find", "page"),
   c("jumpToSelection", "Jump to Selection", "page", "CmdOrCtrl+J"),
+  // The sidebar's search over every note of the project (docs/PLAN-bars-2026-10.md P3): opens the sidebar first when it is away.
+  c("searchNotes", "Search Notes…", "page", "CmdOrCtrl+Shift+F"),
   // View. ⌘K, ⌘T, ⌘Y, ⌘P (Sean, 2026-09-21), MOVED rather than added: two keys
   // for one action is two things to remember and one of them always the wrong one.
   c("toggleSidebar", "Hide Notes Sidebar", "page", "CmdOrCtrl+K"),
@@ -127,6 +129,9 @@ export const COMMANDS: CommandDef[] = [
   // Insert
   c("insertImage", "Image…", "page", "CmdOrCtrl+Shift+I"),
   c("insertTextBox", "Text Box", "page"),
+  // The toolbar's Table button (docs/PLAN-bars-2026-10.md P1): an empty two-column table as a cell of its own. No key
+  // (Sean, 2026-10-10: the inserts are buttons); the editor's own table keys (Tab, Return) take over inside it.
+  c("insertTable", "Table", "editor"),
   // Port-only key: the Mac opens the maths popover from the bar only.
   c("insertMath", "Maths…", "page", "CmdOrCtrl+Shift+M"),
   c("codeBlock", "Code Block", "editor", "CmdOrCtrl+8"),
@@ -192,6 +197,8 @@ export interface KeyLike {
   metaKey: boolean
   altKey: boolean
   shiftKey: boolean
+  /** A real KeyboardEvent has it: AltGr is reported as "AltGraph" (docs/PLAN-bars-2026-10.md, P6). */
+  getModifierState?(key: string): boolean
 }
 
 interface Chord { mod: boolean; cmd: boolean; ctrl: boolean; alt: boolean; shift: boolean; key: string }
@@ -226,13 +233,22 @@ export function matches(event: KeyLike, accelerator: string, platform: string): 
   if (event.ctrlKey !== wantCtrl || event.metaKey !== wantMeta) return false
   if (event.altKey !== chord.alt || event.shiftKey !== chord.shift) return false
   const typed = event.key.toLowerCase()
+  // CTRL+ALT IS ALTGR on a PC's layouts that have one (Windows reports AltGr as Ctrl+Alt), and AltGr + a digit or a letter
+  // types `{ [ ] } @ \ |` there: while AltGr is held, or when the layout turned the press into a character that is not
+  // the chord's own, it is TYPING and the pen's chords stand down (Sean's audit, 2026-10-10; before, the physical key
+  // still won, and a German keyboard could not type a brace). The physical key is asked only when the layout made no
+  // character of the press at all (a dead key, "Unidentified").
+  const altGrZone = chord.alt && wantCtrl && !wantMeta
+  if (altGrZone) {
+    if (event.getModifierState?.("AltGraph") === true) return false
+    if (event.key.length === 1 && typed !== chord.key && !/^\s$/.test(event.key)) return false
+  }
   // A digit is its PHYSICAL key (docs/PLAN-text-cells.md): Shift+7 types "&" on a US keyboard, and Ctrl+Shift+7 is
   // still the 7 key.
   if (/^\d$/.test(chord.key) && event.code && /^Digit\d$/.test(event.code)) return event.code === `Digit${chord.key}`
   if (typed === chord.key) return true
-  // Ctrl+Alt is AltGr on layouts that have one, and then `key` is the typed
-  // character; a chord of one letter or digit still means its physical key.
-  if (chord.alt && wantCtrl && chord.key.length === 1 && event.code) {
+  // A chord of one letter or digit still means its physical key where the press made no character of its own.
+  if (altGrZone && chord.key.length === 1 && event.code) {
     return event.code === (/\d/.test(chord.key) ? `Digit${chord.key}` : `Key${chord.key.toUpperCase()}`)
   }
   return false
@@ -274,6 +290,12 @@ export interface MenuState {
   markers: boolean
   canUndoDrawing: boolean
   canRedoDrawing: boolean
+  /**
+   * What Edit ▸ Undo and Redo name, from the page (docs/PLAN-undo.md): "Rename Note", "Typing", "Move to Trash"; null when
+   * there is nothing to take (the item is greyed and plain). Absent: not said yet, so the plain items stay enabled.
+   */
+  undoLabel?: string | null
+  redoLabel?: string | null
   /** "Dots", "Dashes", "Numbers", "To-do": the style the list button writes. */
   listStyle: string
   /** The language a new code block is tagged with, or null for plain. */

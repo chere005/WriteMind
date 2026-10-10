@@ -33,6 +33,13 @@ swept. Results go to `e2e/.results/<timestamp>/` (git-ignored): `report.txt` (re
 (also appended to `$GITHUB_STEP_SUMMARY` in CI), `logs/<suite>/<script>.log` (everything the script printed) and
 `shots/` (screenshots; **look at them**). `e2e/.results/latest.*` is the last run.
 
+### Writing a script that draws, or presses a command key
+
+* The page ink layer (`.wm-canvas`) belongs to the RENDERED page (2.17.0): a script that draws starts with
+  `freshNote({ rendered: true })` (or `setRendered(true)` after a reload).
+* The command key of the machine is `MOD` (⌘ on a Mac, Ctrl elsewhere); a Mac editing chord (⌘A / C / X / V) is carried
+  by the key event's `commands`, as AppKit sends it. Redo is Ctrl+Shift+Z on every platform (Ctrl+Y is not a Mac key).
+
 ### What the runner does for you
 
 For each suite it starts an isolated, offscreen instance of the built app and runs the suite's scripts in name order
@@ -60,14 +67,18 @@ against it, each as its own node process:
 | `smoke` | the app starts offscreen, makes a note, takes typing |
 | `cells` | brackets on their cells, hold / extend / add / remove, move / duplicate / delete, clipboard, typing over a run, dragging a held bracket; the seams between cells (hover, click, Enter, Escape, arrows, the + menu and its kinds) |
 | `editor` | typing and the formatting keys, list continuation, undo; the code highlighter, the T popover, the rendered page; folding; `/link`; sidebar drag and drop; session restart (restarts the app); the right-click menu; pointer selection, to-do boxes |
-| `drawing` | connectors and routing, labels, undo; pictures (paste, drop, crop, Edit ▸ Undo); pen ink, pick / move / resize / turn / group; text boxes and marks; a 1.5x display; hover feedback, shapes / arrows / text boxes in drawing cells, Undock (08-10) |
+| `drawing` | connectors and routing, labels, undo; pictures (paste, drop, crop, Edit ▸ Undo); pen ink, pick / move / resize / turn / group; text boxes and marks; a 1.5x display; hover feedback, shapes / arrows / text boxes in drawing cells, Undock (08-10), the handles round a picked object and the one inspector over it (11) |
 | `export` | File ▸ Export… ▸ Wolfram Notebook (with the real engine when this machine has one, and with a stand-in that never answers), and a copied drawing cell on the system clipboard (Mac), pasted back: `export/01`, `02`. The engine half of the fixture: `node node_modules/vite-node/vite-node.mjs apps/desktop/scripts/check-wolfram.ts` |
 | `pen` | stroke with pressure, eraser end, barrel button; the bar and the pen chip; every pen button action and the ExpressKeys; the pen cursor; palm rejection and finger scroll |
 | `maths` | the palette, insertion inline / as a block, typesetting (MathML), source back on click |
 | `camera` | a fake camera: the flow-chart reader, squaring a tilted page through four corners |
 | `tablet` | the tablet sheet as the video source: writing, box, chart, page, undo, erase, pen buttons on the sheet |
 | `format` | a note is a `.wm`: a legacy folder converts on launch (originals moved to a backup, a notice), typing, a pen stroke and a pasted picture land inside the file (read back by `e2e/lib/wm.mjs` and the system's `unzip -t`), a restart brings them back, the export reads it |
-| `chrome` | the three bars and their groups, one-press-one-action keys, the application menu, edit mode, projects |
+| `undo` | Ctrl+Z through FILE operations (`docs/PLAN-undo.md`): five things (type, rename, move, trash another note, type) and five Ctrl+Z / Ctrl+Shift+Z checking text, names, folder and sidebar after each press; six trashes and the third-step boundary with the backups; text and file steps interleaved across two notes; a tab switch, a disk reload, a taken name, a failing undo, the open note's own creation undone, a restart |
+| `tabs` | the tab row: the sidebar / rendered / video switches (sidebar open and shut), the video button's menu, the tabs, the +, the open-notes list and count at 460px and wide, and a tab's right-click menu (Rename, Duplicate, Move to, Trash) checked on disk. A script that presses a key uses Cmd on a Mac (the older `chrome` scripts press Ctrl and several of them fail on a Mac at the foundation commit, with or without this suite) |
+| `chrome` | the bars and the application menu, edit mode, projects (01-06); the overlays (07 the find card, 08 the seven dialogs: inert page, Tab trap, Esc, Move to Trash on Cancel, the key list's search, 09 popovers' Esc, the footer's mode chip and the Esc that stops the pen, the link card, the divider); the bar over the note (10 the Style menu, 11 the pen's split button and menu, 12 the fold ladder at 460 / 560 / 640 / 760, 13 the buttons and their tooltips). One number, one script: a suite's scripts run in name order and a number is never reused |
+| `sidebar` | the sidebar: its 36px bar, the search (⇧⌘F, typing, results, accents, the arrow keys, Enter into the Find bar, Escape), row ⋯ and right-click menus, Move to, the + menu and New Section, edit mode and the arming trash, the footer's project menu, the add row as a drop target (`sidebar/_lib.mjs` seeds the notes; each script gets its own app) |
+| `integration` | the merged app from its NEW surfaces (docs/PLAN-bars-2026-10.md; Sean, 2026-10-10: "make sure the cell behavior, moving the input cursor, search, and undo are all implemented properly"). **Every step, and every press of Ctrl+Z / Ctrl+Shift+Z, reads the whole picture** (`integration/_lib.mjs`: the tab in front, the words, the caret, whether the keyboard is in the notes, the files on disk and what each holds, the sidebar's rows, the drawing objects in each note) and compares it with what the steps so far must have made. 01: type-rename-move-trash-type of the plan's P8 done through the Style menu, the tab menu, the sidebar row menu and the seam's +; 02: six file operations from the tab menu, the row menu and the + menu, only three undo, the oldest backup gone, bystander files untouched; 03: twelve steps across two open notes (Find / Replace All, Table, Move Section, rename, the seam's +, a text box, a shape and the inspector's duplicate and delete, Duplicate, New Section) undone and redone in the order the rule gives; 04: the keyboard and the caret after every menu, dialog, field and popover; 05: cells made by the Style menu, the seam and Table (caret, one undo, Redo), the arrows cell-bar-cell, a held cell, Move Section; 06: the sidebar's search while notes come and go (rename, trash, undo, a damaged .wm), Enter into the Find card, the Find card over cells of every kind. Each script is its own app (`isolation: script`); they take minutes, not seconds |
 | `perf` | typing / scroll / pen frame times on a long note (generous limits; numbers are printed as notes) |
 
 Each suite folder has an optional `suite.json`:
@@ -137,6 +148,9 @@ git-ignored). With `WM_PORT` alone the notes folder is read from the app and scr
 * **Hover is `pointerenter`, and a synthetic `PointerEvent` does not produce one.** Features that depend on "the pen is
   over the sheet" (Ctrl+Z over the sheet, a button tap on the sheet) need a real move first:
   `hover(x, y, { pen: true })`.
+* **A script that presses a command key must press the machine's own**: the app's key table is `CmdOrCtrl`, so on a Mac
+  `key("f", { ctrl: true })` is a key that does nothing. `e2e/lib/overlays.mjs` has `mod` (Cmd on a Mac, Ctrl elsewhere) and
+  `replaceChord`; the older scripts that type Ctrl fail on a Mac today, before any change.
 * **The window is set to 1440x900** (offscreen) when the harness loads, so layout and coordinates are the same every
   run. Do not hard-code points that depend on the viewport; derive them from `rectOf` / `brackets()` / `lineBoxes()`.
   A click at the far right of a line lands on the cell brackets, not the text.

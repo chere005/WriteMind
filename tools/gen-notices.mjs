@@ -15,6 +15,12 @@
 // typescript, electron-builder itself) never reach a user and are not listed. Electron and Chromium are the
 // runtime and are listed on their own.
 //
+// WHAT IS BUNDLED BUT NOT A DEPENDENCY OF THE APP: the bundled OCR reader (docs/OCR-BUNDLED.md). onnxruntime-web and
+// onnxruntime-common are devDependencies (esbuild bundles them into out/helpers/bundled-ocr/worker.mjs and the build
+// copies the WebAssembly runtime beside it, so they must not be packed as node_modules), and the PP-OCRv5 models are
+// not npm packages at all - apps/desktop/scripts/ocr-models.json pins them. `bundledReader()` below names them, so
+// the file and the About dialog carry their licences too; a build that bundles something else has to add it there.
+//
 // THE KOFFI PLATFORM PACKAGES (@koromix/koffi-darwin-arm64 ...) are optional and only the build machine's own is
 // installed, so the list is made from the lockfile and they are one entry, carrying koffi's licence.
 
@@ -65,6 +71,9 @@ export const OWN_TOOLS = [
     + "Windows' own.",
   "The Windows installer is made with NSIS, through electron-builder (MIT); both keep their own licences.",
   "Python, Tesseract and the Wolfram Engine are never shipped: WriteMind runs the copy a person has installed.",
+  "The bundled text reader (the PP-OCRv5 models and onnxruntime-web, listed below) is shipped inside the app. "
+    + "onnxruntime's WebAssembly build statically contains components of its own under permissive licences, which "
+    + "Microsoft lists in the ThirdPartyNotices.txt at https://github.com/microsoft/onnxruntime.",
 ]
 
 // MARK: - Reading
@@ -198,6 +207,47 @@ export function libraries(root = ROOT) {
   return { libraries: out, problems }
 }
 
+/** The text of the Apache License 2.0, as the Apache Software Foundation publishes it (tools/licenses/Apache-2.0.txt). */
+const APACHE_2 = (root) => tidy(read(path.join(root, "tools", "licenses", "Apache-2.0.txt")))
+
+/** The packages of the bundled OCR reader that the build puts inside the app. */
+const BUNDLED_RUNTIME = ["onnxruntime-web", "onnxruntime-common"]
+
+/**
+ * What the bundled OCR reader ships (docs/OCR-BUNDLED.md) that `libraries()` cannot see, because it is not a
+ * production dependency of the app: onnxruntime-web and onnxruntime-common (MIT; bundled into the worker, whose
+ * WebAssembly runtime is copied beside it) and the PP-OCRv5 models (Apache-2.0; not npm packages). Same shape as
+ * `libraries()`: { libraries, problems }.
+ */
+export function bundledReader(root = ROOT) {
+  const problems = []
+  const out = []
+  for (const name of BUNDLED_RUNTIME) {
+    const dir = path.join(root, "node_modules", name)
+    if (!existsSync(path.join(dir, "package.json"))) { problems.push(`${name}: not installed (the bundled reader needs it)`); continue }
+    const pkg = readJson(path.join(dir, "package.json"))
+    // The npm package ships no licence file: onnxruntime's repository LICENSE is MIT, "Copyright (c) Microsoft Corporation".
+    const text = licenceTextOf(dir) ?? standardText(pkg.license, "Microsoft Corporation")
+    if (pkg.license !== "MIT" || text === null) { problems.push(`${name}: expected MIT, found ${pkg.license}`); continue }
+    out.push({
+      name, version: pkg.version, license: pkg.license, copyright: copyrightOf(text) ?? "Copyright (c) Microsoft Corporation",
+      url: "https://github.com/microsoft/onnxruntime", text,
+      ...(licenceTextOf(dir) === null ? { note: "The npm package ships no licence file; this is the standard MIT text with the holder named in onnxruntime's own repository LICENSE." } : {}),
+    })
+  }
+  const manifest = readJson(path.join(root, "apps", "desktop", "scripts", "ocr-models.json"))
+  const files = manifest.models.map((model) => model.file)
+  out.push({
+    name: "PaddleOCR PP-OCRv5 mobile models", version: "RapidOCR release " + (manifest.models[0]?.url.match(/\/resolve\/(v[^/]+)\//)?.[1] ?? "unknown"),
+    license: "Apache-2.0", copyright: "Copyright (c) PaddlePaddle Authors (PaddleOCR); ONNX conversion by the RapidOCR project (RapidAI)",
+    url: "https://github.com/RapidAI/RapidOCR", text: APACHE_2(root),
+    note: `The text reader's model files (${files.join(", ")}) are PaddleOCR's PP-OCRv5 models, Apache-2.0, converted to ONNX by RapidOCR, `
+      + "Apache-2.0. They are not npm packages: the build fetches them from the URLs pinned in apps/desktop/scripts/ocr-models.json and checks their SHA-256. "
+      + "The licence of both is the Apache License, Version 2.0, below.",
+  })
+  return { libraries: out, problems }
+}
+
 /** Electron, the runtime. Chromium is inside it. */
 export function electron(root = ROOT) {
   const dir = path.join(root, "node_modules", "electron")
@@ -248,7 +298,10 @@ export function groupTexts(entries) {
 
 /** What generate() returns: the markdown, the notices.json object, and the problems found. */
 export function generate({ root = ROOT } = {}) {
-  const { libraries: libs, problems } = libraries(root)
+  const { libraries: found, problems } = libraries(root)
+  const reader = bundledReader(root)
+  problems.push(...reader.problems)
+  const libs = [...found, ...reader.libraries].sort((a, b) => a.name.toLowerCase().localeCompare(b.name.toLowerCase(), "en") || a.version.localeCompare(b.version))
   const runtime = electron(root)
   problems.push(...runtime.problems)
   const ownLicence = tidy(read(path.join(root, "LICENSE")))
@@ -277,7 +330,7 @@ export function generate({ root = ROOT } = {}) {
     "## Tools shipped with WriteMind", "", ...OWN_TOOLS.map((line) => `- ${line}`), "",
     "## Libraries", "",
     `${listed.length} components ship in the app: Electron, Chromium, and the ${libs.length} libraries below, which are the `
-      + "production dependencies of the app, including what is bundled into its code. Development tools are not shipped and are not listed.", "",
+      + "production dependencies of the app, including what is bundled into its code, and the bundled text reader's runtime and models. Development tools are not shipped and are not listed.", "",
     "| Name | Version | Licence | Copyright | Source |", "| --- | --- | --- | --- | --- |",
     ...listed.map((one) => `| ${cell(one.name)} | ${cell(one.version)} | ${cell(one.license)} | ${cell(one.copyright)} | ${cell(one.url)} |`), "",
     "### Licence texts", "",

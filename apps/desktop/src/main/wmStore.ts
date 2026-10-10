@@ -29,6 +29,7 @@ import {
 import { codeOf, createNow, inTurn, partialOf, writeNow } from "./atomic"
 import { keyOf, remember } from "./echo"
 import { readZip, zipParts, ZipError } from "./zip"
+import { readEntryHead } from "./zipHead"
 
 // MARK: - The app's stamp
 
@@ -179,6 +180,29 @@ export function freshNote(file: string): Promise<WmFile> {
     const there = await disk(file)
     if (there === null) throw Object.assign(new Error(`ENOENT: no such file or directory, open '${file}'`), { code: "ENOENT" })
     try { return parseNote(there.bytes) } catch (error) { throw refusal(file, error) }
+  })
+}
+
+/** How much of a note's words the search reads: a note longer than this is searched as far as here (8 MiB of text). */
+export const SEARCH_TEXT_LIMIT = 8 * 1024 * 1024
+
+/**
+ * The note's WORDS as the file has them now, for the sidebar's search: the text entry alone is read and inflated (a note
+ * with pictures and ink is mostly those, and a search looks at every note of the project). A look and nothing else — the
+ * app's knowledge of the note (its digest, what it holds) is not touched, like `freshNote` — and in the note's own turn, so
+ * it never sees a note between two of the writer's steps (the writer renames a finished file into place, so a look sees the
+ * whole old note or the whole new one). A file that is no note (no end record, no text entry, a damaged directory) throws.
+ */
+export function lookText(file: string): Promise<string> {
+  return inTurn(`${file}`, async () => {
+    let found: Awaited<ReturnType<typeof readEntryHead>>
+    try { found = await readEntryHead(file, WM_TEXT, SEARCH_TEXT_LIMIT) } catch (error) {
+      if (codeOf(error) === "ENOENT" || codeOf(error) === "ENOTDIR") throw error
+      throw refusal(file, error)
+    }
+    if (found === null) throw refusal(file, new Error("it has no text"))
+    const text = found.head.toString("utf8")
+    return text.charCodeAt(0) === 0xfeff ? text.slice(1) : text
   })
 }
 
@@ -442,6 +466,49 @@ export async function createFile(file: string, wm: WmFile, when: Date = new Date
   remembered(key, { ...wm, manifest: out.manifest, manifestData: out.manifestData })
   fileTimes.set(key, when.getTime())
   touched(file)
+}
+
+/**
+ * A note's BYTES put back at a name nothing has (Undo of a trash, Redo of a New Note; main/undoJournal.ts): the exclusive
+ * writer, so a name that was taken since is EEXIST and never overwritten. The app then knows them (digest and container),
+ * exactly as after `createFile`. Bytes that are no note any more (a damaged `.wm` that was trashed) are put back all the
+ * same and the app is told nothing about them: it will not write over a file it has not read.
+ */
+export async function restoreBytes(file: string, bytes: Uint8Array): Promise<void> {
+  let wm: WmFile | null = null
+  try { wm = parseNote(bytes) } catch { wm = null }
+  await fs.mkdir(path.dirname(file), { recursive: true })
+  remember(file)
+  remember(partialOf(file))
+  await inTurn(file, () => createNow(file, [bytes]))
+  remember(file)
+  if (wm === null) return
+  const key = keyOf(file)
+  digests.set(key, sha256([bytes]))
+  remembered(key, wm)
+  fileTimes.set(key, Date.now())
+  touched(file)
+}
+
+/**
+ * A note taken away on the strength of the app owning it (Undo of a New Note, Duplicate or Import; main/undoJournal.ts): in
+ * the note's own write queue, only while the bytes on disk are exactly the bytes the app last read or wrote (the same
+ * digest every save is guarded by), `keep` is handed those bytes to put somewhere safe BEFORE the file is removed.
+ * "changed": the file is somebody else's now, or the app never read it, and it is left alone. "gone": nothing was there.
+ * The app's digest of the name is kept, so a late save of the removed note is refused as "gone", never put back.
+ */
+export function takeOwned(file: string, keep?: (bytes: Uint8Array) => Promise<void>): Promise<"removed" | "changed" | "gone"> {
+  return inTurn(`${file}`, async () => {
+    const there = await disk(file)
+    if (there === null) return "gone"
+    const known = digests.get(keyOf(file)) ?? null
+    if (known === null || there.digest !== known) return "changed"
+    if (keep) await keep(there.bytes)
+    remember(file)
+    await fs.rm(file)
+    remember(file)
+    return "removed"
+  })
 }
 
 /** A new, empty note. */

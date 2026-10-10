@@ -25,6 +25,17 @@ function write(name: string, value: unknown): void {
   try { localStorage.setItem(key(name), JSON.stringify(value)) } catch { /* a private window: this launch only */ }
 }
 
+/**
+ * The header's Writing | Image | Raw is one segmented control and ONE of its three is lifted: the mode the person last
+ * took (Sean's wireframes, 2026-10-10: "the mode the next click does is lifted"). The box's row lifts the same one
+ * among its own Writing / Image. Remembered; anything unreadable is the writing.
+ */
+export const rememberedCaptureMode = (): CaptureMode => {
+  const value = read<unknown>("captureMode", "ink")
+  return value === "page" || value === "raw" ? value : "ink"
+}
+export const rememberCaptureMode = (mode: CaptureMode): void => write("captureMode", mode)
+
 /** Degrees clockwise, a multiple of 90 — "a video pane seven degrees off is a mistake, not a choice". */
 export type Rotation = 0 | 90 | 180 | 270
 

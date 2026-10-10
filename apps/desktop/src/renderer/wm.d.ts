@@ -27,6 +27,9 @@ declare global {
     wm: {
       capabilities(): Promise<Platform>
       tree(): Promise<Section>
+      /** The sidebar's search (main/notesSearch.ts): every note of the project, best first; `id` names it for `cancelSearch`. */
+      searchNotes(id: number, query: string): Promise<import("../shared/search").SearchOutcome>
+      cancelSearch(id: number): Promise<void>
       readNote(file: string): Promise<string>
       /** The file's words and drawing as they are now, WITHOUT the app taking that state as its own (the watcher's look); `adoptNote` takes it. */
       peekNote(file: string): Promise<{ text: string; drawing: string | null; token: string }>
@@ -64,7 +67,7 @@ declare global {
       ocrRead(request: { id: string; file?: string; bytes?: Uint8Array; languages?: string[] }): Promise<import("@writemind/core").OcrReading>
       ocrCancel(id: string): Promise<void>
       ocrStatus(): Promise<{
-        ocr: boolean; engine: "vision" | "windows" | "tesseract" | null; japanese: boolean
+        ocr: boolean; engine: import("@writemind/core").OcrEngine | null; japanese: boolean
         probe: { ok: boolean; installed: string[]; profile: string | null; japanese: boolean; addJapanese: string; reason?: string }
         addJapanese: string; busy: number; reads: number
       }>
@@ -128,6 +131,13 @@ declare global {
       languages?: import("../shared/languages").LanguagesApi
       /** Help ▸ About WriteMind (shared/about.ts, AboutDialog.tsx); absent in an old preload. */
       about?: import("../shared/about").AboutApi
+      /** The undo journal of file steps (main/undoJournal.ts, docs/PLAN-undo.md). */
+      undo: {
+        state(): Promise<import("../shared/undo").UndoState>
+        run(which: "undo" | "redo"): Promise<import("../shared/undo").UndoOutcome>
+        cutRedo(): Promise<void>
+        onChanged(listener: (state: import("../shared/undo").UndoState) => void): () => void
+      }
       onNotesChanged(listener: () => void): () => void
       onFlushRequest(listener: () => Promise<void> | void): () => void
       onEdit(listener: (which: "undo" | "redo") => void): () => void

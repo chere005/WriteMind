@@ -1,0 +1,58 @@
+/*
+ * THE TAB ROW (TabBar.tsx; docs/ui-2026-10/FinalMain.png): the three switches, the tabs, the +, the open-notes list.
+ * A .bar-row (36px, the strip colour). The tab in front is the PAGE's colour and runs on into the toolbar under it,
+ * so the one hairline under the row stops where that tab is (no underline). Loaded after bars.css.
+ */
+
+.tab-bar {
+  align-items: stretch;
+  gap: 0;
+  /* The hairline under the row: it passes behind the tab in front, whose opaque fill covers it. */
+  box-shadow: inset 0 -1px 0 var(--wm-rule);
+  -webkit-app-region: drag;
+}
+.tab-bar > * { -webkit-app-region: no-drag; }
+.tab-bar > .bar-btn { align-self: center; margin-right: 2px; }
+.tab-bar > .tab-gap { width: 10px; flex: none; }
+.tab-bar > .tab-room { flex: 1 1 auto; min-width: 8px; -webkit-app-region: drag; }
+
+.tab-strip { display: flex; align-items: stretch; flex: 0 1 auto; min-width: 0; overflow: hidden; }
+.tab-strip > .tab { flex: 0 1 auto; }
+
+.tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 84px;
+  max-width: 190px;
+  padding: 0 6px 0 12px;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: var(--wm-soft);
+  font-size: 12px;
+  cursor: default;
+  /* The seam between two tabs that are both behind. */
+  box-shadow: inset -1px 0 0 var(--wm-rule);
+}
+.tab:hover:not(.open) { background: var(--bar-fill); color: var(--wm-text); }
+.tab.open { background: var(--bar-page); color: var(--wm-text); box-shadow: none; border-radius: 6px 6px 0 0; }
+.tab:focus-visible { outline: 2px solid var(--wm-accent); outline-offset: -2px; }
+.tab .name { min-width: 0; flex: 1 1 auto; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-align: left; }
+.tab.open .name { font-weight: 600; }
+
+/* The × is on the tab in front and on the one the pointer is over; it keeps its room so a tab never changes width. */
+.tab .close {
+  display: inline-grid; place-items: center; flex: none;
+  width: 18px; height: 18px; border-radius: 5px;
+  color: var(--wm-soft); opacity: 0;
+}
+.tab.open .close, .tab:hover .close, .tab:focus-visible .close { opacity: 1; }
+.tab .close:hover { background: var(--bar-fill); color: var(--wm-text); }
+
+.tab-new { color: var(--wm-soft); margin: 0 0 0 2px; }
+.tab-new:hover:not(:disabled) { color: var(--wm-text); }
+
+/* The open notes' list: a list icon and how many are open. */
+.bar-btn.tab-list { color: var(--wm-faint); gap: 4px; padding: 0 6px; min-width: 0; }
+.bar-btn.tab-list .bar-label-text { font-variant-numeric: tabular-nums; }

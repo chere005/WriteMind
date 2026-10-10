@@ -54,31 +54,6 @@ button { font: inherit; color: inherit; }
 
 .app { display: flex; height: 100%; }
 
-/* The sidebar is a plain flex child, shown or hidden — never a split-view
-   column, because the bar above it has to stay put. */
-.sidebar {
-  width: 232px;
-  flex: 0 0 232px;
-  display: flex;
-  flex-direction: column;
-  background: var(--wm-chrome);
-  border-right: 1px solid var(--wm-rule);
-}
-
-.sidebar-bar {
-  display: flex;
-  align-items: center;
-  gap: 2px;
-  height: 38px;
-  padding: 0 6px;
-  -webkit-app-region: drag;
-  border-bottom: 1px solid var(--wm-rule);
-}
-
-.sidebar-bar > * { -webkit-app-region: no-drag; }
-.sidebar-bar .spacer { flex: 1; }
-.mac .sidebar-bar { padding-left: 78px; }
-
 .icon-button {
   flex: none;
   white-space: nowrap;
@@ -96,121 +71,14 @@ button { font: inherit; color: inherit; }
 .icon-button:hover { background: var(--wm-rule); }
 .icon-button.on { background: var(--wm-accent); color: #fff; }
 
-.bar-divider { width: 1px; height: 16px; background: var(--wm-rule); margin: 0 4px; }
-
-.rows { flex: 1; overflow: auto; padding: 6px; }
-
-/* The add row: a box of its own, split down the middle — a new note on the
-   left, a new section on the right, both landing where the row is. */
-.add-row {
-  display: flex;
-  align-items: stretch;
-  margin: 2px 2px 4px;
-  border: 1px dashed var(--wm-rule);
-  border-radius: 4px;
-}
-.add-row button {
-  flex: 1;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 4px;
-  padding: 3px 0;
-  border: 0;
-  background: transparent;
-  color: var(--wm-faint);
-  font-size: 11px;
-  cursor: pointer;
-}
-.add-row button:hover { color: var(--wm-accent); }
-.add-row .split { width: 1px; background: var(--wm-rule); margin: 3px 0; }
-.add-row svg { display: block; }
-
-.note-row, .section-row {
-  display: block;
-  width: 100%;
-  text-align: left;
-  border: 0;
-  background: transparent;
-  border-radius: 5px;
-  padding: 4px 6px;
-  cursor: pointer;
-}
-.note-row:hover, .section-row:hover { background: var(--wm-rule); }
-.note-row.open { background: var(--wm-accent); color: #fff; }
-.note-row.open .snippet { color: rgba(255, 255, 255, 0.75); }
-.note-row .title { font-size: 12.5px; }
-.note-row .snippet {
-  font-size: 11px;
-  color: var(--wm-faint);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-.section-row { font-size: 12px; font-weight: 600; color: var(--wm-soft); }
-
 .pane { flex: 1; display: flex; flex-direction: column; min-width: 0; }
 
-.tab-bar {
-  display: flex;
-  align-items: stretch;
-  height: 30px;
-  background: var(--wm-chrome);
-  border-bottom: 1px solid var(--wm-rule);
-  -webkit-app-region: drag;
-  overflow: hidden;
-}
-.tab-bar > * { -webkit-app-region: no-drag; }
-.tab {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  padding: 0 10px;
-  border: 0;
-  border-right: 1px solid var(--wm-rule);
-  background: transparent;
-  color: var(--wm-soft);
-  font-size: 12px;
-  cursor: pointer;
-  max-width: 200px;
-}
-.tab.open { background: var(--wm-page); color: var(--wm-text); }
-.tab .close { opacity: 0.5; }
-.tab .close:hover { opacity: 1; }
-
-.top-bar {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 2px 1px;
-  min-height: 32px;
-  padding: 3px 6px;
-  border-bottom: 1px solid var(--wm-rule);
-  background: var(--wm-chrome);
-  position: relative;
-  /* Above the pane divider (8): the bar's popovers (maths palette, menus) hang
-     below it and reach across the divider when the video pane is open. */
-  z-index: 9;
-}
-.top-bar > *, .pop-anchor { flex: none; }
-.top-bar .icon-button, .top-bar select { white-space: nowrap; }
+/* (The bar over the note is toolbar.css's: bars.css's 36px row, never wrapping. The tab row is tabs.css's.) */
 .pop-anchor { position: relative; display: inline-flex; }
-/* The right-hand end (rendered page, PDF) stays right, and drops to its own
-   line rather than being clipped when the pane is narrow. */
-.top-bar > .bar-spacer { flex: 1 1 0; min-width: 0; }
 
-.pen-menu { position: relative; display: inline-flex; }
-.pen-chip { width: auto; padding: 0 6px; gap: 5px; font-size: 11px; }
 .pen-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--wm-faint); }
 .pen-pen .pen-dot { background: #e0a21a; }
 .pen-pressure .pen-dot { background: #2fb457; }
-.pen-pop { width: 340px; display: block; max-height: 80vh; overflow-y: auto; }
-.pen-pop h4 { margin: 12px 0 4px; font-size: 11px; text-transform: uppercase; letter-spacing: 0.04em; color: var(--wm-faint); }
-.pen-pop .pen-slot { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
-.pen-pop .pen-slot select { max-width: 190px; }
-.pen-pop p { margin: 0 0 8px; line-height: 1.35; }
-.pen-pop label { display: block; margin: 4px 0; }
-.pen-pop .hint { color: var(--wm-faint); margin: 8px 0 0; }
 
 .editor { flex: 1; min-height: 0; position: relative; }
 .editor .cm-editor { height: 100%; }
@@ -238,68 +106,6 @@ button { font: inherit; color: inherit; }
   color: var(--wm-faint);
 }
 
-/* The + on the bar names a KIND; the menu is the one list of them. */
-.kind-menu {
-  position: fixed;
-  z-index: 20;
-  min-width: 190px;
-  padding: 4px;
-  border-radius: 8px;
-  border: 1px solid var(--wm-rule);
-  background: var(--wm-chrome);
-  box-shadow: 0 8px 24px var(--wm-shadow);
-}
-.kind-menu button {
-  display: block;
-  width: 100%;
-  text-align: left;
-  border: 0;
-  background: transparent;
-  padding: 4px 8px;
-  border-radius: 5px;
-  font-size: 12.5px;
-  cursor: pointer;
-}
-.kind-menu button:hover { background: var(--wm-accent); color: #fff; }
-.kind-menu hr { border: 0; border-top: 1px solid var(--wm-rule); margin: 4px 2px; }
-
-.camera {
-  flex: 0 0 38%;
-  border-left: 1px solid var(--wm-rule);
-  background: #101012;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 10px;
-  color: #8a8a92;
-  position: relative;
-  min-width: 260px;
-}
-.camera video { width: 100%; height: 100%; object-fit: contain; background: #000; }
-.camera .camera-bar {
-  position: absolute;
-  top: 8px;
-  right: 8px;
-  display: flex;
-  gap: 4px;
-}
-.camera .note {
-  position: absolute;
-  bottom: 10px;
-  left: 0;
-  right: 0;
-  text-align: center;
-  font-size: 11px;
-  color: #8a8a92;
-}
-.camera .box {
-  position: absolute;
-  border: 1.5px dashed var(--wm-accent);
-  background: rgba(109, 169, 240, 0.12);
-  pointer-events: none;
-}
-
 /* The drawing layer sits OVER the notebook and lets every click it does not
    want go through to the words underneath. */
 .stack { position: relative; flex: 1; min-height: 0; display: flex; }
@@ -309,32 +115,61 @@ button { font: inherit; color: inherit; }
 .wm-canvas canvas { position: absolute; left: 0; top: 0; }
 .wm-handles { position: absolute; inset: 0; pointer-events: none; }
 
+/* THE HANDLES round a picked object (Canvas.tsx, handles.ts; Sean's wireframe, 2026-10-10): eight small white squares
+   with an accent edge ON the dashed outline and an accent dot on a stem above it. The button is the target (18 px,
+   centred on the point it is given); the mark is drawn inside it. A small object has one pill under it instead. */
 .wm-handle {
   pointer-events: auto;
   position: absolute;
-  width: 22px;
-  height: 22px;
+  width: 18px;
+  height: 18px;
+  margin: -9px 0 0 -9px;
   padding: 0;
-  border-radius: 50%;
-  border: 1px solid var(--wm-rule);
-  background: var(--wm-chrome);
-  color: var(--wm-soft);
-  font-size: 11px;
-  line-height: 1;
+  border: 0;
+  background: transparent;
   cursor: pointer;
-  box-shadow: 0 1px 4px var(--wm-shadow);
+  display: grid;
+  place-items: center;
 }
-.wm-handle:hover { color: var(--wm-accent); border-color: var(--wm-accent); }
-.wm-handle-wide { width: 28px; border-radius: 11px; }
+.wm-handle::after {
+  content: "";
+  box-sizing: border-box;
+  width: 9px;
+  height: 9px;
+  border-radius: 2px;
+  background: #fff;
+  border: 1.5px solid var(--wm-accent);
+  box-shadow: 0 0 0 0.5px rgba(0, 0, 0, 0.2);
+}
+.wm-handle:hover::after { background: var(--wm-accent); }
+.wm-handle.wm-turn::after { width: 10px; height: 10px; border-radius: 50%; background: var(--wm-accent); border-color: #fff; }
+.wm-stem { position: absolute; width: 0; border-left: 1.5px solid var(--wm-accent); margin-left: -0.75px; pointer-events: none; }
+/* The pill of a small object: its two buttons (turn, resize) side by side below it. */
+.wm-pill {
+  position: absolute;
+  box-sizing: border-box;
+  height: 28px;
+  border-radius: 14px;
+  background: var(--wm-chrome);
+  border: 1px solid var(--wm-rule);
+  box-shadow: 0 1px 6px var(--wm-shadow);
+  pointer-events: none;
+}
+.wm-handle.wm-pillbtn { width: 26px; height: 26px; margin: -13px 0 0 -13px; border-radius: 13px; color: var(--wm-text); }
+.wm-handle.wm-pillbtn::after { display: none; }
+.wm-handle.wm-pillbtn:hover { color: var(--wm-accent); }
 /* The circle on a segment of a routed line. */
-.wm-segment {
+.wm-handle.wm-segment {
   width: 12px;
   height: 12px;
+  margin: 0;
+  border-radius: 50%;
   background: var(--wm-accent);
-  border-color: #fff;
+  border: 1px solid #fff;
   opacity: 0.85;
 }
-.wm-segment:hover { opacity: 1; }
+.wm-handle.wm-segment::after { display: none; }
+.wm-handle.wm-segment:hover { opacity: 1; }
 /* What a click would take, shown before the click (Canvas.tsx `hover`, the Mac's hovered object): a faint dashed
    outline, and its handles dimmed until the pointer is on one. Over it the pointer is an open hand. */
 .wm-hover-box {
@@ -344,7 +179,7 @@ button { font: inherit; color: inherit; }
   border: 1px dashed color-mix(in srgb, var(--wm-accent) 60%, transparent);
   border-radius: 2px;
 }
-.wm-handles-faint .wm-handle { opacity: 0.45; }
+.wm-handles-faint .wm-handle, .wm-handles-faint .wm-stem, .wm-handles-faint .wm-pill { opacity: 0.45; }
 .wm-handles-faint .wm-handle:hover { opacity: 1; }
 .wm-hover-grab .cm-editor, .wm-hover-grab .cm-editor * { cursor: grab !important; }
 
@@ -384,26 +219,10 @@ button { font: inherit; color: inherit; }
   pointer-events: auto;
   cursor: crosshair;
 }
-.wm-crop-bar { position: absolute; display: flex; gap: 6px; pointer-events: none; }
-.wm-crop-bar .wm-handle { position: static; }
-
-.pen-colour {
-  width: 22px;
-  height: 20px;
-  padding: 0;
-  border: 0;
-  background: transparent;
-  cursor: pointer;
-}
-.swatch {
-  width: 13px;
-  height: 13px;
-  margin: 0 1px;
-  padding: 0;
-  border: 1px solid var(--wm-rule);
-  border-radius: 50%;
-  cursor: pointer;
-}
+.wm-crop-bar { position: absolute; display: flex; gap: 4px; padding: 2px; border-radius: 9px; background: var(--wm-chrome); border: 1px solid var(--wm-rule); box-shadow: 0 2px 10px var(--wm-shadow); pointer-events: auto; }
+.wm-crop-btn { width: 28px; height: 28px; padding: 0; border: 0; border-radius: 6px; background: transparent; color: var(--wm-text); display: grid; place-items: center; cursor: default; }
+.wm-crop-btn:hover { background: color-mix(in srgb, var(--wm-text) 9%, transparent); }
+.wm-crop-ok { color: var(--wm-accent); }
 
 /* Whatever the renderer threw, where it can be read. */
 #wm-error {
@@ -421,7 +240,7 @@ button { font: inherit; color: inherit; }
   font-size: 11px;
   font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   color: #fff;
-  background: #c0392b;
+  background: var(--wm-danger);
 }
 #wm-error .text { flex: 1; overflow-wrap: anywhere; user-select: text; }
 #wm-error .close {
@@ -462,38 +281,6 @@ button { font: inherit; color: inherit; }
 }
 .save-problem button:hover { background: rgba(255, 255, 255, 0.36); }
 
-.camera .trouble {
-  position: absolute;
-  bottom: 30px; /* above the note line, never under the header (which wraps in a narrow pane) */
-  z-index: 3;
-  pointer-events: none;
-  left: 0;
-  right: 0;
-  text-align: center;
-  font-size: 11px;
-  color: #e8a0a0;
-}
-.camera-bar .icon-button { background: rgba(0, 0, 0, 0.45); color: #e8e8ea; }
-.camera-bar .icon-button:hover { background: var(--wm-accent); }
-
-/* The page's four corners over the viewfinder ("Straighten"). */
-.camera .quad { position: absolute; inset: 0; pointer-events: none; }
-.camera .quad polygon {
-  fill: rgba(109, 169, 240, 0.10);
-  stroke: var(--wm-accent);
-  stroke-width: 1.5;
-}
-.camera .quad-corner {
-  position: absolute;
-  width: 16px;
-  height: 16px;
-  margin: -8px 0 0 -8px;
-  border-radius: 50%;
-  background: var(--wm-accent);
-  border: 2px solid #fff;
-  cursor: grab;
-  touch-action: none;
-}
 
 /* Maths: typeset in the notebook, and the palette that puts it there (the Mac's MathMenu). */
 /* The typeset maths itself (.wm-math, .wm-math-inline, .wm-math-block) is styled by @writemind/editor's math.ts. */
@@ -592,87 +379,11 @@ button { font: inherit; color: inherit; }
 .icon-button:disabled { opacity: 0.35; cursor: default; background-color: transparent; }
 .icon-button.on:disabled { background-color: transparent; }
 
-/* The bar over the list: 44 points, its buttons right-aligned. */
-.sidebar-bar { height: 44px; }
-.sidebar-bar .icon-button { width: 22px; }
-
-/* The video's switch and its chevron are one control. */
-.bar-split { position: relative; display: inline-flex; align-items: center; border-radius: 5px;
-  background: color-mix(in srgb, var(--wm-rule) 35%, transparent); }
-.bar-split.on { background: color-mix(in srgb, var(--wm-accent) 22%, transparent); }
-.bar-split > .icon-button.on { background-color: transparent; color: var(--wm-accent); }
-.bar-split > .icon-button { background-color: transparent; }
-.bar-split > .icon-button:hover { background-color: var(--wm-rule); }
-.bar-split > .chevron, .bar-split > .chevron-button {
-  width: 14px; padding: 0; font-size: 9px; border-left: 1px solid var(--wm-rule); border-radius: 0 5px 5px 0;
-}
-select.chevron {
-  appearance: none; -webkit-appearance: none; text-align: center; text-align-last: center;
-  --chev: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='8' height='5'%3E%3Cpath d='M1 1l3 3 3-3' fill='none' stroke='%23888' stroke-width='1.3' stroke-linecap='round'/%3E%3C/svg%3E");
-  background-image: var(--chev);
-  background-repeat: no-repeat; background-position: center; color: transparent;
-}
-select.chevron:hover, select.chevron:disabled { background-image: var(--chev); background-repeat: no-repeat; background-position: center; }
-select.chevron option { color: var(--wm-text); background: var(--wm-chrome); }
-.video-pop {
-  position: absolute; top: calc(100% + 4px); right: 0; z-index: 30; min-width: 210px; padding: 4px;
-  border: 1px solid var(--wm-rule); border-radius: 8px; background: var(--wm-chrome);
-  box-shadow: 0 8px 24px var(--wm-shadow); font-size: 12.5px;
-}
-.video-pop button { display: flex; width: 100%; text-align: left; border: 0; background: transparent;
-  padding: 4px 8px; border-radius: 5px; cursor: pointer; }
-.video-pop button:hover:not(:disabled) { background: var(--wm-accent); color: #fff; }
-.video-pop button:disabled { opacity: 0.4; cursor: default; }
-.video-pop .tick { width: 16px; flex: none; }
-.video-pop .none { padding: 4px 8px; color: var(--wm-faint); }
-.video-pop hr { border: 0; border-top: 1px solid var(--wm-rule); margin: 4px 2px; }
-
-/* Rows: edit mode puts duplicate and a two-click trash on each. */
-.note-row, .section-row { display: flex; align-items: center; gap: 6px; }
-.note-row .text { flex: 1; min-width: 0; }
-.section-row .name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.section-row .count { font-size: 10px; font-weight: 400; color: var(--wm-faint); }
-.row-buttons { display: inline-flex; gap: 2px; flex: none; }
-.row-button {
-  flex: none; display: inline-flex; align-items: center; justify-content: center;
-  width: 22px; height: 22px; padding: 0; border: 0; border-radius: 5px;
-  background: transparent; color: var(--wm-soft); cursor: pointer;
-}
-.row-button:hover { background: var(--wm-rule); }
-.row-button.trash.armed { background: #d9382c; color: #fff; }
-.note-row.open .row-button { color: #fff; }
-.note-row.open .row-button:hover { background: rgba(255, 255, 255, 0.25); }
-.note-row.open .row-button.armed { background: #d9382c; }
-
-/* The text bar: sections, each with a grip that puts it away. */
-.bar-group { display: inline-flex; align-items: center; gap: 1px; flex: none; position: relative; }
-.bar-group .bar-select { width: auto; padding: 0 3px; font-size: 11px; }
-.bar-group .away-icon { opacity: 0.55; font-size: 11px; }
-.bar-grip {
-  flex: none; display: inline-flex; align-items: center; justify-content: center;
-  width: 11px; height: 22px; padding: 0; border: 0; background: transparent; cursor: pointer;
-}
-.bar-grip i { display: block; width: 1px; height: 16px; border-radius: 1px; background: var(--wm-rule); }
-.bar-grip:hover i { width: 3px; background: var(--wm-soft); }
-.bar-context {
-  position: fixed; z-index: 70; min-width: 160px; padding: 6px 10px; font-size: 12px;
-  border: 1px solid var(--wm-rule); border-radius: 8px; background: var(--wm-chrome);
-  box-shadow: 0 8px 24px var(--wm-shadow);
-}
-.bar-context .heading { color: var(--wm-faint); margin-bottom: 4px; }
-.bar-context label { display: block; padding: 2px 0; cursor: pointer; }
-
 /* Hide Notes Pane: the camera takes the window. */
 .app.no-editor .camera { flex: 1 1 auto; }
 
-/* The selects in the text bar are a fixed, narrow width: a bar that is as wide
-   as its longest option pushes the pen off the end of the window. */
-.bar-group .bar-select.narrow { width: 66px; text-overflow: ellipsis; }
-
 /* The tablet as a source for the video pane: a sheet of dotted notebook paper. */
 
-.camera .note { pointer-events: none; z-index: 2; }
-.camera-bar { z-index: 3; flex-wrap: wrap; justify-content: flex-end; max-width: 100%; }
 
 /* The pen has taken over the pointer: no OS arrow, our own cursor instead (penCursor.ts). */
 html.pen-active, html.pen-active * { cursor: none !important; }

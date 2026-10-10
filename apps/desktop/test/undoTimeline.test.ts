@@ -16,7 +16,7 @@
 
 import { describe, expect, it } from "vitest"
 import { EditorState, Transaction } from "@codemirror/state"
-import { history, undoDepth } from "@codemirror/commands"
+import { history, isolateHistory, undoDepth } from "@codemirror/commands"
 import { noTransform, type CanvasItem, type Drawing } from "@writemind/core"
 import { DrawingHistory } from "../src/renderer/drawingHistory"
 import { changedBox, EditClock, stepAcross, textTimeline, type TextHost } from "../src/renderer/editTimeline"
@@ -90,6 +90,15 @@ class Note implements TextHost {
       annotations: Transaction.time.of(this.time),
     }).state
   }
+  /** A command's edit: it changes the words and sets the caret itself (a cell made at the bar, a table, a section moved). */
+  command(changes: { from: number; to?: number; insert: string }, caret: number): void {
+    this.time += 1000
+    this.state = this.state.update({
+      changes, selection: { anchor: caret }, annotations: [isolateHistory.of("full"), Transaction.time.of(this.time)],
+    }).state
+  }
+  get caret(): number { return this.state.selection.main.head }
+  setCaret(at: number): void { this.state = this.state.update({ selection: { anchor: at }, userEvent: "select" }).state }
   moveCaret(): void {
     this.time += 100
     const to = this.state.selection.main.head === 0 ? this.state.doc.length : 0
@@ -425,6 +434,80 @@ describe("one Undo for the words and the drawing", () => {
       // A note with words already in it, so the edits are not all at the end of nothing.
       run(seed, 3000, new Note("An existing note.\n\nWith two paragraphs."))
     }
+  })
+})
+
+describe("the caret an Undo and a Redo leave (docs/PLAN-bars-2026-10.md P7, found by e2e/suites/integration)", () => {
+  it("a command that puts the caret inside what it made: Undo gives back the caret it found, Redo the caret it left", () => {
+    // “alpha” and “beta” with the bar between them (the caret on the blank line); a quote cell made there, the caret in it.
+    const note = new Note("alpha\n\nbeta")
+    note.setCaret(6)
+    note.command({ from: 7, insert: "> \n\n" }, 9)
+    expect(note.words).toBe("alpha\n\n> \n\nbeta")
+    expect(note.caret).toBe(9)
+    note.step("undo")
+    expect(note.words).toBe("alpha\n\nbeta")
+    expect(note.caret).toBe(6)
+    note.step("redo")
+    expect(note.words).toBe("alpha\n\n> \n\nbeta")
+    // (CodeMirror's own Redo maps the caret it began with through the change and leaves it at 6, on the blank line above the cell.)
+    expect(note.caret).toBe(9)
+    // and the Undo AFTER a Redo gives back the caret of the beginning again
+    note.step("undo")
+    expect(note.caret).toBe(6)
+  })
+
+  it("a command that rewrites the whole note (Move Section): Redo and the Undo after it keep the caret in the section, not at the end", () => {
+    const text = "# One\n\nalpha\n\n# Two\n\nbeta"
+    const moved = "# Two\n\nbeta\n\n# One\n\nalpha"
+    const note = new Note(text)
+    note.setCaret(text.indexOf("alpha") + 3)
+    const before = note.caret
+    note.command({ from: 0, to: text.length, insert: moved }, moved.indexOf("alpha") + 3)
+    const after = note.caret
+    note.step("undo"); expect(note.words).toBe(text); expect(note.caret).toBe(before)
+    note.step("redo"); expect(note.words).toBe(moved); expect(note.caret).toBe(after)
+    note.step("undo"); expect(note.words).toBe(text); expect(note.caret).toBe(before)
+    note.step("redo"); expect(note.caret).toBe(after)
+  })
+
+  it("typing: Undo takes the caret back to where the typing began, Redo to the end of the words", () => {
+    const note = new Note("abc")
+    note.setCaret(3)
+    note.type("de")
+    expect(note.caret).toBe(5)
+    note.step("undo"); expect(note.caret).toBe(3)
+    note.step("redo"); expect(note.caret).toBe(5)
+  })
+
+  it("an edit grouped into the last one begins where that began and ends where this ended", () => {
+    const note = new Note("")
+    note.type("a", 100); note.type("b", 100); note.type("c", 100)
+    expect(note.words).toBe("abc")
+    note.step("undo"); expect(note.caret).toBe(0)
+    note.step("redo"); expect(note.caret).toBe(3)
+  })
+
+  it("the carets move with the words when the page changes them under the history (a reload that merged)", () => {
+    const note = new Note("alpha")
+    note.setCaret(5)
+    note.command({ from: 5, insert: "!" }, 6)
+    // another program put a line in front of the note; the history keeps the edit and maps it
+    note.state = note.state.update({ changes: { from: 0, insert: "new\n" }, annotations: [Transaction.addToHistory.of(false)] }).state
+    note.step("undo")
+    expect(note.words).toBe("new\nalpha")
+    expect(note.caret).toBe(9)
+    note.step("redo")
+    expect(note.words).toBe("new\nalpha!")
+    expect(note.caret).toBe(10)
+  })
+
+  it("a caret beyond the words (they changed more than the history knew) is kept inside them", () => {
+    const note = new Note("abc")
+    note.setCaret(3)
+    note.command({ from: 3, insert: "defgh" }, 8)
+    note.step("undo")
+    expect(note.caret).toBeLessThanOrEqual(note.words.length)
   })
 })
 

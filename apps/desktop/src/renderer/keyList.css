@@ -13,8 +13,25 @@
   columns: 2 300px;
   column-gap: 28px;
   margin: 0 0 12px;
-  padding-right: 4px;
+  /* The scrollbar has a gutter of its own: a keycap at the right edge is never under it (it was clipped). */
+  scrollbar-gutter: stable;
+  padding-right: 14px;
 }
+.modal.key-list .key-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; margin-bottom: 4px; }
+.modal.key-list .key-head h3 { margin: 4px 0 0; }
+.modal.key-list .key-search {
+  flex: 0 1 220px;
+  min-width: 120px;
+  padding: 4px 8px;
+  border: 1px solid var(--wm-rule);
+  border-radius: 6px;
+  background: var(--wm-page);
+  color: var(--wm-text);
+  font: inherit;
+  font-size: 12px;
+}
+.modal.key-list .key-search:focus { outline: 2px solid var(--wm-accent); outline-offset: -1px; }
+.modal.key-list .key-none { column-span: all; margin: 12px 0; }
 .modal.key-list .key-group {
   break-inside: avoid;
   margin: 0 0 12px;

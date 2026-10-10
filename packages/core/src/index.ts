@@ -10,6 +10,7 @@
 
 export * from "./text/range"
 export * from "./text/find"
+export * from "./text/findVisible"
 // The parser re-exports `Range` from there; everything else is its own.
 export {
   blocks, positioned, positionedUpdate, linesOf, heading, isRule, todoItem, bulletItem, dashItem, numberedItem,
@@ -33,6 +34,7 @@ export * from "./cells/outline"
 export * from "./cells/folding"
 export * from "./cells/editing"
 export * from "./cells/types"
+export * from "./cells/tableCells"
 export * from "./cells/seams"
 export * from "./cells/commands"
 export * from "./cells/subsections"
@@ -44,6 +46,7 @@ export * from "./notes/order"
 export * from "./notes/writing"
 export * from "./notes/session"
 export * from "./notes/linking"
+export * from "./notes/search"
 export * from "./drawing/shapes"
 export * from "./drawing/model"
 export * from "./drawing/geometry"

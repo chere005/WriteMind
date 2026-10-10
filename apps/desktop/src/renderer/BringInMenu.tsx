@@ -1,53 +1,51 @@
 /**
- * The tablet sheet header's "Bring in ▾" (Sean, 2026-10-06: "give the Bring in a drop down arrow that chooses To
- * writing or To docked cell"): one small menu that says where the header's Writing button puts the writing —
- * floating strokes on the note's page (To writing), or a new drawing cell docked at the input cursor (To docked
- * cell, what the box row's Bring in as Drawing Cell does). Page always brings a picture. The choice is remembered
- * (cameraSettings.ts `bringInTo`); Esc or a click away closes the menu, as the Paper menu's.
+ * The tablet header's "Bring in" (the wireframe's one primary, filled): the button brings the sheet's writing into the
+ * note the way it was last asked to, and its menu — the corner triangle, a right-click or a half-second hold — says
+ * which way. The choice IS the action (Sean, 2026-10-06: "give the Bring in a drop down arrow that chooses To writing or
+ * To docked cell"; 2026-10-10: its menu is "Writing / As drawing cell"): picking one brings it in and makes it what the
+ * button does next. The third item brings the sheet as a picture, paper and all (it used to be the header's own Page
+ * button); it is never the button's default.
+ *
+ *   Writing           the strokes float on the note's page (the box row's "Bring in writing")
+ *   As drawing cell   a new drawing cell docked at the input cursor (the box row's "As drawing cell")
+ *   Sheet as picture  the boxed part, or the whole sheet, as an image
  */
 
-import { useEffect, useRef, useState } from "react"
+import { MenuButton } from "./MenuButton"
+import type { MenuItem } from "./FloatingMenu"
 import type { BringTo } from "./cameraSettings"
 
-export const BRING_TO: { value: BringTo; label: string; hint: string }[] = [
-  { value: "writing", label: "To writing", hint: "Writing brings the strokes onto the note's page, where they float" },
-  { value: "cell", label: "To docked cell", hint: "Writing brings the strokes in as a new drawing cell at the input cursor" },
+export const BRING_TO: { value: BringTo; label: string }[] = [
+  { value: "writing", label: "Writing" },
+  { value: "cell", label: "As Drawing Cell" },
 ]
 
-export function BringInMenu({ to, onChange }: { to: BringTo; onChange(next: BringTo): void }) {
-  const [open, setOpen] = useState(false)
-  const root = useRef<HTMLSpanElement | null>(null)
+interface Props {
+  to: BringTo
+  /** The default changed (a pick in the menu). */
+  onChange(next: BringTo): void
+  /** The tooltip of the button, which says what a click does now. */
+  title: string
+  /** Why Bring in is off (a sheet that is a drawing cell already, no note open), or null. */
+  off: string | null
+  onBring(to: BringTo): void
+  onPage(): void
+}
 
-  useEffect(() => {
-    if (!open) return
-    const away = (event: PointerEvent) => { if (!root.current?.contains(event.target as Node)) setOpen(false) }
-    const key = (event: KeyboardEvent) => {
-      if (event.key !== "Escape") return
-      event.preventDefault(); event.stopPropagation()
-      setOpen(false)
-    }
-    window.addEventListener("pointerdown", away, true)
-    window.addEventListener("keydown", key, true)
-    return () => { window.removeEventListener("pointerdown", away, true); window.removeEventListener("keydown", key, true) }
-  }, [open])
-
-  const now = BRING_TO.find((one) => one.value === to) ?? BRING_TO[0]!
+export function BringInMenu({ to, onChange, title, off, onBring, onPage }: Props) {
+  const items: MenuItem[] = [
+    { header: "Bring in" },
+    ...BRING_TO.map((one): MenuItem => ({
+      label: one.label, checked: to === one.value, disabled: off !== null, dataBar: `bring-${one.value}`,
+      onClick: () => { onChange(one.value); onBring(one.value) },
+    })),
+    "-",
+    { label: "Sheet as Picture", icon: "image", disabled: off !== null, dataBar: "bring-page", onClick: onPage },
+  ]
   return (
-    <span className="paper-menu bring-menu" ref={root} onPointerDown={(event) => event.stopPropagation()}>
-      <button className={`icon-button${open ? " on" : ""}`} data-tablet="bring-to" aria-haspopup="menu" aria-expanded={open}
-              title={`Bring in ${now.label.toLowerCase()}: ${now.hint}. Click to choose.`}
-              onClick={() => setOpen((was) => !was)}
-              style={{ width: "auto", padding: "0 6px", fontSize: 11 }}>{"Bring in ▾"}</button>
-      {open && (
-        <div className="paper-pop bring-pop" role="menu" data-tablet="bring-menu">
-          <div className="group" role="radiogroup" aria-label="Bring in">
-            {BRING_TO.map((one) => (
-              <button key={one.value} role="menuitemradio" aria-checked={to === one.value} data-bring-to={one.value}
-                      title={one.hint} onClick={() => { onChange(one.value); setOpen(false) }}>{one.label}</button>
-            ))}
-          </div>
-        </div>
-      )}
-    </span>
+    <MenuButton label="Bring in" className="primary" disabled={off !== null} data={{ capture: "ink" }}
+                title={off ?? title}
+                onMain={() => { if (!off) onBring(to) }}
+                items={items} />
   )
 }

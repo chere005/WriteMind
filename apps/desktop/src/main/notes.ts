@@ -97,7 +97,7 @@ async function readOrderFile(owner: string): Promise<NoteOrder | null> {
  * root lived in the root's file under the folder's absolute path; a folder with no file of its own is read
  * from there once.
  */
-async function readOrder(owner: string, root: string): Promise<NoteOrder> {
+export async function readOrder(owner: string, root: string): Promise<NoteOrder> {
   const own = await readOrderFile(owner)
   if (own) return own
   if (sameFolder(owner, root)) return emptyOrder()
@@ -523,7 +523,7 @@ export async function sweepMediaCache(now = Date.now()): Promise<void> {
 // MARK: - Moving rows
 
 /** Every note under a folder, so a moved section can tell the store its notes moved. */
-async function notesUnder(folder: string): Promise<string[]> {
+export async function notesUnder(folder: string): Promise<string[]> {
   const entries = await io(() => fs.readdir(folder, { withFileTypes: true })).catch(() => [])
   const list: string[] = []
   for (const entry of entries) {

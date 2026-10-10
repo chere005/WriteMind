@@ -1,8 +1,12 @@
 /**
  * The project's side of the sidebar (`SidebarView.swift`): the footer with its
- * Folder menu, the right-click menus on a folder and on the blank list, and
+ * project menu, the right-click menus on a folder, a note and the blank list, and
  * the two states a list can have instead of rows — nothing in it yet, and a
  * project whose folders are not there.
+ *
+ * ONE PLACE FOR THE PROJECT (docs/PLAN-bars-2026-10.md, P3): the footer's project button opens a menu that has
+ * everything the menu bar's Project menu has (Add Folder, Remove Folder, Save, Save As, Open, New) and the sidebar's own
+ * (Hidden Sections, Reveal, Clean Up). It was a "Folder" button with half of that.
  *
  * "Remove Folder from Project" is offered ONLY for a folder that is really on
  * disk at the moment the menu opens (Sean, 2026-09-19: "remove folder on
@@ -12,8 +16,10 @@
 
 import { useCallback, useState } from "react"
 import type { Note } from "@writemind/core"
+import { shown } from "../shared/commands"
 import { FloatingMenu, type MenuItem } from "./FloatingMenu"
-import { distinctNotes } from "./sidebarTree"
+import { Icon } from "./icons"
+import { distinctNotes, moveTargets } from "./sidebarTree"
 import type { ProjectInfo, Section } from "./wm"
 
 export const fileManagerName = (platform: string): string =>
@@ -27,6 +33,7 @@ export const isEmptyTree = (root: Section | null): boolean =>
 
 /** What a row can do beyond the project (the Mac's row menus): rename, duplicate, move and the Trash. */
 export interface RowActions extends ProjectActions {
+  open(note: Note): void
   renameNote(note: Note): void
   renameSection(section: Section): void
   duplicate(note: Note): void
@@ -46,9 +53,9 @@ export interface ProjectActions {
 }
 
 /**
- * The right-click menu on a folder row. `isRoot` is a project folder (a
- * row of depth 0 in a project of several), anything else is a section inside
- * one. `real` is whether the folder is on disk right now.
+ * The right-click menu on a folder row (and its ⋯). `isRoot` is a project folder (a row of depth 0 in a project of
+ * several), anything else is a section inside one. `real` is whether the folder is on disk right now. A new section
+ * is "New Section" on a project folder and in a section alike: one label, one meaning.
  */
 export function sectionMenu(section: Section, real: boolean, project: ProjectInfo | null, platform: string,
   actions: RowActions): MenuItem[] {
@@ -56,7 +63,7 @@ export function sectionMenu(section: Section, real: boolean, project: ProjectInf
   const folders = project?.folders.length ?? 1
   const items: MenuItem[] = [
     { label: "New Note Here", onClick: () => actions.newNote(section.path) },
-    { label: isRoot ? "New Section" : "New Subsection", onClick: () => actions.newSection(section.path) },
+    { label: "New Section", dataBar: "new-section", onClick: () => actions.newSection(section.path) },
   ]
   if (!isRoot) items.push({ label: "Rename…", disabled: !real, onClick: () => actions.renameSection(section) })
   items.push({ label: `Reveal in ${fileManagerName(platform)}`, onClick: () => actions.reveal(section.path), disabled: !real })
@@ -75,35 +82,35 @@ export function sectionMenu(section: Section, real: boolean, project: ProjectInf
     // A folder can be taken OUT of the project and left where it is — the Trash is for one that should go.
     items.push(
       { label: "Remove Folder from Project", onClick: () => actions.run(`excludeFolder:${section.path}`) },
-      { label: `Move to ${trashWord(platform)}…`, onClick: () => actions.trashSection(section) },
+      { label: `Move to ${trashWord(platform)}…`, danger: true, onClick: () => actions.trashSection(section) },
     )
   }
   return items
 }
 
-const sectionsOf = (section: Section): Section[] => section.sections.flatMap((one) => [one, ...sectionsOf(one)])
-
-/** The right-click menu on a note's row (`SidebarView.noteRow`'s `.contextMenu`). */
-export function noteMenu(note: Note, section: Section, root: Section | null, platform: string,
-  actions: RowActions): MenuItem[] {
-  // Move to: the project's folders, a line, then every section inside them.
-  const roots = !root ? [] : root.path === "" ? root.sections : [root]
-  const inside = roots.flatMap(sectionsOf)
-  const where: MenuItem[] = roots.map((one) => ({ label: one.name, onClick: () => actions.moveNote(note, one.path) }))
-  if (inside.length > 0) {
-    where.push("-", ...inside.map((one): MenuItem => ({ label: one.name, onClick: () => actions.moveNote(note, one.path) })))
-  }
+/**
+ * The right-click menu on a note's row, and on a search result (`SidebarView.noteRow`'s `.contextMenu`, as the wireframe
+ * draws it): Open, Rename…, Duplicate, Move to ▸, Reveal, Move to Trash…. Move to lists the project's folders and every
+ * section in the tree's own order, each indented to the depth it has there, and greys the note's own section (it is where
+ * the note already is).
+ */
+export function noteMenu(note: Note, root: Section | null, platform: string, actions: RowActions): MenuItem[] {
+  const where: MenuItem[] = moveTargets(root, note.path, platform === "win32").map((target): MenuItem => ({
+    label: target.name,
+    icon: "folder",
+    disabled: target.here,
+    labelStyle: target.depth > 0 ? { paddingLeft: target.depth * 12 } : undefined,
+    onClick: () => actions.moveNote(note, target.path),
+  }))
   return [
-    { label: "New Note Here", onClick: () => actions.newNote(section.path) },
-    { label: "New Section Here", onClick: () => actions.newSection(section.path) },
-    "-",
+    { label: "Open", onClick: () => actions.open(note) },
     { label: "Rename…", onClick: () => actions.renameNote(note) },
     { label: "Duplicate", onClick: () => actions.duplicate(note) },
-    { label: `Reveal in ${fileManagerName(platform)}`, onClick: () => actions.reveal(note.path) },
-    "-",
     { label: "Move to", submenu: where, disabled: where.length === 0 },
     "-",
-    { label: `Move to ${trashWord(platform)}…`, onClick: () => actions.trashNote(note) },
+    { label: `Reveal in ${fileManagerName(platform)}`, onClick: () => actions.reveal(note.path) },
+    "-",
+    { label: `Move to ${trashWord(platform)}…`, danger: true, onClick: () => actions.trashNote(note) },
   ]
 }
 
@@ -113,7 +120,7 @@ export function listMenu(root: Section | null, project: ProjectInfo | null, plat
   const home = project?.folders.find((one) => one.exists)?.path ?? root?.path ?? ""
   return [
     { label: "New Note", onClick: () => actions.newNote(home) },
-    { label: "New Section", onClick: () => actions.newSection(home) },
+    { label: "New Section", dataBar: "new-section", onClick: () => actions.newSection(home) },
     "-",
     { label: "Add Folder to Project…", onClick: () => actions.run("addFolder") },
     "-",
@@ -128,7 +135,45 @@ interface FooterProps {
   actions: ProjectActions
 }
 
-/** "12 notes · 3 folders" and the Folder menu (`SidebarView.footer`). */
+/**
+ * The project menu: every item of the menu bar's Project menu (the same commands, so the keys shown are the keys that
+ * work), then what only the sidebar knows — the folders hidden from it, where the project is on disk, Clean Up.
+ */
+export function projectMenu(platform: string, project: ProjectInfo | null, root: Section | null, actions: ProjectActions): MenuItem[] {
+  const folders = (project?.folders ?? []).filter((one) => one.exists)
+  const hidden = (project?.excluded ?? []).filter((one) => one.exists)
+  const primary = project?.folders[0]?.path ?? root?.path ?? ""
+  const items: MenuItem[] = [
+    { label: "Add Folder to Project…", hint: shown("addFolder", platform), onClick: () => actions.run("addFolder") },
+  ]
+  // As the menu bar's Remove Folder: every folder that is there, greyed while it is the only one.
+  if (folders.length > 0) {
+    items.push({
+      label: "Remove Folder from Project",
+      disabled: folders.length <= 1,
+      submenu: folders.map((one) => ({ label: one.name, onClick: () => actions.run(`removeFolder:${one.path}`) })),
+    })
+  }
+  if (hidden.length > 0) {
+    items.push({
+      label: "Hidden Sections",
+      submenu: hidden.map((one) => ({ label: `Show ${one.name}`, onClick: () => actions.run(`includeFolder:${one.path}`) })),
+    })
+  }
+  items.push(
+    "-",
+    { label: "Save Project", hint: shown("saveProject", platform), onClick: () => actions.run("saveProject") },
+    { label: "Save Project As…", onClick: () => actions.run("saveProjectAs") },
+    { label: "Open Project…", onClick: () => actions.run("openProject") },
+    { label: "New Project", onClick: () => actions.run("newProject") },
+    "-",
+    { label: `Reveal in ${fileManagerName(platform)}`, onClick: () => actions.reveal(primary), disabled: !primary },
+    { label: "Clean Up Unused Files…", onClick: () => actions.run("cleanUp"), disabled: !primary },
+  )
+  return items
+}
+
+/** The project's name with its menu, and how many notes it holds (`SidebarView.footer`). */
 export function SidebarFooter({ platform, root, project, actions }: FooterProps) {
   const [menu, setMenu] = useState<{ x: number; y: number } | null>(null)
   // (A folder inside another project folder shows twice; a note in it is still one note.)
@@ -137,49 +182,28 @@ export function SidebarFooter({ platform, root, project, actions }: FooterProps)
   // A folder of the project that is not on disk right now (a stick pulled, a folder deleted) still counts as one of the
   // project's, but is not in the list: the footer says so rather than seem to count notes that are not there.
   const gone = (project?.folders ?? []).filter((one) => !one.exists).length
-  const others = (project?.folders ?? []).slice(1).filter((one) => one.exists)
-  const hidden = (project?.excluded ?? []).filter((one) => one.exists)
   const primary = project?.folders[0]?.path ?? root?.path ?? ""
+  const name = project?.name ?? root?.name ?? "Notes"
   const close = useCallback(() => setMenu(null), [])
-
-  const items: MenuItem[] = [
-    { label: "Add Folder to Project…", onClick: () => actions.run("addFolder") },
-  ]
-  // Only folders that are really on disk are offered, to remove or to show again.
-  if (others.length > 0) {
-    items.push({
-      label: "Remove Folder from Project",
-      submenu: others.map((one) => ({ label: one.name, onClick: () => actions.run(`removeFolder:${one.path}`) })),
-    })
-  }
-  if (hidden.length > 0) {
-    items.push({
-      label: "Hidden Folders",
-      submenu: hidden.map((one) => ({ label: `Show ${one.name}`, onClick: () => actions.run(`includeFolder:${one.path}`) })),
-    })
-  }
-  items.push("-", {
-    label: `Reveal in ${fileManagerName(platform)}`, onClick: () => actions.reveal(primary), disabled: !primary,
-  }, "-", { label: "Clean Up Unused Files…", onClick: () => actions.run("cleanUp"), disabled: !primary })
+  const items = projectMenu(platform, project, root, actions)
 
   return (
     <div className="sidebar-footer" data-sidebar="footer">
-      <span>{notes === 1 ? "1 note" : `${notes} notes`}</span>
-      {folders > 1 && <span>· {folders} folders{gone > 0 && gone < folders ? ` (${gone} not there)` : ""}</span>}
-      <div className="spacer" />
-      <button className="folder-button" data-sidebar="folder-menu" aria-haspopup="menu"
-              aria-expanded={menu !== null} title={primary}
+      <button className="bar-btn menu label folder-button" data-sidebar="folder-menu" aria-haspopup="menu"
+              aria-expanded={menu !== null} title={`${name}\n${primary}`}
               onMouseDown={(event) => event.preventDefault()}
               onClick={(event) => {
                 const box = event.currentTarget.getBoundingClientRect()
                 setMenu(menu ? null : { x: box.left, y: box.top })
               }}>
-        <svg width="13" height="11" viewBox="0 0 15 13" fill="none" aria-hidden>
-          <path d="M0.5 2a1 1 0 0 1 1-1h3l1.4 1.6h6.6a1 1 0 0 1 1 1V11a1 1 0 0 1-1 1h-11a1 1 0 0 1-1-1z"
-                stroke="currentColor" />
-        </svg>
-        Folder
+        <Icon name="folder" size={15} />
+        <span className="project-name">{name}</span>
       </button>
+      <div className="spacer" />
+      <span className="note-count" data-sidebar="count">
+        {notes === 1 ? "1 note" : `${notes} notes`}
+        {folders > 1 && ` · ${folders} folders${gone > 0 && gone < folders ? ` (${gone} not there)` : ""}`}
+      </span>
       {menu && <FloatingMenu x={menu.x} y={menu.y} above items={items} onClose={close} id="folder-menu" />}
     </div>
   )

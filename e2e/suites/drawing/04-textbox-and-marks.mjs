@@ -2,7 +2,7 @@
 // question) and a pasted picture. (Was tour/t17 and t18.)
 import { ok, finish, js, sleep, freshNote, canvasBox, saved, arm, handles, click, dblclick, dragPath, line, key, typeText, shot, rectOf, clearDrawing, footer } from "../../lib/harness.mjs"
 
-const file = await freshNote()
+const file = await freshNote({ rendered: true })
 const cb = await canvasBox()
 const X = (dx) => cb.x + dx, Y = (dy) => cb.y + dy
 const items = async () => (await saved(file)).items
@@ -31,9 +31,15 @@ const cx = X(box.center.x * cb.w), cy = Y(box.center.y * cb.h)
 await click(cx, cy); await sleep(250)
 const hs = await handles()
 ok("a click on the box picks it (handles shown)", hs.length >= 3, JSON.stringify(hs.map((h) => h.t)))
-const grip = hs.find((h) => /move/i.test(h.t))
-ok("a text box has a 'Drag to move' handle", !!grip)
-await dragPath(line([grip.x, grip.y], [grip.x, grip.y + 160], 10)); await sleep(300)
+// Sean, 2026-10-10: the six glyph discs (the 'Drag to move' one among them) are gone. A text box has the standard
+// handles: four corners and its two sides (its height is its words'), a rotate dot, all ON its outline, none over the words.
+const edge = (h) => hs.filter((x) => x.t === h)
+ok("a text box has four corner handles and two side handles, and a rotate handle", edge("Resize").length === 6 && edge("Turn").length === 1, JSON.stringify(hs.map((h) => [h.t, h.h])))
+const inside = hs.filter((h) => h.x > cx - (box.width * cb.w) / 2 + 4 && h.x < cx + (box.width * cb.w) / 2 - 4 && h.y > cy - 20 && h.y < cy + 20)
+ok("no handle sits over the words", inside.length === 0, JSON.stringify(inside))
+// ...and it moves by a drag of the box itself (a second press within 450 ms is a double-click, which opens its words)
+await sleep(600)
+await dragPath(line([cx, cy], [cx, cy + 160], 10)); await sleep(300)
 d = await items()
 const moved = d.find((i) => i.id === box.id)
 ok("dragging moves it", moved.transform && moved.transform.dy > 0.05, JSON.stringify(moved.transform))
@@ -51,7 +57,7 @@ await clearDrawing()
 await arm("check"); await click(X(300), Y(140)); await sleep(250)
 d = await items()
 ok("the Check mark puts a mark on the page", d.length === 1 && d[0].kind === "shape", JSON.stringify(d.map((i) => [i.kind, i.shapeKind])))
-ok("...and picks it", (await handles()).length >= 3)
+ok("...and picks it (a small mark has one pill of two buttons, not a ring: 2026-10-10)", (await handles()).length === 2)
 await arm("cross"); await dragPath(line([X(560), Y(130)], [X(600), Y(170)], 8)); await sleep(250)
 await arm("star"); await click(X(800), Y(150)); await sleep(250)
 await arm("question"); await click(X(1000), Y(150)); await sleep(250)

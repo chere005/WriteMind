@@ -7,7 +7,7 @@
 import { historyField } from "@codemirror/commands"
 import type { EditorState } from "@codemirror/state"
 import { drawingMediaFiles, mediaFiles, type Drawing } from "@writemind/core"
-import { historyOf } from "./noteHistory"
+import { closedHistories, historyOf } from "./noteHistory"
 import { namesIn, type Held } from "../shared/housekeeping"
 
 export interface WindowHolding {
@@ -35,6 +35,11 @@ export function heldBy(holding: WindowHolding): Held {
     // Each open note's own history (noteHistory.ts): the editor state of a tab behind another, and the drawing's
     // Undo and Redo.
     const held = historyOf(file)
+    if (held.text) texts.push(wordsAndHistory(held.text))
+    drawings.push(...held.drawing.snapshots())
+  }
+  // The notes closed lately keep their undo too (noteHistory.ts): a picture one of those Undos could bring back is held.
+  for (const held of closedHistories()) {
     if (held.text) texts.push(wordsAndHistory(held.text))
     drawings.push(...held.drawing.snapshots())
   }

@@ -7,7 +7,9 @@ const text = (items) => items.map((i) => i.type === "separator" ? "-" : i.label 
 console.log(m.map((top) => top.label).join(" | "))
 for (const top of m) { console.log("\n== " + top.label); console.log(text(top.submenu ?? [])) }
 const names = m.map((t) => t.label)
-ok("top-level order", JSON.stringify(names.slice(0, 8)) === JSON.stringify(["File", "Project", "Edit", "View", "Format", "Insert", "Pen", "Input Devices"]), names.join())
+// (A Mac's menu bar starts with the application's own menu, "WriteMind"; the order asked about is the one after it.)
+const after = process.platform === "darwin" ? names.slice(1) : names
+ok("top-level order", JSON.stringify(after.slice(0, 8)) === JSON.stringify(["File", "Project", "Edit", "View", "Format", "Insert", "Pen", "Input Devices"]), names.join())
 const sub = (l) => m.find((t) => t.label === l).submenu
 ok("sidebar item has Ctrl+K (the Mac's ⌘K)", sub("View").find((i) => /Notes Sidebar/.test(i.label)).accelerator === "CmdOrCtrl+K")
 ok("Close Tab enabled with a note open", sub("File").find((i) => i.label === "Close Tab").enabled)

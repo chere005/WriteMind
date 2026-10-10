@@ -23,7 +23,7 @@ export const KEY_MENUS: { menu: string; ids: string[] }[] = [
     menu: "Edit",
     ids: [
       "undo", "redo", "undoDrawing", "redoDrawing", "expandSelection", "selectNext", "selectAll",
-      "find", "findReplace", "findNext", "findPrevious", "useSelectionForFind", "jumpToSelection",
+      "find", "findReplace", "findNext", "findPrevious", "useSelectionForFind", "jumpToSelection", "searchNotes",
     ],
   },
   {
@@ -43,7 +43,7 @@ export const KEY_MENUS: { menu: string; ids: string[] }[] = [
       "moveSectionUp", "moveSectionDown",
     ],
   },
-  { menu: "Insert", ids: ["insertImage", "insertTextBox", "insertMath", "codeBlock", "mathsCell", "insertInkCell"] },
+  { menu: "Insert", ids: ["insertImage", "insertTextBox", "insertTable", "insertMath", "codeBlock", "mathsCell", "insertInkCell"] },
   {
     menu: "Pen",
     ids: [
