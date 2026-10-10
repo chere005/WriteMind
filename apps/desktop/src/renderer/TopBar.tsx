@@ -1,54 +1,53 @@
 /**
- * The bar over the note — the Mac's `TopBar.swift`. It is a view inside the
- * editor pane, never across the sidebar, and it has to FIT the pane it lives
- * in, so: small icons, no spacing, and wrapping rather than clipping.
+ * The bar over the note — one 36px row that never wraps and never clips (docs/PLAN-bars-2026-10.md P1; the wireframes are
+ * docs/ui-2026-10/FinalMain.png and FinalToolbar.png). It is a view inside the editor pane, never across the sidebar or
+ * the video, and it has to FIT the pane it lives in: what does not fit leaves the row in a fixed order and waits in the ⋯
+ * menu (`barFold.ts`, a pure function of the width).
  *
- * Left to right, as on the Mac: the SIDEBAR'S SWITCH (one spot, whether the
- * sidebar is open or shut), then six sections — Style, Structure, Insert,
- * Maths, Flow Chart, Pen — each with a grip at its end that puts it away
- * (the bar's context menu lists them all, and `collapsed` is remembered).
- * The markdown toggle and the video's switch are on the SIDEBAR's bar, and
- * export is in the File menu: a pane's switch lives on a different pane.
+ * Left to right: STYLE (the caret's cell kind, with the menu the seam's + opens too), B I U S and Aa (font, size, colour);
+ * the BLOCKS, List and Quote and Code (the list and the code button write the style / language last picked); the INSERTS,
+ * each its own button, Text box, Picture, Table, Maths and Shapes (Sean, 2026-10-10: "don't collapse the inserts into one
+ * button.. it should have text box, picture, table, maths"), and the section moves ("move section up/down to the right of
+ * the insert buttons"); then the PEN, ONE button and its menu (Sean: "i only need a pen enabled and disabled button.. and
+ * a dropdown to choose between pen or eraser (which switches the mode of the single button).. [colour and width] should be
+ * under this dropdown"); then ⋯ when something has folded. The sidebar's switch, the rendered page's and the video's are
+ * in the TAB row now ("keep the rendered and video buttons to the right of the sidebar always"), not on this bar.
  *
- * Every button calls the same command its keyboard shortcut does, and every
- * tooltip names that key (`shown`, from the one table the menu bar uses).
+ * Every button calls the same command its keyboard shortcut does, and every tooltip names that key (`shown`, from the one
+ * table the menu bar uses). Every menu and popover closes on Escape and on a click anywhere else and gives the keyboard
+ * back to the notes.
  */
 
 import type { EditorView } from "@codemirror/view"
 import {
-  CODE_LANGUAGES, languageTitle, LIST_STYLES, listTitle, MARK_KINDS, MARK_MENU_KINDS, NODE_KINDS,
-  PRESET_COLOURS, shapeTitle, HEADING_LADDER, headingName,
-  type CodeLanguage, type Heading, type ListStyle, type Placement, type ShapeKind, type SpanStyle,
+  CODE_LANGUAGES, languageTitle, LIST_STYLES, listTitle, MARK_MENU_KINDS, NODE_KINDS, shapeTitle,
+  type CellKind, type CodeLanguage, type ListStyle, type Placement, type ShapeKind, type SpanStyle,
 } from "@writemind/core"
-import { applyTextStyle } from "@writemind/editor"
-import { useEffect, useState, type ReactNode } from "react"
+import { applyTextStyle, watchCellKind } from "@writemind/editor"
+import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type ReactNode } from "react"
 import { shown } from "../shared/commands"
+import { barParts, foldAt, foldFor, hasMore, type BarSections, type FoldLevel } from "./barFold"
 import type { CanvasMode } from "./Canvas"
 import { runEditorCommand } from "./editorCommands"
-import { useOnScreen } from "./useOnScreen"
-import { MathPalette } from "./MathPalette"
-import { PenMenu } from "./PenMenu"
-import { setEraser, setSelectTool, usePenSettings } from "./penSettings"
+import { returnFocusSoon } from "./focusReturn"
+import type { MenuItem } from "./FloatingMenu"
+import { Icon, type IconName } from "./icons"
+import { kindLabel, kindMenuItems, type KindPick } from "./kindMenu"
+import { MathPalette, MATH_OPEN_EVENT } from "./MathPalette"
+import { MenuButton } from "./MenuButton"
+import { PenSheet, PenSheetRow, type SheetPlace } from "./PenMenu"
+import { PEN_SWATCHES, PEN_WIDTHS, dotSize, nearestWidth, sameInk, swatchOf } from "./penLook"
+import { setPenDraws, usePenSettings, type PenPress } from "./penSettings"
+import { TOOL_GROUPS, type ToolGroupId } from "./toolGroups"
 
-/** The sections of the bar, in the Mac's order (`ToolGroup`). `capture` is the pen's. */
-export const TOOL_GROUPS = [
-  { id: "style", title: "Style", icon: "Aa" },
-  { id: "structure", title: "Structure", icon: "☰" },
-  { id: "insert", title: "Insert", icon: "⊞" },
-  { id: "maths", title: "Maths", icon: "ƒ" },
-  { id: "flowchart", title: "Flow Chart", icon: "⬡" },
-  { id: "capture", title: "Pen", icon: "✏" },
-] as const
-export type ToolGroupId = typeof TOOL_GROUPS[number]["id"]
+export { TOOL_GROUPS, type ToolGroupId }
 
 interface Props {
   view: EditorView | null
   platform: string
   /** A note is open: the tools work on it. */
   hasNote: boolean
-  sidebar: boolean
-  onToggleSidebar(): void
-  /** The sections that are put away. */
+  /** The sections that are put away (Customize toolbar…). */
   collapsed: ToolGroupId[]
   onCollapse(group: ToolGroupId, collapsed: boolean): void
   listStyle: ListStyle
@@ -56,7 +55,8 @@ interface Props {
   codeLanguage: CodeLanguage
   onCodeLanguage(language: CodeLanguage): void
   mode: CanvasMode
-  onToggleMode(): void
+  /** The pen button, its key or its menu (the app owns the pen's mode: `nextPenButton` says what each does). */
+  onPenButton(press: PenPress): void
   penColour: string
   onPenColour(hex: string): void
   penWidth: number
@@ -64,30 +64,61 @@ interface Props {
   placing: Placement | null
   onPlace(placing: Placement | null): void
   onAddPicture(): void
+  /** A command the page owns, not the editor (the Style menu's Drawing cell makes the cell AND its drawing). */
+  onCommand(id: string): void
 }
 
 const FONTS = ["Georgia", "Palatino Linotype", "Times New Roman", "Arial", "Verdana", "Courier New",
   "Consolas", "Comic Sans MS"]
 
+/** A tooltip the Mac's way: the name, its key, and a line about what it does. */
+export const tip = (label: string, keys: string, help: string): string =>
+  `${label}${keys ? `  (${keys})` : ""}\n${help}`
+
 /**
- * The T button: font, size and colour for the selected text. Only the ticked
- * parts go in, and a font left unticked means no `font-family` at all.
+ * The Aa button's popover: font, size and colour for the selected text. Only the ticked parts go in, and a font left
+ * unticked means no `font-family` at all. It hangs under its button, fixed (the bar clips what is drawn outside it), and
+ * closes on Escape and on a click anywhere else.
  */
-function TextStyleMenu({ view, onClose }: { view: EditorView | null; onClose(): void }) {
+function TextStyleMenu({ view, anchor, onClose }: { view: EditorView | null; anchor: HTMLElement | null; onClose(): void }) {
   const [useFont, setUseFont] = useState(false)
   const [font, setFont] = useState(FONTS[0]!)
   const [useSize, setUseSize] = useState(false)
   const [size, setSize] = useState(18)
   const [useColour, setUseColour] = useState(false)
   const [colour, setColour] = useState("#2d7dd2")
+  const pop = useRef<HTMLDivElement | null>(null)
+  const [at, setAt] = useState<CSSProperties>({ visibility: "hidden" })
 
-  const pop = useOnScreen<HTMLDivElement>(true)
+  useLayoutEffect(() => {
+    const box = anchor?.getBoundingClientRect()
+    const width = pop.current?.getBoundingClientRect().width ?? 0
+    if (!box) return
+    setAt({ position: "fixed", top: box.bottom + 4, left: Math.max(8, Math.min(box.left, window.innerWidth - width - 8)) })
+  }, [anchor])
+
+  useEffect(() => {
+    const away = (event: PointerEvent) => {
+      if (event.target instanceof Node && (pop.current?.contains(event.target) || anchor?.contains(event.target))) return
+      onClose()
+    }
+    window.addEventListener("pointerdown", away, true)
+    window.addEventListener("resize", onClose)
+    window.addEventListener("blur", onClose)
+    return () => {
+      window.removeEventListener("pointerdown", away, true)
+      window.removeEventListener("resize", onClose)
+      window.removeEventListener("blur", onClose)
+    }
+  }, [anchor, onClose])
+
   const apply = (style: SpanStyle) => {
     if (view) applyTextStyle(style)(view)
     onClose()
   }
   return (
-    <div ref={pop} className="style-pop" onMouseDown={(event) => event.stopPropagation()}>
+    <div ref={pop} className="style-pop" style={at} data-bar="font-pop" onMouseDown={(event) => event.stopPropagation()}
+         onKeyDown={(event) => { if (event.key === "Escape") { event.preventDefault(); event.stopPropagation(); onClose(); returnFocusSoon() } }}>
       <label><input type="checkbox" checked={useFont} onChange={(e) => setUseFont(e.target.checked)} /> Font</label>
       <select value={font} onChange={(e) => { setFont(e.target.value); setUseFont(true) }}>
         {FONTS.map((name) => <option key={name} value={name}>{name}</option>)}
@@ -109,263 +140,357 @@ function TextStyleMenu({ view, onClose }: { view: EditorView | null; onClose(): 
   )
 }
 
-/** A tooltip the Mac's way: the name, its key, and a line about what it does. */
-export const tip = (label: string, keys: string, help: string): string =>
-  `${label}${keys ? `  (${keys})` : ""}\n${help}`
+/** The caret's cell kind, for the Style button (packages/editor `cellKind.ts`: told only of a change of kind). */
+function useCellKind(view: EditorView | null): CellKind | null {
+  const [kind, setKind] = useState<CellKind | null>(null)
+  useEffect(() => {
+    if (!view) { setKind(null); return }
+    return watchCellKind(view, setKind)
+  }, [view])
+  return kind
+}
 
-function Btn({ label, title, onClick, on, disabled, wide, children }: {
-  label: ReactNode; title: string; onClick(): void; on?: boolean; disabled?: boolean; wide?: boolean
-  children?: ReactNode
+/** The bar's own width, measured: padding included, the row's own box. */
+function useBarWidth(row: React.RefObject<HTMLDivElement | null>): number {
+  const [width, setWidth] = useState(1000)
+  useLayoutEffect(() => {
+    const element = row.current
+    if (!element) return
+    setWidth(element.clientWidth)
+    if (typeof ResizeObserver === "undefined") return
+    const observer = new ResizeObserver(() => setWidth(element.clientWidth))
+    observer.observe(element)
+    return () => observer.disconnect()
+  }, [row])
+  return width
+}
+
+/** A plain bar button: a line icon, or a styled letter. */
+function Btn({ icon, glyph, title, onClick, on, disabled, dataBar, className }: {
+  icon?: IconName; glyph?: ReactNode; title: string; onClick(): void; on?: boolean; disabled?: boolean; dataBar?: string
+  className?: string
 }) {
   return (
-    <button className={`icon-button${on ? " on" : ""}`} title={title} disabled={disabled} onClick={onClick}
-            style={wide ? { width: "auto", padding: "0 6px", fontSize: 11 } : undefined}>
-      {label}{children}
+    <button type="button" className={`bar-btn${on ? " on" : ""}${glyph ? " letter" : ""}${className ? ` ${className}` : ""}`}
+            data-bar={dataBar} title={title} aria-label={title.split("\n")[0]} aria-pressed={on === undefined ? undefined : on}
+            disabled={disabled} onClick={onClick}>
+      {icon && <Icon name={icon} />}{glyph}
     </button>
   )
 }
 
-/** One section, with the grip at its end that puts it away; collapsed it is a single icon. */
-function Group({ id, collapsed, onCollapse, children }: {
-  id: ToolGroupId; collapsed: boolean; onCollapse(collapsed: boolean): void; children: ReactNode
-}) {
-  const group = TOOL_GROUPS.find((one) => one.id === id)!
-  return (
-    <span className={`bar-group${collapsed ? " away" : ""}`} data-group={id}>
-      {collapsed ? (
-        <button className="icon-button away-icon" title={tip(`Show ${group.title} Tools`, "",
-          "This section is put away — click to bring it back")}
-                onClick={() => onCollapse(false)}>{group.icon}</button>
-      ) : children}
-      <button className="bar-grip" data-grip={id}
-              title={tip(collapsed ? `Show ${group.title}` : `Hide ${group.title}`, "",
-                collapsed ? "Bring this section of the bar back" : "Put this section of the bar away")}
-              aria-label={collapsed ? `Show ${group.title} Tools` : `Hide ${group.title} Tools`}
-              onClick={() => onCollapse(!collapsed)}><i /></button>
-    </span>
-  )
-}
-
-const SidebarIcon = () => (
-  <svg width="15" height="12" viewBox="0 0 15 12" fill="none" aria-hidden>
-    <rect x="0.75" y="0.75" width="13.5" height="10.5" rx="2" stroke="currentColor" strokeWidth="1.3" />
-    <path d="M5.2 1v10" stroke="currentColor" strokeWidth="1.3" />
-  </svg>
-)
+const LIST_ICONS: Record<ListStyle, IconName> = { dots: "list", dashes: "listdash", numbered: "listnum", todo: "listcheck" }
 
 export function TopBar({
-  view, platform, hasNote, sidebar, onToggleSidebar, collapsed, onCollapse, listStyle, onListStyle,
-  codeLanguage, onCodeLanguage, mode, onToggleMode, penColour, onPenColour, penWidth, onPenWidth,
-  placing, onPlace, onAddPicture,
+  view, platform, hasNote, collapsed, onCollapse, listStyle, onListStyle, codeLanguage, onCodeLanguage,
+  mode, onPenButton, penColour, onPenColour, penWidth, onPenWidth, placing, onPlace, onAddPicture, onCommand,
 }: Props) {
   const editor = hasNote ? view : null
-  const options = { listStyle, codeLanguage }
-  const run = (id: string) => () => { if (editor) runEditorCommand(editor, id, options) }
-  const key = (id: string) => shown(id, platform)
-  const [styling, setStyling] = useState(false)
-  const [menu, setMenu] = useState<{ x: number; y: number } | null>(null)
   const off = !hasNote
+  const run = (id: string, options?: { listStyle?: ListStyle; codeLanguage?: CodeLanguage }) => () => {
+    if (editor) runEditorCommand(editor, id, { listStyle, codeLanguage, ...options })
+  }
+  const key = (id: string) => shown(id, platform)
+  const away = (group: ToolGroupId) => collapsed.includes(group)
+  const sections: BarSections = { text: !away("text"), blocks: !away("blocks"), insert: !away("insert"), pen: !away("pen") }
+
+  const row = useRef<HTMLDivElement | null>(null)
+  const width = useBarWidth(row)
+  const level: FoldLevel = foldFor(width, sections)
+  const fold = foldAt(level)
+  const kind = useCellKind(editor)
+
   const penTools = usePenSettings()
   const erasing = penTools.eraser
-  const selecting = penTools.selectTool
-  const away = (group: ToolGroupId) => collapsed.includes(group)
+  const penLit = penTools.tool === "pen" ? mode === "pen" : erasing
 
-  // The bar's context menu puts itself away on the next click anywhere.
+  const [styling, setStyling] = useState(false)
+  const fontButton = useRef<HTMLButtonElement | null>(null)
+  const [sheet, setSheet] = useState<SheetPlace | null>(null)
+  const split = useRef<HTMLSpanElement | null>(null)
+  const colourInput = useRef<HTMLInputElement | null>(null)
+  const [customize, setCustomize] = useState<{ x: number; y: number } | null>(null)
+
+  // The Customize checklist puts itself away on the next click anywhere else, on Escape, and when the window goes.
   useEffect(() => {
-    if (!menu) return
-    const close = () => setMenu(null)
-    window.addEventListener("pointerdown", close)
-    return () => window.removeEventListener("pointerdown", close)
-  }, [menu])
+    if (!customize) return
+    const close = (event: Event) => {
+      if (event instanceof PointerEvent && event.target instanceof Element && event.target.closest(".bar-context")) return
+      setCustomize(null)
+    }
+    const escape = (event: KeyboardEvent) => {
+      if (event.key !== "Escape") return
+      event.preventDefault(); event.stopPropagation()
+      setCustomize(null)
+      returnFocusSoon()
+    }
+    window.addEventListener("pointerdown", close, true)
+    window.addEventListener("keydown", escape, true)
+    window.addEventListener("blur", close)
+    window.addEventListener("resize", close)
+    return () => {
+      window.removeEventListener("pointerdown", close, true)
+      window.removeEventListener("keydown", escape, true)
+      window.removeEventListener("blur", close)
+      window.removeEventListener("resize", close)
+    }
+  }, [customize])
 
   const place = (value: string) => {
     if (value === "tool") {
-      // The Mac's "Draw arrows between nodes": stays armed, and a drag from
-      // anywhere draws a line that attaches to the nodes at its ends.
+      // The Mac's "Draw arrows between nodes": stays armed, and a drag from anywhere draws a line that attaches to the
+      // nodes at its ends.
       onPlace(placing?.kind === "line" && placing.tool ? null : { kind: "line", start: "none", end: "arrow", tool: true })
     } else if (value === "line" || value === "arrow" || value === "both") {
-      onPlace({
-        kind: "line",
-        start: value === "both" ? "arrow" : "none",
-        end: value === "line" ? "none" : "arrow",
-      })
+      onPlace({ kind: "line", start: value === "both" ? "arrow" : "none", end: value === "line" ? "none" : "arrow" })
     } else if (value) {
       onPlace({ kind: "shape", shape: value as ShapeKind })
     }
   }
+  const armedTool = placing?.kind === "line" && placing.tool === true
+  const armedText = placing?.kind === "shape" && placing.shape === "text"
+  const placingShape = placing !== null && !armedText
+
+  // MARK: - The menus
+
+  const styleItems = (): MenuItem[] => kindMenuItems(platform, kind, (pick: KindPick) => {
+    if (!editor) return
+    // A list kind is the list button's style from now on, as the button's own menu is.
+    if (pick.listStyle) onListStyle(pick.listStyle)
+    if (!runEditorCommand(editor, pick.command, { listStyle: pick.listStyle ?? listStyle, codeLanguage })) onCommand(pick.command)
+  })
+
+  const listItems = (): MenuItem[] => [
+    ...LIST_STYLES.map((style): MenuItem => ({
+      label: listTitle(style), icon: LIST_ICONS[style], checked: style === listStyle, dataBar: `list-${style}`,
+      hint: style === "dots" ? key("list") || undefined : undefined,
+      onClick: () => { onListStyle(style); if (editor) runEditorCommand(editor, "list", { listStyle: style, codeLanguage }) },
+    })),
+    "-",
+    { label: "Increase Indentation", icon: "indent", hint: key("indent") || undefined, onClick: run("indent") },
+    { label: "Decrease Indentation", icon: "outdent", hint: key("outdent") || undefined, onClick: run("outdent") },
+  ]
+
+  const codeItems = (): MenuItem[] => CODE_LANGUAGES.map((language): MenuItem => ({
+    label: languageTitle(language), checked: language === codeLanguage, dataBar: `code-${language}`,
+    hint: language === "plain" ? key("codeBlock") || undefined : undefined,
+    onClick: () => { onCodeLanguage(language); if (editor) runEditorCommand(editor, "codeBlock", { listStyle, codeLanguage: language }) },
+  }))
+
+  const shapeItems = (): MenuItem[] => [
+    { header: "Flow chart" },
+    ...NODE_KINDS.filter((shape) => shape !== "text").map((shape): MenuItem => ({
+      label: shapeTitle(shape), checked: placing?.kind === "shape" && placing.shape === shape, dataBar: `shape-${shape}`,
+      onClick: () => place(shape),
+    })),
+    "-",
+    { header: "Lines" },
+    { label: "Arrow", checked: false, dataBar: "shape-arrow", onClick: () => place("arrow") },
+    { label: "Both Ways", checked: false, dataBar: "shape-both", onClick: () => place("both") },
+    { label: "Line", checked: false, dataBar: "shape-line", onClick: () => place("line") },
+    { label: "Arrow tool (drag between nodes)", checked: armedTool, dataBar: "shape-tool", onClick: () => place("tool") },
+    "-",
+    { header: "Marks" },
+    ...MARK_MENU_KINDS.filter((shape) => !NODE_KINDS.includes(shape)).map((shape): MenuItem => ({
+      label: shapeTitle(shape), checked: placing?.kind === "shape" && placing.shape === shape, dataBar: `shape-${shape}`,
+      onClick: () => place(shape),
+    })),
+  ]
+
+  const penItems = (): MenuItem[] => [
+    {
+      label: "Pen", icon: "pen", checked: penTools.tool === "pen", dataBar: "pen-pen", hint: key("penToggle") || undefined,
+      onClick: () => onPenButton("choosePen"),
+    },
+    {
+      label: "Eraser", icon: "eraser", checked: penTools.tool === "eraser", dataBar: "erase", hint: key("penErase") || undefined,
+      onClick: () => onPenButton("chooseEraser"),
+    },
+    "-",
+    { header: "Colour" },
+    {
+      custom: (
+        <div className="pen-swatches" data-bar="pen-colours">
+          {PEN_SWATCHES.map((swatch) => (
+            <button key={swatch.hex} type="button" className={`pen-swatch${sameInk(swatch.hex, penColour) ? " on" : ""}`}
+                    style={{ background: swatch.hex }} aria-label={swatch.name} title={swatch.name}
+                    aria-pressed={sameInk(swatch.hex, penColour)} data-bar={`colour-${swatch.hex.slice(1).toLowerCase()}`}
+                    onClick={() => onPenColour(swatch.hex)} />
+          ))}
+          <button type="button" className={`pen-swatch custom${swatchOf(penColour) === null ? " on" : ""}`} data-bar="colour-custom"
+                  aria-label="Custom colour…" title="Custom colour…" aria-pressed={swatchOf(penColour) === null}
+                  onClick={() => {
+                    const input = colourInput.current
+                    if (!input) return
+                    // The system's picker belongs to an input that outlives this menu (the menu goes when the window loses focus).
+                    if (typeof input.showPicker === "function") input.showPicker(); else input.click()
+                  }} />
+        </div>
+      ),
+    },
+    { header: "Width" },
+    {
+      custom: (
+        <div className="pen-widths" data-bar="pen-widths">
+          {PEN_WIDTHS.map((one) => (
+            <button key={one} type="button" className={`pen-width${nearestWidth(penWidth) === one ? " on" : ""}`}
+                    aria-label={`Width ${one}`} title={`${one} px`} aria-pressed={nearestWidth(penWidth) === one}
+                    data-bar={`width-${one}`} onClick={() => onPenWidth(one)}>
+              <i style={{ width: dotSize(one), height: dotSize(one) }} />
+            </button>
+          ))}
+        </div>
+      ),
+    },
+    "-",
+    {
+      label: "Pen always draws (tablet)", toggle: penTools.penDraws, dataBar: "pen-always",
+      onClick: () => setPenDraws(!penTools.penDraws),
+    },
+    {
+      custom: (close) => (
+        <PenSheetRow close={close} onOpen={() => {
+          const box = split.current?.getBoundingClientRect()
+          setSheet({ top: (box?.bottom ?? 36) + 4, right: Math.max(8, window.innerWidth - (box?.right ?? window.innerWidth)) })
+        }} />
+      ),
+    },
+  ]
+
+  /** What folded for width, as menu rows with their icons and keys (the same commands as the buttons). */
+  const moreItems = (): MenuItem[] => {
+    const rows: MenuItem[] = []
+    if (fold.blocks && sections.blocks) {
+      rows.push(
+        { label: "List", icon: LIST_ICONS[listStyle], hint: key("list") || undefined, disabled: off, dataBar: "list", onClick: run("list") },
+        { label: "Quote", icon: "quote", hint: key("quote") || undefined, disabled: off, dataBar: "quote", onClick: run("quote") },
+        { label: "Code", icon: "code", hint: key("codeBlock") || undefined, disabled: off, dataBar: "code", onClick: run("codeBlock") },
+      )
+    }
+    if (fold.inserts && sections.insert) {
+      rows.push(
+        { label: "Text box", icon: "textbox", disabled: off, dataBar: "textbox", onClick: () => onPlace(armedText ? null : { kind: "shape", shape: "text" }) },
+        { label: "Picture…", icon: "image", hint: key("insertImage") || undefined, disabled: off, dataBar: "picture", onClick: onAddPicture },
+        { label: "Table", icon: "table", disabled: off, dataBar: "table", onClick: run("insertTable") },
+        { label: "Maths", icon: "math", hint: key("insertMath") || undefined, disabled: off, dataBar: "maths",
+          onClick: () => window.dispatchEvent(new Event(MATH_OPEN_EVENT)) },
+        { label: "Shapes", icon: "shapes", disabled: off, dataBar: "shapes", submenu: shapeItems() },
+        { label: "Move section up", icon: "secup", hint: key("moveSectionUp") || undefined, disabled: off, dataBar: "secup", onClick: run("moveSectionUp") },
+        { label: "Move section down", icon: "secdown", hint: key("moveSectionDown") || undefined, disabled: off, dataBar: "secdown", onClick: run("moveSectionDown") },
+      )
+    }
+    return [
+      ...(rows.length > 0 ? [{ header: "Moved here for width" } as MenuItem, ...rows, "-" as const] : []),
+      { label: "Customize toolbar…", dataBar: "customize", onClick: () => {
+        const box = row.current?.querySelector<HTMLElement>('[data-bar="more"]')?.getBoundingClientRect()
+        setCustomize({ x: Math.max(8, (box?.right ?? 300) - 190), y: (box?.bottom ?? 36) + 2 })
+      } },
+    ]
+  }
+
+  // MARK: - The parts
+
+  const glyphs: Record<string, ReactNode> = {
+    bold: <b>B</b>, italic: <i>I</i>, underline: <u>U</u>, strike: <s>S</s>,
+  }
+  const renderPart = (id: string): ReactNode => {
+    switch (id) {
+      case "style": {
+        const help = tip("Style", `${key("heading:1")}–${key("heading:0").split("+").pop()}`,
+          "The caret's cell, and the style to make it: title, chapter, author, section, lists, quote, code, maths, drawing")
+        return fold.glyph
+          ? <MenuButton key={id} icon="para" title={help} items={styleItems} disabled={off} dataBar="style" />
+          : <MenuButton key={id} label={kindLabel(kind)} chevron noMark title={help} items={styleItems} disabled={off}
+                        className="bordered style" dataBar="style" />
+      }
+      case "bold": return <Btn key={id} glyph={glyphs.bold} dataBar="bold" title={tip("Bold", key("bold"), "Heavier type for the selection")} disabled={off} onClick={run("bold")} />
+      case "italic": return <Btn key={id} glyph={glyphs.italic} dataBar="italic" title={tip("Italic", key("italic"), "Sloped type for the selection")} disabled={off} onClick={run("italic")} />
+      case "underline": return <Btn key={id} glyph={glyphs.underline} dataBar="underline" title={tip("Underline", key("underline"), "A line under the selection")} disabled={off} onClick={run("underline")} />
+      case "strike": return <Btn key={id} glyph={glyphs.strike} dataBar="strike" title={tip("Strikethrough", key("strike"), "A line through the selection — struck out, still readable")} disabled={off} onClick={run("strike")} />
+      case "font":
+        return (
+          <span key={id} className="pop-anchor">
+            <button ref={fontButton} type="button" className={`bar-btn menu letter${styling ? " on" : ""}`} disabled={off} data-bar="font"
+                    aria-label="Font and Colour" aria-expanded={styling}
+                    title={tip("Font and Colour", "", "Font, size and colour for the selected text")}
+                    onClick={() => setStyling((was) => !was)}><span className="aa">Aa</span></button>
+            {styling && <TextStyleMenu view={editor} anchor={fontButton.current} onClose={() => setStyling(false)} />}
+          </span>
+        )
+      case "list":
+        // The list button writes whichever marker the menu last picked.
+        return <MenuButton key={id} icon={LIST_ICONS[listStyle]} dataBar="list" disabled={off} onMain={run("list")} items={listItems}
+                           title={tip("List", key("list"), `Make these lines a ${listTitle(listStyle).toLowerCase()} list`)} />
+      case "quote": return <Btn key={id} icon="quote" dataBar="quote" title={tip("Quote", key("quote"), "Set these lines in as a quotation")} disabled={off} onClick={run("quote")} />
+      case "code":
+        // The fence carries a language, and the menu picks it.
+        return <MenuButton key={id} icon="code" dataBar="code" disabled={off} onMain={run("codeBlock")} items={codeItems}
+                           title={tip("Code Block", key("codeBlock"), codeLanguage === "plain"
+                             ? "A fenced block, set in monospace" : `A fenced ${languageTitle(codeLanguage)} block, coloured`)} />
+      case "textbox":
+        return <Btn key={id} icon="textbox" dataBar="textbox" on={armedText} disabled={off}
+                    title={tip("Text box", key("insertTextBox"), "A box of words that floats over the page — click where it goes")}
+                    onClick={() => onPlace(armedText ? null : { kind: "shape", shape: "text" })} />
+      case "picture":
+        return <Btn key={id} icon="image" dataBar="picture" disabled={off} onClick={onAddPicture}
+                    title={tip("Picture…", key("insertImage"), `Add a picture (${key("paste") || "paste"} pastes one, and so does a drop)`)} />
+      case "table":
+        return <Btn key={id} icon="table" dataBar="table" disabled={off} onClick={run("insertTable")}
+                    title={tip("Table", key("insertTable"), "A table of two columns — Tab goes cell to cell, Return adds a row")} />
+      case "maths":
+        return <MathPalette key={id} view={editor} disabled={off}
+                            title={tip("Maths", key("insertMath"), "Integrals, sums, derivatives — written as Wolfram Language")} />
+      case "shapes":
+        return <MenuButton key={id} icon="shapes" dataBar="shapes" disabled={off} on={placingShape} items={shapeItems}
+                           title={tip("Shapes", "", "Flow-chart shapes, lines and arrows, marks — pick one, then click where it goes")} />
+      case "secup":
+        return <Btn key={id} icon="secup" dataBar="secup" disabled={off} onClick={run("moveSectionUp")}
+                    title={tip("Move Section Up", key("moveSectionUp"), "This heading and everything under it, above the section before it")} />
+      case "secdown":
+        return <Btn key={id} icon="secdown" dataBar="secdown" disabled={off} onClick={run("moveSectionDown")}
+                    title={tip("Move Section Down", key("moveSectionDown"), "This heading and everything under it, below the section after it")} />
+      case "grow": return <div key={id} className="grow" />
+      case "pen":
+        return (
+          <span key={id} ref={split} className="pen-split-anchor">
+            <MenuButton caret icon={penTools.tool === "pen" ? "pen" : "eraser"} dataBar="pen" caretDataBar="pen-menu"
+                        on={penLit} disabled={off} items={penItems}
+                        onMain={() => onPenButton("button")}
+                        title={penTools.tool === "pen"
+                          ? tip(mode === "pen" ? "Pen (down)" : "Pen", key("penToggle"), mode === "pen"
+                            ? "Put the pen down and give the clicks back to the notebook"
+                            : `Draw over the note (hold ${platform === "darwin" ? "Cmd" : "Ctrl"} in either mode to pull a rectangle over what is on the page)`)
+                          : tip(erasing ? "Eraser (on)" : "Eraser", key("penErase"), erasing
+                            ? "Erase is on: touch a stroke with the pen (or the mouse) to rub it out. Click to put it down."
+                            : "Erase on the note's page: rub out whole strokes by touching them")}
+                        caretTitle={tip("Pen options", "", "Pen or eraser, colour, width, the tablet")} />
+          </span>
+        )
+      default:
+        return id.startsWith("air") ? <span key={id} className="bar-air" /> : null
+    }
+  }
 
   return (
-    <div className="top-bar" onContextMenu={(event) => {
-      event.preventDefault()
-      setMenu({ x: event.clientX, y: event.clientY })
-    }}>
-      {/* ONE spot for the sidebar's switch, the one it has when the sidebar is
-          away: it does not move when the sidebar opens (Sean, 2026-09-19). */}
-      <button className={`icon-button${sidebar ? " on" : ""}`} data-bar="sidebar"
-              aria-label={sidebar ? "Hide Notes Sidebar" : "Show Notes Sidebar"}
-              aria-pressed={sidebar}
-              title={tip(sidebar ? "Hide Notes Sidebar" : "Show Notes Sidebar", key("toggleSidebar"),
-                sidebar ? "Put the notes list away" : "Bring the notes list back")}
-              onClick={onToggleSidebar}><SidebarIcon /></button>
-      <div className="bar-divider" />
-
-      <Group id="style" collapsed={away("style")} onCollapse={(c) => onCollapse("style", c)}>
-        <select className="icon-button bar-select narrow" disabled={off}
-                title={tip("Text Style", "Ctrl+1–7",
-                  "Title, chapter, author, section, subsection, subsubsection or body text")}
-                value=""
-                onChange={(event) => {
-                  if (editor) runEditorCommand(editor, `heading:${Number(event.target.value) as Heading}`, options)
-                  event.currentTarget.value = ""
-                }}>
-          <option value="" disabled>Style</option>
-          {HEADING_LADDER.map((level) => (
-            <option key={level} value={level}>{headingName(level)}</option>
-          ))}
-        </select>
-        <Btn label="B" title={tip("Bold", key("bold"), "Heavier type for the selection")}
-             disabled={off} onClick={run("bold")} />
-        <Btn label="I" title={tip("Italic", key("italic"), "Sloped type for the selection")}
-             disabled={off} onClick={run("italic")} />
-        <Btn label="U" title={tip("Underline", key("underline"), "A line under the selection")}
-             disabled={off} onClick={run("underline")} />
-        <Btn label="S" title={tip("Strikethrough", key("strike"),
-          "A line through the selection — struck out, still readable")}
-             disabled={off} onClick={run("strike")} />
-        <span className="pop-anchor">
-          <button className={`icon-button${styling ? " on" : ""}`} disabled={off}
-                  title={tip("Font and Colour", "", "Font, size and colour for the selected text")}
-                  onClick={() => setStyling((was) => !was)}>T</button>
-          {styling && <TextStyleMenu view={editor} onClose={() => setStyling(false)} />}
-        </span>
-      </Group>
-
-      <Group id="structure" collapsed={away("structure")} onCollapse={(c) => onCollapse("structure", c)}>
-        {/* The list button writes whichever marker the chevron picked. */}
-        <span className="bar-split">
-          <button className="icon-button" disabled={off} data-bar="list"
-                  title={tip("List", key("list"), `Make these lines a ${listTitle(listStyle).toLowerCase()} list`)}
-                  onClick={run("list")}>☰</button>
-          <select className="icon-button chevron" disabled={off} value={listStyle}
-                  title={tip("List Style", "", "Dots, dashes, numbers or to-dos")}
-                  onChange={(event) => onListStyle(event.target.value as ListStyle)}>
-            {LIST_STYLES.map((style) => <option key={style} value={style}>{listTitle(style)}</option>)}
-          </select>
-        </span>
-        <Btn label="❝" title={tip("Quote", key("quote"), "Set these lines in as a quotation")}
-             disabled={off} onClick={run("quote")} />
-        {/* The fence carries a language, and the chevron picks it. */}
-        <span className="bar-split">
-          <button className="icon-button" disabled={off} data-bar="code"
-                  title={tip("Code Block", key("codeBlock"), codeLanguage === "plain"
-                    ? "A fenced block, set in monospace"
-                    : `A fenced ${languageTitle(codeLanguage)} block, coloured`)}
-                  onClick={run("codeBlock")}>{"{}"}</button>
-          <select className="icon-button chevron" disabled={off} value={codeLanguage}
-                  title={tip("Code Language", "", "What the block is written in")}
-                  onChange={(event) => onCodeLanguage(event.target.value as CodeLanguage)}>
-            {CODE_LANGUAGES.map((language) => (
-              <option key={language} value={language}>{languageTitle(language)}</option>
-            ))}
-          </select>
-        </span>
-        <Btn label="⇤" title={tip("Decrease Indentation", key("outdent"), "Out one step — quotes and bullets too")}
-             disabled={off} onClick={run("outdent")} />
-        <Btn label="⇥" title={tip("Increase Indentation", key("indent"), "In one step — quotes and bullets too")}
-             disabled={off} onClick={run("indent")} />
-        <Btn label="⤒" title={tip("Move Section Up", key("moveSectionUp"),
-          "This heading and everything under it, above the section before it")}
-             disabled={off} onClick={run("moveSectionUp")} />
-        <Btn label="⤓" title={tip("Move Section Down", key("moveSectionDown"),
-          "This heading and everything under it, below the section after it")}
-             disabled={off} onClick={run("moveSectionDown")} />
-      </Group>
-
-      <Group id="insert" collapsed={away("insert")} onCollapse={(c) => onCollapse("insert", c)}>
-        {/* The Mac keeps only the Text Box here (the picture is Insert > Image…);
-            the picture button stays too, since a pasted or dropped one is the
-            most common way a picture gets onto the page. */}
-        <Btn label="[T]" title={tip("Text Box", "", "A box of words that floats over the page — click where it goes")}
-             disabled={off} wide on={placing?.kind === "shape" && placing.shape === "text"}
-             onClick={() => onPlace(placing?.kind === "shape" && placing.shape === "text" ? null : { kind: "shape", shape: "text" })} />
-        <Btn label="▣" title={tip("Image…", key("insertImage"), "Add a picture (Ctrl+V pastes one, and so does a drop)")}
-             disabled={off} onClick={onAddPicture} />
-      </Group>
-
-      <Group id="maths" collapsed={away("maths")} onCollapse={(c) => onCollapse("maths", c)}>
-        <MathPalette view={editor} />
-      </Group>
-      {/* Put away, the section is one icon -- but Insert > Maths... (Ctrl+Shift+M) still opens the palette. */}
-      {away("maths") && <MathPalette view={editor} showButton={false} />}
-
-      <Group id="flowchart" collapsed={away("flowchart")} onCollapse={(c) => onCollapse("flowchart", c)}>
-        <select className={`icon-button bar-select narrow${(placing?.kind === "shape" && NODE_KINDS.includes(placing.shape)) || (placing?.kind === "line" && placing.tool) ? " on" : ""}`}
-                disabled={off} value=""
-                title={tip("Shapes", "", "Flow-chart shapes, and arrows between them — pick one, then click where it goes")}
-                onChange={(event) => { place(event.target.value); event.currentTarget.value = "" }}>
-          <option value="" disabled>Shapes</option>
-          <optgroup label="Flow chart">
-            {NODE_KINDS.map((kind) => <option key={kind} value={kind}>{shapeTitle(kind)}</option>)}
-          </optgroup>
-          <optgroup label="Lines">
-            <option value="arrow">Arrow</option>
-            <option value="both">Both Ways</option>
-            <option value="line">Line</option>
-            <option value="tool">{placing?.kind === "line" && placing.tool ? "✓ Arrow tool (drag between nodes)" : "Arrow tool (drag between nodes)"}</option>
-          </optgroup>
-        </select>
-        <select className={`icon-button bar-select narrow${placing?.kind === "shape" && MARK_KINDS.includes(placing.shape) ? " on" : ""}`}
-                disabled={off} value=""
-                title={tip("Marks", "", "Check marks, crosses, stars, arrows — the things drawn all the time")}
-                onChange={(event) => { place(event.target.value); event.currentTarget.value = "" }}>
-          <option value="" disabled>Marks</option>
-          {MARK_MENU_KINDS.map((kind) => <option key={kind} value={kind}>{shapeTitle(kind)}</option>)}
-          <optgroup label="Lines">
-            <option value="arrow">Arrow</option>
-            <option value="both">Both Ways</option>
-            <option value="line">Line</option>
-          </optgroup>
-        </select>
-      </Group>
-
-      <Group id="capture" collapsed={away("capture")} onCollapse={(c) => onCollapse("capture", c)}>
-        {/* ONE BUTTON FOR THE PANE: the pen, lit while it is down. ⌘ is the
-            selector in either mode, so the marquee needs none of its own. */}
-        <button className={`icon-button${mode === "pen" ? " on" : ""}`} disabled={off}
-                title={mode === "pen"
-                  ? "Put the pen down and give the clicks back to the notebook"
-                  : "Draw over the note (hold Ctrl in either mode to pull a rectangle over what is on the page)"}
-                onClick={onToggleMode}>✎</button>
-        <button className={`icon-button${erasing ? " on" : ""}`} disabled={off} data-bar="erase"
-                aria-pressed={erasing}
-                title={erasing
-                  ? "Erase is on (the note's page): touch a stroke with the pen (or the mouse) to rub it out. Click to put it down."
-                  : "Erase on the note's page: rub out whole strokes by touching them — no eraser end or side button needed (the tablet sheet has its own Erase)"}
-                onClick={() => setEraser(!erasing)}>⌫</button>
-        <button className={`icon-button${selecting ? " on" : ""}`} disabled={off} data-bar="select"
-                aria-pressed={selecting}
-                title={selecting
-                  ? "Select is on: drag on the page to pull a rectangle, or on an object to move it. Click to put it down."
-                  : "Select: pull a rectangle over the page, or move an object — no key or side button needed (Ctrl+Alt+3)"}
-                onClick={() => setSelectTool(!selecting)}>⬚</button>
-        <input type="color" className="pen-colour" title="Pen colour" value={penColour} disabled={off}
-               onChange={(event) => onPenColour(event.target.value)} />
-        {PRESET_COLOURS.slice(0, 4).map((hex) => (
-          <button key={hex} className="swatch" style={{ background: hex }} title={hex} disabled={off}
-                  onClick={() => onPenColour(hex)} />
-        ))}
-        <select className="icon-button bar-select" disabled={off}
-                title="Pen width" value={penWidth}
-                onChange={(event) => onPenWidth(Number(event.target.value))}>
-          {[1, 2, 3, 5, 8, 12].map((width) => <option key={width} value={width}>{width}</option>)}
-        </select>
-        <PenMenu />
-      </Group>
-
-      {menu && (
-        <div className="bar-context" style={{ left: menu.x, top: menu.y }}
-             onPointerDown={(event) => event.stopPropagation()}>
-          <div className="heading">Toolbar Sections</div>
+    <div ref={row} className="bar-row page top-bar" data-bar-row="top"
+         onContextMenu={(event) => {
+           // A right-click on the bar is Customize toolbar… (the pen's own button has its menu).
+           event.preventDefault()
+           setCustomize({ x: event.clientX, y: event.clientY })
+         }}>
+      {barParts(level, sections).map((part) => renderPart(part.id))}
+      {/* The pen's colour, kept in an input that outlives the pen menu: the system's picker is a window of its own,
+          and the menu goes when this one takes the keyboard. (Its value is the pen's colour: the old bar's swatch.) */}
+      <input ref={colourInput} type="color" className="pen-colour" tabIndex={-1} aria-hidden="true" value={penColour}
+             onChange={(event) => onPenColour(event.target.value)} />
+      {hasMore(level, sections) && (
+        <MenuButton icon="more" dataBar="more" title={tip("More", "", "What no longer fits the bar, and Customize toolbar…")} items={moreItems} />
+      )}
+      {sheet && <PenSheet at={sheet} onClose={() => { setSheet(null); returnFocusSoon() }} />}
+      {customize && (
+        <div className="bar-context" data-bar="customize-pop" role="dialog" aria-label="Customize toolbar"
+             style={{ left: Math.max(8, Math.min(customize.x, window.innerWidth - 200)), top: customize.y }}>
+          <div className="heading">Toolbar sections</div>
           {TOOL_GROUPS.map((group) => (
             <label key={group.id}>
               <input type="checkbox" checked={!away(group.id)} data-section={group.id}

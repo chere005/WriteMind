@@ -10,6 +10,7 @@
 
 import { useEffect, useRef, useState, type ReactNode } from "react"
 import { FloatingMenu, type MenuItem } from "./FloatingMenu"
+import { returnFocusSoon } from "./focusReturn"
 import { Icon, type IconName } from "./icons"
 
 interface Props {
@@ -29,6 +30,14 @@ interface Props {
   chevron?: boolean
   /** No corner triangle (a control whose chevron says it already). */
   noMark?: boolean
+  /**
+   * A SPLIT button with a caret of its own (the pen): the main button and a small caret button side by side, one
+   * rounded shape (`.bar-split`), the menu opening from the caret and right-aligned under the whole. Needs `onMain`.
+   */
+  caret?: boolean
+  /** The caret button's name and test hook. */
+  caretTitle?: string
+  caretDataBar?: string
   className?: string
   /** Test hook. */
   dataBar?: string
@@ -39,45 +48,60 @@ interface Props {
 const HOLD_MS = 500
 const CORNER = 12
 
-export function MenuButton({ icon, label, title, items, onMain, on, tint, disabled, chevron, noMark, className, dataBar, style, children }: Props) {
+export function MenuButton({ icon, label, title, items, onMain, on, tint, disabled, chevron, noMark, caret, caretTitle, caretDataBar, className, dataBar, style, children }: Props) {
   const button = useRef<HTMLButtonElement>(null)
+  const split = useRef<HTMLSpanElement>(null)
   const [at, setAt] = useState<{ x: number; y: number } | null>(null)
   const hold = useRef<number | null>(null)
   const held = useRef(false)
+  // The press that puts the menu away (the menu hears it first, on the window) must not also open it again as the click:
+  // by the time the button hears its own pointerdown the menu is already gone (React has rendered between the two
+  // listeners), so the press is matched to the closing by TIME — both inside one pointerdown.
+  const closedAt = useRef(-1e9)
+  const downAt = useRef(1e9)
+  const closedByThisPress = () => {
+    const same = Math.abs(closedAt.current - downAt.current) < 80
+    downAt.current = 1e9   // (a press is matched once: a click with no press of its own, a script's, never is)
+    return same
+  }
 
   const open = () => {
-    const box = button.current?.getBoundingClientRect()
+    const box = (caret ? split.current : button.current)?.getBoundingClientRect()
     if (!box) return
-    setAt({ x: box.left, y: box.bottom + 2 })
+    setAt({ x: caret ? box.right : box.left, y: box.bottom + 2 })
   }
+  // A bar's menu is a chrome action: when it goes (Escape, a click elsewhere, a pick) the keyboard is the notes' again.
+  const close = () => { closedAt.current = performance.now(); setAt(null); returnFocusSoon() }
   useEffect(() => () => { if (hold.current !== null) window.clearTimeout(hold.current) }, [])
 
-  const classes = ["bar-btn", !noMark && onMain ? "menu" : "", label !== undefined ? "label" : "", on ? "on" : "", tint ? "tint" : "", className ?? ""]
+  const classes = ["bar-btn", !noMark && onMain && !caret ? "menu" : "", label !== undefined ? "label" : "", on ? "on" : "", tint ? "tint" : "", className ?? ""]
     .filter(Boolean).join(" ")
   const list = typeof items === "function" ? items : () => items
-  return (
-    <>
+  const main = (
       <button ref={button} type="button" className={classes} style={style} disabled={disabled} data-bar={dataBar}
               aria-label={label === undefined ? title : undefined} title={title}
               aria-haspopup="menu" aria-expanded={at !== null} aria-pressed={onMain ? !!on : undefined}
               onPointerDown={(event) => {
+                downAt.current = performance.now()
                 if (!onMain || event.button !== 0) return
                 held.current = false
                 hold.current = window.setTimeout(() => { held.current = true; open() }, HOLD_MS)
               }}
               onPointerUp={() => { if (hold.current !== null) { window.clearTimeout(hold.current); hold.current = null } }}
               onPointerLeave={() => { if (hold.current !== null) { window.clearTimeout(hold.current); hold.current = null } }}
-              onContextMenu={(event) => { event.preventDefault(); if (!disabled) open() }}
+              // (A button that only opens a menu leaves the right-click to the bar, whose own menu is Customize toolbar…)
+              onContextMenu={(event) => { if (!onMain) return; event.preventDefault(); event.stopPropagation(); if (!disabled) open() }}
               onKeyDown={(event) => {
                 if (disabled) return
                 if (event.key === "ArrowDown" || (event.altKey && event.key === "ArrowDown")) { event.preventDefault(); open() }
               }}
               onClick={(event) => {
                 if (disabled) return
+                if (!onMain && closedByThisPress()) return
                 if (held.current) { held.current = false; return }
                 if (!onMain) { open(); return }
                 const box = event.currentTarget.getBoundingClientRect()
-                const inCorner = event.clientX > box.right - CORNER && event.clientY > box.bottom - CORNER
+                const inCorner = !caret && event.clientX > box.right - CORNER && event.clientY > box.bottom - CORNER
                 if (inCorner) open(); else onMain()
               }}>
         {icon && <Icon name={icon} />}
@@ -85,7 +109,25 @@ export function MenuButton({ icon, label, title, items, onMain, on, tint, disabl
         {chevron && <Icon name="chev" size={10} className="chev" />}
         {children}
       </button>
-      {at && <FloatingMenu x={at.x} y={at.y} items={list()} onClose={() => setAt(null)} />}
+  )
+  return (
+    <>
+      {caret ? (
+        <span ref={split} className={`bar-split${on ? " on" : ""}${disabled ? " disabled" : ""}`}>
+          {main}
+          <button type="button" className="bar-btn caret" disabled={disabled} data-bar={caretDataBar}
+                  aria-label={caretTitle ?? `${title} options`} title={caretTitle ?? `${title} options`}
+                  aria-haspopup="menu" aria-expanded={at !== null}
+                  onPointerDown={() => { downAt.current = performance.now() }}
+                  onClick={() => {
+                    if (disabled || closedByThisPress()) return
+                    open()
+                  }}>
+            <Icon name="chev" size={10} className="chev" />
+          </button>
+        </span>
+      ) : main}
+      {at && <FloatingMenu x={at.x} y={at.y} items={list()} right={caret} onClose={close} />}
     </>
   )
 }

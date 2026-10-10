@@ -17,8 +17,8 @@ export type MenuItem =
   | "-"
   /** A small caption over the rows that follow ("Cells", "Colour"). */
   | { header: string }
-  /** A row the menu does not make itself (the pen's swatches and widths). Its buttons join the arrow keys. */
-  | { custom: ReactNode }
+  /** A row the menu does not make itself (the pen's swatches and widths). Its buttons join the arrow keys. A function is given the way to close the menu. */
+  | { custom: ReactNode | ((close: () => void) => ReactNode) }
   | {
     label: string
     onClick?: () => void
@@ -50,26 +50,34 @@ interface Props {
   items: MenuItem[]
   /** Open upward from y (a button at the bottom of the window). */
   above?: boolean
+  /** `x` is the menu's RIGHT edge, not its left (the pen's button at the end of the bar). */
+  right?: boolean
   onClose(): void
   /** The test hook: an id on the element. */
   id?: string
 }
 
-export function FloatingMenu({ x, y, items, above, onClose, id }: Props) {
+export function FloatingMenu({ x, y, items, above, right, onClose, id }: Props) {
   const box = useRef<HTMLDivElement>(null)
   const [at, setAt] = useState({ x, y })
   const was = useRef<Element | null>(document.activeElement)
+  const focused = useRef(false)
 
   // Kept inside the window: a menu near the right or bottom edge opens the other way.
   useLayoutEffect(() => {
     const element = box.current
     if (!element) return
     const { width, height } = element.getBoundingClientRect()
-    const left = Math.max(4, Math.min(x, window.innerWidth - width - 4))
+    const left = Math.max(4, Math.min(right ? x - width : x, window.innerWidth - width - 4))
     const top = above ? Math.max(4, y - height) : Math.max(4, Math.min(y, window.innerHeight - height - 4))
     setAt({ x: left, y: top })
-    element.querySelector<HTMLButtonElement>("button:not(:disabled)")?.focus({ preventScroll: true })
-  }, [x, y, above, items])
+    // The keyboard goes into the menu when it OPENS — not every time its rows change (a menu that stays up while a choice
+    // in it changes the rows, the pen's colour and width, must not throw the keyboard back to its first row).
+    if (!focused.current) {
+      focused.current = true
+      element.querySelector<HTMLButtonElement>("button:not(:disabled)")?.focus({ preventScroll: true })
+    }
+  }, [x, y, above, right, items])
 
   useEffect(() => {
     const away = (event: Event) => {
@@ -120,7 +128,7 @@ function Items({ items, onClose }: { items: MenuItem[]; onClose(): void }) {
       {items.map((item, index) => {
         if (item === "-") return <hr key={`-${index}`} />
         if ("header" in item) return <div className="float-header" key={`h${index}:${item.header}`}>{item.header}</div>
-        if ("custom" in item) return <div className="float-custom" key={`c${index}`}>{item.custom}</div>
+        if ("custom" in item) return <div className="float-custom" key={`c${index}`}>{typeof item.custom === "function" ? item.custom(onClose) : item.custom}</div>
         const nested = item.submenu
         return (
           <div className="float-row" key={`${index}:${item.label}`}>

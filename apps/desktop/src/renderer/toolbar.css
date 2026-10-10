@@ -1,0 +1,67 @@
+/*
+ * THE BAR OVER THE NOTE (TopBar.tsx; docs/PLAN-bars-2026-10.md P1, wireframes docs/ui-2026-10/FinalMain.png and
+ * FinalToolbar.png). It is bars.css's 36px page-coloured row; what is here is what only this bar has: the styled letters,
+ * the Style button's 110px, the pen's split button, the pen menu's swatches and widths, the pen sheet, the Customize
+ * checklist. Loaded after bars.css.
+ */
+
+/* Above the pane divider: the bar's popovers hang below it and reach across the divider when the video pane is open. */
+.top-bar { position: relative; z-index: 9; }
+
+/* B I U S and Aa are LETTERS, set in Georgia the way the Mac's bar sets them (not line icons: a line icon cannot be bold). */
+.bar-btn.letter { font-family: Georgia, "Times New Roman", serif; font-size: 15px; }
+.bar-btn.letter b, .bar-btn.letter i, .bar-btn.letter u, .bar-btn.letter s { font-weight: 700; font-style: normal; text-decoration: none; }
+.bar-btn.letter i { font-style: italic; font-weight: 400; }
+.bar-btn.letter u { text-decoration: underline; font-weight: 400; }
+.bar-btn.letter s { text-decoration: line-through; font-weight: 400; }
+.bar-btn.letter .aa { font-size: 15px; letter-spacing: -0.02em; }
+
+/* The Style button: 110px, bordered, the caret's cell kind and a chevron. */
+.bar-btn.bordered.style { width: 110px; padding: 0 6px 0 9px; font-size: 12.5px; }
+.bar-btn.bordered.style .bar-label-text { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; text-align: left; }
+
+/* The pen: the old grey tint on a split button (app.css's video switch) is not the pen's. */
+.top-bar .bar-split { background: transparent; }
+.top-bar .bar-split.on { background: var(--wm-accent-fill, var(--wm-accent)); }
+.top-bar .bar-split > .bar-btn:hover:not(:disabled) { background: var(--bar-fill); }
+.top-bar .bar-split.on > .bar-btn:hover:not(:disabled) { background: rgba(255, 255, 255, 0.16); }
+.pen-split-anchor { display: inline-flex; }
+
+/* The pen's colour lives in an input that outlives its menu (the system's picker is a window of its own). */
+.top-bar > .pen-colour {
+  position: absolute; right: 8px; bottom: 2px; width: 1px; height: 1px; padding: 0; border: 0; opacity: 0; pointer-events: none;
+}
+
+/* The pen menu's colour and width rows. */
+.float-menu .pen-swatches { display: flex; gap: 7px; align-items: center; padding: 2px 0; }
+.float-menu .pen-swatch {
+  flex: none; width: 20px; min-width: 20px; height: 20px; min-height: 20px; padding: 0; border-radius: 50%;
+  border: 1px solid rgba(0, 0, 0, 0.22); cursor: default;
+}
+.float-menu .pen-swatch.custom { background: conic-gradient(#f2542d, #f5b700, #2fbf71, #2d7dd2, #8e44ad, #f2542d); }
+.float-menu .pen-swatch.on { box-shadow: 0 0 0 2px var(--wm-chrome), 0 0 0 3.5px var(--wm-text); }
+.float-menu .pen-swatch:hover:not(:disabled), .float-menu .pen-swatch:focus-visible:not(:disabled) { outline: 2px solid var(--wm-accent); outline-offset: 2px; }
+.float-menu .pen-widths { display: flex; gap: 2px; align-items: center; }
+.float-menu .pen-width {
+  flex: none; width: 31px; min-width: 31px; height: 26px; min-height: 26px; padding: 0; border-radius: 6px; background: transparent;
+  display: inline-flex; align-items: center; justify-content: center; color: var(--wm-text);
+}
+.float-menu .pen-width i { display: block; border-radius: 50%; background: currentColor; }
+.float-menu .pen-width.on { background: var(--bar-tint); }
+.float-menu button.pen-width:hover:not(:disabled), .float-menu button.pen-width:focus-visible:not(:disabled) { background: var(--bar-fill); color: var(--wm-text); }
+.float-menu .pen-width.on:hover:not(:disabled) { background: var(--bar-tint); }
+
+/* The pen menu's last row (the old Wacom chip): a row like the others, a dot for what the pen has been seen to do. */
+.float-custom:has(> .pen-chip) { padding: 0; }
+.float-menu .pen-chip { width: 100%; justify-content: space-between; }
+.float-menu .pen-chip .pen-dot { flex: none; margin-left: auto; }
+
+/* The pen's tablet sheet: a popover under the pen button (fixed: the bar clips what it draws outside itself). */
+.pen-pop {
+  z-index: 85; padding: 10px 12px; background: var(--wm-chrome); border: 1px solid var(--wm-rule); border-radius: 8px;
+  box-shadow: 0 8px 24px var(--wm-shadow); font-size: 12px;
+}
+.pen-pop select, .pen-pop .icon-button { background: var(--wm-page); color: var(--wm-text); border: 1px solid var(--wm-rule); border-radius: 5px; font: inherit; }
+
+/* The Customize toolbar… checklist: a card by the pointer or under the dots. */
+.bar-context label { display: flex; align-items: center; gap: 6px; }

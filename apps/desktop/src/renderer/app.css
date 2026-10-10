@@ -178,29 +178,9 @@ button { font: inherit; color: inherit; }
 .tab .close { opacity: 0.5; }
 .tab .close:hover { opacity: 1; }
 
-.top-bar {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 2px 1px;
-  min-height: 32px;
-  padding: 3px 6px;
-  border-bottom: 1px solid var(--wm-rule);
-  background: var(--wm-chrome);
-  position: relative;
-  /* Above the pane divider (8): the bar's popovers (maths palette, menus) hang
-     below it and reach across the divider when the video pane is open. */
-  z-index: 9;
-}
-.top-bar > *, .pop-anchor { flex: none; }
-.top-bar .icon-button, .top-bar select { white-space: nowrap; }
+/* (The bar over the note is toolbar.css's: bars.css's 36px row, never wrapping.) */
 .pop-anchor { position: relative; display: inline-flex; }
-/* The right-hand end (rendered page, PDF) stays right, and drops to its own
-   line rather than being clipped when the pane is narrow. */
-.top-bar > .bar-spacer { flex: 1 1 0; min-width: 0; }
 
-.pen-menu { position: relative; display: inline-flex; }
-.pen-chip { width: auto; padding: 0 6px; gap: 5px; font-size: 11px; }
 .pen-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--wm-faint); }
 .pen-pen .pen-dot { background: #e0a21a; }
 .pen-pressure .pen-dot { background: #2fb457; }
@@ -387,14 +367,6 @@ button { font: inherit; color: inherit; }
 .wm-crop-bar { position: absolute; display: flex; gap: 6px; pointer-events: none; }
 .wm-crop-bar .wm-handle { position: static; }
 
-.pen-colour {
-  width: 22px;
-  height: 20px;
-  padding: 0;
-  border: 0;
-  background: transparent;
-  cursor: pointer;
-}
 .swatch {
   width: 13px;
   height: 13px;
@@ -644,16 +616,7 @@ select.chevron option { color: var(--wm-text); background: var(--wm-chrome); }
 .note-row.open .row-button:hover { background: rgba(255, 255, 255, 0.25); }
 .note-row.open .row-button.armed { background: #d9382c; }
 
-/* The text bar: sections, each with a grip that puts it away. */
-.bar-group { display: inline-flex; align-items: center; gap: 1px; flex: none; position: relative; }
-.bar-group .bar-select { width: auto; padding: 0 3px; font-size: 11px; }
-.bar-group .away-icon { opacity: 0.55; font-size: 11px; }
-.bar-grip {
-  flex: none; display: inline-flex; align-items: center; justify-content: center;
-  width: 11px; height: 22px; padding: 0; border: 0; background: transparent; cursor: pointer;
-}
-.bar-grip i { display: block; width: 1px; height: 16px; border-radius: 1px; background: var(--wm-rule); }
-.bar-grip:hover i { width: 3px; background: var(--wm-soft); }
+/* The text bar's Customize toolbar… checklist (the sections are put away there; toolbar.css has the bar). */
 .bar-context {
   position: fixed; z-index: 70; min-width: 160px; padding: 6px 10px; font-size: 12px;
   border: 1px solid var(--wm-rule); border-radius: 8px; background: var(--wm-chrome);
@@ -664,10 +627,6 @@ select.chevron option { color: var(--wm-text); background: var(--wm-chrome); }
 
 /* Hide Notes Pane: the camera takes the window. */
 .app.no-editor .camera { flex: 1 1 auto; }
-
-/* The selects in the text bar are a fixed, narrow width: a bar that is as wide
-   as its longest option pushes the pen off the end of the window. */
-.bar-group .bar-select.narrow { width: 66px; text-overflow: ellipsis; }
 
 /* The tablet as a source for the video pane: a sheet of dotted notebook paper. */
 

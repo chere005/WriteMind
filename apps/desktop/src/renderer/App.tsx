@@ -39,10 +39,11 @@ import { LinkBanner, type LinkRequest } from "./LinkBanner"
 import { FindBar, type FindRequest } from "./FindBar"
 import { KeyList } from "./KeyList"
 import { Sidebar, SidebarBar } from "./Sidebar"
-import { TopBar, TOOL_GROUPS, type ToolGroupId } from "./TopBar"
+import { TopBar, type ToolGroupId } from "./TopBar"
+import { migrateCollapsed, sectionsAway } from "./toolGroups"
 import { runEditorCommand } from "./editorCommands"
 import { useChrome } from "./useChrome"
-import { putToolsDown, usePenSettings, useSheetTools } from "./penSettings"
+import { nextPenButton, penSettings, putToolsDown, setEraser, setPenTool, usePenSettings, useSheetTools, type PenPress } from "./penSettings"
 import { usePenOnSheet } from "./tabletFocus"
 import { registerPenHandlers, runPenCommand } from "./penActions"
 import { cycleColour, stepWidth, PEN_WIDTHS } from "./penButtons"
@@ -181,9 +182,11 @@ export function App() {
   const [editing, setEditing] = useState(false)
   // The toolbar's sections that are put away, and what the list and code
   // buttons write — remembered, as the Mac keeps them in its defaults.
-  const [collapsedGroups, setCollapsedGroups] = useState<ToolGroupId[]>(() =>
-    remembered<string[]>("collapsedGroups", []).filter(
-      (id): id is ToolGroupId => TOOL_GROUPS.some((group) => group.id === id)))
+  // (The bar has four sections since 2026-10-10, kept as `toolSections`; what the six old ones had put away is migrated once.)
+  const [collapsedGroups, setCollapsedGroups] = useState<ToolGroupId[]>(() => {
+    const kept = remembered<unknown>("toolSections", null)
+    return kept === null ? migrateCollapsed(remembered<string[]>("collapsedGroups", [])) : sectionsAway(kept)
+  })
   const [listStyle, setListStyle] = useState<ListStyle>(() => remembered<ListStyle>("listStyle", "dots"))
   const [codeLanguage, setCodeLanguage] = useState<CodeLanguage>(() =>
     remembered<CodeLanguage>("codeLanguage", "plain"))
@@ -846,10 +849,18 @@ export function App() {
     return () => window.removeEventListener("paste", paste)
   }, [addPicture])
 
-  const toggleMode = useCallback(() => {
-    setPlacing(null)
-    putToolsDown()
-    setMode((was) => (was === "pen" ? "cursor" : "pen"))
+  // THE BAR'S ONE PEN BUTTON (Sean, 2026-10-10): its click, its menu (Pen / Eraser) and ⌥⌘1 / ⌥⌘2 all end in `nextPenButton`,
+  // which says what the button is (the pen or the eraser) and whether it is on; the pen's mode is this component's.
+  const modeRef = useRef(mode)
+  modeRef.current = mode
+  const penButton = useCallback((press: PenPress) => {
+    const now = penSettings()
+    const down = modeRef.current === "pen"
+    const next = nextPenButton({ tool: now.tool, eraser: now.eraser, down }, press)
+    // The pen coming down or going up lets go of the one-gesture tools, as it always did (and drops an armed shape).
+    if (next.down !== down) { setPlacing(null); putToolsDown(); setMode(next.down ? "pen" : "cursor") }
+    setPenTool(next.tool)
+    if (next.eraser !== penSettings().eraser) setEraser(next.eraser)
   }, [])
 
   const newNote = useCallback(async (folder: string) => {
@@ -1364,12 +1375,12 @@ export function App() {
   const sheetTools = useSheetTools()
   const toolsHere = usePenOnSheet() ? sheetTools : penTools
   useEffect(() => registerPenHandlers({
-    togglePen: toggleMode,
+    togglePen: () => penButton("keyPen"),
     nextColour: () => setPenColour((now) => cycleColour(now, PRESET_COLOURS.slice(0, 4), 1)),
     prevColour: () => setPenColour((now) => cycleColour(now, PRESET_COLOURS.slice(0, 4), -1)),
     wider: () => setPenWidth((now) => stepWidth(now, PEN_WIDTHS, 1)),
     thinner: () => setPenWidth((now) => stepWidth(now, PEN_WIDTHS, -1)),
-  }), [toggleMode])
+  }), [penButton])
 
   // HELP ▸ QUICK REFERENCE (main/welcome.ts): the note is written if it is missing and rewritten with this app's text if
   // it is out of date (any edit to it is overwritten: it is the app's, not the person's), then opened in a tab and shown
@@ -1524,7 +1535,7 @@ export function App() {
   const collapseGroup = useCallback((group: ToolGroupId, away: boolean) => {
     setCollapsedGroups((was) => {
       const next = away ? [...new Set([...was, group])] : was.filter((one) => one !== group)
-      remember("collapsedGroups", next)
+      remember("toolSections", next)
       return next
     })
   }, [])
@@ -1578,20 +1589,18 @@ export function App() {
         <TabBar platform={kind} open={open} current={current}
                 onSelect={(note) => { void openNote(note) }} onClose={close} onCloseOthers={closeOthers}
                 onNew={() => { void newNote(targetFolder()) }} onReveal={(path) => { void window.wm.reveal(path) }} />
-        {/* The bar is always there — the sidebar's switch is its first
-            button — and its tools wait for a note. */}
+        {/* The bar is always there, and its tools wait for a note. (The sidebar's switch is the tab row's now, not this bar's.) */}
         <TopBar view={view} platform={kind} hasNote={hasNote}
-                sidebar={showSidebar} onToggleSidebar={() => setShowSidebar((was) => !was)}
                 collapsed={collapsedGroups} onCollapse={collapseGroup}
                 listStyle={listStyle}
                 onListStyle={(style) => { setListStyle(style); remember("listStyle", style) }}
                 codeLanguage={codeLanguage}
                 onCodeLanguage={(language) => { setCodeLanguage(language); remember("codeLanguage", language) }}
                 onAddPicture={() => { void choosePicture() }}
-                mode={mode} onToggleMode={toggleMode}
+                mode={mode} onPenButton={penButton}
                 penColour={penColour} onPenColour={setPenColour}
                 penWidth={penWidth} onPenWidth={setPenWidth}
-                onPlace={arm} placing={placing} />
+                onPlace={arm} placing={placing} onCommand={run} />
         {current ? (
           <>
             {finding && (
