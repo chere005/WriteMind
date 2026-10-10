@@ -143,15 +143,13 @@ the Swift app: only notarization needs it. `minimumSystemVersion` is 13.0
 (Electron 44).
 
 **No Intel code in the app.** The dmg holds an arm64 app and nothing else:
-not x64, not a universal merge. The tablet helper is compiled for
-`arm64-apple-macos13.0` alone (no `lipo`); Electron's frameworks are the
+not x64, not a universal merge. The two helpers (wm-vision, the Vision reader of words in a picture, and wm-pen, the
+tablet's) are compiled for `arm64-apple-macos13.0` alone (no `lipo`); Electron's frameworks are the
 arm64 ones; `fsevents` (a dev tool's) is not packed; koffi, whose package
 carries every platform's prebuilt `.node` and is used only by the Windows pen
 (`main/pen/win32.ts` returns "not Windows" before it requires it), is left
 out of the Mac app by `mac.files` in `electron-builder.yml` and stays in the
-Windows one. onnxruntime-web's `.wasm` (the bundled OCR reader) is
-WebAssembly, which has no CPU architecture, so it is the same file on every
-platform. `tools/verify-mac.sh` walks every Mach-O in the app (the files
+Windows one. `tools/verify-mac.sh` walks every Mach-O in the app (the files
 inside `app.asar` included), fails on any slice that is not arm64 and on any
 universal binary, and on a `mac/` (x64) app folder or a `-mac-x64.dmg`.
 macos-15, the runner, is an Apple silicon Mac. A first open needs the user's
