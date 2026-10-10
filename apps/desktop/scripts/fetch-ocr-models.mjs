@@ -6,7 +6,7 @@
 //   node scripts/fetch-ocr-models.mjs          fetch what is missing, say where the cache is
 //
 // build.mjs calls `fetchOcrModels()`. Offline with an empty cache, a dev build goes on without the models (the app
-// then reads with the platform's own reader, as before); WM_REQUIRE_OCR_MODELS=1 (the release jobs) makes it fatal.
+// then has NO reader - there is no other - and offers nothing that reads); WM_REQUIRE_OCR_MODELS=1 (the release jobs) makes it fatal.
 import { createHash } from "node:crypto"
 import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs"
 import path from "node:path"
@@ -59,7 +59,7 @@ export async function fetchOcrModels({ required = process.env.WM_REQUIRE_OCR_MOD
       await download(model)
     } catch (error) {
       if (required) throw error
-      console.warn(`WARNING: ${error.message}\n  The build goes on WITHOUT the bundled reader; the app will use the platform's own.`)
+      console.warn(`WARNING: ${error.message}\n  The build goes on WITHOUT the reader; the app will not read pictures.`)
       return null
     }
   }

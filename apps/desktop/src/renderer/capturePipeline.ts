@@ -187,7 +187,7 @@ function canvasOf(cut: CanvasImageSource, size: Size): HTMLCanvasElement {
  * `chartFrom` with the NODES LABELLED. The shapes are found first, with no
  * words (a page of prose gives nothing, and then no reader is ever asked); only
  * a picture that holds a chart goes to the text reader, and the chart is then
- * read again with the words in hand (the Mac passes Vision's words in
+ * read again with the words in hand (the Swift app passes Vision's words in
  * from the start; asking only when there is something to label is what keeps
  * a reader that takes a few hundred milliseconds off every prose capture).
  * A reader that fails or finds nothing leaves the unlabelled chart, which is

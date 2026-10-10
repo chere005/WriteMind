@@ -7,21 +7,19 @@ import { build } from "esbuild"
 import * as ort from "onnxruntime-web"
 import { afterAll, beforeAll, describe, expect, it } from "vitest"
 import { composeLines, parseOcrJson } from "@writemind/core"
-import {
-  BundledPool, bundledOcrFolder, bundledReader, bundledWords, readWithBundledOcr, wantsJapanese,
-} from "../src/main/bundledOcr"
+import { BundledPool, bundledOcrFolder, bundledWords, readWithBundledOcr, wantsJapanese } from "../src/main/bundledOcr"
 import { loadEngine, MODEL_FILES, modelsIn } from "../src/main/bundledOcr/engine"
 import { ctcAlphabet, onnxMetadata } from "../src/main/bundledOcr/onnxMeta"
 import {
   ctcDecode, detectorSize, lineFrom, linesInMap, minAreaRect, pickReading, readPicture, type BundledLine, type Engine,
 } from "../src/main/bundledOcr/pipeline"
 import { decodePng } from "../src/main/bundledOcr/png"
-import { forgetOcrProbe, probeWindowsOcr, readerFor, readWords, tesseract, visionHelper } from "../src/main/helpers"
+import { canRead, readWords } from "../src/main/helpers"
 import { OcrService } from "../src/main/ocr"
 
 /**
- * The bundled reader (main/bundledOcr.ts, docs/OCR-BUNDLED.md): the arithmetic round the two networks with stand-ins,
- * the order `readerFor` / `readWords` ask the readers in, and - where the build's model cache is there
+ * The bundled reader (main/bundledOcr.ts, docs/OCR-BUNDLED.md), the only reader there is: the arithmetic round the
+ * networks with stand-ins, when a folder counts as a reader (oneReader.test.ts has the rest of the rules), and - where the build's model cache is there
  * (apps/desktop/.cache/ocr-models, `node apps/desktop/scripts/fetch-ocr-models.mjs`) - real reads of a printed, a
  * handwritten (a public-domain scan, Wikimedia Commons "Handwriting.png") and a Japanese picture, in-process and
  * through the very worker the app runs, including taking a read back.
@@ -134,21 +132,18 @@ describe("the bundled reader's arithmetic", () => {
     expect(wantsJapanese(["en-US"])).toBe(false)
   })
 
-  it("answers in the shape every reader does, which the app's own parser takes", () => {
+  it("answers in the app's shape, which its own parser takes", () => {
     const words = bundledWords([
       { text: "call the plumber", confidence: 0.97, x: 0.1, y: 0.5, width: 0.4, height: 0.1,
         words: [{ text: "call", x: 0.1, y: 0.5, width: 0.08, height: 0.1 }, { text: "the", x: 0.2, y: 0.5, width: 0.06, height: 0.1 },
           { text: "plumber", x: 0.28, y: 0.5, width: 0.2, height: 0.1 }] },
       { text: "buy milk", confidence: 0.99, x: 0.1, y: 0.2, width: 0.3, height: 0.1, words: [] },
-    ], true)
-    expect(words).toMatchObject({ engine: "bundled", language: "en", installed: ["en", "ja"], japanese: true })
+    ])
+    expect(Object.keys(words)).toEqual(["lines"])
     const parsed = parseOcrJson(JSON.stringify(words))
     if (!("reading" in parsed)) throw new Error(parsed.error)
-    expect(parsed.reading.engine).toBe("bundled")
     expect(parsed.reading.lines[0]!.words).toHaveLength(3)
     expect(composeLines(parsed.reading, null)).toEqual(["buy milk", "call the plumber"])
-    expect(bundledWords([{ text: String.fromCharCode(0x6771, 0x4eac), confidence: 1, x: 0, y: 0, width: 1, height: 1, words: [] }], true).language).toBe("ja")
-    expect(bundledWords([], false).installed).toEqual(["en"])
   })
 
   it("decodes PNG itself (the worker has no Electron)", () => {
@@ -183,26 +178,26 @@ function fakeApp(): { main: string; folder: string } {
   return { main, folder }
 }
 
-describe("the order the readers are asked in", () => {
-  it("is the bundled reader first wherever its files are all there, and the others when one is missing", async () => {
+describe("when a folder is the reader", () => {
+  it("is when the worker, the runtime and ALL THREE models are there: the English pair alone is not a reader (Japanese is read everywhere)", () => {
     const { main, folder } = fakeApp()
     for (const file of ["worker.mjs", "ort/ort-wasm-simd-threaded.mjs", "ort/ort-wasm-simd-threaded.wasm", `models/${MODEL_FILES.det}`]) {
       writeFileSync(path.join(folder, file), "")
     }
     // No recogniser yet: not a reader.
     expect(bundledOcrFolder(main)).toBeNull()
-    expect((await readerFor(main)).engine).not.toBe("bundled")
+    expect(canRead(main)).toBe(false)
     writeFileSync(path.join(folder, "models", MODEL_FILES.rec), "")
-    expect(bundledOcrFolder(main)).toBe(folder)
-    expect(await readerFor(main)).toEqual({ ocr: true, engine: "bundled", japanese: false })
-    // Japanese is the extra recogniser.
+    expect(bundledOcrFolder(main)).toBeNull()
+    // CHANGED 2026-10-10 (it was a reader without Japanese, `japanese: false`): the multilingual model is part of it.
     writeFileSync(path.join(folder, "models", MODEL_FILES.recJapanese), "")
-    expect(bundledReader(main)).toEqual({ ocr: true, engine: "bundled", japanese: true })
+    expect(bundledOcrFolder(main)).toBe(folder)
+    expect(canRead(main)).toBe(true)
   }, 30000)
 
-  it("falls back to the platform's own reader when the bundled one fails", async () => {
+  it("has nothing to fall back on when its worker fails: the read fails, with what the worker said", async () => {
     const { main, folder } = fakeApp()
-    for (const file of ["ort/ort-wasm-simd-threaded.mjs", "ort/ort-wasm-simd-threaded.wasm", `models/${MODEL_FILES.det}`, `models/${MODEL_FILES.rec}`]) {
+    for (const file of ["ort/ort-wasm-simd-threaded.mjs", "ort/ort-wasm-simd-threaded.wasm", ...Object.values(MODEL_FILES).map((name) => `models/${name}`)]) {
       writeFileSync(path.join(folder, file), "")
     }
     // A worker that fails every read, as one with broken models would.
@@ -211,18 +206,7 @@ describe("the order the readers are asked in", () => {
       "parentPort.on('message', (job) => parentPort.postMessage({ id: job.id, error: 'the models are broken' }))",
     ].join("\n"))
     await expect(readWithBundledOcr(main, path.join(fixtures, "ocr-english.png"))).rejects.toThrow("the models are broken")
-    // Windows' engine stands behind it (the real script, beside the fake app as the build puts it).
-    copyFileSync(path.join(here, "../src/helpers/wm-ocr.ps1"), path.join(folder, "..", "wm-ocr.ps1"))
-    forgetOcrProbe()
-    if (process.platform === "win32" && (await probeWindowsOcr(main)).ok) {
-      const out = await readWords(main, path.join(fixtures, "ocr-english.png"))
-      expect(out.engine).toBe("windows")
-      expect(out.lines.map((line) => line.text).join(" ").toLowerCase()).toContain("plumber")
-    } else if (!tesseract() && !visionHelper(main)) {
-      // Nothing stands behind it here: that is a reader that FAILED (the page says so), not a picture with no words.
-      // (It returned an empty reading, quietly, before the order became a table: test/ocrOrder.test.ts.)
-      await expect(readWords(main, path.join(fixtures, "ocr-english.png"))).rejects.toThrow("the models are broken")
-    }
+    await expect(readWords(main, path.join(fixtures, "ocr-english.png"))).rejects.toThrow("the models are broken")
   }, 60000)
 })
 
@@ -280,7 +264,6 @@ describe.skipIf(!haveModels)("the bundled reader on real pictures", () => {
 
   it("reads through the app's own worker, and answers in the app's shape", async () => {
     const out = await readWords(app.main, path.join(fixtures, "ocr-english.png"))
-    expect(out.engine).toBe("bundled")
     const parsed = parseOcrJson(JSON.stringify(out))
     if (!("reading" in parsed)) throw new Error(parsed.error)
     const lines = composeLines(parsed.reading, null)
@@ -305,7 +288,7 @@ describe.skipIf(!haveModels)("the bundled reader on real pictures", () => {
     pool.close()
   }, 60000)
 
-  it("is stopped by the OCR service's cancel, as the other readers are", async () => {
+  it("is stopped by the OCR service's cancel", async () => {
     let stopped = false
     const service = new OcrService(async (file, options) => {
       options.signal?.addEventListener("abort", () => { stopped = true })
@@ -319,7 +302,6 @@ describe.skipIf(!haveModels)("the bundled reader on real pictures", () => {
     expect(stopped).toBe(true)
     // ...and the same picture asked again is read, not inherited from the dead request.
     const out = await service.request({ id: "b", source: { file: path.join(fixtures, "ocr-handwriting.png") } })
-    expect(out.engine).toBe("bundled")
     expect(together(out.lines.map((line) => line.text))).toContain("lazy")
   }, 60000)
 

@@ -31,7 +31,7 @@ import { pictureFiles } from "./macDrawing"
 import { rescueUnsaved } from "./rescue"
 import { findUnused } from "./housekeeping"
 import type { Held } from "../shared/housekeeping"
-import { ADD_JAPANESE_OCR, penHelper, readerFor, toolsScript, windowsOcr, winget } from "./helpers"
+import { canRead, penHelper, toolsScript, winget } from "./helpers"
 import { createToolSetup } from "./toolSetup"
 import { ocrFor } from "./ocr"
 import { buildMenu } from "./menu"
@@ -536,21 +536,16 @@ app.whenReady().then(async () => {
     return systemPreferences.askForMediaAccess("camera")
   })
 
-  // The OCR engine is asked about NOW, in the background, so that the first
-  // `app:capabilities` does not wait for a PowerShell to start.
-  void windowsOcr(here)
   // File ▸ Language Setup…'s Install and Activate: the installer's own script beside the app (Windows), and winget.
   const languageScript = toolsScript(here)
-  ipcMain.handle("app:capabilities", async () => {
-    const reader = await readerFor(here)
+  ipcMain.handle("app:capabilities", () => {
     return {
-      // A CAPABILITY IS A FILE BEING THERE (or a probe that works):
-      // `wm-vision` on macOS, Windows' own OCR engine on Windows,
-      // `tesseract` anywhere. None is a dependency — with none
-      // installed the app runs the same and simply does not offer to
-      // read a picture. The same for setting a language up from the app.
+      // A CAPABILITY IS A FILE BEING THERE: the bundled reader's folder
+      // (the same one engine on every platform). A build without it runs
+      // the same and simply does not offer to read a picture. The same
+      // for setting a language up from the app.
       ...capabilitiesFor(process.platform, {
-        ocr: reader.ocr, engine: reader.engine, japanese: reader.japanese,
+        ocr: canRead(here),
         languageSetup: { script: languageScript !== null, winget: winget() !== null },
       }),
       platform: process.platform,
@@ -646,10 +641,10 @@ app.whenReady().then(async () => {
   // An ink cell's snapshot, `ink-<id>.svg` beside the note's other media (docs\PLAN-docking-ink-cells.md (f)).
   ipcMain.handle("media:inkSnapshot", (_event, note: string, id: string, svg: string, onlyIfMissing?: boolean) =>
     saveInkSnapshot(notesRoot(), note, id, svg, onlyIfMissing === true))
-  /** The words in a picture, by whichever reader this machine has. */
+  /** The words in a picture, by the bundled reader. */
   const ocr = ocrFor(here)
-  ipcMain.handle("vision:read", async (_event, file: string) =>
-    ocr.request({ id: `vision:${file}`, source: { file: await findMedia(notesRoot(), file) } }))
+  ipcMain.handle("ocr:readPicture", async (_event, file: string) =>
+    ocr.request({ id: `read:${file}`, source: { file: await findMedia(notesRoot(), file) } }))
   // The picture reader as the capture paths use it: a note's picture by name
   // or the bytes of one that has not been saved (a capture's cut, the
   // tablet's sheet), cached by what is in it and taken back by `ocr:cancel`.
@@ -692,10 +687,8 @@ app.whenReady().then(async () => {
   registerSheets(ipcMain)
   // The document camera's scanned pages (tabs): userData/scans.json and userData/scans/<id>.jpg.
   registerScans(ipcMain)
-  /** What the reader is, what it can read, and how to add Japanese - for the diagnostics. */
-  ipcMain.handle("ocr:status", async () => ({
-    ...(await readerFor(here)), probe: await windowsOcr(here), addJapanese: ADD_JAPANESE_OCR, busy: ocr.busy, reads: ocr.started,
-  }))
+  /** Whether there is a reader, and what it is doing - for the diagnostics. */
+  ipcMain.handle("ocr:status", async () => ({ ocr: canRead(here), busy: ocr.busy, reads: ocr.started }))
 
   ipcMain.handle("media:choose", async () => {
     if (!window) return null

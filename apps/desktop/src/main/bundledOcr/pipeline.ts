@@ -10,11 +10,12 @@
  *   picture -> detector input (resized, multiple of 32, ImageNet-normalised BGR)
  *           -> probability map -> lines (connected blobs, their minimum-area rectangles, grown by DB's unclip)
  *           -> each line cut out upright at 48 px high -> recogniser -> CTC greedy decode
- *           -> the `Words` shape the other readers give: lines AND words, boxed as fractions of the picture, y down,
+ *           -> the `Words` shape (helpers.ts): lines AND words, boxed as fractions of the picture, y down,
  *              with the recogniser's own confidence.
  *
  * The word boxes come from the CTC timesteps: each character is emitted at a column of the cut-out line, so a
- * word's left and right are where its first and last characters were seen. They are line-high, like Vision's.
+ * word's left and right are where its first and last characters were seen. They are line-high, not tight round the
+ * ink - which is the shape the marks rules (core capture/handwritingMarks.ts) were made for.
  */
 
 import type { Rgba } from "./png"

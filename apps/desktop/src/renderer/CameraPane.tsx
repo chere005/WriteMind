@@ -4,7 +4,7 @@
  * outlines, the PAGE as a photograph, the RAW picture as the camera sees it.
  *
  * What is Apple's and what is ours, in one place. Finding the page in the
- * frame is Vision's document segmentation on the Mac; here it is
+ * frame is Vision's document segmentation in the Swift app; here it is
  * `findPage` in `@writemind/core` (a threshold-and-hull finder with a line
  * vote for pale desks, refined along the real edge), so a capture squares the
  * page up by itself and "Straighten" starts its four corners ON the page,

@@ -1,12 +1,13 @@
 /**
- * THE BUNDLED READER, from the main process's side: one engine shipped INSIDE WriteMind (PP-OCRv5 on onnxruntime's
+ * THE READER, from the main process's side: the ONE engine shipped INSIDE WriteMind (PP-OCRv5 on onnxruntime's
  * WebAssembly build, docs/OCR-BUNDLED.md), so macOS, Windows and Linux read a picture the same way with nothing to
- * install. `helpers.ts` asks it first and falls back to Vision / Windows' engine / tesseract when its files are not
- * there or it fails.
+ * install. It is the only reader there is: `helpers.ts` asks it and nothing else, and a read that fails is a
+ * failed read, not a cue for another engine.
  *
- * A CAPABILITY IS A FILE BEING THERE, as for every other reader: `out/helpers/bundled-ocr/` holds the worker, the
- * WebAssembly runtime and the models (scripts/build.mjs puts them there, `asarUnpack` takes them out of the archive);
- * a build made offline without the models simply has no bundled reader.
+ * A CAPABILITY IS A FILE BEING THERE: `out/helpers/bundled-ocr/` holds the worker, the WebAssembly runtime and the
+ * models - the detector, the English recogniser AND the multilingual one that reads Japanese (scripts/build.mjs puts
+ * them there, `asarUnpack` takes them out of the archive). A build made offline without them has no reader at all,
+ * and the app then shows nothing for reading pictures.
  *
  * The networks run in worker threads (main/bundledOcr/worker.ts), never on the main process's own thread: one per
  * picture being read (ocr.ts runs at most two), each kept warm for a while after. A read that is taken back
@@ -18,40 +19,34 @@ import os from "node:os"
 import path from "node:path"
 import { Worker } from "node:worker_threads"
 import { modelsIn } from "./bundledOcr/engine"
-import { hasJapanese, type BundledLine } from "./bundledOcr/pipeline"
+import type { BundledLine } from "./bundledOcr/pipeline"
 import { isPng, type Rgba } from "./bundledOcr/png"
 import { shipped, type ReadOptions, type Words } from "./helpers"
 
-/** The folder the bundled reader lives in, when everything it needs is there. */
+/**
+ * The folder the reader lives in, when everything it needs is there. Japanese is part of "everything": the reader
+ * reads English and Japanese everywhere, so a folder without the multilingual model is not a reader.
+ */
 export function bundledOcrFolder(here: string): string | null {
   const folder = shipped(here, "../helpers/bundled-ocr")
   const runtime = [path.join(folder, "worker.mjs"), path.join(folder, "ort", "ort-wasm-simd-threaded.wasm"),
     path.join(folder, "ort", "ort-wasm-simd-threaded.mjs")]
-  return runtime.every((file) => existsSync(file)) && modelsIn(path.join(folder, "models")).ok ? folder : null
-}
-
-/** What `readerFor` says when the bundled reader is there. */
-export function bundledReader(here: string): { ocr: true; engine: "bundled"; japanese: boolean } | null {
-  const folder = bundledOcrFolder(here)
-  return folder ? { ocr: true, engine: "bundled", japanese: modelsIn(path.join(folder, "models")).japanese } : null
+  const models = modelsIn(path.join(folder, "models"))
+  return runtime.every((file) => existsSync(file)) && models.ok && models.japanese ? folder : null
 }
 
 /** Whether the languages asked for want the Japanese pass. Nothing asked for: yes, as the Mac reads Japanese first. */
 export const wantsJapanese = (languages?: string[]): boolean =>
   !languages || languages.length === 0 || languages.some((tag) => /^ja(-|$)/i.test(tag))
 
-/** The worker's lines in the shape every reader returns (helpers.ts `Words`). */
-export function bundledWords(lines: BundledLine[], japaneseShipped: boolean): Words {
+/** The worker's lines as the app's `Words` (helpers.ts). */
+export function bundledWords(lines: BundledLine[]): Words {
   return {
-    engine: "bundled",
     lines: lines.map((line) => ({
       text: line.text, confidence: line.confidence,
       x: line.x, y: line.y, width: line.width, height: line.height,
       words: line.words.map((word) => ({ ...word })),
     })),
-    language: lines.some((line) => hasJapanese(line.text)) ? "ja" : "en",
-    installed: japaneseShipped ? ["en", "ja"] : ["en"],
-    japanese: japaneseShipped,
   }
 }
 
@@ -76,7 +71,7 @@ async function pixelsOf(file: string): Promise<Rgba | null> {
   return { width, height, data }
 }
 
-interface Reply { id: number; lines?: BundledLine[]; japanese?: boolean; error?: string }
+interface Reply { id: number; lines?: BundledLine[]; error?: string }
 interface Slot { worker: Worker; busy: boolean; timer?: ReturnType<typeof setTimeout> }
 
 /** How long a worker is kept warm after its last picture. */
@@ -155,7 +150,7 @@ export class BundledPool {
 
 const pools = new Map<string, BundledPool>()
 
-/** One picture through the bundled reader. Throws when it cannot (the caller falls back to another reader). */
+/** One picture through the reader. Throws when it cannot. */
 export async function readWithBundledOcr(here: string, file: string, options: ReadOptions = {}): Promise<Words> {
   const folder = bundledOcrFolder(here)
   if (!folder) throw new Error("the bundled reader's files are not beside the app")
@@ -163,5 +158,5 @@ export async function readWithBundledOcr(here: string, file: string, options: Re
   pools.set(folder, pool)
   const pixels = await pixelsOf(file)
   const reply = await pool.read({ ...(pixels ? { pixels } : { file }), japanese: wantsJapanese(options.languages) }, options.signal)
-  return bundledWords(reply.lines ?? [], reply.japanese === true)
+  return bundledWords(reply.lines ?? [])
 }

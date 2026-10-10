@@ -211,8 +211,8 @@ export async function readCanvasLines(canvas: HTMLCanvasElement, signal?: AbortS
 /**
  * The picture with the drawn SHAPES rubbed out: the outlines of boxes and the
  * arrows joining them, which a text reader mistakes for part of the words
- * (Windows' engine reads a box with a thick pen line round it as nothing at
- * all, and the words in it with it). An outline is a mark that is big in BOTH
+ * (a reader can take a box with a thick pen line round it for nothing at
+ * all, and the words in it with it: Windows' engine did). An outline is a mark that is big in BOTH
  * directions with little ink in it, or a long thin line; a word, however
  * long, is short. The reading still has the words' own boxes - they were
  * never touched - so a node is labelled by the words inside it as before.

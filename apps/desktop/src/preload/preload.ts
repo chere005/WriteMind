@@ -98,7 +98,7 @@ const api = {
   writeInkSnapshot: (note: string, id: string, svg: string, onlyIfMissing?: boolean) =>
     ipcRenderer.invoke("media:inkSnapshot", note, id, svg, onlyIfMissing === true),
   choosePicture: () => ipcRenderer.invoke("media:choose"),
-  readPicture: (file: string) => ipcRenderer.invoke("vision:read", file),
+  readPicture: (file: string) => ipcRenderer.invoke("ocr:readPicture", file),
   /** The words in a picture (a note's file by name, or the bytes of one), boxed and cached; `ocrCancel(id)` takes the request back. */
   ocrRead: (request: { id: string; file?: string; bytes?: Uint8Array; languages?: string[] }) =>
     ipcRenderer.invoke("ocr:read", request),

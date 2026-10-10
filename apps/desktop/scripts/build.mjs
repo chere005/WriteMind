@@ -14,20 +14,23 @@ const common = {
 
 await build({ ...common, entryPoints: ["src/main/main.ts"], outfile: "out/main/main.mjs", format: "esm" })
 await build({ ...common, entryPoints: ["src/preload/preload.ts"], outfile: "out/preload/preload.cjs", format: "cjs" })
-// The helpers that are scripts rather than programs (Windows' OCR) ship as they are, beside
-// the main bundle where `shipped(here, "../helpers/...")` looks - and `asarUnpack`
+// The helpers ship beside the main bundle, where `shipped(here, "../helpers/...")` looks - and `asarUnpack`
 // (electron-builder.yml) takes them out of the archive, where nothing can run.
-import { copyFileSync, cpSync, mkdirSync, rmSync, writeFileSync } from "node:fs"
+import { copyFileSync, mkdirSync, rmSync, writeFileSync } from "node:fs"
 mkdirSync("out/helpers", { recursive: true })
-cpSync("src/helpers", "out/helpers", { recursive: true })
+// What an older build left in a developer's out/: the readers that are gone (Windows.Media.Ocr's script, and the
+// Vision helper, a Mac binary that was never to be shipped once OCR was one technology). out/ is not cleaned, and a
+// stale one would be packaged.
+rmSync("out/helpers/wm-ocr.ps1", { force: true })
+rmSync("out/helpers/wm-vision", { force: true })
 // The Windows installer's own optional-tools script, for File > Language Setup...'s Install and Activate buttons
 // (main/toolSetup.ts, helpers.ts `toolsScript`): the same file the installer embeds from the build resources, so the
 // two cannot drift. `asarUnpack: out/helpers/**` already takes it out of the archive.
 copyFileSync("../../packaging/installer-tools.ps1", "out/helpers/installer-tools.ps1")
 // THE BUNDLED READER (docs/OCR-BUNDLED.md): its worker, onnxruntime's WebAssembly (the one file that runs on every
 // platform) and the PP-OCRv5 models fetched and checked by fetch-ocr-models.mjs, all in out/helpers/bundled-ocr, which
-// asarUnpack takes out of the archive. Without the models (offline, empty cache) the folder is left out and the app
-// reads with the platform's own reader.
+// asarUnpack takes out of the archive. Without the models (offline, empty cache) the folder is left out: the app then
+// has NO reader and offers nothing that reads (there is no other reader to fall back on).
 import { fetchOcrModels, manifest } from "./fetch-ocr-models.mjs"
 rmSync("out/helpers/bundled-ocr", { recursive: true, force: true })
 const ocrModels = await fetchOcrModels()
