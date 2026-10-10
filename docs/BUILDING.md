@@ -17,9 +17,10 @@ npm -w @writemind/desktop run build
 
 Three things, in order: the renderer (vite → `apps/desktop/out/renderer`),
 the shell (esbuild → `out/main/main.mjs` and `out/preload/preload.cjs`), and
-`tools/build-vision.sh`, which compiles the macOS Vision helper when it is
-run on a Mac and **does nothing anywhere else** — that is not a failure, it
-is the capability rule: see `docs/PORT.md`.
+`tools/build-helpers.sh`, which compiles the macOS tablet helper (`wm-pen`,
+arm64 only, macOS 13) when it is run on a Mac and **does nothing anywhere
+else** — that is not a failure, it is the capability rule: see
+`docs/PORT.md`.
 
 ## Notices (licences and attribution)
 
@@ -40,19 +41,20 @@ folder (`extraResources` in `electron-builder.yml`, plus Chromium's
 ## Packages
 
 ```sh
-npm -w @writemind/desktop run package:mac      # two dmgs: arm64 and x64 (signed with Sean's certificate)
+npm -w @writemind/desktop run package:mac      # the arm64 dmg (signed with Sean's certificate; no Intel build)
 npm -w @writemind/desktop run package:win      # nsis + portable
 npm -w @writemind/desktop run package:linux    # pacman + AppImage + deb
 ```
 
-On a Mac, `package:mac:adhoc` is what a release ships: the same two dmgs
-(`WriteMind-<version>-mac-arm64.dmg`, `-mac-x64.dmg`), signed ad hoc, never
-published. It packages the existing build, so:
+On a Mac, `package:mac:adhoc` is what a release ships: the one dmg,
+`WriteMind-<version>-mac-arm64.dmg`, signed ad hoc, never published. **Apple
+silicon only** (Sean, 2026-10-10: nothing built for Intel ships on a Mac).
+It packages the existing build, so:
 
 ```sh
-npm run build                                   # with the universal Vision helper (tools/build-vision.sh)
+npm run build                                   # with the arm64 tablet helper (tools/build-helpers.sh)
 npm -w @writemind/desktop run package:mac:adhoc
-bash tools/verify-mac.sh                        # the signature, the chips, the helper, Info.plist, the dmgs
+bash tools/verify-mac.sh                        # the signature, every Mach-O arm64, the helpers, Info.plist, the dmg
 ```
 
 They land in `dist-electron/`. `apps/desktop/electron-builder.yml` is the
@@ -128,7 +130,7 @@ package:mac` signs without being told anything.
 `CSC_IDENTITY_AUTO_DISCOVERY=false` builds unsigned in the meantime, which
 is what a local check needs.
 
-**The released dmgs are signed AD HOC, not with that certificate.** There is
+**The released dmg is signed AD HOC, not with that certificate.** There is
 no Apple Developer ID, so nothing can be notarized; an Apple Development
 certificate would not get past Gatekeeper either. `package:mac:adhoc` (and
 release.yml's mac job, the same line) passes `-c.mac.identity=-
@@ -138,13 +140,22 @@ unsigned, no timestamp (an ad-hoc signature cannot have one) and no
 notarization. `mac.identity` in `electron-builder.yml` stays Sean's
 certificate, for his own `package:mac`. `hardenedRuntime` is false, as in
 the Swift app: only notarization needs it. `minimumSystemVersion` is 13.0
-(Electron 44). The Vision helper is universal (`lipo` of an arm64 and an
-x86_64 build for macOS 13), so the one build serves both dmgs; the dmgs are
-not one universal app because koffi's darwin `.node` files and the helper
-defeat `@electron/universal`. (koffi is Windows-only at run time:
-`main/pen/win32.ts` never loads it on a Mac, so the x64 dmg built on an
-Apple silicon runner carrying koffi's arm64 prebuilt is harmless.) A first
-open needs the user's yes: docs/INSTALL-MAC.md.
+(Electron 44).
+
+**No Intel code in the app.** The dmg holds an arm64 app and nothing else:
+not x64, not a universal merge. The tablet helper is compiled for
+`arm64-apple-macos13.0` alone (no `lipo`); Electron's frameworks are the
+arm64 ones; `fsevents` (a dev tool's) is not packed; koffi, whose package
+carries every platform's prebuilt `.node` and is used only by the Windows pen
+(`main/pen/win32.ts` returns "not Windows" before it requires it), is left
+out of the Mac app by `mac.files` in `electron-builder.yml` and stays in the
+Windows one. onnxruntime-web's `.wasm` (the bundled OCR reader) is
+WebAssembly, which has no CPU architecture, so it is the same file on every
+platform. `tools/verify-mac.sh` walks every Mach-O in the app (the files
+inside `app.asar` included), fails on any slice that is not arm64 and on any
+universal binary, and on a `mac/` (x64) app folder or a `-mac-x64.dmg`.
+macos-15, the runner, is an Apple silicon Mac. A first open needs the user's
+yes: docs/INSTALL-MAC.md.
 
 ## "WriteMind" in the Dock, not "Electron" (macOS)
 
@@ -213,13 +224,13 @@ The pushed tag starts `.github/workflows/release.yml`, four jobs:
    unit tests, the build; `electron-builder --win nsis --x64 --publish
    always` uploads the installer, its `.blockmap` and `latest.yml` into
    the draft.
-3. **mac** (macos-15, after prepare, beside windows): `npm ci`, the build
-   (the universal Vision helper), `electron-builder --mac dmg --arm64 --x64
-   --publish never` signed ad hoc (the line `package:mac:adhoc` runs),
-   `bash tools/verify-mac.sh`, then `gh release upload` puts
-   `WriteMind-0.5.1-mac-arm64.dmg` and `-mac-x64.dmg` into the draft.
-4. **publish** (ubuntu, after both): the five files (`latest.yml`, the
-   `.exe`, its `.blockmap`, the two dmgs) are checked and the draft is
+3. **mac** (macos-15, an Apple silicon runner, after prepare, beside
+   windows): `npm ci`, the build (the arm64 tablet helper),
+   `electron-builder --mac dmg --arm64 --publish never` signed ad hoc (the
+   line `package:mac:adhoc` runs), `bash tools/verify-mac.sh`, then
+   `gh release upload` puts `WriteMind-0.5.1-mac-arm64.dmg` into the draft.
+4. **publish** (ubuntu, after both): the four files (`latest.yml`, the
+   `.exe`, its `.blockmap`, the one dmg) are checked and the draft is
    published (marked Latest; a version with a `-`, like
    `0.6.0-preview.1`, is a pre-release, which installed copies of a normal
    version do not take).
@@ -232,8 +243,8 @@ Run workflow with the tag (it reuses the draft). Never `--publish always`
 by hand from a local machine.
 
 `ci.yml`'s **mac-package** job (pushes to main and a manual run, macos-15)
-builds the same two dmgs with `package:mac:adhoc`, runs `verify-mac.sh`
-and keeps the dmgs as an artifact for 14 days; it never publishes. Its unit
+builds the same dmg with `package:mac:adhoc`, runs `verify-mac.sh`
+and keeps the dmg as an artifact for 14 days; it never publishes. Its unit
 test step blocks, as on Windows (the tests that took Windows paths for
 granted use the system's own since 2026-10-05). So a
 release's mac job has been rehearsed by the last push to main.
@@ -282,14 +293,22 @@ loaded on macOS; there is no zip and no `latest-mac.yml`). A packaged
 WriteMind.app (not a dev run, not an end-to-end run) asks GitHub's
 `releases/latest` once at launch when **Check on startup** is on, and when
 asked (Help ▸ Check for Updates…). A newer published release (not a
-pre-release) that carries this Mac's dmg (`-mac-arm64.dmg` or
-`-mac-x64.dmg`, by the running app's architecture) brings up the same
+pre-release) that carries the Apple silicon dmg (`-mac-arm64.dmg`)
+brings up the same
 **Updates available** dialog with **Download** in place of Update now and
 one line: "Drag the new WriteMind into Applications to replace this one."
 Download opens `https://github.com/chere005/WriteMind/releases/tag/v<version>`
 in the browser (the address is built from the version, never taken from
 GitHub's answer). The user drags the new copy over the old one and opens it
 once with Open Anyway (docs/INSTALL-MAC.md).
+
+An Intel Mac does not look at all: this build is Apple silicon only, so
+Help ▸ Check for Updates… says so ("built for Apple silicon Macs ... does not
+run on an Intel Mac") instead of answering "you're up to date" about a release
+it cannot run (`updateEligibility`'s `arch`). Only a development run or a
+hand-made x64 build can reach that code; the Intel dmgs of earlier releases
+carry their own, older updater, which finds no `-mac-x64.dmg` on a newer
+release and says nothing is newer.
 
 ### Installing on Windows, unsigned
 
@@ -320,8 +339,8 @@ wolframscript.exe -activate                     # signs in with YOUR Wolfram ID;
 
 ### Installing on a Mac
 
-`WriteMind-<version>-mac-arm64.dmg` (Apple silicon) or `-mac-x64.dmg`
-(Intel), macOS 13 or newer: drag WriteMind onto Applications, then the
+`WriteMind-<version>-mac-arm64.dmg` (Apple silicon only; Intel Macs are
+not supported), macOS 13 or newer: drag WriteMind onto Applications, then the
 first open's Open Anyway (Privacy & Security on macOS 15 / 26,
 Control-click ▸ Open on 13 / 14). docs/INSTALL-MAC.md has the whole of it,
 the camera's repeated question after each version included.

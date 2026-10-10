@@ -2,21 +2,18 @@
 
 WriteMind for macOS comes as a disk image on the repo's
 [Releases page](https://github.com/chere005/WriteMind/releases/latest), beside the Windows
-installer. It needs **macOS 13 Ventura or newer**. It is signed *ad hoc* and not notarized (there is
-no Apple Developer ID behind it yet), so macOS asks you to confirm the first time you open it; this
-page says how.
+installer. It needs **macOS 13 Ventura or newer on an Apple silicon Mac** (M1, M2, M3, M4 …).
+**Intel Macs are not supported**: there is no Intel build, and the Apple silicon app does not run on
+one. It is signed *ad hoc* and not notarized (there is no Apple Developer ID behind it yet), so macOS
+asks you to confirm the first time you open it; this page says how.
 
 ## Which dmg
 
-Apple menu ▸ **About This Mac**:
-
-| About This Mac says | Download |
-| --- | --- |
-| **Chip**: Apple M1, M2, M3, M4 … (Apple silicon) | `WriteMind-<version>-mac-arm64.dmg` |
-| **Processor**: … Intel Core … | `WriteMind-<version>-mac-x64.dmg` |
-
-The Intel one also runs on Apple silicon (through Rosetta, more slowly); the Apple silicon one does
-not run on an Intel Mac.
+There is one: `WriteMind-<version>-mac-arm64.dmg`. Apple menu ▸ **About This Mac** should say
+**Chip**: Apple M1, M2, M3, M4 … If it says **Processor**: … Intel Core …, this is an Intel Mac and
+WriteMind for the Mac does not run on it. Everything inside the app is built for Apple silicon and
+nothing for Intel, Rosetta included. Earlier releases also had an Intel dmg; those copies keep
+working on an Intel Mac but get no newer version.
 
 ## Installing
 
@@ -82,11 +79,11 @@ asks again at the next use.
 ## Updates
 
 **Help ▸ Check for Updates…** (and a look at launch, when **Check on startup** is ticked) asks
-GitHub for the newest release. When there is a newer one with a dmg for your Mac, the **Updates
+GitHub for the newest release. When there is a newer one with the Apple silicon dmg, the **Updates
 available** dialog offers **Download**, which opens that release's page in your browser. On a Mac,
 WriteMind never downloads, installs or restarts anything itself. To update:
 
-1. Download the dmg for your chip (the same name as before, with the new version).
+1. Download the dmg (the same name as before, with the new version).
 2. Quit WriteMind, open the dmg and drag the new WriteMind onto Applications ▸ **Replace**.
 3. Open it as on the first open above (Open Anyway once more), and allow the camera again.
 
@@ -134,7 +131,7 @@ forgets WriteMind's camera and folder answers.
 
 ## For whoever builds it
 
-The dmgs are made by `.github/workflows/release.yml` (its mac job, on macos-15) and, on every push
-to main, by `ci.yml`'s mac-package job, with `npm -w @writemind/desktop run package:mac:adhoc`
-after `npm run build`; `bash tools/verify-mac.sh` checks them (docs/BUILDING.md, "Releases and
+The dmg is made by `.github/workflows/release.yml` (its mac job, on macos-15, an Apple silicon
+runner) and, on every push to main, by `ci.yml`'s mac-package job, with `npm -w @writemind/desktop run package:mac:adhoc`
+after `npm run build`; `bash tools/verify-mac.sh` checks it, every Mach-O in the app included (docs/BUILDING.md, "Releases and
 updates").
