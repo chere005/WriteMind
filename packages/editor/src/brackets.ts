@@ -34,7 +34,7 @@ import { notebook, selectedRanges } from "./notebook"
 import { foldField, insideHidden, toggleFold } from "./fold"
 import { moveHeldCells } from "./keys"
 import { armedField } from "./seams"
-import { holdingField, setHolding } from "./preview/hold"
+import { holdGuard, holdingField, setHolding } from "./preview/hold"
 import { renderedField } from "./rendered"
 import { groupsIn } from "./eval/index"
 import { groupRange, isGroupedCell } from "@writemind/core"
@@ -528,7 +528,7 @@ const holdingClass = EditorView.editorAttributes.compute([holdingField], (state)
 
 // (The two fields are named here as well as by their own extensions, so the compute above can never ask for one that is not there.)
 // (And the gap over a cell that touches one it stands apart from, which the brackets are measured below: apart.ts.)
-export const cellBrackets: Extension = [holdingField, renderedField, gutterPlugin, heldLines, holdingClass, apartCells]
+export const cellBrackets: Extension = [holdingField, holdGuard, renderedField, gutterPlugin, heldLines, holdingClass, apartCells]
 
 /** Which cells a command over "the selection" takes. */
 export function heldCells(view: EditorView): Range[] {

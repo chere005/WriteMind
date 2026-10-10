@@ -3,7 +3,7 @@
 // previous wrap; the match is selected and scrolled into view (and a closed section that hides it opens); Replace and
 // Replace All keep the cells' structure and are ONE undo step; no regex; the words and the switches are remembered for the
 // session; closing gives the caret back at the match. Real keys, markdown side and rendered page.
-import { ok, test, finish, js, sleep, freshNote, setDoc, doc, sel, selText, key, click, clickEl, focus, setSel, typeText, setRendered, shot, lineBoxes } from "../../lib/harness.mjs"
+import { ok, test, finish, js, sleep, freshNote, setDoc, doc, sel, selText, key, click, clickEl, focus, menuClick, setSel, typeText, setRendered, shot, lineBoxes } from "../../lib/harness.mjs"
 
 await freshNote()
 const D = [
@@ -65,10 +65,13 @@ for (const rendered of [false, true]) {
     await closeFind()
     // a section closed over a match
     await setDoc("# One\n\nplain\n\n## Hidden section\n\nsecret word here\n\n# Two\n\nother", 0); await focus(); await sleep(300)
-    await js(`(()=>{const v=document.querySelector('.cm-content').cmTile.view; v.dispatch({selection:{anchor:0}})})()`)
-    await key("ArrowUp", { alt: true, shift: true, ctrl: true }).catch(() => {})
-    await open(); await typeText("secret"); await sleep(400)
-    ok("the match is selected whether or not its section was closed", (await selText()) === "secret", JSON.stringify(await selText()))
+    await menuClick("foldAll"); await sleep(400)
+    const closed = await js(`document.querySelectorAll('.wm-folded').length`)
+    ok("the sections are closed", closed > 0, String(closed))
+    await open(); await typeText("secret"); await sleep(500)
+    ok("the match is selected", (await selText()) === "secret", JSON.stringify(await selText()))
+    const shownLine = await js(`(()=>{const v=document.querySelector('.cm-content').cmTile.view; const m=v.state.selection.main; const c=v.coordsAtPos(m.from); return !!c && c.bottom - c.top > 5})()`)
+    ok("and it is on screen: the closed section that hid it was opened", shownLine === true)
     await closeFind()
   })
 

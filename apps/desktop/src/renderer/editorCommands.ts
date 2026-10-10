@@ -20,6 +20,7 @@ import {
   sectionAtCaret, selectAllOccurrences, selectNext, tagFence, toggleFold, unfoldAll, wrap,
 } from "@writemind/editor"
 import { EditorSelection } from "@codemirror/state"
+import { isolateHistory } from "@codemirror/commands"
 
 export interface EditorOptions {
   listStyle: ListStyle
@@ -39,15 +40,22 @@ function cellsToAct(view: EditorView): Range[] {
   return own ? [own.range] : []
 }
 
-/** Several edits as one transaction (back to front, as `editsOver` returns them). */
-function applyEdits(view: EditorView, edits: Edit[]): boolean {
+/**
+ * Several edits as one transaction (back to front, as `editsOver` returns them), the cells they leave selected left HELD
+ * (the keys' own rule: Ctrl+Shift+Up on a held cell leaves it held). `caretIn`: the commands were acting on the cell the
+ * caret is in, nothing held, and a caret is not a held cell — it stays on the same characters of that cell (of the copy,
+ * for Duplicate), where the menu used to leave the whole cell selected.
+ */
+function applyEdits(view: EditorView, edits: Edit[], caretIn: number | null = null): boolean {
   if (edits.length === 0) return false
   const ascending = [...edits].sort((a, b) => a.range.location - b.range.location)
   let shift = 0
   const ranges = ascending.map((edit) => {
     const at = edit.selection.location + shift
     shift += edit.replacement.length - edit.range.length
-    return EditorSelection.range(at, at + edit.selection.length)
+    return caretIn === null
+      ? EditorSelection.range(at, at + edit.selection.length)
+      : EditorSelection.cursor(at + Math.min(caretIn, edit.selection.length))
   })
   view.dispatch({
     changes: edits.map((edit) => ({
@@ -55,13 +63,19 @@ function applyEdits(view: EditorView, edits: Edit[]): boolean {
     })),
     selection: EditorSelection.create(ranges),
     scrollIntoView: true,
+    // One undo step of its own, as every command is (keys.ts `run`).
+    annotations: isolateHistory.of("full"),
   })
   view.focus()
   return true
 }
 
-const onCells = (view: EditorView, make: (span: Range, text: string) => Edit | null): boolean =>
-  applyEdits(view, editsOver(cellsToAct(view), view.state.doc.toString(), make))
+const onCells = (view: EditorView, make: (span: Range, text: string) => Edit | null): boolean => {
+  const cells = cellsToAct(view)
+  const held = view.state.selection.ranges.some((r) => !r.empty)
+  const caretIn = !held && cells.length === 1 ? Math.max(0, view.state.selection.main.head - cells[0]!.location) : null
+  return applyEdits(view, editsOver(cells, view.state.doc.toString(), make), caretIn)
+}
 
 const edit = (view: EditorView, make: (text: string, where: Range) => Edit | null): boolean => {
   const change = make(view.state.doc.toString(), selection(view))
