@@ -3,7 +3,7 @@
 // four corner handles and its row, Hold's frame and badge, Zoom's magnification, the footer's one line and its fact, the
 // toast for what an action did, and the "What should this pane show?" cards when there is no source.
 // @e2e video=chart
-import { showVideoPane, pickCamera, js, ok, finish, sleep, drag, freshNote, shot, waitFor, rectOf, key, pickFromMenu } from "../../lib/harness.mjs"
+import { showVideoPane, pickCamera, js, ok, finish, sleep, drag, freshNote, shot, waitFor, rectOf, key, pickFromMenu, openVideoMenu } from "../../lib/harness.mjs"
 
 await freshNote()
 await showVideoPane()
@@ -98,12 +98,15 @@ await pickFromMenu(".camera-head [data-camera-zoom=square]", "zoom-original")
 ok("Original Size in Zoom's menu puts the whole picture back", await js(`!document.querySelector('[data-camera-zoom=square]').classList.contains('on')`))
 
 // 8. no source: the pane asks, with a card for each way
-await js(`document.querySelector('[data-bar=video-options]').click()`); await sleep(200)
-await js(`[...document.querySelectorAll('.video-pop button')].find((b) => b.textContent.includes('Turn Camera Off')).click()`)
+await openVideoMenu()   // (the video button's menu in the tab row; the sidebar's old video-pop is gone)
+await js(`document.querySelector('[data-bar=video-off]').click()`)
 await sleep(800)
 ok("with no source the pane asks What should this pane show?", /What should this pane show\?/.test(await js(`document.querySelector('.camera .placeholder .title')?.textContent ?? ''`)))
 ok("...with a card for the tablet, Refresh devices and Hide this pane", await js(`!!document.querySelector('.camera .source-card[data-source=tablet]') && !!document.querySelector('.camera [data-action=refresh]') && !!document.querySelector('.camera [data-action=hide]')`))
-ok("...and Hold, Straighten and the takes are off with no picture", await js(`document.querySelector('[data-camera=hold]').disabled && document.querySelector('[data-capture=raw]').disabled && [...document.querySelectorAll('.camera-head button')].find((b) => b.title.startsWith('Square the page up')).disabled`))
+// FinalStates.png "No source yet": the header is the close button alone (a row of greyed turn / zoom / hold / take controls
+// for a picture that is not there is noise) and there is no strip with a green "Live" dot for a camera that is not live.
+ok("...and the header is the close button alone: no turn, zoom, Hold, Straighten or takes with no picture", await js(`(() => { const b = [...document.querySelectorAll('.camera-head button')]; return b.length === 1 && b[0].getAttribute('aria-label') === 'Put the camera away' })()`))
+ok("...and no strip of tabs (nothing is live, no page is kept)", await js(`!document.querySelector('.camera .sheet-tabs')`))
 await width(280)
 await shot("no-source-280")
 ok("at 280px the cards and links stay inside the pane", await js(`(() => { const p = document.querySelector('.camera').getBoundingClientRect(); return [...document.querySelectorAll('.camera .placeholder button')].every((b) => { const r = b.getBoundingClientRect(); return r.left >= p.left - 0.5 && r.right <= p.right + 0.5 }) })()`))
