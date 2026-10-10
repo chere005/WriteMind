@@ -35,7 +35,7 @@ ok("the menu lists Text, the six levels, the lists and the quote, the cells", JS
 ok("the caret's kind (Text) is the ticked one, and only it", rows.filter((r) => r[3] === "true").map((r) => r[1]).join() === "Text", JSON.stringify(rows.filter((r) => r[3] === "true")))
 const mac = await js(`navigator.userAgent.includes('Mac')`)
 const hint = (name) => rows.find((r) => r[1] === name)?.[2]
-ok("each entry carries its key as the menu bar shows it", hint("Title") === (mac ? "Cmd+1" : "Ctrl+1") && hint("Code") === (mac ? "Cmd+8" : "Ctrl+8") && hint("Maths") === (mac ? "Cmd+9" : "Ctrl+9") && hint("Drawing") === (mac ? "Cmd+0" : "Ctrl+0"), JSON.stringify(rows.map((r) => [r[1], r[2]])))
+ok("each entry carries its key as the menu bar shows it", hint("Title") === (mac ? "⌘1" : "Ctrl+1") && hint("Code") === (mac ? "⌘8" : "Ctrl+8") && hint("Maths") === (mac ? "⌘9" : "Ctrl+9") && hint("Drawing") === (mac ? "⌘0" : "Ctrl+0") && hint("Quote") === (mac ? "⌃⌘Q" : "Ctrl+Q"), JSON.stringify(rows.map((r) => [r[1], r[2]])))
 const tip = await js(`document.querySelector('[data-bar=style]').title`)
 ok("the button's tooltip names the keys of THIS machine (no hand-typed Ctrl on a Mac)", mac ? !/Ctrl/.test(tip) && /Cmd\+1–7/.test(tip) : /Ctrl\+1–7/.test(tip), tip)
 await shot("menu")

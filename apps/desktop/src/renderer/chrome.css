@@ -1,77 +1,8 @@
 /*
- * The window's own shape (the app shell): sizes the Mac's ContentView gives
- * it, the divider between the notes and the video, and the sidebar's footer
- * and menus. Loaded AFTER app.css, so where a rule here and one there are the
- * same strength this one wins.
+ * The window's shape (the app shell): the readable-in-both-appearances colour corrections and the small dialogs'
+ * (Rename, the Trash's "are you sure") base. Loaded AFTER app.css, so where a rule here and one there are the same
+ * strength this one wins. (The divider is overlays.css's, the video pane's width camera.css's, the page's menus bars.css's.)
  */
-
-/* The video's width is the divider's: --video-w is set on .app by PaneDivider.
-   Until it has measured, the Mac's 420 : 720 share. Notes keep the rest. */
-.camera { flex: 0 0 var(--video-w, 37%); min-width: 280px; }
-.pane { min-width: 0; }
-
-.pane-divider { position: relative; flex: 0 0 0; z-index: 8; outline: none; }
-.pane-divider::before {
-  content: "";
-  position: absolute;
-  top: 0; bottom: 0; left: -4px;
-  width: 9px;
-  cursor: col-resize;
-}
-.pane-divider::after {
-  content: "";
-  position: absolute;
-  top: 0; bottom: 0; left: -1px;
-  width: 3px;
-  background: var(--wm-accent);
-  opacity: 0;
-  transition: opacity 0.12s;
-  pointer-events: none;
-}
-.pane-divider:hover::after, .pane-divider.dragging::after, .pane-divider:focus-visible::after { opacity: 0.55; }
-
-/* While the divider is held the page does not select text under the pointer. */
-body:has(.pane-divider.dragging) { user-select: none; cursor: col-resize; }
-body:has(.pane-divider.dragging) iframe, body:has(.pane-divider.dragging) video { pointer-events: none; }
-
-/* The page's own menus: the sidebar's right-click and Folder menus. */
-.float-menu {
-  position: fixed;
-  z-index: 80;
-  min-width: 190px;
-  padding: 4px;
-  border-radius: 8px;
-  border: 1px solid var(--wm-rule);
-  background: var(--wm-chrome);
-  color: var(--wm-text);
-  box-shadow: 0 8px 24px var(--wm-shadow);
-  font-size: 12.5px;
-}
-.float-menu.sub { position: absolute; left: calc(100% - 2px); top: -5px; }
-.float-row { position: relative; }
-.float-menu button {
-  display: flex;
-  justify-content: space-between;
-  gap: 24px;
-  width: 100%;
-  text-align: left;
-  border: 0;
-  background: transparent;
-  padding: 5px 8px;
-  border-radius: 5px;
-  color: var(--wm-text);
-  cursor: default;
-  white-space: nowrap;
-}
-.float-menu button:hover:not(:disabled), .float-menu button:focus-visible:not(:disabled) {
-  background: var(--wm-accent-fill);
-  color: #fff;
-  outline: none;
-}
-.float-menu button:disabled { color: var(--wm-faint); }
-.float-menu .hint { color: var(--wm-faint); }
-.float-menu button:hover:not(:disabled) .hint, .float-menu button:focus-visible:not(:disabled) .hint { color: rgba(255, 255, 255, 0.8); }
-.float-menu hr { border: 0; border-top: 1px solid var(--wm-rule); margin: 4px 2px; }
 
 /*
  * READABLE IN BOTH APPEARANCES. The Mac asks the system for its colours; here the two palettes are
@@ -88,10 +19,8 @@ body:has(.pane-divider.dragging) iframe, body:has(.pane-divider.dragging) video 
 @media (prefers-color-scheme: dark) {
   :root { --wm-faint: #92929e; --wm-accent-fill: #2f6fb8; --wm-hover: #31323a; }
 }
-.icon-button.on, .kind-menu button:hover, .math-foot button.default,
-.context-menu button:hover:not(:disabled), .wm-style-btn.on,
-.link-banner { background: var(--wm-accent-fill); }
-.math-foot button.default, .wm-style-btn.on { border-color: var(--wm-accent-fill); }
+.icon-button.on, .math-foot button.default { background: var(--wm-accent-fill); }
+.math-foot button.default { border-color: var(--wm-accent-fill); }
 
 /* The font-and-colour popover's own controls: the browser's dark buttons are #6b6b6b with light words (4.4:1). */
 .style-pop .actions button, .style-pop input[type="number"], .style-pop select {

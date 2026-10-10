@@ -107,7 +107,10 @@ await js(`document.querySelector('.float-menu [data-bar=video-off]').click()`)
 await sleep(800)
 ok("with no source the pane asks What should this pane show?", /What should this pane show\?/.test(await js(`document.querySelector('.camera .placeholder .title')?.textContent ?? ''`)))
 ok("...with a card for the tablet, Refresh devices and Hide this pane", await js(`!!document.querySelector('.camera .source-card[data-source=tablet]') && !!document.querySelector('.camera [data-action=refresh]') && !!document.querySelector('.camera [data-action=hide]')`))
-ok("...and Hold, Straighten and the takes are off with no picture", await js(`document.querySelector('[data-camera=hold]').disabled && document.querySelector('[data-capture=raw]').disabled && [...document.querySelectorAll('.camera-head button')].find((b) => b.title.startsWith('Square the page up')).disabled`))
+// FinalStates.png "No source yet": the header is the close button alone (a row of greyed turn / zoom / hold / take controls
+// for a picture that is not there is noise) and there is no strip with a green "Live" dot for a camera that is not live.
+ok("...and the header is the close button alone: no turn, zoom, Hold, Straighten or takes with no picture", await js(`(() => { const b = [...document.querySelectorAll('.camera-head button')]; return b.length === 1 && b[0].getAttribute('aria-label') === 'Put the camera away' })()`))
+ok("...and no strip of tabs (nothing is live, no page is kept)", await js(`!document.querySelector('.camera .sheet-tabs')`))
 await width(280)
 await shot("no-source-280")
 ok("at 280px the cards and links stay inside the pane", await js(`(() => { const p = document.querySelector('.camera').getBoundingClientRect(); return [...document.querySelectorAll('.camera .placeholder button')].every((b) => { const r = b.getBoundingClientRect(); return r.left >= p.left - 0.5 && r.right <= p.right + 0.5 }) })()`))

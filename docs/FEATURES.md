@@ -262,7 +262,7 @@ is how the code is put together.
 - **⌫ deletes what you last selected** on the drawing layer — writing, ink or
   a picture. ⌘V pastes a picture wherever you are, source or preview. A middle
   click closes a tab.
-- **Font, size and colour** for the selected text, from the T button. It
+- **Font, size and colour** for the selected text, from the **Aa** button. It
   writes a `<span style="…">`, so other markdown apps still read the note.
 - **⌘D, as in Sublime Text.** The word under the cursor, then one more
   occurrence per press, all editable at once. ⌃⌘G takes every one.
@@ -318,14 +318,14 @@ is how the code is put together.
   ⌃G makes one bigger group of the lot, so groups nest by swallowing
   rather than by stacking.
   The pen button itself is still the pen, on and off; its menu also picks
-  the size and the colour (a circular colour well plus six swatches). ⌘Z
+  the width and the colour (six presets and a custom one). ⌘Z
   undoes a stroke while the pen is up — ⇧⌘Z puts it back — and Undo Drawing
   sits in the Edit menu at ⌥⌘Z whatever has the keyboard.
 - **Pictures on the page.** The image button adds one, ⌘V pastes one, and
   they behave like any other object on the layer. Files live in
   the note itself (`media/` inside its `.wm`), so they go with it when it moves
   and go when it does.
-- **Maths, written as Wolfram Language.** The `f(x)` button opens a pane of
+- **Maths, written as Wolfram Language.** The **Maths** button (Σ) opens a pane of
   shapes — integrals with their bounds (single, double and contour), sums
   and infinite series, Taylor series, limits including one-sided ones,
   ordinary, partial and mixed derivatives, grad, div, curl and the

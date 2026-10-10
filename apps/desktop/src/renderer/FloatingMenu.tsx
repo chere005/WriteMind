@@ -1,8 +1,12 @@
 /**
  * A small menu that opens where it is asked to: the sidebar's right-click
- * menus and its Folder button's. It is the page's own, not the shell's,
- * because a native menu cannot be driven by an end-to-end script and the page
- * already draws the Cut / Copy / Paste one the same way (`.context-menu`).
+ * menus and its Folder button's, the bars' menus, the seam's +, the notes'
+ * Cut / Copy / Paste. It is the page's own, not the shell's, because a native
+ * menu cannot be driven by an end-to-end script.
+ *
+ * ITS COLUMNS are the wireframes' (docs/ui-2026-10/FinalToolbar.png, FinalStates.png): a menu that ticks anything keeps ONE
+ * column for the tick on every row, then a row's own icon (only the rows that have one), then the label; a key hint is drawn
+ * the Mac's way (⇧⌘L) on a Mac and in words elsewhere.
  *
  * It takes the keyboard while it is up (Up, Down, Enter, Escape, Right/Left
  * for a submenu) and gives it back to where it was when it goes: a menu is a
@@ -15,7 +19,9 @@
  */
 
 import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type ReactNode } from "react"
+import { chordGlyphs } from "../shared/chord"
 import { returnFocus } from "./focusReturn"
+import { hostPlatform } from "./hostPlatform"
 import { Icon, type IconName } from "./icons"
 
 export type MenuItem =
@@ -71,7 +77,6 @@ export function FloatingMenu({ x, y, items, above, right, onClose, id, dataBar }
   const box = useRef<HTMLDivElement>(null)
   const [at, setAt] = useState({ x, y })
   const was = useRef<Element | null>(document.activeElement)
-  const focused = useRef(false)
 
   // Kept inside the window: a menu near the right or bottom edge opens the other way.
   useLayoutEffect(() => {
@@ -142,8 +147,8 @@ export function FloatingMenu({ x, y, items, above, right, onClose, id, dataBar }
 
 function Items({ items, onClose }: { items: MenuItem[]; onClose(): void }) {
   const [open, setOpen] = useState<number | null>(null)
-  // A menu that has any check or icon keeps a column for it on every row, so the labels line up.
-  const marked = items.some((item) => typeof item === "object" && "label" in item && (item.checked !== undefined || item.icon !== undefined))
+  // A menu that ticks anything keeps the tick's column on every row, so the labels line up; an icon is the row's own.
+  const ticks = items.some((item) => typeof item === "object" && "label" in item && item.checked !== undefined)
   return (
     <>
       {items.map((item, index) => {
@@ -169,11 +174,11 @@ function Items({ items, onClose }: { items: MenuItem[]; onClose(): void }) {
                       if (!item.keepOpen && item.toggle === undefined) onClose()
                       item.onClick?.()
                     }}>
-              {marked && <span className="float-mark">{item.checked ? "✓" : item.icon ? <Icon name={item.icon} size={14} /> : null}</span>}
-              {marked && item.checked && item.icon && <Icon name={item.icon} size={14} />}
+              {ticks && <span className="float-mark" aria-hidden="true">{item.checked ? "✓" : null}</span>}
+              {item.icon && <span className="float-icon" aria-hidden="true"><Icon name={item.icon} size={14} /></span>}
               <span className="float-label" style={item.labelStyle}>{item.label}</span>
               {item.toggle !== undefined ? <span className={`float-switch${item.toggle ? " on" : ""}`} aria-hidden="true" />
-                : nested ? <span className="hint">▸</span> : item.hint ? <span className="hint">{item.hint}</span> : null}
+                : nested ? <span className="hint">▸</span> : item.hint ? <span className="hint">{chordGlyphs(item.hint, hostPlatform())}</span> : null}
             </button>
             {nested && open === index && (
               <div className="float-menu sub" role="menu">

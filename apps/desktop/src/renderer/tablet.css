@@ -49,7 +49,7 @@
 .tablet-host .box-actions button.primary, .camera .viewfinder .box-actions button.primary { background: var(--wm-accent-fill, var(--wm-accent)); color: #fff; }
 .tablet-host .box-actions button.primary:hover:not(:disabled), .camera .viewfinder .box-actions button.primary:hover:not(:disabled) { background: var(--wm-accent-fill, var(--wm-accent)); filter: brightness(1.12); }
 .tablet-host .box-actions button.danger { color: #ff8f85; }
-.tablet-host .box-actions button.danger:hover:not(:disabled) { background: #c0392b; color: #fff; }
+.tablet-host .box-actions button.danger:hover:not(:disabled) { background: var(--wm-danger); color: #fff; }
 .tablet-host .box-actions button:disabled, .camera .viewfinder .box-actions button:disabled { opacity: 0.4; cursor: default; }
 .tablet-host .box-actions .sep, .camera .viewfinder .box-actions .sep { width: 1px; height: 12px; margin: 0 2px; background: rgba(255, 255, 255, 0.2); }
 
@@ -61,7 +61,7 @@
 }
 .float-menu .paper-chips button[aria-checked="true"] { background: var(--wm-accent-fill, var(--wm-accent)); border-color: transparent; color: #fff; }
 .float-menu .paper-chips button:disabled { opacity: 0.4; }
-.paper-chips .swatch { width: 11px; height: 11px; border-radius: 3px; border: 1px solid rgba(128, 128, 128, 0.6); flex: none; display: inline-block; }
+.paper-chips .swatch { width: 11px; height: 11px; margin: 0 1px; padding: 0; border-radius: 3px; border: 1px solid rgba(128, 128, 128, 0.6); flex: none; display: inline-block; }
 
 /*
   THE TABS (SheetStrip.tsx): one slim strip under the header, 30px, never wrapping: tabs shrink, then the row scrolls

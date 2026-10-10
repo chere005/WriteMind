@@ -958,11 +958,15 @@ export function CameraPane({
                         onHold={() => { if (held) letGo(); else frozen.hold() }}
                         straighten={straighten} onStraighten={toggleStraighten} onFindPage={findNow}
                         mode={mode} onTake={(next) => { void take(next) }}
-                        onHide={onHide} showEditor={showEditor} onToggleEditor={onToggleEditor} />
+                        onHide={onHide} showEditor={showEditor} onToggleEditor={onToggleEditor}
+                        empty={showPlaceholder && kept.pages.length === 0} />
         )}
-      {/* The tabs: one slim row under the header, so the sheet (below it) is never under it. */}
-      <SheetStrip mode={tablet ? "tablet" : "camera"}
-                  scan={{ onAdd: () => { void keepNow() }, addOff: keepOff, live: running && deviceName(stream.label) ? deviceName(stream.label) : null }} />
+      {/* The tabs: one slim row under the header, so the sheet (below it) is never under it. With no source and no kept page there
+          is no live camera to name and nothing to switch to: the pane asks what it should show (FinalStates.png "No source yet"). */}
+      {!(showPlaceholder && kept.pages.length === 0) && (
+        <SheetStrip mode={tablet ? "tablet" : "camera"}
+                    scan={{ onAdd: () => { void keepNow() }, addOff: keepOff, live: running && deviceName(stream.label) ? deviceName(stream.label) : null }} />
+      )}
       {/* WHAT THE PANE SHOWS: the picture (or the sheet) in everything between the strip and the footer, and what is laid on it. */}
       <div className="camera-body" ref={host} data-camera="body"
            onPointerDown={pictureDown} onPointerMove={pictureMove} onPointerUp={pictureUp}

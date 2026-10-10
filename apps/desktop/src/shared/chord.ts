@@ -40,6 +40,19 @@ export function chordCaps(chord: string, platform: string): string[] {
 }
 
 /**
+ * A chord as a Mac's menu draws it: the caps run together in Apple's order, "Cmd+Shift+L" -> "⇧⌘L", "Ctrl+Cmd+Up" -> "⌃⌘↑"
+ * (the wireframes' menus: docs/ui-2026-10/FinalToolbar.png, FinalStates.png). A PC's menu writes the words, so the chord is
+ * returned as `shown()` gave it, and so is anything that is not a chord (a count, a word) on either platform. Tooltips and
+ * the generated lists keep the words (the tests hold them to the key table); only a menu's hint column is drawn this way.
+ */
+export function chordGlyphs(chord: string, platform: string): string {
+  if (platform !== "darwin") return chord
+  const { modifiers } = chordParts(chord)
+  if (modifiers.length === 0 || !modifiers.every((name) => name in APPLE_SYMBOL)) return chord
+  return chordCaps(chord, platform).join("")
+}
+
+/**
  * The command key of this machine and one more key, as `shown()` words it: "Cmd+X" on a Mac, "Ctrl+X" elsewhere. For the keys
  * the table does not carry because the shell's own menu does them (Cut, Copy, Paste, Select All), so that no label in the
  * page types "Ctrl" by hand — on a Mac that is a key that does nothing.

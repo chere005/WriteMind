@@ -17,13 +17,13 @@ const row = () => J(`(() => {
   return { bar: { x: r.x, y: r.y, w: r.width, h: r.height, r: r.right }, sidebar: q('[data-bar=sidebar]'), markdown: q('[data-bar=markdown]'), video: q('[data-bar=video]'),
     plus: q('[data-bar=new-tab]'), list: q('[data-bar=tab-list]'), strip: q('.tab-strip'),
     tabs: [...document.querySelectorAll('.tab')].map((t) => { const b = t.getBoundingClientRect(); return { name: t.querySelector('.name').textContent, open: t.classList.contains('open'), x: b.x, r: b.right, w: b.width, h: b.height } }),
-    count: document.querySelector('[data-bar=tab-list]').textContent.trim(), listTitle: document.querySelector('[data-bar=tab-list]').title,
+    count: document.querySelector('[data-bar=tab-list]')?.textContent.trim() ?? null, listTitle: document.querySelector('[data-bar=tab-list]')?.title ?? null,
     scrollW: document.documentElement.scrollWidth, innerW: innerWidth } })()`)
 
-// ---- an empty row: the three switches, the +, the list at 0 — and the bar is there with nothing open
+// ---- an empty row: the three switches and the + — and the bar is there with nothing open (no list: FinalToolbar.png's "No note open" strip has none, so 0 notes is not a count to show)
 let r = await row()
-ok("with nothing open the row still has its switches and a +", r.sidebar && r.markdown && r.video && r.plus && r.list, JSON.stringify(r))
-ok("and the list button says 0", r.count === "0" && r.listTitle === "0 open notes", `${r.count} / ${r.listTitle}`)
+ok("with nothing open the row still has its switches and a +", r.sidebar && r.markdown && r.video && r.plus, JSON.stringify(r))
+ok("and no list button (there is nothing to list; it comes with the first tab)", r.list === null && r.count === null, `${r.count} / ${r.listTitle}`)
 ok("the rendered button is greyed with no note to render", await js(`document.querySelector('[data-bar=markdown]').disabled`))
 
 // ---- three tabs at the wide window

@@ -163,8 +163,11 @@ export function TabBar(props: Props) {
       <button type="button" className="bar-btn tab-new" aria-label="New Tab" data-bar="new-tab"
               title={`New note (${key("newNote")})`} onClick={onNew}><Icon name="plus" /></button>
       <div className="tab-room" />
-      <MenuButton icon="list" label={open.length} dataBar="tab-list" className="tab-list" title={openCount(open.length)} name={`Open notes: ${open.length}`}
-                  items={() => openListMenu(open, current, onSelect, onCloseOthers)} />
+      {/* (With no note open there is nothing to list: FinalToolbar.png's "No note open" strip has no count.) */}
+      {open.length > 0 && (
+        <MenuButton icon="list" label={open.length} dataBar="tab-list" className="tab-list" title={openCount(open.length)} name={`Open notes: ${open.length}`}
+                    items={() => openListMenu(open, current, onSelect, onCloseOthers)} />
+      )}
       {menu && <FloatingMenu x={menu.x} y={menu.y} items={menu.items} id="tab-menu"
                              onClose={() => { setMenu(null); returnFocusSoon() }} />}
       {prompt && <Prompt spec={prompt} onClose={() => setPrompt(null)} />}

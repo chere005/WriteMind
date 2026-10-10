@@ -194,7 +194,7 @@ const leftOverFurniture: Command = (view) => {
  */
 const putCaretAway: Command = (view) => {
   if (!on(view) || barUp(view) || view.state.field(awayField, false)) return false
-  if (view.dom.ownerDocument.querySelector(".style-pop, .float-menu, .context-menu, .kind-menu")) return false
+  if (view.dom.ownerDocument.querySelector(".style-pop, .float-menu")) return false
   view.dispatch({ selection: EditorSelection.cursor(view.state.selection.main.head), effects: putAway.of(true) })
   return true
 }

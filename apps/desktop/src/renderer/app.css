@@ -71,8 +71,6 @@ button { font: inherit; color: inherit; }
 .icon-button:hover { background: var(--wm-rule); }
 .icon-button.on { background: var(--wm-accent); color: #fff; }
 
-.bar-divider { width: 1px; height: 16px; background: var(--wm-rule); margin: 0 4px; }
-
 .pane { flex: 1; display: flex; flex-direction: column; min-width: 0; }
 
 /* (The bar over the note is toolbar.css's: bars.css's 36px row, never wrapping. The tab row is tabs.css's.) */
@@ -81,13 +79,6 @@ button { font: inherit; color: inherit; }
 .pen-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--wm-faint); }
 .pen-pen .pen-dot { background: #e0a21a; }
 .pen-pressure .pen-dot { background: #2fb457; }
-.pen-pop { width: 340px; display: block; max-height: 80vh; overflow-y: auto; }
-.pen-pop h4 { margin: 12px 0 4px; font-size: 11px; text-transform: uppercase; letter-spacing: 0.04em; color: var(--wm-faint); }
-.pen-pop .pen-slot { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
-.pen-pop .pen-slot select { max-width: 190px; }
-.pen-pop p { margin: 0 0 8px; line-height: 1.35; }
-.pen-pop label { display: block; margin: 4px 0; }
-.pen-pop .hint { color: var(--wm-faint); margin: 8px 0 0; }
 
 .editor { flex: 1; min-height: 0; position: relative; }
 .editor .cm-editor { height: 100%; }
@@ -113,52 +104,6 @@ button { font: inherit; color: inherit; }
   justify-content: center;
   gap: 10px;
   color: var(--wm-faint);
-}
-
-/* The + on the bar names a KIND; the menu is the one list of them. */
-.kind-menu {
-  position: fixed;
-  z-index: 20;
-  min-width: 190px;
-  padding: 4px;
-  border-radius: 8px;
-  border: 1px solid var(--wm-rule);
-  background: var(--wm-chrome);
-  box-shadow: 0 8px 24px var(--wm-shadow);
-}
-.kind-menu button {
-  display: block;
-  width: 100%;
-  text-align: left;
-  border: 0;
-  background: transparent;
-  padding: 4px 8px;
-  border-radius: 5px;
-  font-size: 12.5px;
-  cursor: pointer;
-}
-.kind-menu button:hover { background: var(--wm-accent); color: #fff; }
-.kind-menu hr { border: 0; border-top: 1px solid var(--wm-rule); margin: 4px 2px; }
-
-.camera {
-  flex: 0 0 38%;
-  border-left: 1px solid var(--wm-rule);
-  background: #101012;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 10px;
-  color: #8a8a92;
-  position: relative;
-  min-width: 260px;
-}
-.camera video { width: 100%; height: 100%; object-fit: contain; background: #000; }
-.camera .box {
-  position: absolute;
-  border: 1.5px dashed var(--wm-accent);
-  background: rgba(109, 169, 240, 0.12);
-  pointer-events: none;
 }
 
 /* The drawing layer sits OVER the notebook and lets every click it does not
@@ -279,16 +224,6 @@ button { font: inherit; color: inherit; }
 .wm-crop-btn:hover { background: color-mix(in srgb, var(--wm-text) 9%, transparent); }
 .wm-crop-ok { color: var(--wm-accent); }
 
-.swatch {
-  width: 13px;
-  height: 13px;
-  margin: 0 1px;
-  padding: 0;
-  border: 1px solid var(--wm-rule);
-  border-radius: 50%;
-  cursor: pointer;
-}
-
 /* Whatever the renderer threw, where it can be read. */
 #wm-error {
   position: fixed;
@@ -346,25 +281,6 @@ button { font: inherit; color: inherit; }
 }
 .save-problem button:hover { background: rgba(255, 255, 255, 0.36); }
 
-
-/* The page's four corners over the viewfinder ("Straighten"). */
-.camera .quad { position: absolute; inset: 0; pointer-events: none; }
-.camera .quad polygon {
-  fill: rgba(109, 169, 240, 0.10);
-  stroke: var(--wm-accent);
-  stroke-width: 1.5;
-}
-.camera .quad-corner {
-  position: absolute;
-  width: 16px;
-  height: 16px;
-  margin: -8px 0 0 -8px;
-  border-radius: 50%;
-  background: var(--wm-accent);
-  border: 2px solid #fff;
-  cursor: grab;
-  touch-action: none;
-}
 
 /* Maths: typeset in the notebook, and the palette that puts it there (the Mac's MathMenu). */
 /* The typeset maths itself (.wm-math, .wm-math-inline, .wm-math-block) is styled by @writemind/editor's math.ts. */
@@ -462,34 +378,6 @@ button { font: inherit; color: inherit; }
 
 .icon-button:disabled { opacity: 0.35; cursor: default; background-color: transparent; }
 .icon-button.on:disabled { background-color: transparent; }
-
-/* The video's switch and its chevron are one control. */
-.bar-split { position: relative; display: inline-flex; align-items: center; border-radius: 5px;
-  background: color-mix(in srgb, var(--wm-rule) 35%, transparent); }
-.bar-split.on { background: color-mix(in srgb, var(--wm-accent) 22%, transparent); }
-.bar-split > .icon-button.on { background-color: transparent; color: var(--wm-accent); }
-.bar-split > .icon-button { background-color: transparent; }
-.bar-split > .icon-button:hover { background-color: var(--wm-rule); }
-.bar-split > .chevron, .bar-split > .chevron-button {
-  width: 14px; padding: 0; font-size: 9px; border-left: 1px solid var(--wm-rule); border-radius: 0 5px 5px 0;
-}
-select.chevron {
-  appearance: none; -webkit-appearance: none; text-align: center; text-align-last: center;
-  --chev: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='8' height='5'%3E%3Cpath d='M1 1l3 3 3-3' fill='none' stroke='%23888' stroke-width='1.3' stroke-linecap='round'/%3E%3C/svg%3E");
-  background-image: var(--chev);
-  background-repeat: no-repeat; background-position: center; color: transparent;
-}
-select.chevron:hover, select.chevron:disabled { background-image: var(--chev); background-repeat: no-repeat; background-position: center; }
-select.chevron option { color: var(--wm-text); background: var(--wm-chrome); }
-
-/* The text bar's Customize toolbar… checklist (the sections are put away there; toolbar.css has the bar). */
-.bar-context {
-  position: fixed; z-index: 70; min-width: 160px; padding: 6px 10px; font-size: 12px;
-  border: 1px solid var(--wm-rule); border-radius: 8px; background: var(--wm-chrome);
-  box-shadow: 0 8px 24px var(--wm-shadow);
-}
-.bar-context .heading { color: var(--wm-faint); margin-bottom: 4px; }
-.bar-context label { display: block; padding: 2px 0; cursor: pointer; }
 
 /* Hide Notes Pane: the camera takes the window. */
 .app.no-editor .camera { flex: 1 1 auto; }

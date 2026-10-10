@@ -54,11 +54,26 @@ interface CameraProps {
   /** The notes pane is hidden: the header carries the way back. */
   showEditor: boolean
   onToggleEditor?(): void
+  /** NO SOURCE (or one that would not start): there is no picture to turn, zoom, hold or take, so the header is the close button
+   *  alone, as FinalStates.png draws it ("No source yet"), and not a row of greyed controls. */
+  empty?: boolean
 }
 
 /** The header over the camera's picture. */
 export function CameraHeader(p: CameraProps) {
   const percent = `${p.zoomPercent}%`
+  if (p.empty) {
+    return (
+      <div className="bar-row camera-bar camera-head" role="toolbar" aria-label="Camera" data-camera-head="camera">
+        {!p.showEditor && (
+          <button type="button" className="bar-btn label" data-pane="notes" title="Back to Side by Side: the notes and the video together again"
+                  onClick={() => p.onToggleEditor?.()}><span className="bar-label-text">Back to Side by Side</span></button>
+        )}
+        <span className="grow" />
+        <button type="button" className="bar-btn" aria-label="Put the camera away" title="Put the camera away" onClick={p.onHide}><Icon name="close" /></button>
+      </div>
+    )
+  }
   return (
     <div className="bar-row camera-bar camera-head" role="toolbar" aria-label="Camera" data-camera-head="camera">
       <button type="button" className="bar-btn" data-camera-turn="left" aria-label="Turn left" title="Turn the picture a quarter turn anticlockwise"
@@ -79,7 +94,7 @@ export function CameraHeader(p: CameraProps) {
               title={p.holdTitle} disabled={p.holdOff} onClick={p.onHold}><Icon name="pause" /></button>
       <MenuButton icon="straighten" on={p.straighten} disabled={!p.pictured && !p.straighten} onMain={p.onStraighten}
                   title="Square the page up: drag the four corners onto the page's corners"
-                  items={[{ label: "Find the Page Again", icon: "find", disabled: !p.straighten || !p.pictured, onClick: p.onFindPage,
+                  items={[{ label: "Find the Page Again", icon: "search", disabled: !p.straighten || !p.pictured, onClick: p.onFindPage,
                     dataBar: "find-page" }]} />
       {!p.showEditor && (
         <button type="button" className="bar-btn label" data-pane="notes" title="Back to Side by Side: the notes and the video together again"
