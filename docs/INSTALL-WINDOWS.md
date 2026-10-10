@@ -184,9 +184,9 @@ The pushed tag runs `.github/workflows/release.yml`: a first job checks that the
 app's version and makes a draft release for the tag (notes from the tag's annotation); on
 windows-latest the typecheck, the unit tests and the build run and electron-builder makes this
 installer and uploads it with its `.blockmap` and `latest.yml` into the draft; beside it, on
-macos-15, the Mac job uploads `WriteMind-<version>-mac-arm64.dmg` and `WriteMind-<version>-mac-x64.dmg`
-(signed ad hoc: docs/INSTALL-MAC.md). A last job checks that all five files are there
-(`latest.yml`, the `.exe`, its `.blockmap`, the two dmgs) and publishes the release; a failed
+macos-15, the Mac job uploads `WriteMind-<version>-mac-arm64.dmg` (Apple silicon only)
+(signed ad hoc: docs/INSTALL-MAC.md). A last job checks that all four files are there
+(`latest.yml`, the `.exe`, its `.blockmap`, the one dmg) and publishes the release; a failed
 Windows or Mac job leaves it a draft (re-run that job). Every installed copy then finds it
 (docs/BUILDING.md, "What an installed copy does").
 Never `--publish always` from a local machine.

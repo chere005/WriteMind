@@ -33,7 +33,7 @@ import {
   DEFAULT_UPDATE_SETTINGS, MAC_DOWNLOAD_LINE, RELEASES_LATEST_API, RELEASE_TAG_PAGE, UPDATE_CHANNELS,
   UPDATE_COMMAND_IDS, dialogAfterLaunchCheck, dialogAfterMenuCheck, latestFromGitHub, macDmgSuffix, nextStatus,
   oneLine, progressLine, readUpdateSettings, releasePage, sameForDisplay, shortReason, testFeed, updateDialogText,
-  updateEligibility, updateMenu, updateMenuLabel, writeUpdateSettings, type CopyFacts, type UpdateAnswer,
+  INTEL_MAC_WHY, updateEligibility, updateMenu, updateMenuLabel, writeUpdateSettings, type CopyFacts, type UpdateAnswer,
   type UpdateEvent, type UpdateStatus, type UpdateView,
 } from "../src/shared/update"
 import { buildMenu } from "../src/main/menu"
@@ -65,6 +65,22 @@ describe("which copies look for updates", () => {
     expect(updateEligibility({ ...mac, packaged: false })).toEqual({ ok: false, why: expect.stringMatching(/development run/) })
     expect(updateEligibility({ ...mac, env: { WRITEMIND_DEV: "1" } })).toEqual({ ok: false, why: expect.stringMatching(/development run/) })
     expect(updateEligibility({ ...mac, env: { WRITEMIND_E2E: "1" } })).toEqual({ ok: false, why: expect.stringMatching(/test run/) })
+  })
+
+  it("an Intel Mac does not look: WriteMind for the Mac is Apple silicon only, and it says so", () => {
+    const mac: CopyFacts = { platform: "darwin", arch: "arm64", packaged: true, env: {}, besideExe: ["WriteMind"], hasFeedFile: false }
+    expect(updateEligibility(mac)).toEqual({ ok: true, how: "download" })
+    // Left out, the chip is not asked about (the facts above this test do not carry one).
+    expect(updateEligibility({ ...mac, arch: undefined })).toEqual({ ok: true, how: "download" })
+    const intel = updateEligibility({ ...mac, arch: "x64" })
+    expect(intel).toEqual({ ok: false, why: INTEL_MAC_WHY })
+    expect(INTEL_MAC_WHY).toMatch(/Apple silicon/)
+    expect(INTEL_MAC_WHY).toMatch(/Intel Mac/)
+    // Not even a Developer ID copy with a feed installs on one, and the chip outranks "development run".
+    expect(updateEligibility({ ...mac, arch: "x64", hasFeedFile: true, macSelfUpdates: true })).toEqual({ ok: false, why: INTEL_MAC_WHY })
+    expect(updateEligibility({ ...mac, arch: "x64", packaged: false })).toEqual({ ok: false, why: INTEL_MAC_WHY })
+    // Windows x64 is not an Intel Mac.
+    expect(updateEligibility({ ...installed, arch: "x64" })).toEqual({ ok: true, how: "install" })
   })
 
   it("nothing else does, and each says why", () => {
@@ -323,7 +339,6 @@ const release = (over: Record<string, unknown> = {}) => ({
     { name: "WriteMind-Setup-1.0.1.exe.blockmap", state: "uploaded" },
     { name: "latest.yml", state: "uploaded" },
     { name: "WriteMind-1.0.1-mac-arm64.dmg", state: "uploaded" },
-    { name: "WriteMind-1.0.1-mac-x64.dmg", state: "uploaded" },
   ],
   ...over,
 })
@@ -333,7 +348,8 @@ describe("a Mac's look at GitHub's latest release", () => {
 
   it("offers a newer published release that carries this Mac's dmg, with its page", () => {
     expect(latestFromGitHub(release(), "1.0.0", "arm64")).toEqual({ version: "1.0.1", page })
-    expect(latestFromGitHub(release(), "1.0.0", "x64")).toEqual({ version: "1.0.1", page })
+    // Intel: there is no dmg for it (the release carries Apple silicon's alone), so nothing is offered.
+    expect(latestFromGitHub(release(), "1.0.0", "x64")).toBeNull()
     // The text as it came, too.
     expect(latestFromGitHub(JSON.stringify(release({ tag_name: "v2.0.0" })), "1.0.0", "arm64"))
       .toEqual({ version: "2.0.0", page: "https://github.com/chere005/WriteMind/releases/tag/v2.0.0" })
@@ -341,7 +357,7 @@ describe("a Mac's look at GitHub's latest release", () => {
     // A pre-release build is older than its final release.
     expect(latestFromGitHub(release({ tag_name: "v1.1.0" }), "1.1.0-beta.1", "arm64")?.version).toBe("1.1.0")
     expect(macDmgSuffix("arm64")).toBe("-mac-arm64.dmg")
-    expect(macDmgSuffix("x64")).toBe("-mac-x64.dmg")
+    expect(macDmgSuffix("x64")).toBeNull()
   })
 
   it("ignores drafts, pre-releases, the same or an older version", () => {
@@ -483,8 +499,8 @@ describe("the updater in download mode (a packaged Mac)", () => {
 
   it("the launch look (Check on startup) asks by itself; Later puts it off; unticked, it does not look", async () => {
     vi.useFakeTimers()
-    answering(release({ tag_name: "v1.2.0", assets: [{ name: "WriteMind-1.2.0-mac-x64.dmg", state: "uploaded" }] }))
-    as("darwin", "x64")
+    answering(release({ tag_name: "v1.2.0", assets: [{ name: "WriteMind-1.2.0-mac-arm64.dmg", state: "uploaded" }] }))
+    as("darwin", "arm64")
     const first = start()
     expect(fx.fetch).not.toHaveBeenCalled()
     await vi.advanceTimersByTimeAsync(3_000)
@@ -535,6 +551,22 @@ describe("the updater in download mode (a packaged Mac)", () => {
     expect(await said(() => fx.fetch.mockImplementation(() => new Promise(() => {})), true))
       .toEqual({ kind: "error", reason: "the update server took too long to answer" })
     expect(fx.openExternal).not.toHaveBeenCalled()
+  })
+
+  it("an Intel Mac never looks, and Help ▸ Check for Updates… says this build is for Apple silicon", async () => {
+    answering(release())
+    vi.useFakeTimers()
+    as("darwin", "x64")
+    const { updater, dialog } = start()
+    expect(updater.menu().canCheck).toBe(false)
+    await updater.command("checkForUpdates")
+    expect(dialog()).toEqual({ kind: "off", why: INTEL_MAC_WHY })
+    expect(updateDialogText(dialog()!).detail).toMatch(/Apple silicon.*Intel Mac/)
+    // Not at launch either: no look at GitHub, nothing opened, no updater loaded.
+    await vi.advanceTimersByTimeAsync(30_000)
+    expect(fx.fetch).not.toHaveBeenCalled()
+    expect(fx.openExternal).not.toHaveBeenCalled()
+    expect(fx.required).not.toContain("electron-updater")
   })
 
   it("(the control) an installed Windows copy still goes to electron-updater, never to GitHub's API itself", async () => {

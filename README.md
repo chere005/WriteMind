@@ -23,7 +23,7 @@ A notebook, a live camera and a drawing layer over both, for macOS, Windows and 
 
 Download from the [latest release](https://github.com/chere005/WriteMind/releases/latest). Installed copies update themselves (Help ▸ Check for Updates…).
 
-- **macOS 13+:** `WriteMind-<version>-mac-arm64.dmg` (Apple silicon) or `-mac-x64.dmg` (Intel). Signed and notarized: drag it onto Applications. [Details](docs/INSTALL-MAC.md)
+- **macOS 13+, Apple silicon (M1 and newer) only:** `WriteMind-<version>-mac-arm64.dmg`. There is no Intel build. Drag it onto Applications. [Details](docs/INSTALL-MAC.md)
 - **Windows:** `WriteMind-Setup-<version>.exe`. Per-user, no admin. It can install Python and the Wolfram Engine for runnable cells. Unsigned, so SmartScreen asks first (More info ▸ Run anyway). [Details](docs/INSTALL-WINDOWS.md)
 
 Runnable cells use the Python, Wolfram, C, C++ and Rust you have installed; File ▸ Language Setup… shows and changes which.
