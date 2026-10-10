@@ -916,7 +916,7 @@ export function CameraPane({
     ? "Take back what was written here since its note was put away (it has not reached the drawing cell yet)"
     : binding.bound
     ? "Take back the last change in the note (this sheet writes into its drawing cell: its Undo is the note's)"
-    : `Take back the last stroke on the sheet (${shownKey("undo", kind) || "Ctrl+Z"} while the pen is over it). Its menu clears the sheet.`
+    : `Take back the last stroke on the sheet (${shownKey("undo", kind)} while the pen is over it). Its menu clears the sheet.`
 
   const line = tablet
     ? sheetLine({
@@ -1008,7 +1008,7 @@ export function CameraPane({
           <div className={`box${zooming ? " zoom" : ""}`} data-camera="box" style={{
             left: box.x, top: box.y, width: box.width, height: box.height,
           }}>
-            {!zooming && !dragging && (["nw", "ne", "sw", "se"] as const).map((corner) => (
+            {!zooming && (["nw", "ne", "sw", "se"] as const).map((corner) => (
               <span key={corner} className="handle" data-handle={corner}
                     onPointerDown={cornerDown(corner)} onPointerMove={cornerMove} onPointerUp={cornerUp} onPointerCancel={cornerUp} />
             ))}
@@ -1083,7 +1083,7 @@ export function CameraPane({
           <div className="source-cards" role="listbox" aria-label="Input Devices">
             {cameras.map((one) => (
               <button key={one.id} type="button" className="source-card" data-camera={one.id} onClick={() => choose(one.id)}>
-                <Icon name="camera" size={22} /><span className="name">{one.name}</span><span className="sub">point it at a page</span>
+                <Icon name="camera" size={22} /><span className="name">{deviceName(one.name) || "Camera"}</span><span className="sub">point it at a page</span>
               </button>
             ))}
             <button type="button" className="source-card" data-source="tablet" onClick={() => choose(TABLET_SOURCE)}>
