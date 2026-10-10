@@ -9,9 +9,13 @@
  * this" but "IS THE HELPER INSTALLED".
  *
  * So there is no table of operating systems here. There is one rule, asked
- * once, and the shell answers the helper part by looking for a file:
- * `wm-vision` (built by `tools/build-vision.sh`) on macOS, `tesseract`
- * anywhere. Nothing else in the app asks `process.platform`.
+ * once, and the shell answers the helper part by looking for a file: the
+ * bundled reader's folder (every platform, when the build had its models),
+ * `wm-vision` (built by `tools/build-vision.sh`) on macOS, Windows' own
+ * engine, `tesseract` anywhere - in the order `OCR_ORDER` of main/helpers.ts.
+ * With none of them there is no handwriting reading and nothing is shown
+ * for it (no Aa on a picture, no Text in the camera's box). Nothing else in
+ * the app asks `process.platform`.
  *
  * The rule for a build that cannot do something: SAY NOTHING AND SHOW
  * NOTHING. A button that is there but dead, or a dialog explaining what
@@ -36,8 +40,9 @@ export interface Capabilities {
   /** Reading handwriting off a captured page into markdown. */
   handwritingOCR: boolean
   /**
-   * WHICH reader: Vision on a Mac, `Windows.Media.Ocr` on Windows (nothing to
-   * install for the user's own languages), tesseract if it is on the PATH.
+   * WHICH reader: the bundled one on every platform when its files are there,
+   * else Vision on a Mac, `Windows.Media.Ocr` on Windows (nothing to install
+   * for the user's own languages), tesseract if it is on the PATH.
    * Null when there is none.
    */
   ocrEngine: OcrEngine | null
@@ -72,7 +77,7 @@ export interface Capabilities {
 
 /** What the shell found on this machine. */
 export interface Helpers {
-  /** `wm-vision` on macOS, Windows' own OCR engine on Windows, `tesseract` anywhere. */
+  /** The bundled reader, `wm-vision` on macOS, Windows' own OCR engine on Windows, `tesseract` anywhere. */
   ocr: boolean
   /** Which of them answered. */
   engine?: OcrEngine | null

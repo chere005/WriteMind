@@ -1,13 +1,19 @@
 # Reading words out of a picture on Windows
 
 (Since the `ocr-bundled` branch the app reads with its own bundled engine first, on every platform, when its files
-are there; Windows' engine below is the fallback. docs/OCR-BUNDLED.md.)
+are there; Windows' engine below is the fallback, behind it in one table, `OCR_ORDER` in `main/helpers.ts`. docs/OCR-BUNDLED.md
+has the design and, in "Against Vision", the measured table that kept the bundled reader first on a Mac too.)
 
 The Mac reads a picture with Vision. Windows has an OCR engine of its own,
 `Windows.Media.Ocr`, which needs **nothing installed** for the languages in
-the user's profile. WriteMind uses it (Vision first on a Mac, then this, then
-`tesseract` if one is on the PATH) and shows the Aa handle only when a reader
-that works is there.
+the user's profile. WriteMind uses it when the bundled reader's files are not
+there or it fails (the order is bundled, Vision, this, then `tesseract` if one is
+on the PATH) and shows the Aa handle only when a reader that works is there.
+
+Measured on the same pictures (docs/OCR-BUNDLED.md): on a Windows 10 machine the bundled reader read the felt-tip fixture
+exactly where this engine gave "The quick brown FOX / ivmps over+e lazy dog.", read Japanese this machine's engine could not,
+and read maths on a line this engine mostly missed. On a Mac the same bundled reader was within a handful of characters of
+Vision (a little behind on English handwriting, ahead on Japanese and maths).
 
 ## What is where
 

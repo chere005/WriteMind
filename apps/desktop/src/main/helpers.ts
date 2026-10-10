@@ -12,11 +12,18 @@
  * Arch calls `tesseract` and `tesseract-data-eng`.
  *
  * None is a dependency: with none installed the app runs exactly as it does
- * now and simply does not offer to read a picture. Order of preference:
- * THE BUNDLED READER first on every platform when its files are beside the
- * app (main/bundledOcr.ts, docs/OCR-BUNDLED.md: one engine, so every
- * platform reads alike), then Vision, then Windows' engine, then tesseract -
- * which are also the fallback when the bundled one fails.
+ * now and simply does not offer to read a picture. Order of preference is a
+ * TABLE, `OCR_ORDER`, and nothing else decides it: THE BUNDLED READER first
+ * on every platform when its files are beside the app (main/bundledOcr.ts,
+ * docs/OCR-BUNDLED.md: one engine, so every platform reads alike), then
+ * Vision, then Windows' engine, then tesseract - each also the fallback for
+ * the one before it when that fails. Vision was measured against the bundled
+ * reader on the same pictures on a Mac (docs/OCR-BUNDLED.md "Against Vision")
+ * and did NOT earn first place: a little better on English handwriting, much
+ * quicker on a big photo, worse on maths, and the bundled reader reads
+ * Japanese better. To try the other way round, set `WRITEMIND_OCR_ORDER=
+ * vision,bundled` (names left out follow in the table's order), or edit the
+ * table - one line.
  */
 
 import { execFile } from "node:child_process"
@@ -261,52 +268,78 @@ export const forgetOcrProbe = (): void => { probed = null }
 
 // MARK: - Whichever reader there is
 
+/**
+ * THE ORDER THE READERS ARE ASKED IN, the one place it is decided (no platform is asked: a reader that is not on this
+ * machine is simply not there, and the next one stands in). Bundled first: docs/OCR-BUNDLED.md "Against Vision".
+ */
+export const OCR_ORDER: readonly OcrEngine[] = ["bundled", "vision", "windows", "tesseract"]
+
+/**
+ * The order in use: `OCR_ORDER`, unless `WRITEMIND_OCR_ORDER` names engines to put first ("vision,bundled"). Names that
+ * are not an engine are ignored, and an engine left out follows in the table's order, so a typo cannot leave the app
+ * with no reader.
+ */
+export function ocrOrder(env: NodeJS.ProcessEnv = process.env): OcrEngine[] {
+  const named = (env.WRITEMIND_OCR_ORDER ?? "").split(",").map((name) => name.trim().toLowerCase())
+    .filter((name): name is OcrEngine => (OCR_ORDER as readonly string[]).includes(name))
+  return [...new Set<OcrEngine>([...named, ...OCR_ORDER])]
+}
+
+/** Whether one reader is on this machine (a file being there, or a probe that works). */
+async function hasReader(here: string, engine: OcrEngine): Promise<boolean> {
+  switch (engine) {
+    case "bundled": return bundledOcrFolder(here) !== null
+    case "vision": return visionHelper(here) !== null
+    case "windows": return windowsOcrScript(here) !== null && (await windowsOcr(here)).ok
+    case "tesseract": return tesseract() !== null
+  }
+}
+
 /** Whether anything on this machine could read a picture's words, without asking (a file being there). */
 export const canRead = (here: string): boolean =>
   bundledOcrFolder(here) !== null || visionHelper(here) !== null || windowsOcrScript(here) !== null || tesseract() !== null
 
 /** Which reader will be used, and what it can do: the answer `capabilitiesFor` is given. */
-export async function readerFor(here: string):
+export async function readerFor(here: string, order: readonly OcrEngine[] = ocrOrder()):
 Promise<{ ocr: boolean; engine: OcrEngine | null; japanese: boolean }> {
-  const bundled = bundledReader(here)
-  if (bundled) return bundled
-  if (visionHelper(here)) return { ocr: true, engine: "vision", japanese: true }
-  if (windowsOcrScript(here)) {
-    const probe = await windowsOcr(here)
-    if (probe.ok) return { ocr: true, engine: "windows", japanese: probe.japanese }
+  for (const engine of order) {
+    if (!(await hasReader(here, engine))) continue
+    switch (engine) {
+      case "bundled": return bundledReader(here)!
+      // Vision's own helper reads Japanese when this Mac's Vision has it (wm-vision asks for ja-JP first, as the Mac app does).
+      case "vision": return { ocr: true, engine, japanese: true }
+      case "windows": return { ocr: true, engine, japanese: (await windowsOcr(here)).japanese }
+      case "tesseract": return { ocr: true, engine, japanese: false }
+    }
   }
-  if (tesseract()) return { ocr: true, engine: "tesseract", japanese: false }
   return { ocr: false, engine: null, japanese: false }
 }
 
-/**
- * The words in a picture, by whichever reader this machine has. Vision gives
- * a confidence per line and is the better reader by a distance; Windows'
- * engine gives lines AND words, all boxed; tesseract gives text, so every
- * line it finds counts as read.
- */
-export async function readWords(here: string, file: string, options: ReadOptions = {}): Promise<Words> {
-  if (bundledOcrFolder(here)) {
-    try {
-      return await readWithBundledOcr(here, file, options)
-    } catch (error) {
-      // Taken back is taken back; anything else falls through to the platform's own reader.
-      if ((error as { name?: string }).name === "AbortError") throw error
-      console.warn("WriteMind: the bundled reader failed; using the platform's own:", (error as Error).message)
-    }
+/** One picture through one named reader. Throws what the reader said. */
+async function readWith(engine: OcrEngine, here: string, file: string, options: ReadOptions): Promise<Words> {
+  switch (engine) {
+    case "bundled": return readWithBundledOcr(here, file, options)
+    case "vision": return readWithVision(here, file, options)
+    case "windows": return readWithWindowsOcr(here, file, options)
+    case "tesseract": return readWithTesseract(file, options)
   }
+}
+
+/** One picture through the Vision helper (`wm-vision text <file> [tag,tag]`: no tags is the Mac app's own rule, Japanese first). */
+export async function readWithVision(here: string, file: string, options: ReadOptions = {}): Promise<Words> {
   const vision = visionHelper(here)
-  if (vision) {
-    const { stdout } = await run(vision, ["text", file], {
-      ...(options.signal ? { signal: options.signal } : {}), maxBuffer: 32 * 1024 * 1024,
-    })
-    return { ...(JSON.parse(stdout) as Words), engine: "vision" }
-  }
-  if (windowsOcrScript(here) && (await windowsOcr(here)).ok) {
-    return readWithWindowsOcr(here, file, options)
-  }
+  if (!vision) throw new Error("no wm-vision beside the app, or not macOS")
+  const languages = options.languages && options.languages.length > 0 ? [options.languages.join(",")] : []
+  const { stdout } = await run(vision, ["text", file, ...languages], {
+    ...(options.signal ? { signal: options.signal } : {}), maxBuffer: 32 * 1024 * 1024,
+  })
+  return { ...(JSON.parse(stdout) as Words), engine: "vision" }
+}
+
+/** One picture through `tesseract`, which gives text and nothing else: every line it finds counts as read. */
+async function readWithTesseract(file: string, options: ReadOptions): Promise<Words> {
   const other = tesseract()
-  if (!other) return { lines: [] }
+  if (!other) throw new Error("no tesseract on the PATH")
   // `--psm 6` reads a block of text rather than hunting for a layout,
   // which is what a captured chunk of writing is.
   const { stdout } = await run(other, [file, "stdout", "--psm", "6"],
@@ -316,6 +349,31 @@ export async function readWords(here: string, file: string, options: ReadOptions
     lines: stdout.split("\n").map((line) => line.trim()).filter((line) => line.length > 0)
       .map((text) => ({ text, confidence: 1 })),
   }
+}
+
+/**
+ * The words in a picture, by the first reader of the order (`ocrOrder`) that is on this machine and works. A reader
+ * that fails stands aside for the next one; a cancel is not a failure; when every reader there is has failed, the last
+ * one's error is thrown (the page says the reader failed, which is not the same as reading nothing). Vision gives a
+ * confidence per line; Windows' engine gives lines AND words, all boxed; the bundled one both, with boxes per word;
+ * tesseract gives text.
+ */
+export async function readWords(here: string, file: string, options: ReadOptions = {},
+  order: readonly OcrEngine[] = ocrOrder()): Promise<Words> {
+  let failure: Error | null = null
+  for (const engine of order) {
+    if (!(await hasReader(here, engine))) continue
+    try {
+      return await readWith(engine, here, file, options)
+    } catch (error) {
+      // Taken back is taken back; anything else falls through to the next reader.
+      if ((error as { name?: string }).name === "AbortError") throw error
+      failure = error as Error
+      console.warn(`WriteMind: the ${engine} reader failed; trying the next:`, failure.message)
+    }
+  }
+  if (failure) throw failure
+  return { lines: [] }
 }
 
 /** The page's four corners, on the one platform that can find them. */
