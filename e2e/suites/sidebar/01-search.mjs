@@ -80,4 +80,23 @@ ok("and the keyboard is the note's", await js(`!!document.activeElement.closest(
 await search("qubits"); await settled("qubits")
 await js(`document.querySelector('.hit-row').click()`); await sleep(1200)
 ok("a click opens the note", (await js(`document.querySelector('.footer span')?.textContent`)) === "Qubits.wm")
+
+// ---- a result inside the note that is already open: it is not read over again, the caret goes to the words
+await key("Escape"); await sleep(200)
+await js(`${VIEW}.dispatch({ selection: { anchor: 0 } })`)
+const lengthBefore = (await doc()).length
+await search("again"); await settled("again")
+await key("Enter"); await sleep(900)
+ok("the open note's own result puts the caret on the words and raises the Find bar", (await selText()) === "again" && (await side()).find?.value === "again", `${await selText()} / ${JSON.stringify((await side()).find)}`)
+ok("and the note was not touched", (await doc()).length === lengthBefore)
+await key("Escape"); await sleep(200)
+
+// ---- the list is the notes as they are now: a note that gains the words while its search is on screen appears in it
+await js(`document.querySelector('[data-sidebar=search]').focus()`)
+await search("zebra"); s = await settled("zebra")
+ok("nothing has 'zebra' yet", s.hits.length === 0 && /No notes match/.test(s.status ?? ""), JSON.stringify(s.status))
+await js(`${VIEW}.dispatch({ changes: { from: ${VIEW}.state.doc.length, insert: "\\na zebra crossing" } })`)
+await until(async () => (await side()).hits.length === 1, 8000, 250).catch(() => {})
+s = await side()
+ok("the note's autosave brings it into the results without typing in the field again", s.hits.length === 1 && s.hits[0].title === "Qubits" && s.hits[0].snippetMark === "zebra", JSON.stringify(s.hits))
 finish()
