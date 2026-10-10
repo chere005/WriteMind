@@ -12,8 +12,31 @@ is how the code is put together.
   on disk; a folder inside it is a subsection. The section you have selected
   is where the next new note goes. Drag a note — or a whole section — into
   another one and the file really moves, so Finder agrees with the sidebar.
-- **An edit button** puts duplicate and delete on every row, and the order
-  you drag rows into is remembered.
+- **The sidebar is a 36px bar and a list.** The bar reads a search field,
+  **+** and the pencil. **+** makes a note in the open note's section; its
+  corner (or a right-click, or holding it) opens New Note / New Section. The
+  **pencil** is edit mode: duplicate and a two-click delete on every row. Rows
+  have line icons, titles that clamp to two lines, a count on each section and
+  a **⋯** on hover that opens the row's menu (Open, Rename…, Duplicate, Move to
+  ▸ indented to the tree and greying the note's own section, Reveal, Move to
+  Trash…). Each section starts with one quiet "+ New note" row — where the note
+  will land — and a row dropped on it moves into that section, at the top.
+  The order you drag rows into is remembered. The rendered and video buttons
+  are not here: they are the tab row's, beside the sidebar button.
+- **Search Notes (⇧⌘F, Ctrl+Shift+F).** Type in the sidebar's field and the
+  results replace the list: each is the note's title, the section it is in and
+  one line with the match marked. Titles come first, then the words in the
+  notes; case and accents do not matter ("cafe" finds "Café"); every folder of
+  the project is searched, `.wm` notes included, without waiting for you (the
+  reading is done off the page, cached until a note changes, and cancelled the
+  moment you type again). The arrow keys walk the results, **Enter** opens the
+  note with the caret on the first match and the Find bar on those words, and
+  **Escape** clears the field and gives the keyboard back to the notes. The key
+  opens the sidebar first when it is away.
+- **One project menu.** The project's name at the foot of the sidebar opens
+  everything the Project menu has (Add Folder, Remove Folder, Save, Save As,
+  Open, New) and the sidebar's own: Hidden Sections, Reveal, Clean Up Unused
+  Files…. The note count is beside it.
 - **A markdown editor, and a preview of it.** The bar sits over the editor
   pane; the button on its right lights up while the preview is showing
   (⇧⌘P). Bold, italic, underline, bullets and quote are on the left
@@ -228,8 +251,8 @@ is how the code is put together.
   move, size and turn it from there. Drag instead of clicking to size it as
   it goes down; a line or an arrow runs from the press to the release.
 - **A folder can leave the project without leaving the disk.** Right-click
-  a folder in the sidebar: *Remove Folder from Project* hides it (Folder ▸
-  Hidden Folders brings it back); *Move to Trash* is the one that moves it.
+  a folder in the sidebar: *Remove Folder from Project* hides it (the project
+  menu's Hidden Sections brings it back); *Move to Trash* is the one that moves it.
 - **⌫ deletes what you last selected** on the drawing layer — writing, ink or
   a picture. ⌘V pastes a picture wherever you are, source or preview. A middle
   click closes a tab.
@@ -240,7 +263,7 @@ is how the code is put together.
 - **It opens side by side.** Every launch shows the notes and the video
   together, whatever was put away last time.
 - **Collapse what you're not using.** The notes list and the video from the
-  sidebar's header; the notes pane from the corner of the video. ⌃⌘S, ⌃⌘E,
+  tab row's buttons; the notes pane from the corner of the video. ⌃⌘S, ⌃⌘E,
   ⌃⌘C.
 - **Two modes over one page, and one button between them.** The drawing
   layer is there in the markdown and on the rendered page alike — the

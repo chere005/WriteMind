@@ -69,6 +69,7 @@ against it, each as its own node process:
 | `format` | a note is a `.wm`: a legacy folder converts on launch (originals moved to a backup, a notice), typing, a pen stroke and a pasted picture land inside the file (read back by `e2e/lib/wm.mjs` and the system's `unzip -t`), a restart brings them back, the export reads it |
 | `undo` | Ctrl+Z through FILE operations (`docs/PLAN-undo.md`): five things (type, rename, move, trash another note, type) and five Ctrl+Z / Ctrl+Shift+Z checking text, names, folder and sidebar after each press; six trashes and the third-step boundary with the backups; text and file steps interleaved across two notes; a tab switch, a disk reload, a taken name, a failing undo, the open note's own creation undone, a restart |
 | `chrome` | the three bars and their groups, one-press-one-action keys, the application menu, edit mode, projects |
+| `sidebar` | the sidebar: its 36px bar, the search (⇧⌘F, typing, results, accents, the arrow keys, Enter into the Find bar, Escape), row ⋯ and right-click menus, Move to, the + menu and New Section, edit mode and the arming trash, the footer's project menu, the add row as a drop target (`sidebar/_lib.mjs` seeds the notes; each script gets its own app) |
 | `perf` | typing / scroll / pen frame times on a long note (generous limits; numbers are printed as notes) |
 
 Each suite folder has an optional `suite.json`:

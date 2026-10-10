@@ -54,31 +54,6 @@ button { font: inherit; color: inherit; }
 
 .app { display: flex; height: 100%; }
 
-/* The sidebar is a plain flex child, shown or hidden — never a split-view
-   column, because the bar above it has to stay put. */
-.sidebar {
-  width: 232px;
-  flex: 0 0 232px;
-  display: flex;
-  flex-direction: column;
-  background: var(--wm-chrome);
-  border-right: 1px solid var(--wm-rule);
-}
-
-.sidebar-bar {
-  display: flex;
-  align-items: center;
-  gap: 2px;
-  height: 38px;
-  padding: 0 6px;
-  -webkit-app-region: drag;
-  border-bottom: 1px solid var(--wm-rule);
-}
-
-.sidebar-bar > * { -webkit-app-region: no-drag; }
-.sidebar-bar .spacer { flex: 1; }
-.mac .sidebar-bar { padding-left: 78px; }
-
 .icon-button {
   flex: none;
   white-space: nowrap;
@@ -97,57 +72,6 @@ button { font: inherit; color: inherit; }
 .icon-button.on { background: var(--wm-accent); color: #fff; }
 
 .bar-divider { width: 1px; height: 16px; background: var(--wm-rule); margin: 0 4px; }
-
-.rows { flex: 1; overflow: auto; padding: 6px; }
-
-/* The add row: a box of its own, split down the middle — a new note on the
-   left, a new section on the right, both landing where the row is. */
-.add-row {
-  display: flex;
-  align-items: stretch;
-  margin: 2px 2px 4px;
-  border: 1px dashed var(--wm-rule);
-  border-radius: 4px;
-}
-.add-row button {
-  flex: 1;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 4px;
-  padding: 3px 0;
-  border: 0;
-  background: transparent;
-  color: var(--wm-faint);
-  font-size: 11px;
-  cursor: pointer;
-}
-.add-row button:hover { color: var(--wm-accent); }
-.add-row .split { width: 1px; background: var(--wm-rule); margin: 3px 0; }
-.add-row svg { display: block; }
-
-.note-row, .section-row {
-  display: block;
-  width: 100%;
-  text-align: left;
-  border: 0;
-  background: transparent;
-  border-radius: 5px;
-  padding: 4px 6px;
-  cursor: pointer;
-}
-.note-row:hover, .section-row:hover { background: var(--wm-rule); }
-.note-row.open { background: var(--wm-accent); color: #fff; }
-.note-row.open .snippet { color: rgba(255, 255, 255, 0.75); }
-.note-row .title { font-size: 12.5px; }
-.note-row .snippet {
-  font-size: 11px;
-  color: var(--wm-faint);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-.section-row { font-size: 12px; font-weight: 600; color: var(--wm-soft); }
 
 .pane { flex: 1; display: flex; flex-direction: column; min-width: 0; }
 
@@ -592,10 +516,6 @@ button { font: inherit; color: inherit; }
 .icon-button:disabled { opacity: 0.35; cursor: default; background-color: transparent; }
 .icon-button.on:disabled { background-color: transparent; }
 
-/* The bar over the list: 44 points, its buttons right-aligned. */
-.sidebar-bar { height: 44px; }
-.sidebar-bar .icon-button { width: 22px; }
-
 /* The video's switch and its chevron are one control. */
 .bar-split { position: relative; display: inline-flex; align-items: center; border-radius: 5px;
   background: color-mix(in srgb, var(--wm-rule) 35%, transparent); }
@@ -626,23 +546,6 @@ select.chevron option { color: var(--wm-text); background: var(--wm-chrome); }
 .video-pop .tick { width: 16px; flex: none; }
 .video-pop .none { padding: 4px 8px; color: var(--wm-faint); }
 .video-pop hr { border: 0; border-top: 1px solid var(--wm-rule); margin: 4px 2px; }
-
-/* Rows: edit mode puts duplicate and a two-click trash on each. */
-.note-row, .section-row { display: flex; align-items: center; gap: 6px; }
-.note-row .text { flex: 1; min-width: 0; }
-.section-row .name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.section-row .count { font-size: 10px; font-weight: 400; color: var(--wm-faint); }
-.row-buttons { display: inline-flex; gap: 2px; flex: none; }
-.row-button {
-  flex: none; display: inline-flex; align-items: center; justify-content: center;
-  width: 22px; height: 22px; padding: 0; border: 0; border-radius: 5px;
-  background: transparent; color: var(--wm-soft); cursor: pointer;
-}
-.row-button:hover { background: var(--wm-rule); }
-.row-button.trash.armed { background: #d9382c; color: #fff; }
-.note-row.open .row-button { color: #fff; }
-.note-row.open .row-button:hover { background: rgba(255, 255, 255, 0.25); }
-.note-row.open .row-button.armed { background: #d9382c; }
 
 /* The text bar: sections, each with a grip that puts it away. */
 .bar-group { display: inline-flex; align-items: center; gap: 1px; flex: none; position: relative; }

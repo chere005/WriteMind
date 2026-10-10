@@ -3,7 +3,7 @@
  * so they can be tested on their own.
  */
 
-import type { Note } from "@writemind/core"
+import { isInside, type Note } from "@writemind/core"
 import { folderOf } from "./paths"
 import type { Section } from "./wm"
 
@@ -134,4 +134,80 @@ export function distinctNotes(root: Section, caseBlind: boolean): number {
   }
   walk(root)
   return seen.size
+}
+
+// MARK: - Move to ▸
+
+/** A place a note can be moved to, as the Move to menu lists it. */
+export interface MoveTarget {
+  path: string
+  name: string
+  /** How deep it is in the tree, from the project's folders (0) down: the menu indents by it. */
+  depth: number
+  /** The note's own section: greyed, it is where the note already is. */
+  here: boolean
+}
+
+const sameFolderPath = (a: string, b: string, caseBlind: boolean): boolean => {
+  const clean = (path: string) => path.replace(/\\/g, "/").replace(/\/+$/, "")
+  return caseBlind ? clean(a).toLowerCase() === clean(b).toLowerCase() : clean(a) === clean(b)
+}
+
+/**
+ * The places a note can go, in the tree's own order, each at the depth it has there (so the menu reads as the sidebar
+ * does): the project's folders, and every section inside them. The note's own folder is `here` (greyed). A folder that
+ * is both a project folder and inside another is listed where it stands each time, so a person finds it where they look.
+ */
+export function moveTargets(root: Section | null, notePath: string, caseBlind = false): MoveTarget[] {
+  if (!root) return []
+  const own = folderOf(notePath)
+  const out: MoveTarget[] = []
+  const walk = (section: Section, depth: number) => {
+    out.push({ path: section.path, name: section.name, depth, here: sameFolderPath(section.path, own, caseBlind) })
+    for (const child of section.sections) walk(child, depth + 1)
+  }
+  if (root.path === "") for (const one of root.sections) walk(one, 0)
+  else walk(root, 0)
+  return out
+}
+
+// MARK: - Dropping on the add row
+
+/** What a row dragged by the sidebar carries (`Sidebar.tsx`). */
+export interface DraggedRow { kind: "note" | "section"; path: string }
+
+/** What a drop on a section's add row does; the caller runs it. */
+export type AddRowDrop =
+  | { kind: "place"; file: string; folder: string; before: string | null }
+  | { kind: "move-section"; folder: string; target: string }
+
+const baseOf = (path: string): string => path.split(/[\\/]/).pop() ?? path
+
+/**
+ * A row dropped on a section's "New note" row: the add row is where a new note would land, at the top of the section, so a
+ * dropped note lands there too — before the section's first note (null: the end, when the section has none). A note that is
+ * already first in that section, and a section dropped where it already is or into itself, change nothing (null).
+ */
+export function addRowDrop(item: DraggedRow, section: Section, caseBlind = false): AddRowDrop | null {
+  if (item.kind === "note") {
+    const first = section.notes.find((one) => !sameFolderPath(one.path, item.path, caseBlind))
+    const alreadyFirst = sameFolderPath(folderOf(item.path), section.path, caseBlind) && section.notes[0] !== undefined
+      && sameFolderPath(section.notes[0].path, item.path, caseBlind)
+    if (alreadyFirst) return null
+    return { kind: "place", file: item.path, folder: section.path, before: first ? baseOf(first.path) : null }
+  }
+  if (isInside(section.path, item.path) || sameFolderPath(folderOf(item.path), section.path, caseBlind)) return null
+  return { kind: "move-section", folder: item.path, target: section.path }
+}
+
+// MARK: - Walking the results with the arrow keys
+
+/** The result a key moves to (the list does not wrap: Down at the last stays, Up at the first goes back to the field, −1). */
+export function stepResult(active: number, key: string, count: number): number {
+  if (count === 0) return -1
+  if (key === "ArrowDown") return Math.min(count - 1, active + 1)
+  if (key === "ArrowUp") return active <= 0 ? -1 : Math.min(count - 1, active - 1)
+  if (key === "Home") return 0
+  if (key === "End") return count - 1
+  return active
 }

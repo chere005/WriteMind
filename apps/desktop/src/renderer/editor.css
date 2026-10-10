@@ -56,16 +56,6 @@
 }
 .link-banner button:hover { background: rgba(255, 255, 255, 0.2); }
 
-/* A row being dragged, and the line a dropped row would land above. */
-.note-row.dragging, .section-row.dragging { opacity: 0.4; }
-/* (inside the row: a row that is not on the page is not laid out or painted - see below - and paint containment would clip a shadow above it) */
-.note-row.drop-above { box-shadow: inset 0 2px 0 var(--wm-accent); }
-/* A list of thousands costs only the rows on show: the browser skips style, layout and paint for the rest. */
-.note-row { content-visibility: auto; contain-intrinsic-size: auto 42px; }
-.section-row { content-visibility: auto; contain-intrinsic-size: auto 26px; }
-.section-row.drop-into { outline: 2px solid var(--wm-accent); outline-offset: -2px; }
-.rows.drop-root { outline: 2px dashed var(--wm-accent); outline-offset: -2px; }
-
 /* The text-style popover. */
 .style-pop {
   position: absolute;

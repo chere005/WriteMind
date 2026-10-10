@@ -39,7 +39,8 @@ import { Notebook, type ViewState } from "./Notebook"
 import { LinkBanner, type LinkRequest } from "./LinkBanner"
 import { FindBar, type FindRequest } from "./FindBar"
 import { KeyList } from "./KeyList"
-import { Sidebar, SidebarBar } from "./Sidebar"
+import { Sidebar } from "./Sidebar"
+import { useOpenFound } from "./foundOpen"
 import { TopBar, TOOL_GROUPS, type ToolGroupId } from "./TopBar"
 import { runEditorCommand } from "./editorCommands"
 import { useChrome } from "./useChrome"
@@ -138,6 +139,8 @@ export function App() {
   const [linking, setLinking] = useState<LinkRequest | null>(null)
   // Find in the note (the Mac's find bar); `lastQuery` is what Find Next goes on looking for with the bar away.
   const [finding, setFinding] = useState<FindRequest | null>(null)
+  // Search Notes (⇧⌘F) asked for the sidebar's field (the sidebar may have to open first: it takes the keyboard when it is there).
+  const [searchAsk, setSearchAsk] = useState(false)
   /** Help ▸ Keyboard Shortcuts is up (KeyList.tsx). */
   const [showKeys, setShowKeys] = useState(false)
   // File ▸ Clean Up Unused Files… (CleanUpDialog.tsx, main/housekeeping.ts).
@@ -1464,6 +1467,10 @@ export function App() {
     setShowEditor(!showEditor)
   }
   const targetFolder = (): string => targetFolderOf(current, root)
+  // A result of the sidebar's search opens at the first place its words are, with the Find bar on them (foundOpen.ts).
+  const openFound = useOpenFound({
+    view, current, text: () => textRef.current, openNote, finding, setFinding,
+  })
 
   // The pen's buttons and ExpressKeys, for what only this component owns: the
   // pen's colour and width and whether the pen is down (penActions.ts).
@@ -1554,6 +1561,8 @@ export function App() {
         return
       }
       case "toggleSidebar": setShowSidebar((was) => !was); return
+      // ⇧⌘F: the sidebar's search field (the sidebar is brought back first, out of the picture's full window too).
+      case "searchNotes": setCameraFullWindow(false); setShowSidebar(true); setSearchAsk(true); return
       // Two independent switches, as on the Mac: the preview / editor mode, and whether the
       // markdown editor shows its markers (the choice is remembered; it is the editor's, so the
       // rendered page, which always puts its marks away, does not need it).
@@ -1652,8 +1661,10 @@ export function App() {
         <Sidebar
           root={root}
           openNote={current}
-          editing={editing}
+          editing={editing} onEditing={setEditing}
+          newIn={targetFolder()}
           onOpen={(note) => { void openNote(note) }}
+          onOpenFound={(note, hit, typed) => openFound(note, hit, typed)}
           onNewNote={(folder) => { void newNote(folder) }}
           onNewSection={(parent) => { void newSection(parent) }}
           onPlaceNote={(file, folder, before) => { void placeNote(file, folder, before) }}
@@ -1663,25 +1674,10 @@ export function App() {
           onTrashSection={(section) => { void trashSection(section) }}
           onRenameNote={(note, name) => renameNoteTo(note, name)}
           onRenameSection={(section, name) => renameSectionTo(section, name)}
+          searchAsk={searchAsk} onSearchTaken={() => setSearchAsk(false)}
           project={project} platform={kind}
           onProjectCommand={(id) => { if (id === "cleanUp") setCleanUp(true); else void window.wm.runMain(id) }}
           onReveal={(path) => { void window.wm.reveal(path) }}
-          header={(
-            <SidebarBar
-              platform={kind}
-              editing={editing} onEditing={setEditing}
-              onNewSection={() => { void newSection(targetFolder()) }}
-              newSectionIn={targetFolder().split(/[\\/]/).pop() || "the notes folder"}
-              rendered={rendered} hasNote={hasNote}
-              onToggleRendered={() => setRendered((was) => !was)}
-              camera={showCamera} onToggleCamera={toggleCameraPane}
-              cameras={cameras} cameraId={sourceId}
-              onPickCamera={(id) => run(`camera:${id}`)}
-              onCameraOff={() => run("cameraOff")}
-              onRefreshCameras={() => { void refreshCameras() }}
-              notesPane={showEditor} onToggleNotesPane={toggleEditorPane}
-            />
-          )}
         />
       </div>)}
       <div className="pane" style={showEditor && !cameraFullWindow ? undefined : { display: "none" }}>

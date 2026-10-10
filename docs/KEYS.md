@@ -69,6 +69,7 @@ Mac app's own chord; "—" is a port-only key.
 | Edit | Find Next | F3 | ⌘G |
 | Edit | Find Previous | Shift+F3 | ⇧⌘G |
 | Edit | Jump to Selection | Ctrl+J | ⌘J |
+| Edit | Search Notes… | Ctrl+Shift+F | ⇧⌘F |
 | View | Show / Hide Notes Sidebar | Ctrl+K | ⌘K |
 | View | Markdown Preview / Editor | Ctrl+T | ⌘T |
 | View | Show / Hide Video | Ctrl+Shift+Y | ⌘Y |

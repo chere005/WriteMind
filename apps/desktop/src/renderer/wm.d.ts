@@ -27,6 +27,9 @@ declare global {
     wm: {
       capabilities(): Promise<Platform>
       tree(): Promise<Section>
+      /** The sidebar's search (main/notesSearch.ts): every note of the project, best first; `id` names it for `cancelSearch`. */
+      searchNotes(id: number, query: string): Promise<import("../shared/search").SearchOutcome>
+      cancelSearch(id: number): Promise<void>
       readNote(file: string): Promise<string>
       /** The file's words and drawing as they are now, WITHOUT the app taking that state as its own (the watcher's look); `adoptNote` takes it. */
       peekNote(file: string): Promise<{ text: string; drawing: string | null; token: string }>

@@ -25,6 +25,7 @@ import {
 } from "./notes"
 import { UndoJournal } from "./undoJournal"
 import { createUndoOps, type UndoOps } from "./undoOps"
+import { NotesSearch } from "./notesSearch"
 import { setAppVersion } from "./wmStore"
 import { pictureFiles } from "./macDrawing"
 import { rescueUnsaved } from "./rescue"
@@ -557,6 +558,11 @@ app.whenReady().then(async () => {
     }
   })
   ipcMain.handle("notes:tree", () => projectTree(project.folders, notesRoot(), project.name))
+  // The sidebar's search (notesSearch.ts): the tree as the sidebar lists it, searched in batches, cancellable by its id.
+  const notesSearch = new NotesSearch()
+  ipcMain.handle("notes:search", async (_event, id: number, query: string) =>
+    notesSearch.run(Number(id), await projectTree(project.folders, notesRoot(), project.name), String(query)))
+  ipcMain.handle("notes:searchCancel", (_event, id: number) => { notesSearch.cancel(Number(id)) })
   ipcMain.handle("note:duplicate", (_event, file: string) => ops!.duplicateNote(file))
   ipcMain.handle("note:read", (_event, file: string) => readNote(file))
   ipcMain.handle("note:peek", (_event, file: string) => peekNoteFile(String(file)))

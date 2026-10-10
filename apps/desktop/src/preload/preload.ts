@@ -52,6 +52,8 @@ const api = {
   update,
   capabilities: () => ipcRenderer.invoke("app:capabilities"),
   tree: () => ipcRenderer.invoke("notes:tree"),
+  searchNotes: (id: number, query: string) => ipcRenderer.invoke("notes:search", id, query),
+  cancelSearch: (id: number) => ipcRenderer.invoke("notes:searchCancel", id),
   readNote: (file: string) => ipcRenderer.invoke("note:read", file),
   peekNote: (file: string) => ipcRenderer.invoke("note:peek", file),
   adoptNote: (file: string, token: string) => ipcRenderer.invoke("note:adopt", file, token),

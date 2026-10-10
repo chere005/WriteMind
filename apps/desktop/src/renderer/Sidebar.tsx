@@ -1,72 +1,53 @@
 /**
- * The tree, flattened to the rows that show — a view that recursed here
- * could not be type-checked on the Mac and would be slower here, and the
- * flat list is what both sides draw.
+ * The notes list: the tree flattened to the rows that show — a view that recursed here could not be type-checked on the
+ * Mac and would be slower here, and the flat list is what both sides draw — and, over it, the search.
  *
- * The bar above it reads edit · add section · separator · markdown · video,
- * and NEW NOTE IS NOT ON IT: it is the add row, a box split down the middle
- * at the top of the list and at the top of every section, so the way to make
- * a note is where the note will land.
+ * THE BAR (36px, after the macOS traffic lights; docs/PLAN-bars-2026-10.md P3, Sean 2026-10-10: "i like the side bar...
+ * make the section flow better but keep the overall sidebar ux"): a search field, + (New Note; its corner triangle, a
+ * half-second hold or a right-click open New Note / New Section) and the pencil, which is today's edit mode (Sean:
+ * "yes sidebar pencil for edit"). The markdown and video buttons are not here any more: they are the tab row's, to the right
+ * of the sidebar's own button, whether the sidebar is open or shut (Sean: "keep the rendered and video buttons to the right
+ * of the sidebar always").
+ *
+ * NEW NOTE IS ALSO THE ADD ROW, one quiet row at the top of the list and of every section (Sean, 2026-09-21: "a small
+ * entry that looks like a note, where the note will land"). It is a drop target: a row dropped on it moves into that section,
+ * at the top, where a new note would land.
+ *
+ * SEARCH replaces the tree while there is a query: each result is a note's title, the section it is in and one line with the
+ * match marked (main/notesSearch.ts does the work, off the page). The arrow keys walk the results, Enter opens one and puts
+ * the Find bar on the words at the first match, Escape clears and gives the keyboard back to the notes.
  */
 
 import { memo, useEffect, useMemo, useRef, useState } from "react"
 import { stem, type Note } from "@writemind/core"
-import { shown, TABLET_SOURCE } from "../shared/commands"
-import { tip } from "./TopBar"
+import { shown } from "../shared/commands"
+import type { FoundNote, SearchOutcome } from "../shared/search"
 import { FloatingMenu, type MenuItem } from "./FloatingMenu"
+import { Icon } from "./icons"
+import { MenuButton } from "./MenuButton"
 import {
   EmptyList, isEmptyTree, listMenu, MissingFolders, noteMenu, sectionMenu, SidebarFooter, trashWord,
   type RowActions,
 } from "./SidebarProject"
 import { Prompt, type PromptSpec } from "./Prompt"
-import { canTrashSection, flatten, newlySeen, rowKeys, sectionAt } from "./sidebarTree"
+import { returnFocus } from "./focusReturn"
+import {
+  addRowDrop, canTrashSection, flatten, newlySeen, rowKeys, sectionAt, stepResult, type DraggedRow,
+} from "./sidebarTree"
+import { useNoteSearch } from "./useNoteSearch"
 import type { ProjectInfo, Section } from "./wm"
-
-/**
- * How tall the two icons on the add row are — one number, so they cannot be different heights (Mac 2ea0dcb; Sean:
- * "make the new note and new section icons the same height"). Both shapes are drawn from the top of the box to its
- * bottom: the folder used to stop half a pixel short at each end, a point shorter than the page beside it.
- */
-const ADD_ICON_HEIGHT = 13
-
-const PageIcon = () => (
-  <svg width="11" height={ADD_ICON_HEIGHT} viewBox="0 0 11 13" fill="none" aria-hidden>
-    <rect x="0.5" y="0.5" width="10" height="12" rx="2" stroke="currentColor"
-          strokeDasharray="2.5 2" />
-    <path d="M5.5 3.8v5M3 6.3h5" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" />
-  </svg>
-)
-
-const FolderIcon = () => (
-  <svg width="15" height={ADD_ICON_HEIGHT} viewBox="0 0 15 13" fill="none" aria-hidden>
-    <path d="M0.5 3.2V11.5a1 1 0 0 0 1 1h9" stroke="currentColor" />
-    <path d="M0.5 3.2V1.5a1 1 0 0 1 1-1h3l1.4 1.6h4.6a1 1 0 0 1 1 1v2"
-          stroke="currentColor" />
-    <path d="M12 7.6v4.4M9.8 9.8h4.4" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" />
-  </svg>
-)
-
-const TrashIcon = () => (
-  <svg width="12" height="13" viewBox="0 0 12 13" fill="none" aria-hidden>
-    <path d="M1 3h10M4.2 3V1.6h3.6V3M2.2 3l.6 8.4h6.4l.6-8.4M4.8 5.2v4M7.2 5.2v4"
-          stroke="currentColor" strokeWidth="1.1" strokeLinecap="round" strokeLinejoin="round" />
-  </svg>
-)
-
-const DuplicateIcon = () => (
-  <svg width="13" height="13" viewBox="0 0 13 13" fill="none" aria-hidden>
-    <rect x="3.5" y="3.5" width="8" height="8" rx="1.6" stroke="currentColor" strokeWidth="1.1" />
-    <path d="M9 1.6H3.1a1.5 1.5 0 0 0-1.5 1.5V9M7.5 5.6v4M5.5 7.6h4"
-          stroke="currentColor" strokeWidth="1.1" strokeLinecap="round" />
-  </svg>
-)
 
 interface Props {
   root: Section | null
   openNote: string | null
-  /** Edit mode: duplicate and delete on every row. */
+  /** Edit mode (the pencil): duplicate and delete on every row. */
   editing: boolean
+  onEditing(on: boolean): void
+  /** The folder + (and the empty list's buttons) work in: the open note's own, else the project's. "" when none is there. */
+  newIn: string
   onOpen(note: Note): void
+  /** A search result opened: the page puts the Find bar on `hit`'s words at the first match. */
+  onOpenFound(note: Note, hit: FoundNote, typed: string): void
   onNewNote(folder: string): void
   onNewSection(parent: string): void
   /** A note dropped on a row: into that row's folder, at that row's place (null = the end). */
@@ -83,7 +64,9 @@ interface Props {
    */
   onRenameNote?(note: Note, name: string): void | string | Promise<void | string>
   onRenameSection?(section: Section, name: string): void | string | Promise<void | string>
-  header: React.ReactNode
+  /** Search Notes (⇧⌘F) was asked for: the field takes the keyboard, and `onSearchTaken` says it did. */
+  searchAsk: boolean
+  onSearchTaken(): void
   /** The open project (its folders and the ones hidden), for the footer and the folder menus. */
   project?: ProjectInfo | null
   platform?: string
@@ -94,10 +77,13 @@ interface Props {
 
 /** What a row being dragged carries. */
 const MIME = "application/x-writemind-row"
-interface Dragged { kind: "note" | "section"; path: string }
+type Dragged = DraggedRow
 
 const folderOf = (path: string): string => path.replace(/[\\/][^\\/]*$/, "")
 const baseName = (path: string): string => path.split(/[\\/]/).pop() ?? path
+
+/** A tooltip: the name, its key, and what it does. */
+const titled = (label: string, keys: string, help: string): string => `${label}${keys ? `  (${keys})` : ""}\n${help}`
 
 /**
  * What a row calls when something happens to it. It is ONE object that lives as long as the sidebar does (a ref), and
@@ -108,28 +94,43 @@ const baseName = (path: string): string => path.split(/[\\/]/).pop() ?? path
 interface RowCtx {
   open(note: Note): void
   newNote(folder: string): void
-  newSection(parent: string): void
   duplicate(note: Note): void
   arm(key: string | null): void
   trashNote(note: Note): void
   trashSection(path: string, depth: number): void
   toggle(path: string): void
-  noteMenu(event: React.MouseEvent, note: Note, sectionPath: string): void
+  /** (`x`, `y` is where the menu opens: the pointer for a right-click, the ⋯ button's corner.) */
+  noteMenu(x: number, y: number, note: Note): void
   /** (`depth` says WHICH row: a folder inside another project folder is a row twice, as itself and as a subsection.) */
-  sectionMenu(event: React.MouseEvent, path: string, depth: number): void
+  sectionMenu(x: number, y: number, path: string, depth: number): void
   dragStart(event: React.DragEvent, item: Dragged): void
   dragEnd(): void
-  dragOver(event: React.DragEvent, path: string, mode: "above" | "into"): void
+  dragOver(event: React.DragEvent, path: string, mode: "above" | "into" | "add"): void
   dropOnNote(event: React.DragEvent, note: Note): void
   dropInto(event: React.DragEvent, folder: string): void
+  dropOnAdd(event: React.DragEvent, path: string, depth: number): void
 }
 type Ctx = { readonly current: RowCtx }
+
+/** Where a ⋯ button opens its menu: under its left edge. */
+const under = (button: HTMLElement): { x: number; y: number } => {
+  const box = button.getBoundingClientRect()
+  return { x: box.left, y: box.bottom + 2 }
+}
+
+const MoreButton = ({ open }: { open(x: number, y: number): void }) => (
+  <button type="button" className="row-more" data-row="more" tabIndex={-1} aria-haspopup="menu" aria-label="More"
+          title="More"
+          onClick={(event) => { event.stopPropagation(); const at = under(event.currentTarget); open(at.x, at.y) }}
+          onDoubleClick={(event) => event.stopPropagation()}>
+    <Icon name="more" size={14} />
+  </button>
+)
 
 interface NoteRowProps {
   ctx: Ctx
   note: Note
   indent: number
-  sectionPath: string
   open: boolean
   dragging: boolean
   over: boolean
@@ -139,7 +140,7 @@ interface NoteRowProps {
 
 const sameNoteRow = (a: NoteRowProps, b: NoteRowProps): boolean =>
   a.note.path === b.note.path && a.note.title === b.note.title && a.note.snippet === b.note.snippet
-  && a.indent === b.indent && a.sectionPath === b.sectionPath && a.open === b.open && a.dragging === b.dragging
+  && a.indent === b.indent && a.open === b.open && a.dragging === b.dragging
   && a.over === b.over && a.editing === b.editing && a.armed === b.armed
 
 const TrashButton = ({ ctx, armedNow, id, what, act }: { ctx: Ctx; armedNow: boolean; id: string; what: string; act: () => void }) => (
@@ -148,36 +149,50 @@ const TrashButton = ({ ctx, armedNow, id, what, act }: { ctx: Ctx; armedNow: boo
           onClick={(event) => {
             event.stopPropagation()
             if (armedNow) { ctx.current.arm(null); act() } else ctx.current.arm(id)
-          }}><TrashIcon /></button>
+          }}><Icon name="trash" size={14} /></button>
 )
 
-const NoteRow = memo(function NoteRow({ ctx, note, indent, sectionPath, open, dragging, over, editing, armed }: NoteRowProps) {
+/** A row is a button: Enter and Space press it, and the menu key (or Shift+F10) opens its menu where it stands. */
+function rowPress(event: React.KeyboardEvent<HTMLElement>, press: () => void, menu: (x: number, y: number) => void): void {
+  if (event.target !== event.currentTarget) return
+  if (event.key === "Enter" || event.key === " ") { event.preventDefault(); press() }
+  else if (event.key === "ContextMenu" || (event.key === "F10" && event.shiftKey)) {
+    event.preventDefault()
+    const box = event.currentTarget.getBoundingClientRect()
+    menu(box.left + 24, box.bottom - 4)
+  }
+}
+
+const NoteRow = memo(function NoteRow({ ctx, note, indent, open, dragging, over, editing, armed }: NoteRowProps) {
   const classes = ["note-row"]
   if (open) classes.push("open")
   if (dragging) classes.push("dragging")
   if (over) classes.push("drop-above")
+  const menu = (x: number, y: number) => ctx.current.noteMenu(x, y, note)
   return (
-    <div role="button" tabIndex={0} className={classes.join(" ")} style={{ paddingLeft: indent * 14 }} data-path={note.path}
+    <div role="button" tabIndex={0} className={classes.join(" ")} style={{ paddingLeft: 8 + indent * 16 }} data-path={note.path}
          onClick={() => ctx.current.open(note)}
-         onContextMenu={(event) => ctx.current.noteMenu(event, note, sectionPath)}
+         onKeyDown={(event) => rowPress(event, () => ctx.current.open(note), menu)}
+         onContextMenu={(event) => { event.preventDefault(); event.stopPropagation(); menu(event.clientX, event.clientY) }}
          draggable
          onDragStart={(event) => ctx.current.dragStart(event, { kind: "note", path: note.path })}
          onDragEnd={() => ctx.current.dragEnd()}
          onDragOver={(event) => ctx.current.dragOver(event, note.path, "above")}
          onDrop={(event) => ctx.current.dropOnNote(event, note)}>
+      <Icon name="doc" size={15} className="row-icon" />
       <div className="text">
-        <div className="title">{note.title}</div>
+        <div className="title" title={note.title}>{note.title}</div>
         {note.snippet && <div className="snippet">{note.snippet}</div>}
       </div>
-      {editing && (
+      {editing ? (
         <span className="row-buttons">
           <button className="row-button" data-duplicate={note.path} title="Duplicate"
                   onClick={(event) => { event.stopPropagation(); ctx.current.duplicate(note) }}>
-            <DuplicateIcon />
+            <Icon name="dup" size={14} />
           </button>
           <TrashButton ctx={ctx} armedNow={armed} id={`note:${note.path}`} what="note" act={() => ctx.current.trashNote(note)} />
         </span>
-      )}
+      ) : <MoreButton open={menu} />}
     </div>
   )
 }, sameNoteRow)
@@ -202,40 +217,107 @@ const SectionRow = memo(function SectionRow({ ctx, path, name, depth, indent, ex
   const classes = ["section-row"]
   if (dragging) classes.push("dragging")
   if (over) classes.push("drop-into")
+  const menu = (x: number, y: number) => ctx.current.sectionMenu(x, y, path, depth)
   return (
-    <div role="button" tabIndex={0} className={classes.join(" ")} style={{ paddingLeft: indent * 14 }} data-path={path}
+    <div role="button" tabIndex={0} className={classes.join(" ")} style={{ paddingLeft: 4 + indent * 16 }} data-path={path}
+         aria-expanded={expanded}
          onClick={() => ctx.current.toggle(path)}
-         onContextMenu={(event) => ctx.current.sectionMenu(event, path, depth)}
+         onKeyDown={(event) => rowPress(event, () => ctx.current.toggle(path), menu)}
+         onContextMenu={(event) => { event.preventDefault(); event.stopPropagation(); menu(event.clientX, event.clientY) }}
          draggable
          onDragStart={(event) => ctx.current.dragStart(event, { kind: "section", path })}
          onDragEnd={() => ctx.current.dragEnd()}
          onDragOver={(event) => ctx.current.dragOver(event, path, "into")}
          onDrop={(event) => ctx.current.dropInto(event, path)}>
-      <span className="name">{expanded ? "▾ " : "▸ "}{name}</span>
+      <Icon name={expanded ? "chev" : "chevr"} size={12} className="disclosure" />
+      <Icon name="folder" size={15} className="row-icon" />
+      <span className="name">{name}</span>
       {trashable
         ? <TrashButton ctx={ctx} armedNow={armed} id={`section:${path}`} what="section and its notes" act={() => ctx.current.trashSection(path, depth)} />
-        : <span className="count">{count}</span>}
+        : <><span className="count">{count}</span><MoreButton open={menu} /></>}
     </div>
   )
 })
 
-const AddRow = memo(function AddRow({ ctx, path, name, indent }: { ctx: Ctx; path: string; name: string; indent: number }) {
+const AddRow = memo(function AddRow({ ctx, path, depth, name, indent, over }: { ctx: Ctx; path: string; depth: number; name: string; indent: number; over: boolean }) {
   return (
-    <div className="add-row" style={{ paddingLeft: indent * 14 }}>
-      <button onClick={() => ctx.current.newNote(path)} title={`New note in ${name}`}>
-        <PageIcon /> New note
-      </button>
-      <div className="split" />
-      <button onClick={() => ctx.current.newSection(path)} title={`New section in ${name}`}>
-        <FolderIcon /> New section
-      </button>
-    </div>
+    <button type="button" className={`add-row${over ? " drop-over" : ""}`} style={{ paddingLeft: 8 + indent * 16 }}
+            data-add={path} title={`New note in ${name}`}
+            onClick={() => ctx.current.newNote(path)}
+            onDragOver={(event) => ctx.current.dragOver(event, path, "add")}
+            onDrop={(event) => ctx.current.dropOnAdd(event, path, depth)}>
+      <Icon name="plus" size={14} />
+      New note
+    </button>
   )
 })
+
+/** The words with the match marked. */
+function Marked({ text, mark }: { text: string; mark: { from: number; to: number } | null }) {
+  if (!mark || mark.to <= mark.from) return <>{text}</>
+  return <>{text.slice(0, mark.from)}<mark>{text.slice(mark.from, mark.to)}</mark>{text.slice(mark.to)}</>
+}
+
+/** The row a search result stands for, so the menus and Open can work on it. */
+const noteOfHit = (hit: FoundNote): Note => ({ path: hit.path, modified: hit.modified, title: hit.title, snippet: hit.snippet.text })
+
+interface ResultsProps {
+  outcome: SearchOutcome | null
+  busy: boolean
+  query: string
+  openNote: string | null
+  active: string | null
+  onActive(path: string | null): void
+  onOpen(hit: FoundNote): void
+  onMenu(event: { x: number; y: number }, hit: FoundNote): void
+}
+
+/** What the list shows while there is a query. */
+function Results({ outcome, busy, query, openNote, active, onActive, onOpen, onMenu }: ResultsProps) {
+  const list = useRef<HTMLDivElement>(null)
+  // The result the arrow keys are on stays in view.
+  useEffect(() => {
+    if (active === null) return
+    for (const row of list.current?.querySelectorAll<HTMLElement>("[data-hit]") ?? []) {
+      if (row.dataset.hit === active) { row.scrollIntoView({ block: "nearest" }); break }
+    }
+  }, [active])
+  const hits = outcome?.hits ?? []
+  return (
+    <div className="results" id="sidebar-results" ref={list} role="listbox" aria-label="Search results" aria-busy={busy} data-sidebar="results">
+      {hits.map((hit, index) => (
+        <div key={hit.path} role="option" id={`hit-${index}`} aria-selected={hit.path === active}
+             className={`hit-row${hit.path === active ? " active" : ""}${hit.path === openNote ? " open" : ""}`}
+             data-hit={hit.path}
+             onMouseMove={() => { if (hit.path !== active) onActive(hit.path) }}
+             onClick={() => onOpen(hit)}
+             onContextMenu={(event) => { event.preventDefault(); onMenu({ x: event.clientX, y: event.clientY }, hit) }}>
+          <Icon name="doc" size={15} className="row-icon" />
+          <div className="text">
+            <div className="title" title={hit.title}><Marked text={hit.title} mark={hit.titleMark} /></div>
+            {hit.snippet.text && <div className="snippet"><Marked text={hit.snippet.text} mark={hit.snippet.mark} /></div>}
+            <div className="where"><Icon name="folder" size={11} /><span>{hit.where}</span></div>
+          </div>
+          <MoreButton open={(x, y) => onMenu({ x, y }, hit)} />
+        </div>
+      ))}
+      {hits.length === 0 && (outcome === null || outcome.query !== query) && busy && <div className="status" data-sidebar="searching">Searching…</div>}
+      {hits.length === 0 && outcome !== null && outcome.query === query && (
+        <div className="status" data-sidebar="no-matches" role="status">No notes match “{query}”.</div>
+      )}
+      {outcome !== null && outcome.more && <div className="note">Showing the best {hits.length}. Type more to narrow it.</div>}
+      {outcome !== null && outcome.unreadable > 0 && (
+        <div className="note" data-sidebar="unreadable">
+          {outcome.unreadable === 1 ? "1 note could not be read" : `${outcome.unreadable} notes could not be read`}; found by name only.
+        </div>
+      )}
+    </div>
+  )
+}
 
 export function Sidebar({
-  root, openNote, editing, onOpen, onNewNote, onNewSection, onPlaceNote, onMoveSection,
-  onDuplicate, onTrashNote, onTrashSection, header, project = null, platform = "win32",
+  root, openNote, editing, onEditing, newIn, onOpen, onOpenFound, onNewNote, onNewSection, onPlaceNote, onMoveSection,
+  onDuplicate, onTrashNote, onTrashSection, searchAsk, onSearchTaken, project = null, platform = "win32",
   onProjectCommand, onReveal, onRenameNote, onRenameSection,
 }: Props) {
   const [menu, setMenu] = useState<{ x: number; y: number; items: MenuItem[] } | null>(null)
@@ -244,6 +326,7 @@ export function Sidebar({
   const actions: RowActions = {
     run: (id) => onProjectCommand?.(id),
     reveal: (path) => onReveal?.(path),
+    open: onOpen,
     newNote: onNewNote,
     newSection: onNewSection,
     renameNote: (note) => setPrompt({
@@ -281,7 +364,7 @@ export function Sidebar({
     setExpanded((was) => new Set([...was, ...fresh]))
   }, [root])
   const [dragging, setDragging] = useState<Dragged | null>(null)
-  const [over, setOver] = useState<{ path: string; mode: "above" | "into" } | null>(null)
+  const [over, setOver] = useState<{ path: string; mode: "above" | "into" | "add" } | null>(null)
   // THE TRASH BUTTON THAT HAS BEEN CLICKED ONCE: red, and the next click on it
   // deletes. There is no dialog — the Trash is the undo — and it disarms on
   // its own after a moment, or when editing ends.
@@ -350,29 +433,34 @@ export function Sidebar({
     else onMoveSection(item.path, folder)
   }
 
+  /** A drop on a section's add row: into that section, at the top, where a new note lands. */
+  const dropOnAdd = (event: React.DragEvent, path: string, depth: number) => {
+    const item = carried(event)
+    end()
+    if (!item) return
+    event.preventDefault()
+    event.stopPropagation()
+    const section = sectionAt(root, path, depth)
+    const move = section ? addRowDrop(item, section, platform === "win32") : null
+    if (!move) return
+    if (move.kind === "place") onPlaceNote(move.file, move.folder, move.before)
+    else onMoveSection(move.folder, move.target)
+  }
+
   // What the rows call. Rebuilt every render (it sees this render's state); the rows hold the ref, not its members.
   const latest: RowCtx = {
     open: onOpen,
     newNote: onNewNote,
-    newSection: onNewSection,
     duplicate: onDuplicate,
     arm: setArmed,
     trashNote: onTrashNote,
     trashSection: (path, depth) => { const section = sectionAt(root, path, depth); if (section) onTrashSection(section) },
     toggle,
-    noteMenu: (event, note, sectionPath) => {
-      event.preventDefault()
-      event.stopPropagation()
-      const section = sectionAt(root, sectionPath)
-      if (section) setMenu({ x: event.clientX, y: event.clientY, items: noteMenu(note, section, root, platform, actions) })
-    },
-    sectionMenu: (event, path, depth) => {
-      event.preventDefault()
-      event.stopPropagation()
-      const { clientX: x, clientY: y } = event
+    noteMenu: (x, y, note) => setMenu({ x, y, items: noteMenu(note, root, platform, actions) }),
+    sectionMenu: (x, y, path, depth) => {
       const section = sectionAt(root, path, depth)
       if (!section) return
-      // Asked now, at the right-click: a folder Explorer took since the last read is not real.
+      // Asked now, at the click: a folder Explorer took since the last read is not real.
       void window.wm.existing([path]).then((found) => {
         setMenu({ x, y, items: sectionMenu(section, found.length > 0, project, platform, actions) })
       })
@@ -387,10 +475,11 @@ export function Sidebar({
       if (!accepts(event)) return
       event.preventDefault()
       event.stopPropagation()
-      if (over?.path !== path) setOver({ path, mode })
+      if (over?.path !== path || over.mode !== mode) setOver({ path, mode })
     },
     dropOnNote,
     dropInto,
+    dropOnAdd,
   }
   const ctxRef = useRef<RowCtx>(latest)
   ctxRef.current = latest
@@ -403,30 +492,127 @@ export function Sidebar({
       // A project of several folders has no folder of its own to add to.
       if (row.kind === "add") {
         if (row.section.path === "") return null
-        return <AddRow key={keys[index]} ctx={ctxRef} path={row.section.path} name={row.section.name} indent={row.indent} />
+        return <AddRow key={keys[index]} ctx={ctxRef} path={row.section.path} depth={row.section.depth} name={row.section.name}
+                       indent={row.indent} over={over?.mode === "add" && over.path === row.section.path} />
       }
       if (row.kind === "section") {
         const path = row.section.path
         return (
           <SectionRow key={keys[index]} ctx={ctxRef} path={path} name={row.section.name} depth={row.section.depth} indent={row.indent}
-                      expanded={expanded.has(path)} dragging={dragging?.path === path} over={over?.path === path}
+                      expanded={expanded.has(path)} dragging={dragging?.path === path} over={over?.mode === "into" && over.path === path}
                       trashable={editing && canTrashSection(row.section)} armed={armed === `section:${path}`}
                       count={counts.get(path) ?? 0} />
         )
       }
       const note = row.note
       return (
-        <NoteRow key={keys[index]} ctx={ctxRef} note={note} indent={row.indent} sectionPath={row.section.path}
-                 open={note.path === openNote} dragging={dragging?.path === note.path} over={over?.path === note.path}
+        <NoteRow key={keys[index]} ctx={ctxRef} note={note} indent={row.indent}
+                 open={note.path === openNote} dragging={dragging?.path === note.path}
+                 over={over?.mode === "above" && over.path === note.path}
                  editing={editing} armed={armed === `note:${note.path}`} />
       )
     })
   }, [rows, counts, expanded, dragging, over, editing, armed, openNote])
 
+  // MARK: Search
+
+  const [query, setQuery] = useState("")
+  const typed = query.trim()
+  const { outcome, busy } = useNoteSearch(typed, root)
+  const searching = typed.length > 0
+  const hits = outcome?.hits ?? []
+  // The result the arrow keys are on, by its note (a result list that is searched again keeps its place).
+  const [active, setActive] = useState<string | null>(null)
+  const activeIndex = active === null ? -1 : hits.findIndex((hit) => hit.path === active)
+  const field = useRef<HTMLInputElement>(null)
+  // Enter pressed before the results for the words typed had come back: it opens the best one when they do.
+  const openWhenReady = useRef(false)
+
+  const openHit = (hit: FoundNote) => {
+    openWhenReady.current = false
+    onOpenFound(noteOfHit(hit), hit, typed)
+  }
+  useEffect(() => {
+    if (!openWhenReady.current || !outcome || outcome.query !== typed) return
+    openWhenReady.current = false
+    const first = outcome.hits[0]
+    if (first) onOpenFound(noteOfHit(first), first, typed)
+  }, [outcome]) // eslint-disable-line react-hooks/exhaustive-deps
+  // A new list starts with nothing chosen; a list searched again keeps the choice if it is still there.
+  useEffect(() => {
+    if (active !== null && !hits.some((hit) => hit.path === active)) setActive(null)
+  }, [hits]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // ⇧⌘F: the field takes the keyboard (with what was in it selected, to type over).
+  useEffect(() => {
+    if (!searchAsk) return
+    field.current?.focus()
+    field.current?.select()
+    onSearchTaken()
+  }, [searchAsk]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  const leave = () => {
+    setQuery("")
+    setActive(null)
+    openWhenReady.current = false
+    field.current?.blur()
+    // The keyboard goes back to the notes (the field was the one thing that had it).
+    window.setTimeout(returnFocus, 0)
+  }
+  const fieldKeys = (event: React.KeyboardEvent<HTMLInputElement>) => {
+    if (event.nativeEvent.isComposing) return
+    if (event.key === "Escape") { event.preventDefault(); event.stopPropagation(); leave(); return }
+    if (!searching) return
+    if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+      event.preventDefault()
+      const next = stepResult(activeIndex, event.key, hits.length)
+      setActive(next < 0 ? null : hits[next]!.path)
+    } else if (event.key === "Enter") {
+      event.preventDefault()
+      const chosen = activeIndex >= 0 ? hits[activeIndex] : outcome !== null && outcome.query === typed ? hits[0] : undefined
+      if (chosen) openHit(chosen)
+      else if (outcome === null || outcome.query !== typed) openWhenReady.current = true
+    }
+  }
+
+  const newMenu: MenuItem[] = [
+    { label: "New Note", icon: "docnew", hint: shown("newNote", platform), onClick: () => onNewNote(newIn) },
+    { label: "New Section", icon: "foldernew", dataBar: "new-section", onClick: () => onNewSection(newIn) },
+  ]
+
   return (
     <div className="sidebar">
-      {header}
-      {missing && project ? <MissingFolders project={project} actions={actions} />
+      <div className="bar-row under-lights sidebar-bar" data-sidebar="bar">
+        <label className="side-search" data-sidebar="search-field">
+          <Icon name="search" size={14} />
+          <input ref={field} type="text" role="searchbox" data-sidebar="search" placeholder="Search notes"
+                 aria-label="Search notes" aria-controls={searching ? "sidebar-results" : undefined}
+                 aria-activedescendant={searching && activeIndex >= 0 ? `hit-${activeIndex}` : undefined}
+                 title={titled("Search Notes", shown("searchNotes", platform), "Every note of the project, by its title and its words")}
+                 spellCheck={false} autoComplete="off" value={query}
+                 onChange={(event) => setQuery(event.target.value)} onKeyDown={fieldKeys} />
+          {query.length > 0 && (
+            <button type="button" className="clear" data-sidebar="search-clear" aria-label="Clear search" tabIndex={-1}
+                    onMouseDown={(event) => event.preventDefault()}
+                    onClick={() => { setQuery(""); setActive(null); field.current?.focus() }}>
+              <Icon name="close" size={10} />
+            </button>
+          )}
+        </label>
+        <MenuButton icon="plus" dataBar="new-note" title={titled("New Note", shown("newNote", platform), "In the open note's section. The corner opens New Note and New Section")}
+                    items={newMenu} onMain={() => onNewNote(newIn)} />
+        <button type="button" className={`bar-btn${editing ? " on" : ""}`} data-bar="edit"
+                aria-label={editing ? "Done Editing" : "Edit Notes"} aria-pressed={editing}
+                title={titled(editing ? "Done Editing" : "Edit Notes", "", editing ? "Put the duplicate and delete buttons away" : "Duplicate and delete on every row")}
+                onClick={() => onEditing(!editing)}>
+          <Icon name="edit" />
+        </button>
+      </div>
+      {searching ? (
+        <Results outcome={outcome} busy={busy} query={typed} openNote={openNote} active={active} onActive={setActive}
+                 onOpen={openHit}
+                 onMenu={(at, hit) => setMenu({ x: at.x, y: at.y, items: noteMenu(noteOfHit(hit), root, platform, actions) })} />
+      ) : missing && project ? <MissingFolders project={project} actions={actions} />
         : isEmptyTree(root) && root ? <EmptyList root={root} project={project} actions={actions} /> : (
       <div className={`rows${over?.path === "" ? " drop-root" : ""}`}
            onContextMenu={(event) => {
@@ -450,165 +636,6 @@ export function Sidebar({
       <SidebarFooter platform={platform} root={root} project={project} actions={actions} />
       {menu && <FloatingMenu x={menu.x} y={menu.y} items={menu.items} onClose={() => setMenu(null)} id="sidebar-menu" />}
       {prompt && <Prompt spec={prompt} onClose={() => setPrompt(null)} />}
-    </div>
-  )
-}
-
-// MARK: - The bar over the list
-
-const SlidersIcon = () => (
-  <svg width="14" height="12" viewBox="0 0 14 12" fill="none" aria-hidden>
-    <path d="M1 3h12M1 9h12" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" />
-    <circle cx="4.5" cy="3" r="1.7" fill="var(--wm-chrome)" stroke="currentColor" strokeWidth="1.2" />
-    <circle cx="9.5" cy="9" r="1.7" fill="var(--wm-chrome)" stroke="currentColor" strokeWidth="1.2" />
-  </svg>
-)
-
-const CheckIcon = () => (
-  <svg width="13" height="12" viewBox="0 0 13 12" fill="none" aria-hidden>
-    <path d="M1.5 6.5l3.4 3.4L11.5 2.5" stroke="currentColor" strokeWidth="1.6"
-          strokeLinecap="round" strokeLinejoin="round" />
-  </svg>
-)
-
-const DocIcon = ({ rich }: { rich: boolean }) => (
-  <svg width="12" height="14" viewBox="0 0 12 14" fill="none" aria-hidden>
-    <path d="M1.5 1h6l3 3v9h-9z" stroke="currentColor" strokeWidth="1.2" strokeLinejoin="round" />
-    {rich
-      ? <path d="M3.6 6.2h4.8M3.6 8.4h4.8M3.6 10.6h3" stroke="currentColor" strokeWidth="1.1" strokeLinecap="round" />
-      : <path d="M3.6 7h4.8M3.6 9.4h4.8" stroke="currentColor" strokeWidth="1.1" strokeLinecap="round" opacity="0.7" />}
-  </svg>
-)
-
-const VideoIcon = ({ on }: { on: boolean }) => (
-  <svg width="16" height="12" viewBox="0 0 16 12" fill="none" aria-hidden>
-    <rect x="0.8" y="1.8" width="9.4" height="8.4" rx="1.8" stroke="currentColor" strokeWidth="1.2"
-          fill={on ? "currentColor" : "none"} />
-    <path d="M10.6 5l4-2.2v6.4l-4-2.2z" stroke="currentColor" strokeWidth="1.2" strokeLinejoin="round"
-          fill={on ? "currentColor" : "none"} />
-    {!on && <path d="M1 11.5L15 .5" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" />}
-  </svg>
-)
-
-export interface SidebarBarProps {
-  platform: string
-  editing: boolean
-  onEditing(on: boolean): void
-  onNewSection(): void
-  newSectionIn: string
-  rendered: boolean
-  hasNote: boolean
-  onToggleRendered(): void
-  camera: boolean
-  onToggleCamera(): void
-  cameras: { id: string; name: string }[]
-  cameraId: string | null
-  onPickCamera(id: string): void
-  onCameraOff(): void
-  onRefreshCameras(): void
-  /** The notes pane is showing, and the video menu's way to put it away (the Mac's "Whole Screen"; here it is the window, never the display). */
-  notesPane?: boolean
-  onToggleNotesPane?(): void
-}
-
-/**
- * The bar over the list — the Mac's `SidebarView.header`: a spacer, Edit
- * Notes, New Section, a separator, the markdown toggle and the video's
- * switch, right-aligned, 44 points tall. New Note is not here: it is the
- * add row at the top of the list and of every section. The sidebar's own
- * switch is not here either: it is the first button of the text bar.
- */
-export function SidebarBar(props: SidebarBarProps) {
-  const [videoMenu, setVideoMenu] = useState(false)
-  useEffect(() => {
-    if (!videoMenu) return
-    const close = () => setVideoMenu(false)
-    window.addEventListener("pointerdown", close)
-    return () => window.removeEventListener("pointerdown", close)
-  }, [videoMenu])
-  const { platform, editing, camera } = props
-  return (
-    <div className="sidebar-bar">
-      <div className="spacer" />
-      <button className={`icon-button${editing ? " on" : ""}`} data-bar="edit"
-              aria-label={editing ? "Done Editing" : "Edit Notes"} aria-pressed={editing}
-              title={tip(editing ? "Done Editing" : "Edit Notes", "", editing ? "Done" : "Duplicate and delete")}
-              onClick={() => props.onEditing(!editing)}>
-        {editing ? <CheckIcon /> : <SlidersIcon />}
-      </button>
-      <button className="icon-button" data-bar="new-section" aria-label="New Section"
-              title={tip("New Section", "", `New section in ${props.newSectionIn}`)}
-              onClick={props.onNewSection}><FolderIcon /></button>
-      <div className="bar-divider" />
-      <button className={`icon-button${props.rendered ? " on" : ""}`} data-bar="markdown"
-              disabled={!props.hasNote}
-              aria-label={props.rendered ? "Rendered" : "Markdown"} aria-pressed={props.rendered}
-              title={tip(props.rendered ? "Rendered" : "Markdown", shown("toggleMode", platform),
-                props.rendered ? "Showing the note rendered — click for the markdown behind it"
-                  : "Showing the markdown — click to render it and go on typing")}
-              onClick={props.onToggleRendered}><DocIcon rich={props.rendered} /></button>
-      {/* A PANE'S SWITCH LIVES ON A DIFFERENT PANE: the video's is here, and
-          its chevron lists the cameras, as the Input Devices menu does. */}
-      <span className={`bar-split${camera ? " on" : ""}`}>
-        <button className={`icon-button${camera ? " on" : ""}`} data-bar="video"
-                aria-label={camera ? "Hide Video" : "Show Video"} aria-pressed={camera}
-                title={tip(camera ? "Hide Video" : "Show Video", shown("toggleCamera", platform),
-                  camera ? "Put the camera pane away" : "Bring the camera pane back")}
-                onClick={props.onToggleCamera}><VideoIcon on={camera} /></button>
-        <button className="icon-button chevron-button" data-bar="video-options" aria-label="Video Options"
-                title={tip("Video Options", "", "Which camera (or the tablet), and turning it off")}
-                onPointerDown={(event) => event.stopPropagation()}
-                onClick={() => setVideoMenu((was) => !was)}>▾</button>
-        {videoMenu && (
-          <div className="video-pop" onPointerDown={(event) => event.stopPropagation()}>
-            {props.cameras.length === 0 && <div className="none">No cameras found</div>}
-            {props.cameras.map((one) => (
-              <button key={one.id} onClick={() => { props.onPickCamera(one.id); setVideoMenu(false) }}>
-                <span className="tick">{props.cameraId === one.id ? "✓" : ""}</span>{one.name}
-              </button>
-            ))}
-            <button data-source="tablet" onClick={() => { props.onPickCamera(TABLET_SOURCE); setVideoMenu(false) }}>
-              <span className="tick">{props.cameraId === TABLET_SOURCE ? "✓" : ""}</span>Tablet
-            </button>
-            <hr />
-            <button disabled={props.cameraId === null}
-                    onClick={() => { props.onCameraOff(); setVideoMenu(false) }}>
-              <span className="tick" />Turn Camera Off
-            </button>
-            <button onClick={() => { props.onRefreshCameras() }}>
-              <span className="tick" />Refresh Device List
-            </button>
-            {/* The Mac's "Picture" panel: turn it, put it back to its own size, zoom into a box. The pane owns the picture. */}
-            <hr />
-            {([
-              ["turn-left", "Turn Left", "A quarter turn anticlockwise", false],
-              ["turn-right", "Turn Right", "A quarter turn clockwise", false],
-              ["original-size", "Original Size", "The whole camera picture again, at the size it comes in", false],
-              ["resize-by-square", "Resize by Square", "Drag a box on the picture and the pane shows just that much", true],
-            ] as const).map(([action, label, help, close]) => (
-              <button key={action} data-camera-action={action} title={help}
-                      disabled={props.cameraId === null || props.cameraId === TABLET_SOURCE}
-                      onClick={() => {
-                        window.dispatchEvent(new CustomEvent("wm:camera-action", { detail: action }))
-                        // Turning is done two or three times in a row: the panel stays up. A box is finished on the picture.
-                        if (close) setVideoMenu(false)
-                      }}>
-                <span className="tick" />{label}
-              </button>
-            ))}
-            {props.onToggleNotesPane && (
-              <>
-                <hr />
-                <button data-camera-action="notes-pane" disabled={!camera}
-                        title={props.notesPane === false ? "The notes and the video side by side again" : "Put the notes away and give the window to the video"}
-                        onClick={() => { props.onToggleNotesPane?.(); setVideoMenu(false) }}>
-                  <span className="tick" />{props.notesPane === false ? "Back to Side by Side" : "Video Only (Hide Notes Pane)"}
-                </button>
-              </>
-            )}
-          </div>
-        )}
-      </span>
     </div>
   )
 }
