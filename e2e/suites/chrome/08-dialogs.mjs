@@ -119,4 +119,22 @@ async function owesTrash() {
   await key("Enter"); await sleep(1200)
   ok("Enter on the focused Move to Trash trashes it", !(await noteRows()).some((p) => /Two\.wm$/.test(p)), JSON.stringify(await noteRows()))
 }
+
+// ---- the same two dialogs from a TAB's right-click menu (the tabs branch asks with the page's Prompt, as the sidebar does)
+const tabItem = async (re) => JSON.parse(await js(`(()=>{const b=[...document.querySelectorAll('#tab-menu > .float-row > button')].find(x=>${re}.test(x.textContent.trim()));if(!b)return 'null';const r=b.getBoundingClientRect();return JSON.stringify({x:r.x+r.width/2,y:r.y+r.height/2})})()`))
+const openTabMenu = async () => {
+  const at = JSON.parse(await js(`(()=>{const r=document.querySelector('.tab').getBoundingClientRect();return JSON.stringify({x:r.x+20,y:r.y+r.height/2})})()`))
+  await rightClick(at.x, at.y); await sleep(300)
+}
+await openTabMenu()
+item = await tabItem("/^Rename/")
+await click(item.x, item.y); await waitFor(`!!document.querySelector('[data-modal="prompt"]')`)
+ok("Tab menu, Rename: the name field has the keyboard", await js(`document.activeElement?.getAttribute('aria-label') === 'Name'`), await keyboardIn())
+await owes("Tab menu Rename", "prompt")
+await openTabMenu()
+item = await tabItem("/^Move to (Recycle Bin|Trash)/")
+await click(item.x, item.y); await waitFor(`!!document.querySelector('[data-modal="prompt"]')`)
+ok("Tab menu, Move to Trash: starts on CANCEL", await js(`document.activeElement?.dataset.modal === 'cancel'`), await keyboardIn())
+await owes("Tab menu Move to Trash", "prompt")
+ok("Escape on it left the note and its tab", (await noteRows()).some((p) => /One\.wm$/.test(p)) && (await js(`!!document.querySelector('.tab')`)))
 finish()

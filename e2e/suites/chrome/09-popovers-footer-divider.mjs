@@ -2,9 +2,12 @@
 // elsewhere closes them, the keyboard goes back to the notes; the divider between the notes and the video is a visible
 // 6px column with a grip and the accent while it is dragged; the footer says what the pen is (a live region) and the page
 // carries the same chip with "Esc to stop", and that Esc really stops it; the link picker floats like the find card.
-import { ok, finish, js, sleep, waitFor, freshNote, setDoc, key, click, rightClick, drag, mouse, hover, focus, shot, centerOf, menuClick, showVideoPane, insertText, doc } from "../../lib/harness.mjs"
+import { ok, finish, js, sleep, waitFor, freshNote, setDoc, key, click, rightClick, drag, mouse, hover, focus, shot, centerOf, menuClick, showVideoPane, insertText, doc, clickEl, penMenu } from "../../lib/harness.mjs"
 import { MAC, mod, box, keyboardIn } from "../../lib/overlays.mjs"
 
+// (The scripts of a suite share one app: the pen's width, colour and tool are what 08-toolbar-pen left in the page's storage.)
+await js(`localStorage.clear()`)
+await js(`location.reload()`); await sleep(1500)
 await freshNote()
 await setDoc("Alpha para\n\nBeta para\n\nGamma", 0); await focus(); await sleep(300)
 const gone = (selector) => js(`!document.querySelector(${JSON.stringify(selector)})`)
@@ -16,7 +19,10 @@ await key("Escape"); await sleep(250)
 ok("Esc closes the maths palette", await gone('[data-math="pop"]'))
 ok("...and the keyboard is the note's", (await keyboardIn()) === "editor", await keyboardIn())
 await menuClick("insertMath"); await waitFor(`!!document.querySelector('[data-math="pop"]')`)
-await click(900, 600); await sleep(250)
+// (Elsewhere is measured from the palette, not a fixed point: the palette is 420 x 533 under the toolbar's Maths button and reaches
+// (900, 600) at 1440 x 900, so a press there is a press INSIDE it.)
+const open = await box('[data-math="pop"]')
+await click(open.x - 80, open.y + 200); await sleep(250)
 ok("a press elsewhere closes the maths palette", await gone('[data-math="pop"]'))
 await menuClick("insertMath"); await waitFor(`!!document.querySelector('[data-math="pop"]')`)
 const pop = await box('[data-math="pop"]')
@@ -66,6 +72,27 @@ await key("Escape"); await sleep(300)
 ok("while a menu is up its Esc is the menu's: it closes and the pen stays down", (await gone("#context-menu")) && (await chipText()) === "Pen · 3 px", await chipText())
 await key("Escape"); await sleep(300)
 ok("the next Esc stops the pen", (await chipText()) === "")
+
+// The chip against the bar's ONE pen button (the toolbar made the button a pen-or-eraser tool: `penSettings.tool`): the chip says what the
+// pane is doing, Pen / Eraser, and nothing once the pane is the notebook's again.
+await clickEl('[data-bar=pen]'); await sleep(300)
+ok("the pen button down (tool: pen): the chip says Pen · 3 px", (await chipText()) === "Pen · 3 px", await chipText())
+await penMenu(); await clickEl('.float-menu [data-bar=erase]'); await sleep(300)
+ok("Eraser picked from the button's menu: the chip says Eraser", (await chipText()) === "Eraser" && /^Eraser · Esc to stop$/.test(await pageChip()), `${await chipText()} / ${await pageChip()}`)
+await clickEl('[data-bar=pen]'); await sleep(300)
+ok("the eraser button up while the pen is still down under it: the chip still says Pen · 3 px (the pane takes the clicks)", (await chipText()) === "Pen · 3 px", await chipText())
+await clickEl('[data-bar=pen]'); await sleep(300)
+ok("the eraser button down again: Eraser", (await chipText()) === "Eraser", await chipText())
+await key("Escape"); await sleep(300)
+ok("Esc puts both down: the chip goes, the tool stays the eraser", (await chipText()) === "" && (await pageChip()) === "" && (await js(`/^Eraser/.test(document.querySelector('[data-bar=pen]').title)`)), await chipText())
+await clickEl('[data-bar=pen]'); await sleep(300)
+ok("the eraser button from rest: Eraser", (await chipText()) === "Eraser", await chipText())
+await clickEl('[data-bar=pen]'); await sleep(300)
+ok("and up again: no chip, the pane is the notebook's", (await chipText()) === "" && (await pageChip()) === "", await chipText())
+await penMenu(); await clickEl('.float-menu [data-bar=pen-pen]'); await sleep(300)
+ok("Pen picked from the menu: the chip says Pen · 3 px and the eraser is let go", (await chipText()) === "Pen · 3 px", await chipText())
+await key("Escape"); await sleep(300)
+ok("Esc puts the pen up and the chip goes", (await chipText()) === "" && !(await js(`document.querySelector('[data-bar=pen]').classList.contains('on')`)), await chipText())
 
 // ---- AltGr: Ctrl+Alt pen chords stand down, so { [ ] } @ \ | type (a PC's chord; a Mac's is Cmd+Option and is not AltGr)
 if (!MAC) {
