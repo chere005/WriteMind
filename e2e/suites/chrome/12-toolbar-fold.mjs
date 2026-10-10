@@ -72,7 +72,7 @@ ok("the dots' menu is captioned 'Moved here for width' (shown in small caps)", /
 ok("it lists Text box, Picture…, Table, Maths, Shapes, Move section up, Move section down — each with an icon", JSON.stringify(rows.map((r) => r[1])) === JSON.stringify(["Text box", "Picture…", "Table", "Maths", "Shapes", "Move section up", "Move section down", "Customize toolbar…"]) && rows.slice(0, 7).every((r) => r[3]), JSON.stringify(rows))
 const mac = await js(`navigator.userAgent.includes('Mac')`)
 const hintOf = (name) => rows.find((r) => r[1] === name)?.[2]
-ok("the keys are shown (this machine's, no hand-typed Ctrl on a Mac)", hintOf("Picture…") === (mac ? "Cmd+Shift+I" : "Ctrl+Shift+I") && hintOf("Maths") === (mac ? "Cmd+Shift+M" : "Ctrl+Shift+M") && hintOf("Move section up") === (mac ? "Ctrl+Cmd+Up" : "Ctrl+Up"), JSON.stringify(rows.map((r) => [r[1], r[2]])))
+ok("the keys are shown (this machine's, no hand-typed Ctrl on a Mac)", hintOf("Picture…") === (mac ? "⇧⌘I" : "Ctrl+Shift+I") && hintOf("Maths") === (mac ? "⇧⌘M" : "Ctrl+Shift+M") && hintOf("Move section up") === (mac ? "⌃⌘↑" : "Ctrl+Up"), JSON.stringify(rows.map((r) => [r[1], r[2]])))
 await shot("more-560")
 await clickEl('.float-menu [data-bar=table]'); await sleep(350)
 ok("Table from the dots writes the table cell after the caret's, the caret in its first header cell", (await doc()).includes("# One\n\nalpha words\n\n|  |  |\n| --- | --- |\n|  |  |\n|  |  |\n\n# Two"), JSON.stringify(await doc()))

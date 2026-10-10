@@ -37,13 +37,13 @@ export function videoMenu(state: VideoMenuState, act: VideoMenuActions): MenuIte
   const sources: MenuItem[] = cameras.length === 0
     ? [{ label: "No cameras found", disabled: true }]
     : cameras.map((one): MenuItem => ({
-      label: one.name, checked: cameraId === one.id, onClick: () => act.pick(one.id), dataBar: "video-source",
+      label: one.name, icon: "camera", checked: cameraId === one.id, onClick: () => act.pick(one.id), dataBar: "video-source",
     }))
   return [
     { label: "Show video", checked: camera, hint: shown("toggleCamera", platform), onClick: act.toggleVideo, dataBar: "video-show" },
     "-",
     ...sources,
-    { label: "Tablet sheet", checked: cameraId === TABLET_SOURCE, onClick: () => act.pick(TABLET_SOURCE), dataBar: "video-tablet" },
+    { label: "Tablet sheet", icon: "tablet", checked: cameraId === TABLET_SOURCE, onClick: () => act.pick(TABLET_SOURCE), dataBar: "video-tablet" },
     { label: "Turn camera off", disabled: cameraId === null, onClick: act.off, dataBar: "video-off" },
     "-",
     { label: "Turn left", keepOpen: true, disabled: !turnable, onClick: () => act.turn("turn-left"), dataBar: "video-turn-left" },

@@ -10,7 +10,7 @@
  *   .bar-row      a 36px bar            .bar-btn     a 28px icon button (.on lit, .tint softly lit)
  *   .bar-btn.menu a button that opens a menu: a small triangle in its lower-right corner (MenuButton.tsx)
  *   .bar-split    a main button and its caret (the pen)          .bar-seg   a segmented control
- *   .bar-air      12px between groups   .bar-rule  the one hairline   .bar-label  a bordered text button
+ *   .bar-air      12px between groups   .bar-btn.bordered  a bordered text button
  */
 
 :root {
@@ -96,17 +96,56 @@
 .bar-seg > .bar-btn.on { background: var(--wm-accent-fill, var(--wm-accent)); color: #fff; }
 
 .bar-air { width: 12px; flex: none; }
-.bar-rule { width: 1px; height: 18px; margin: 0 6px; background: var(--wm-rule); flex: none; }
 
 /* The macOS traffic lights sit over the sidebar's bar: the bar starts after them. */
 .mac .bar-row.under-lights { padding-left: 78px; }
 
-/* THE PAGE'S MENUS, as the wireframes draw them: roomy rows, a column for a check or an icon, captions, switches. */
-.float-menu { padding: 5px; border-radius: 9px; font-size: 12px; min-width: 200px; }
-.float-menu button { align-items: center; gap: 8px; min-height: 24px; padding: 0 8px; justify-content: flex-start; }
+/*
+ * THE PAGE'S MENUS (FloatingMenu.tsx), as the wireframes draw them: roomy rows, ONE column for the tick (kept on every row of a
+ * menu that ticks anything), a row's own icon in the text's colour, the label, a key hint on the right, captions, switches.
+ */
+.float-menu {
+  position: fixed;
+  z-index: 80;
+  min-width: 200px;
+  padding: 5px;
+  border-radius: 9px;
+  border: 1px solid var(--wm-rule);
+  background: var(--wm-chrome);
+  color: var(--wm-text);
+  box-shadow: 0 8px 24px var(--wm-shadow);
+  font-size: 12px;
+}
+.float-menu.sub { position: absolute; left: calc(100% - 2px); top: -5px; }
+.float-row { position: relative; }
+.float-menu button {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 8px;
+  width: 100%;
+  min-height: 24px;
+  padding: 0 8px;
+  text-align: left;
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--wm-text);
+  cursor: default;
+  white-space: nowrap;
+}
+.float-menu button:hover:not(:disabled), .float-menu button:focus-visible:not(:disabled) {
+  background: var(--wm-accent-fill);
+  color: #fff;
+  outline: none;
+}
+.float-menu button:disabled { color: var(--wm-faint); }
 .float-menu button .float-label { flex: 0 1 auto; }
-.float-menu button .hint { margin-left: auto; padding-left: 18px; font-size: 11px; }
+.float-menu .hint { margin-left: auto; padding-left: 18px; font-size: 11px; color: var(--wm-faint); }
+.float-menu button:hover:not(:disabled) .hint, .float-menu button:focus-visible:not(:disabled) .hint { color: rgba(255, 255, 255, 0.8); }
+.float-menu hr { border: 0; border-top: 1px solid var(--wm-rule); margin: 4px 2px; }
 .float-mark { width: 14px; flex: none; display: inline-flex; align-items: center; justify-content: center; color: var(--wm-accent); font-size: 11px; }
+.float-icon { flex: none; display: inline-flex; align-items: center; justify-content: center; }
 .float-menu button:hover:not(:disabled) .float-mark, .float-menu button:focus-visible:not(:disabled) .float-mark { color: #fff; }
 .float-menu button.danger { color: var(--wm-danger); }
 .float-menu button.danger:hover:not(:disabled), .float-menu button.danger:focus-visible:not(:disabled) { color: #fff; background: var(--wm-danger); }

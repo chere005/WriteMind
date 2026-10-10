@@ -1,7 +1,30 @@
 // shared/chord.ts: the key list draws a chord as caps, in Apple's order (⌃⌥⇧⌘) on a Mac (docs/PLAN-bars-2026-10.md P6).
 import { describe, expect, it } from "vitest"
-import { chordCaps, chordParts, modChord } from "../src/shared/chord"
+import { chordCaps, chordGlyphs, chordParts, modChord } from "../src/shared/chord"
 import { COMMANDS, shown } from "../src/shared/commands"
+
+describe("a chord as a menu's hint (the wireframes: ⇧⌘L, ⌃⌘↑)", () => {
+  it("a Mac runs the caps together in Apple's order", () => {
+    expect(chordGlyphs("Cmd+Shift+L", "darwin")).toBe("⇧⌘L")
+    expect(chordGlyphs("Ctrl+Cmd+Up", "darwin")).toBe("⌃⌘↑")
+    expect(chordGlyphs("Alt+Cmd+1", "darwin")).toBe("⌥⌘1")
+    expect(chordGlyphs("Cmd+7", "darwin")).toBe("⌘7")
+    expect(chordGlyphs("Cmd+[", "darwin")).toBe("⌘[")
+  })
+  it("a PC's menu keeps the words, and anything that is not a chord is left as it is on both", () => {
+    expect(chordGlyphs("Ctrl+Shift+L", "win32")).toBe("Ctrl+Shift+L")
+    expect(chordGlyphs("F1", "darwin")).toBe("F1")
+    expect(chordGlyphs("▸", "darwin")).toBe("▸")
+    expect(chordGlyphs("3 notes", "darwin")).toBe("3 notes")
+  })
+  it("every key the table shows on a Mac turns into caps without a word of Cmd, Ctrl, Alt or Shift left", () => {
+    for (const command of COMMANDS) {
+      const words = shown(command.id, "darwin")
+      if (!words) continue
+      expect(chordGlyphs(words, "darwin"), command.id).not.toMatch(/Cmd|Ctrl|Alt|Shift/)
+    }
+  })
+})
 
 describe("a chord as caps", () => {
   it("a Mac prints the modifiers in Apple's order, as symbols, whatever order the table wrote them in", () => {
