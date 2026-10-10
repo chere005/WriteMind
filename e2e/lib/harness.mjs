@@ -247,9 +247,10 @@ export async function key(k, o = {}) {
   let mods = modBits(o)
   if (process.platform === "darwin" && !o.raw) {
     // (A script that names the physical key — Shift+7 types "&" — is looked up by that key and keeps the key it typed.)
-    const found = macChord(o.code ? o.code.replace(/^Digit|^Key/, "") : k, mods)
+    const digit = /^Digit(\d)$/.exec(o.code ?? "")
+    const found = macChord(digit ? digit[1] : k, mods)
     mods = found.mods
-    if (!o.code) k = found.k
+    if (!digit) k = found.k
   }
   const { vk, code } = keyInfo(k, o)
   const chord = [[mods & CTRL, "Control", "ControlLeft", 17, CTRL], [mods & SHIFT, "Shift", "ShiftLeft", 16, SHIFT], [mods & ALT, "Alt", "AltLeft", 18, ALT], [mods & META, "Meta", "MetaLeft", 91, META]].filter((m) => m[0])
