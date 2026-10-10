@@ -68,11 +68,14 @@ for (const rendered of [false, true]) {
       ok(`the menu offers ${want}`, names.includes(want), JSON.stringify(names))
     }
     ok("it is a FloatingMenu (role=menu), not the old .kind-menu", (await js(`document.querySelector('#seam-kinds')?.getAttribute('role')`)) === "menu" && (await js(`!document.querySelector('.kind-menu')`)))
-    const focused = () => js(`document.activeElement?.closest('#seam-kinds') ? document.activeElement.querySelector('.float-label')?.textContent : null`)
-    const first = await focused()
+    // The overlays package's rule (docs/PLAN-bars-2026-10.md P6): the MENU has the keyboard on opening, no row is chosen; the first arrow moves onto a row.
+    const focused = () => js(`(() => { const a = document.activeElement; if (!a?.closest('#seam-kinds')) return null; return a.id === 'seam-kinds' ? '(menu)' : a.querySelector('.float-label')?.textContent })()`)
+    ok("the menu itself has the keyboard, no row is chosen yet", (await focused()) === "(menu)", JSON.stringify(await focused()))
     await key("ArrowDown"); const second = await focused()
-    ok("the keyboard is in the menu and ArrowDown moves to the next row", first && second && first !== second, JSON.stringify({ first, second }))
-    await key("ArrowUp"); ok("ArrowUp moves back", (await focused()) === first)
+    ok("the keyboard is in the menu and ArrowDown moves onto the first row", second === "Text", JSON.stringify({ second }))
+    await key("ArrowDown"); const third = await focused()
+    ok("and ArrowDown again to the next row", third === "Title", JSON.stringify({ third }))
+    await key("ArrowUp"); ok("ArrowUp moves back", (await focused()) === second)
     await key("Escape"); await sleep(200)
     ok("Escape closes the menu", (await js(`!document.querySelector('#seam-kinds')`)))
     ok("...and leaves the bar up (it is the cursor; a second Escape puts it out)", await armed())
@@ -80,7 +83,7 @@ for (const rendered of [false, true]) {
     ok("the keyboard is back in the notes", (await js(`document.activeElement?.closest('.cm-content') !== null`)))
     await key("Escape"); await sleep(100)
     ok("a second Escape puts the bar out", !(await armed()))
-    // Enter picks the focused row: ArrowDown twice from the first row is Title.
+    // Enter picks the focused row: ArrowDown twice from the menu itself is the second row, Title.
     await hover(700, await gapOf()); await sleep(150)
     const m3 = await marker(); await click(m3.cx, m3.cy); await sleep(250)
     await key("ArrowDown"); await key("ArrowDown"); await key("Enter"); await sleep(250)
