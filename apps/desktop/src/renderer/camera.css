@@ -5,8 +5,10 @@
   the header does can land on it. Dark in both themes, as the pane always was; the letterbox stays black.
 */
 
-/* (div.camera: app.css and chrome.css are loaded after this file and give .camera its old centred column.) */
+/* The video's width is the divider's: --video-w is set on .app by PaneDivider (until it has measured, the Mac's 420 : 720
+   share); the notes keep the rest. Hide Notes Pane gives the pane the window (`.app.no-editor .camera`, app.css). */
 div.camera {
+  flex: 0 0 var(--video-w, 37%); min-width: 280px; position: relative; border-left: 1px solid var(--wm-rule);
   /* The pane's own palette (the bars' tokens, bars.css, pointed at a dark ground). */
   --cam-bar: #1e1e20;
   --cam-ink: #e8e8ea;
@@ -68,6 +70,28 @@ div.camera {
   display: inline-flex; align-items: center; justify-content: center; cursor: pointer;
 }
 .camera .full-window-exit:hover { background: rgba(0, 0, 0, 0.6); }
+.camera.full-window .held-badge { left: 48px; }
+
+.camera video { width: 100%; height: 100%; object-fit: contain; background: #000; }
+
+/* The page's four corners over the viewfinder ("Straighten"). */
+.camera .quad { position: absolute; inset: 0; pointer-events: none; }
+.camera .quad polygon {
+  fill: rgba(109, 169, 240, 0.10);
+  stroke: var(--wm-accent);
+  stroke-width: 1.5;
+}
+.camera .quad-corner {
+  position: absolute;
+  width: 16px;
+  height: 16px;
+  margin: -8px 0 0 -8px;
+  border-radius: 50%;
+  background: var(--wm-accent);
+  border: 2px solid #fff;
+  cursor: grab;
+  touch-action: none;
+}
 
 /* The stage holds the video and everything that turns and zooms with it. */
 .camera .stage { position: absolute; inset: 0; overflow: hidden; background: #000; }
@@ -79,10 +103,11 @@ div.camera {
 .camera.zooming .camera-body { cursor: crosshair; }
 /* Hold image: the still in the video's place (sized and turned like it in CameraPane), the video playing on under it. */
 .camera .stage canvas.still, .camera .stage canvas.page-still { position: absolute; left: 50%; top: 50%; transform-origin: 50% 50%; }
-/* A held picture is framed and says so. */
+/* A held picture is framed and says so. The badge sits at the TOP LEFT: the toast owns the top right (a capture's "✓ Writing added"
+   used to cover a centred badge), and the full-window way out, which owns the very corner, pushes it along. */
 .camera .held-frame { position: absolute; inset: 0; z-index: 2; box-sizing: border-box; border: 2px solid var(--wm-accent); pointer-events: none; }
 .camera .held-badge {
-  position: absolute; z-index: 3; top: 10px; left: 50%; transform: translateX(-50%); display: inline-flex; align-items: center; gap: 5px;
+  position: absolute; z-index: 3; top: 10px; left: 12px; display: inline-flex; align-items: center; gap: 5px;
   padding: 3px 10px; border-radius: 999px; background: rgba(0, 0, 0, 0.72); color: #fff; font-size: 11px; font-weight: 600;
   pointer-events: none; white-space: nowrap;
 }

@@ -20,9 +20,7 @@
 .bar-btn.bordered.style { width: 110px; padding: 0 6px 0 9px; font-size: 12.5px; }
 .bar-btn.bordered.style .bar-label-text { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; text-align: left; }
 
-/* The pen: the old grey tint on a split button (app.css's video switch) is not the pen's. */
-.top-bar .bar-split { background: transparent; }
-.top-bar .bar-split.on { background: var(--wm-accent-fill, var(--wm-accent)); }
+/* The pen's split button (bars.css has its shape and its lit state): a hover is a wash, and a white one over the accent fill. */
 .top-bar .bar-split > .bar-btn:hover:not(:disabled) { background: var(--bar-fill); }
 .top-bar .bar-split.on > .bar-btn:hover:not(:disabled) { background: rgba(255, 255, 255, 0.16); }
 .pen-split-anchor { display: inline-flex; }
@@ -36,7 +34,8 @@
 .float-menu .pen-swatches { display: flex; gap: 7px; align-items: center; padding: 2px 0; }
 .float-menu .pen-swatch {
   flex: none; width: 20px; min-width: 20px; height: 20px; min-height: 20px; padding: 0; border-radius: 50%;
-  border: 1px solid rgba(0, 0, 0, 0.22); cursor: default;
+  /* A hairline in the text's own colour: the black preset is a hole in a dark menu without it. */
+  border: 1px solid color-mix(in srgb, var(--wm-text) 28%, transparent); cursor: default;
 }
 .float-menu .pen-swatch.custom { background: conic-gradient(#f2542d, #f5b700, #2fbf71, #2d7dd2, #8e44ad, #f2542d); }
 .float-menu .pen-swatch.on { box-shadow: 0 0 0 2px var(--wm-chrome), 0 0 0 3.5px var(--wm-text); }
@@ -51,17 +50,31 @@
 .float-menu button.pen-width:hover:not(:disabled), .float-menu button.pen-width:focus-visible:not(:disabled) { background: var(--bar-fill); color: var(--wm-text); }
 .float-menu .pen-width.on:hover:not(:disabled) { background: var(--bar-tint); }
 
-/* The pen menu's last row (the old Wacom chip): a row like the others, a dot for what the pen has been seen to do. */
+/* The pen menu's last row (the old Wacom chip): a row like the others, its label in the label column (the tick's column is
+   14px and the gaps 8px: FloatingMenu's rows), and a dot for what the pen has been seen to do. */
 .float-custom:has(> .pen-chip) { padding: 0; }
-.float-menu .pen-chip { width: 100%; justify-content: space-between; }
+.float-menu .pen-chip { width: 100%; justify-content: space-between; padding-left: 30px; }
 .float-menu .pen-chip .pen-dot { flex: none; margin-left: auto; }
 
 /* The pen's tablet sheet: a popover under the pen button (fixed: the bar clips what it draws outside itself). */
+.pen-pop { width: 340px; display: block; max-height: 80vh; overflow-y: auto; }
+.pen-pop h4 { margin: 12px 0 4px; font-size: 11px; text-transform: uppercase; letter-spacing: 0.04em; color: var(--wm-faint); }
+.pen-pop .pen-slot { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+.pen-pop .pen-slot select { max-width: 190px; }
+.pen-pop p { margin: 0 0 8px; line-height: 1.35; }
+.pen-pop label { display: block; margin: 4px 0; }
+.pen-pop .hint { color: var(--wm-faint); margin: 8px 0 0; }
 .pen-pop {
   z-index: 85; padding: 10px 12px; background: var(--wm-chrome); border: 1px solid var(--wm-rule); border-radius: 8px;
   box-shadow: 0 8px 24px var(--wm-shadow); font-size: 12px;
 }
 .pen-pop select, .pen-pop .icon-button { background: var(--wm-page); color: var(--wm-text); border: 1px solid var(--wm-rule); border-radius: 5px; font: inherit; }
 
-/* The Customize toolbar… checklist: a card by the pointer or under the dots. */
-.bar-context label { display: flex; align-items: center; gap: 6px; }
+/* The Customize toolbar… checklist (the sections are put away there): a card by the pointer or under the dots. */
+.bar-context {
+  position: fixed; z-index: 70; min-width: 160px; padding: 6px 10px; font-size: 12px;
+  border: 1px solid var(--wm-rule); border-radius: 8px; background: var(--wm-chrome);
+  box-shadow: 0 8px 24px var(--wm-shadow);
+}
+.bar-context .heading { color: var(--wm-faint); margin-bottom: 4px; }
+.bar-context label { display: flex; align-items: center; gap: 6px; padding: 2px 0; cursor: pointer; }
