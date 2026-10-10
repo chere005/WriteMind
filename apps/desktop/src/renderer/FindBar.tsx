@@ -119,7 +119,11 @@ export function FindBar({ view, request, onQuery, onClose }: Props) {
   const label = query.length === 0 ? "" : count.total === 0 ? "Not found" : count.index > 0 ? `${count.index} of ${count.total}` : `${count.total} found`
 
   return (
-    <div className="find-card" role="search" aria-label="Find in the note" onKeyDown={keys} data-bar="find">
+    <div className="find-card" role="search" aria-label="Find in the note" onKeyDown={keys} data-bar="find"
+         // A press on the card's buttons never takes the keyboard from where it is: Replace All turns itself off when nothing is
+         // left to replace, and a button that goes disabled under the focus hands it to the page, where Escape (the card's own key)
+         // is nobody's and the keyboard is no longer the note's. The click still arrives.
+         onMouseDown={(event) => { if (event.target instanceof Element && event.target.closest("button")) event.preventDefault() }}>
       <div className="find-row">
         <input ref={input} className="find-input" placeholder="Find" value={query} spellCheck={false}
                aria-label="Find" onChange={(event) => { typed.current = true; setQuery(event.target.value) }} />
