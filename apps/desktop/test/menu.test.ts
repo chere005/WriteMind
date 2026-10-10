@@ -191,11 +191,11 @@ describe("the application menu is the Mac's", () => {
     expect(sub(menu(), "File").find((one) => one.label === "Close Tab")!.enabled).toBe(false)
   })
 
-  it("Insert: Image…, Text Box, Maths… (port-only key), a separator, Code Block (named for its language), Maths Cell, Drawing Cell", () => {
-    expect(labels(sub(menu(), "Insert"))).toEqual(["Image…", "Text Box", "Maths…", "-", "Code Block", "Maths Cell", "Drawing Cell"])
-    expect(labels(sub(menu({ codeLanguage: "Python" }), "Insert"))).toEqual(["Image…", "Text Box", "Maths…", "-", "Python Block", "Maths Cell", "Drawing Cell"])
+  it("Insert: Image…, Text Box, Table (no key), Maths… (port-only key), a separator, Code Block (named for its language), Maths Cell, Drawing Cell", () => {
+    expect(labels(sub(menu(), "Insert"))).toEqual(["Image…", "Text Box", "Table", "Maths…", "-", "Code Block", "Maths Cell", "Drawing Cell"])
+    expect(labels(sub(menu({ codeLanguage: "Python" }), "Insert"))).toEqual(["Image…", "Text Box", "Table", "Maths…", "-", "Python Block", "Maths Cell", "Drawing Cell"])
     // The number keys beside them (Sean, 2026-10-06): Ctrl+8 Code Block, Ctrl+9 Maths Cell, Ctrl+0 Drawing Cell.
-    expect(sub(menu(), "Insert").slice(4).map((one) => one.accelerator)).toEqual(["CmdOrCtrl+8", "CmdOrCtrl+9", "CmdOrCtrl+0"])
+    expect(sub(menu(), "Insert").slice(5).map((one) => one.accelerator)).toEqual(["CmdOrCtrl+8", "CmdOrCtrl+9", "CmdOrCtrl+0"])
   })
 
   it("Ctrl+0 is the Drawing Cell's alone: no zoom role (View ▸ Actual Size) anywhere in the bar", () => {

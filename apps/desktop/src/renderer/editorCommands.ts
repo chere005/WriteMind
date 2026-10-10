@@ -16,7 +16,7 @@ import {
   type CodeLanguage, type Edit, type Heading, type ListStyle, type Range,
 } from "@writemind/core"
 import {
-  applyEdit, evaluationCell, fence, mathsCell, foldAll, foldedKeys, heading, heldCells, indentLines, list, markdownCell, mergeTheCell, outdentLines, quote,
+  applyEdit, evaluationCell, fence, mathsCell, tableCell, foldAll, foldedKeys, heading, heldCells, indentLines, list, markdownCell, mergeTheCell, outdentLines, quote,
   sectionAtCaret, selectAllOccurrences, selectNext, tagFence, toggleFold, unfoldAll, wrap,
 } from "@writemind/editor"
 import { EditorSelection } from "@codemirror/state"
@@ -105,6 +105,7 @@ export function runEditorCommand(view: EditorView, id: string, options: EditorOp
       else tagFence(fenceOf(options.codeLanguage))(view)
       return true
     case "mathsCell": mathsCell(view); return true
+    case "insertTable": tableCell(view); return true
     case "splitCell": edit(view, (text, where) => splitCell(text, where)); return true
     case "mergeCells": mergeTheCell(view); return true
     case "duplicateCell": onCells(view, (span, text) => duplicateCell(span, text)); return true
