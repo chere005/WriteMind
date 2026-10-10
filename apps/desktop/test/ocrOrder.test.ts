@@ -1,4 +1,4 @@
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, writeFileSync } from "node:fs"
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, statSync, writeFileSync } from "node:fs"
 import os from "node:os"
 import path from "node:path"
 import { fileURLToPath } from "node:url"
@@ -147,7 +147,14 @@ describe("asking the readers in order", () => {
 // THE REAL VISION HELPER, where this Mac has built it (`npm run build` puts it in out/helpers/wm-vision): it reads Japanese
 // the way the Mac app does (ja-JP first, kept only when it found Japanese), which the bundled reader's comparison needs.
 const built = path.join(desktop, "out", "main")
-const haveVision = process.platform === "darwin" && visionHelper(built) !== null && existsSync(path.join(fixtures, "ocr-japanese.png"))
+// (A helper built BEFORE the source last changed is an old build, not a failing helper: `npm run build` rebuilds it, and until it
+// has, there is nothing here to test.)
+const visionSource = path.join(desktop, "..", "..", "tools", "vision", "wm-vision.swift")
+const visionCurrent = (): boolean => {
+  const helper = visionHelper(built)
+  return helper !== null && existsSync(visionSource) && statSync(helper).mtimeMs >= statSync(visionSource).mtimeMs
+}
+const haveVision = process.platform === "darwin" && visionCurrent() && existsSync(path.join(fixtures, "ocr-japanese.png"))
 describe.skipIf(!haveVision)("the Vision helper beside the build", () => {
   const engines: OcrEngine[] = ["vision"]
   const KAIGI = String.fromCharCode(0x4f1a, 0x8b70), TOKYO = String.fromCharCode(0x6771, 0x4eac)
