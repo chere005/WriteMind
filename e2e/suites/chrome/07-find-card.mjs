@@ -62,6 +62,13 @@ ok("the match it was on is selected", on === "alpha" && (await selText()).toLowe
 const after = await scroller()
 ok("the note's top edge did not move when it went", after.y === before.y && after.h === before.h, JSON.stringify({ before, after }))
 
+// ---- Find and Replace pressed with the keyboard in the find field opens the replace row (the page leaves a field's keys alone; the card answers its own)
+await setDoc(TEXT, 0); await focus(); await key("f", mod); await sleep(250)
+ok("(the card is open with only the find row)", !(await js(`!!document.querySelector('[data-find="replace-all"]')`)))
+await key(replaceChord.key, replaceChord.opts); await sleep(300)
+ok("Find and Replace inside the find field opens the replace row and moves to it", (await js(`!!document.querySelector('[data-find="replace-all"]')`)) && (await js(`document.activeElement?.getAttribute('aria-label') === 'Replace with'`)))
+await key("Escape"); await sleep(200)
+
 // ---- Replace All is one undo
 await setDoc(TEXT, 0); await focus(); await sleep(200)
 await key(replaceChord.key, replaceChord.opts); await sleep(300)

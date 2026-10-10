@@ -18,6 +18,8 @@ import { EditorView } from "@codemirror/view"
 import { findAll, nextMatch } from "@writemind/core"
 import { findCount, findNextMatch, replaceEvery, replaceMatch, setFind } from "@writemind/editor"
 import { Icon } from "./icons"
+import { hostPlatform } from "./hostPlatform"
+import { commandForKey } from "../shared/commands"
 
 export interface FindRequest {
   /** "replace" also shows the replace row. */
@@ -106,6 +108,13 @@ export function FindBar({ view, request, onQuery, onClose }: Props) {
     if (event.key === "Escape") { event.preventDefault(); close(); return }
     const control = event.ctrlKey || event.metaKey
     if (event.key === "Enter" && !control && event.target === input.current) { event.preventDefault(); go(event.shiftKey); return }
+    // Find and Replace from inside the card: the page's key handler leaves a field's keys alone, so the card answers its own.
+    if (commandForKey(event.nativeEvent, hostPlatform())?.id === "findReplace") {
+      event.preventDefault()
+      setReplacing(true)
+      window.setTimeout(() => { replaceInput.current?.focus(); replaceInput.current?.select() }, 0)
+      return
+    }
     if (event.key === "F3") { event.preventDefault(); go(event.shiftKey); return }
     if (event.key === "Enter" && event.target === replaceInput.current) {
       event.preventDefault()
