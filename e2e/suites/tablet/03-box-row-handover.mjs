@@ -23,7 +23,9 @@ await setOrientation(0); await sleep(350)   // the feed's samples land on the sh
 const cm = JSON.parse(await js(`(()=>{const r=document.querySelector('.cm-content').getBoundingClientRect();return JSON.stringify({x:r.x,y:r.y})})()`))
 await click(cm.x + 40, cm.y + 12)
 await typeText("First paragraph.")
-await key("Enter"); await key("Enter")
+// (The note is on the rendered page, where ONE Return starts the next paragraph, a blank line and all; a second one would add
+// another blank line, and the cell lands after the blank run, so the text under test would read "\n\n\n".)
+await key("Enter")
 await typeText("Second paragraph.")
 await sleep(300)
 
