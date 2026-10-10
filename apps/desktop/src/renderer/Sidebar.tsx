@@ -285,8 +285,8 @@ function Results({ outcome, busy, query, openNote, active, onActive, onOpen, onM
   const hits = outcome?.hits ?? []
   return (
     <div className="results" id="sidebar-results" ref={list} role="listbox" aria-label="Search results" aria-busy={busy} data-sidebar="results">
-      {hits.map((hit) => (
-        <div key={hit.path} role="option" id={`hit-${hit.path}`} aria-selected={hit.path === active}
+      {hits.map((hit, index) => (
+        <div key={hit.path} role="option" id={`hit-${index}`} aria-selected={hit.path === active}
              className={`hit-row${hit.path === active ? " active" : ""}${hit.path === openNote ? " open" : ""}`}
              data-hit={hit.path}
              onMouseMove={() => { if (hit.path !== active) onActive(hit.path) }}
@@ -587,7 +587,7 @@ export function Sidebar({
           <Icon name="search" size={14} />
           <input ref={field} type="text" role="searchbox" data-sidebar="search" placeholder="Search notes"
                  aria-label="Search notes" aria-controls={searching ? "sidebar-results" : undefined}
-                 aria-activedescendant={searching && active !== null ? `hit-${active}` : undefined}
+                 aria-activedescendant={searching && activeIndex >= 0 ? `hit-${activeIndex}` : undefined}
                  title={titled("Search Notes", shown("searchNotes", platform), "Every note of the project, by its title and its words")}
                  spellCheck={false} autoComplete="off" value={query}
                  onChange={(event) => setQuery(event.target.value)} onKeyDown={fieldKeys} />

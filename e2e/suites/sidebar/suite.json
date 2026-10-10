@@ -1,1 +1,1 @@
-{ "description": "the sidebar (docs/PLAN-bars-2026-10.md P3): its bar, the search over every note (typing, arrows, Enter into the Find bar, Escape), edit mode, the + menu and New Section, Move to, the add row as a drop target" }
+{ "description": "the sidebar (docs/PLAN-bars-2026-10.md P3): its bar, the search over every note (typing, arrows, Enter into the Find bar, Escape), edit mode, the + menu and New Section, Move to, the add row as a drop target", "isolation": "script" }
