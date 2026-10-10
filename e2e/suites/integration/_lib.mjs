@@ -70,6 +70,9 @@ export const inNotes = () => js(`!!document.activeElement?.closest('.cm-content'
 export async function world() {
   // (A save writes a temporary file beside the note and renames it over: a picture taken in that instant is of the writer's
   // scaffolding. One that stays is a real finding — it is then in the `files` check.)
+  // (The autosave starts 500 ms after the last edit: a picture taken before it has even begun would see no scaffolding yet and then, a
+  // moment later in the same call, the writer's temporary file. So wait past the debounce first, then for the scaffolding to go.)
+  await sleep(700)
   for (let i = 0; i < 25 && (await listing()).some((rel) => /\.tmp$/.test(rel)); i++) await sleep(200)
   const hasEditor = await js(`!!document.querySelector('.cm-content')`)
   return {
