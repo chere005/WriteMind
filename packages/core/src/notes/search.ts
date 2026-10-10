@@ -78,12 +78,16 @@ function fold(source: string, mapped: boolean): Folded {
   return { text, from, to }
 }
 
+const NON_ASCII = /[^\u0000-\u007f]+/gu
+
 /** The text as it is searched: lower case, no accents, white space runs one space, line breaks kept. */
 export function foldSearch(source: string): string {
-  // (The common case, a note in plain ASCII, is two native passes and no loop.)
+  // (The common case, a note in plain ASCII, is two native passes and no loop; anything else loops only over its non-ASCII
+  // runs, one code point at a time as `foldMapped` does, so a note with one "é" is not slow all the way through.)
   // eslint-disable-next-line no-control-regex
-  if (/^[\u0000-\u007f]*$/.test(source)) return source.toLowerCase().replace(/[^\S\n]+/g, " ")
-  return fold(source, false).text
+  const text = /^[\u0000-\u007f]*$/.test(source) ? source
+    : source.replace(NON_ASCII, (run) => { let out = ""; for (const character of run) out += foldPoint(character); return out })
+  return text.toLowerCase().replace(/[^\S\n]+/g, " ")
 }
 
 /** The same, with the way back to the source's own positions. */
@@ -116,10 +120,16 @@ export interface NoteText {
   folded: string
 }
 
+/** A line that is only words: it starts with a letter and has none of the characters markup is made of. */
+const PLAIN = /^\p{L}[^`*_~<\\!\[|]*$/u
+
 /** A line as the note shows it, or null when it is not words (see the top of the file). */
 export function plainSearchLine(raw: string): string | null {
   const line = raw.trim()
-  if (line.length === 0 || isMarkdownMarker(line)) return null
+  if (line.length === 0) return null
+  // Most lines of most notes are words and nothing else: they start with a letter and hold no mark that markup uses.
+  if (PLAIN.test(line)) return line
+  if (isMarkdownMarker(line)) return null
   // A fence's own line (```wl, ~~~), a rule, a picture or an ink cell.
   if (/^(```|~~~)[\w+#.\-]*$/.test(line) || isRule(line) || pictureLine(line) !== null) return null
   // A table's delimiter row (| --- | :---: |).
@@ -192,21 +202,33 @@ export interface NoteHit {
 /** What a hit needs to know of the note. */
 export interface NoteFacts { title: string; stem: string; snippet: string }
 
-/** The first match of the query in the note's words, as a line of the plain text and a place in it; null when there is none. */
-function bodyMatch(query: SearchQuery, body: NoteText): { line: number; text: string; mark: Mark } | null {
-  const at = body.folded.indexOf(query.needle)
-  if (at < 0) return null
-  let line = 0
-  for (let i = body.folded.indexOf("\n"); i >= 0 && i < at; i = body.folded.indexOf("\n", i + 1)) line++
-  // The same line in the plain text (folding never adds or takes away a line break).
-  let start = 0
-  for (let k = 0; k < line; k++) start = body.plain.indexOf("\n", start) + 1
-  const stop = body.plain.indexOf("\n", start)
-  const text = body.plain.slice(start, stop < 0 ? body.plain.length : stop)
-  const mapped = foldMapped(text)
-  const inLine = mapped.text.indexOf(query.needle)
-  if (inLine < 0) return null
-  return { line, text, mark: { from: mapped.from[inLine]!, to: mapped.to[inLine + query.needle.length - 1]! } }
+/**
+ * The first match of the query in the note's words, as a line of the plain text and a place in it; null when there is none.
+ * `not` is a line that is not to count (the heading that IS the title, when the title has matched: showing it again as the
+ * line under itself says nothing).
+ */
+function bodyMatch(query: SearchQuery, body: NoteText, not: string | null): { line: number; text: string; mark: Mark } | null {
+  for (let at = body.folded.indexOf(query.needle); at >= 0; at = body.folded.indexOf(query.needle, at + 1)) {
+    let line = 0
+    for (let i = body.folded.indexOf("\n"); i >= 0 && i < at; i = body.folded.indexOf("\n", i + 1)) line++
+    // The same line in the plain text (folding never adds or takes away a line break).
+    let start = 0
+    for (let k = 0; k < line; k++) start = body.plain.indexOf("\n", start) + 1
+    const stop = body.plain.indexOf("\n", start)
+    const text = body.plain.slice(start, stop < 0 ? body.plain.length : stop)
+    if (not !== null && text === not) {
+      // (on to the next line: nothing else of this one is worth looking at)
+      const next = body.folded.indexOf("\n", at)
+      if (next < 0) return null
+      at = next
+      continue
+    }
+    const mapped = foldMapped(text)
+    const inLine = mapped.text.indexOf(query.needle)
+    if (inLine < 0) return null
+    return { line, text, mark: { from: mapped.from[inLine]!, to: mapped.to[inLine + query.needle.length - 1]! } }
+  }
+  return null
 }
 
 /** Where the query is in a short string (a title), as that string's own marks; null when it is not. */
@@ -224,7 +246,8 @@ export function markIn(query: SearchQuery, source: string): Mark | null {
  */
 export function matchNote(query: SearchQuery, note: NoteFacts, body: NoteText | null): NoteHit | null {
   const title = markIn(query, note.title)
-  const inBody = body ? bodyMatch(query, body) : null
+  // (A title that has matched is not shown again as the line under itself: the words are looked in for another line.)
+  const inBody = body ? bodyMatch(query, body, title ? note.title : null) : null
   const named = title === null ? markIn(query, note.stem) : null
   if (title === null && named === null && inBody === null) return null
   const tier: HitTier = title ? (title.from === 0 ? 0 : 1) : named ? 2 : 3

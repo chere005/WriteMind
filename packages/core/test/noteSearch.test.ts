@@ -104,8 +104,9 @@ describe("a title match", () => {
     const found = hit("heat", facts("Field Notes on Heat Flow", "Field Notes on Heat Flow", "first words"), "# Field Notes on Heat Flow\n")
     expect(found?.tier).toBe(1)
     expect(found?.titleMark).toEqual({ from: 15, to: 19 })
-    // the heading line is words too: the snippet is that line, marked
-    expect(found?.snippet.text).toBe("Field Notes on Heat Flow")
+    // the heading line IS the title: not shown again under itself, so the note's own first words are
+    expect(found?.snippet).toEqual({ text: "first words", mark: null })
+    expect(found?.line).toBeNull()
   })
 
   it("is tier 0 at the start of the title", () => {
@@ -174,10 +175,22 @@ describe("a body match", () => {
   it("is not a match when only the title has it and the words do not (the snippet is the note's own)", () => {
     const found = hit("zebra", facts("Zebra stripes", "z", "own words"), "# Zebra stripes\n")
     expect(found?.tier).toBe(0)
-    // (the heading line is words, so it is the line shown)
-    expect(found?.snippet.text).toBe("Zebra stripes")
+    expect(found?.snippet.text).toBe("own words")
     const bare = hit("zebra", facts("Zebra stripes", "z", "own words"), "x")
     expect(bare?.snippet.text).toBe("own words")
+  })
+
+  it("shows another line of the words when the title has matched and the words have the query too", () => {
+    const found = hit("heat", facts("Heat flow", "Heat flow", "first"), "# Heat flow\nthe heat rises\n")
+    expect(found?.tier).toBe(0)
+    expect(found?.snippet).toEqual({ text: "the heat rises", mark: { from: 4, to: 8 } })
+    expect(found?.line).toBe(1)
+  })
+
+  it("counts a heading line as words when it is not the title (a second heading)", () => {
+    const found = hit("later", facts("Heat flow", "Heat flow", "first"), "# Heat flow\n## Later on\n")
+    expect(found?.tier).toBe(3)
+    expect(found?.snippet.text).toBe("Later on")
   })
 
   it("does not take one line's text for another's when the folded text is shorter (ligatures, accents)", () => {
