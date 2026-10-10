@@ -103,6 +103,7 @@ export function startUpdater(host: UpdaterHost): Updater {
   const current = app.getVersion()
   const eligible = updateEligibility({
     platform: process.platform,
+    arch: process.arch,
     packaged: app.isPackaged,
     env: process.env,
     besideExe: besideExe(),

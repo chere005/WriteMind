@@ -20,8 +20,8 @@
  * ON A MAC (2026-10-05) the app is ad-hoc signed, not notarized, so Squirrel.Mac cannot replace it and
  * electron-updater is never loaded there. A packaged Mac copy (not a development or test run) looks the same way —
  * at launch when "Check on startup" is ticked, and from Help ▸ Check for Updates… — but at GitHub's releases/latest
- * answer (main/updater.ts, `latestFromGitHub` here), and only offers a release that carries this Mac's dmg. Its
- * "Updates available" has [Download] in place of [Update now] and one line, "Drag the new WriteMind into
+ * answer (main/updater.ts, `latestFromGitHub` here), and only offers a release that carries the Apple silicon dmg (an
+ * Intel Mac does not look: it is told the app is for Apple silicon). Its "Updates available" has [Download] in place of [Update now] and one line, "Drag the new WriteMind into
  * Applications to replace this one."; Download opens the release's page (`releasePage`, built from the version,
  * never a URL from the answer) in the browser. Nothing is downloaded, installed or restarted by the app itself.
  */
@@ -134,6 +134,8 @@ export interface UpdateApi {
 
 export interface CopyFacts {
   platform: string
+  /** `process.arch`. Left out, a Mac is taken to be Apple silicon (the only Mac this app is built for). */
+  arch?: string
   /** `app.isPackaged`. */
   packaged: boolean
   env: Record<string, string | undefined>
@@ -148,6 +150,9 @@ export interface CopyFacts {
   macSelfUpdates?: boolean
 }
 
+/** What an Intel Mac is told by Help ▸ Check for Updates… (a development run: no packaged Intel build exists). */
+export const INTEL_MAC_WHY = "This WriteMind is built for Apple silicon Macs (macOS 13 or newer) and does not run on an Intel Mac, so there is no newer version to offer this Mac."
+
 export type Eligibility = { ok: true; how: UpdateHow } | { ok: false; why: string }
 
 /**
@@ -159,6 +164,9 @@ export function updateEligibility(facts: CopyFacts): Eligibility {
   const { env } = facts
   const mac = facts.platform === "darwin"
   if (facts.platform !== "win32" && !mac) return { ok: false, why: "Updates come with the Windows installer; on this system, install a new version by hand." }
+  // WriteMind for the Mac is built for Apple silicon only (2026-10-10), so there is no Intel download to offer: say so
+  // rather than look, find no dmg for this chip and answer "you're up to date" about a release this Mac cannot run.
+  if (mac && facts.arch !== undefined && facts.arch !== "arm64") return { ok: false, why: INTEL_MAC_WHY }
   if (!facts.packaged || env.WRITEMIND_DEV === "1") return { ok: false, why: "This is a development run of WriteMind, which does not update itself." }
   if (env.WRITEMIND_E2E) return { ok: false, why: "This is a test run of WriteMind, which does not update itself." }
   // A Mac copy installs the update itself when it can be replaced in place (Sean, 2026-10-06: "download and install
@@ -200,9 +208,13 @@ function newerThan(release: string, current: string): boolean {
   return ours[4] !== undefined
 }
 
-/** The end of this Mac's dmg's name (electron-builder.yml's mac artifactName: WriteMind-1.0.1-mac-arm64.dmg), by `process.arch`. */
+/**
+ * The end of this Mac's dmg's name (electron-builder.yml's mac artifactName: WriteMind-3.1.0-mac-arm64.dmg), by
+ * `process.arch`. There is one dmg, for Apple silicon; any other chip has none (an Intel Mac is told so by
+ * updateEligibility before it ever looks).
+ */
 export function macDmgSuffix(arch: string): string | null {
-  return arch === "arm64" ? "-mac-arm64.dmg" : arch === "x64" ? "-mac-x64.dmg" : null
+  return arch === "arm64" ? "-mac-arm64.dmg" : null
 }
 
 /**
