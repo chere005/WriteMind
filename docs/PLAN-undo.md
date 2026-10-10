@@ -133,6 +133,13 @@ an undone Move to Trash leaves the item in the Trash too, and Redo puts the file
 * **A file step closes the typing group in progress**: CodeMirror joins typing made within half a second, and typing, a
   rename and typing again must not become one step spanning the rename (`closeTextGroups`, called when the journal records,
   undoes or redoes).
+* **The caret goes with the step** (2026-10-10, found by `e2e/suites/integration`): an Undo of a text step leaves the caret where
+  the step found it and a Redo where it left it, and so does the Undo after a Redo. The note's timeline (`editTimeline.ts`) keeps
+  both ends of every step beside its stamp and sets them after CodeMirror's own Undo / Redo (which only maps the caret the step began
+  with, and put it above a cell made at the bar and at the end of the note after a Move Section); non-history changes (a reload that
+  merged) move them with the words.
+* **Undo, Redo and Undo again of a created note works**: the second Undo keeps the note's words under a name of its own in the step's
+  backup folder (it used to collide with the first Undo's copy: "something with that name is already there").
 * **Redo is valid only while nothing new has been done since the undo.** The page tells the journal at the first edit after
   an undo (`undo:cutRedo`), and a text redo is checked against the time of the newest recorded file step.
 * **The text history survives what happens to its note.** A rename or a move keeps the editor's undo history (the state is

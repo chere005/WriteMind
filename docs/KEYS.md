@@ -233,6 +233,12 @@ text above it). The menu's Move Cell Up / Down and Duplicate Cell keep a caret o
 Duplicate) instead of selecting the whole cell; held cells stay held through the key moves and through a click on a toolbar or pane
 button (on the rendered page the browser's own selection cannot hold a drawn block, and was read back as a caret: `holdGuard`).
 
+**Where the caret is after an Undo and after a Redo** (found by `e2e/suites/integration`, 2026-10-10): an Undo gives the caret back
+where the step found it, and a Redo puts it where the step left it (inside the quote cell the + made, in the table's first header
+cell, on the words of the moved section) — and so does the Undo that follows a Redo. CodeMirror's own Redo only maps the caret the
+step began with through the change, which left it above the new cell and, after a whole-note rewrite such as Move Section, at the
+end of the note; `editTimeline.ts` keeps both ends of every step.
+
 ### Find (docs/PLAN-bars-2026-10.md P7 (e))
 
 | Key | Does |
