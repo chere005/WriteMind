@@ -207,9 +207,9 @@ describe("the feature list is true to the source", () => {
     expect(box).toContain("Bring in as Drawing Cell")
     expect(box).toContain("Copy Cell")
     expect(features("Wacom tablet")).toContain("Bring in as Drawing Cell")
-    // the dock handle
-    expect(read("apps/desktop/src/renderer/Canvas.tsx")).toContain(">⤵</button>")
-    expect(features("Drawing")).toContain("⤵")
+    // the dock control (2026-10-10: the ⤵ disc became the Dock button of the inspector over a picked object)
+    expect(read("apps/desktop/src/renderer/Inspector.tsx")).toContain("Dock into the note")
+    expect(features("Drawing")).toContain("Dock in a picked one")
   })
 
   it("the notes are what the format says: .wm holding note.mdwm; a project a small JSON file", () => {

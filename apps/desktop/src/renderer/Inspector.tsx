@@ -160,7 +160,7 @@ export function Inspector(props: Props) {
         )
       case "heads":
         return (
-          <span className="wm-insp-heads" key="heads" data-row="heads">
+          <span className="wm-insp-heads" key="heads" data-row="heads" data-insp="heads">
             {head("startHead", "none", "headnoneL", "No head at the start")}
             {head("startHead", "arrow", "headL", "A head at the start")}
             <span className="wm-insp-gap" />

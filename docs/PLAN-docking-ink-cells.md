@@ -135,7 +135,7 @@ interface Surface { cell: string | null; origin: Point /* page px */; size: Size
 
 ## (d) Docking
 
-- **The handle** `.wm-handle.wm-dock` (beside crop / read) on a PAGE selection that holds strokes and/or pictures
+- **The handle** (since 2026-10-10 the dock control of the inspector over the pick, `[data-insp=dock]`, no longer a disc `.wm-handle.wm-dock` beside crop / read: docs/PARITY.md "The handles and the inspector") on a PAGE selection that holds strokes and/or pictures
   only (`dockable(...) !== null`; a selection with shapes, arrows or text boxes shows none this round). Title:
   "Dock into the note (click: at the cursor; drag: where you let go)".
 - **What it becomes**: exactly one picture → a picture cell; anything else (ink, several pictures, ink and

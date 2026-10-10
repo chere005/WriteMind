@@ -481,7 +481,7 @@ export function Canvas({
     onChange(next)
   }, [drawing, size, onChange])
 
-  // The pen / cursor mode changing, or a tool being armed, puts the layer's pick, crop box, style bar and label
+  // The pen / cursor mode changing, or a tool being armed, puts the layer's pick, crop box, inspector and label
   // away (the Mac does the same): the handles of a picked shape no longer stay up once the pen goes down.
   const toolArmed_ = placing !== null
   const modeSeen = useRef({ mode, armed: toolArmed_ })
@@ -1811,7 +1811,9 @@ export function Canvas({
       if (event.key === "Escape" && latest.current.pop) { setPop(null); return }
       if (event.key === "Escape" && latest.current.crop) { setCrop(null); return }
       if (event.key === "Escape" && latest.current.compact) {
+        // The heads row is the arrow's moment (just drawn): Escape puts it, and the pick, away.
         setCompact(null)
+        setSelection(new Set())
         // A tool armed at the same time is put away too: one Escape, not two.
         if (latest.current.placing) onPlaced()
         return

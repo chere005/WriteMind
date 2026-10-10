@@ -40,7 +40,7 @@ export const WELCOME_FEATURES: string[] = [
   "**Maths cells:** Ctrl+9 makes one, or turns a cell's words into one; Wolfram Language, typeset when the caret leaves. Ctrl+Shift+M opens the palette.",
   "**Tables:** a pipe table (`| a | b |`) is one cell, a real table on the rendered page; Tab and Return move along it.",
   "**Rendered page:** Ctrl+T shows the note as a finished page you can still type in.",
-  "**Drawing:** pen ink, shapes, arrows, text boxes and pictures float over the note; the ⤵ handle docks them into it as cells. Ctrl+0 makes a drawing cell.",
+  "**Drawing:** ink, shapes, arrows, text boxes and pictures float over the note; Dock in a picked one's bar makes it a cell. Ctrl+0 makes a drawing cell.",
   "**Runnable cells:** Python, Wolfram, C, C++ and Rust, each with its icon and In[n] / Out[n]; Shift+Enter runs one.",
   "**Language Setup:** File ▸ Language Setup… shows which program runs each language, tests it, lets you choose another and helps you get a missing one.",
   "**Video pane:** a document camera: its box and the Writing, Page and Raw buttons bring a page in as ink or a picture; + keeps each scanned page as a tab.",

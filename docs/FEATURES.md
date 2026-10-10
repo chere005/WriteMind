@@ -225,7 +225,7 @@ is how the code is put together.
   a cross, a query, a star, boxes, circles, triangles, arrows and lines.
   Pick one and then click where it goes: it lands the size of a line of
   writing, a green tick, a red cross and a yellow query, and the handles
-  move, size and turn it from there. Drag instead of clicking to size it as
+  size and turn it from there (drag the mark itself to move it). Drag instead of clicking to size it as
   it goes down; a line or an arrow runs from the press to the release.
 - **A folder can leave the project without leaving the disk.** Right-click
   a folder in the sidebar: *Remove Folder from Project* hides it (Folder ▸
@@ -248,8 +248,13 @@ is how the code is put together.
   pen button says which mode the pane is in: press it to put the pen down
   or pick it up. With the pen **up** the notebook has the clicks: the
   words, the bars between the cells and the brackets, and the drawings are
-  things you can handle — drag one to move it, or use the buttons that
-  appear (move, turn, resize, delete). With the pen **down** it draws, and
+  things you can handle — drag one to move it. A picked one has eight
+  resize handles on its outline and a rotate dot above it, and ONE bar over
+  it (below it when there is no room above) with its name, colour, width,
+  fill, Aa, order, dock, copy and delete; a small one has a single pill with
+  turn and resize under it. A corner scales it about the opposite corner, an
+  edge of a node or a text box stretches that one way, and Delete acts on a
+  click, never on a press you let go of elsewhere. With the pen **down** it draws, and
   the pointer is a pencil over that pane and nowhere else. In either mode,
   hold **⌘ and drag** to pull a rectangle over the page: it takes
   everything it *touches*, whole or not. The mode is remembered between

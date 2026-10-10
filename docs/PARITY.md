@@ -544,12 +544,12 @@ t10 t11 t12 t17 t18 re-run against this build, all passing).
 | Marks palette = the Mac's: tick, cross, query, star, box, circle, triangle + Arrow, Both Ways, Line (`MARK_MENU_KINDS`) | fixed (listed 4) |
 | Shapes palette: the six nodes (+ Text Box, port extra) and **Arrow tool** (the Mac's "Draw arrows between nodes": stays armed, each end that lands on a node is attached) | built |
 | Alt-drag from a node draws an attached arrow without the tool | built (a lone Alt release may flash the Windows menu bar; not hardware-checked) |
-| Style bar for an arrow (head at either end, solid / dashed / dotted); opens when an arrow is drawn, and from the ◐ handle | built |
+| Heads and line of an arrow (head at either end, solid / dashed / dotted): the heads row of the inspector. Drawing an arrow shows that row ALONE beside its end (2026-10-10; before: the whole style bar over the node just joined) | built (superseded: see "The handles and the inspector" below) |
 | Colour, width, fill of the picked objects (strokes, shapes, text boxes, arrows) | built (port extra: the Mac has only the arrow bar) |
 | Group handle reads Group / Ungroup; Ctrl+G widens the selection to the whole group | fixed |
-| Move handle (✥); Shift turns in 15 degree steps | built (the Mac has both) |
+| ~~Move handle (✥)~~ gone 2026-10-10 (a drag of the object moves it; no disc); Shift turns in 15 degree steps | built (the Mac has the disc) |
 | A pasted / dropped / inserted picture, and a capture's picture, arrive picked (`DrawingHistory.select`) | built |
-| Handles never leave the pane (the Mac clamps them 14pt in); tiny marks and thin strokes spread their handles apart | fixed |
+| Handles never leave the pane (the Mac clamps them 14pt in: `PANE_INSET`); a small object has ONE pill instead of a ring (2026-10-10; it used to spread nine discs apart) | fixed |
 | Canvas follows a change of display scale without a resize (it polls `devicePixelRatio`; a media-query listener stops firing once re-armed) | fixed, checked at 1.5x and 2x by emulation only |
 | Arrow-key nudge (1pt, Shift 10pt, one undo per burst); Ctrl+C / Ctrl+X / Ctrl+V of objects, also between notes (a token line on the text clipboard; pictures are one shared media folder); Front / Back / up / down / Copy in the bar | built, port extras (the Mac has none) |
 | Snapping, alignment guides, lock, a text box's font size | the Mac has none; not built |
@@ -788,8 +788,33 @@ code), not as red wavy lines on a screenshot (an offscreen Chromium has no dicti
 |---|---|---|
 | Verifier issues from the Drawing lane list (Backspace/Delete also eating a letter, stale pick/crop swallowing keys, palette lines attached, Enter confirms a crop, label Escape flag, total `readDrawing` + unknown shape kinds, pointer ownership, burst after Undo, eraser between samples) | already fixed by the earlier lane fixer, re-checked in the code | `layerKeys.test.ts`, `drawingFix1.test.ts`, `drawingBurst.test.ts`, `e2e/suites/drawing/06-keys.mjs` (55 pass) |
 | Ctrl+C / Ctrl+X with WORDS selected in the note are the words' (the pick is let go); a caret only still copies/cuts the objects | fixed (new) | `layerKeys.test.ts`, `07-mode-and-copy.mjs` |
-| Pen / cursor mode change, or arming a tool, puts away the pick, crop box, style bar and label (Mac) | fixed (new) | `07-mode-and-copy.mjs` |
+| Pen / cursor mode change, or arming a tool, puts away the pick, crop box, inspector and label (Mac) | fixed (new) | `07-mode-and-copy.mjs` |
 | An edit that changes nothing (delete of ids already gone) records no undo step | fixed (new) | `07-mode-and-copy.mjs` |
+
+## The handles and the inspector (P5, 2026-10-10: docs/PLAN-bars-2026-10.md, docs/ui-2026-10/FinalTablet.png)
+
+PORT-ONLY. The Mac has a disc per job (turn, move, delete, dock, style, resize) and a style bar for an arrow; Sean's
+wireframe replaces them with the standard handles and ONE bar. Pure parts: `renderer/handles.ts` (26 tests:
+`handles.test.ts`) and `renderer/inspectorRules.ts` (22: `inspectorRules.test.ts`); the width ladder and swatches are
+core's (`WIDTH_LADDER`, `PRESET_COLOURS`: `widthLadder.test.ts`), shared with the pen. e2e: `drawing/11-handles-and-inspector`
+(66 checks, screenshots `drawing__11-*__rectangle / resized / bar-below / arrow-compact / multi / picture / crop`).
+
+| Item | Status | Where |
+|---|---|---|
+| A picked object has EIGHT resize handles (corners, edge middles) standing ON the dashed outline (3 px out), and a rotate dot on a stem 26 px above the top edge; hover shows them faint (a hovered picture: the outline only, as before) | built | `handleLayout`; `Canvas.tsx` |
+| Handles are never on a text box's words: they stand on its outline, not over its middle (the discs used to) | built | `11`: "no handle sits over the words" |
+| A SMALL object (long side < 48 px, or short side < 24 px: a tick, a flat stroke) has one PILL under it (turn, resize), not a ring | built | `layoutKind`, `RING_MIN` |
+| A corner scales about the OPPOSITE corner (before: about the centre); an edge scales about the middle of the opposite edge along its own axis (`resizeBy`) | built; changed from the centre pivot | `handles.ts` |
+| An edge of an unturned NODE or TEXT BOX STRETCHES: the edge moves, the opposite one holds, in that one direction (a text box only sideways: its height is its words'; the stretch floor is 24 x 16 px as drawn). A turned node, a mark, a stroke, a picture or a group scales by the edge instead. A stretch bakes into `width` / `aspect` and half the move into the transform, so arrows follow | built | `stretchedItem` |
+| The rotate dot turns about the centre; Shift: 15 degree steps (as before) | built | |
+| ONE inspector over the pick (replaces the discs and `StyleBar`): name, colour, width (the pen's six), fill, Aa (a node's or text box's label; a picture's read-the-words where the platform can), crop, order, dock, copy, delete; an arrow also its heads and line; several objects: Group / Ungroup, order, copy, delete | built | `inspectorPlan`, `Inspector.tsx` |
+| It stands above the object (clear of the rotate dot), BELOW when there is no room above, kept on the pane, never over the object (only on a pane the object fills, where it is pinned to the top) | built | `inspectorSpot` |
+| After the arrow tool (or a palette line) the bar is the heads row ALONE, beside the arrow's end on a side clear of the arrow and the nodes it joins; a press on the arrow, or any other pick, makes it the whole bar; Esc puts it and the pick away | built | `compact`, `avoid` |
+| Delete fires on a CLICK (a press and a lift on the button); a press let go elsewhere deletes nothing; it reads red (#c0392b) and is hidden while a crop or a label is being edited | built | `Inspector.tsx`; `11` |
+| Popovers (colour, width, fill, order) are portalled to the page, close on Esc (only they close), on a press elsewhere, on the same button; the bar never takes the keyboard from the note | built | `Popover`; `11` |
+| A connector alone has no ring (it keeps its segment circles); a multi-selection with an arrow in it has the ring | built | `wantsRing` |
+| While a picture is cropped the ring gives way to the crop box's corners and the bar stands clear of the crop's buttons | built | |
+| Not built | | Edge stretch inside an ink cell is not clamped to the cell (a scale was never); a stroke or picture cannot be stretched one way (the model's transform is one uniform scale); the old Escape-closes-the-style-bar |
 
 ## Projects and chrome, round 2 (fix-projects, 2026-10-04)
 
