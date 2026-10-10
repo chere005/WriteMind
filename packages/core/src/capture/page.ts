@@ -5,9 +5,8 @@
  *
  * Ported from the pure half of `WriteMind/Camera/NotebookCapture.swift`.
  * None of this is Apple's: the perspective maths is Heckbert's closed form
- * and the rest is arithmetic. What DOES need Vision on the Mac — finding
- * the page in the frame by itself, and reading handwriting — is asked for
- * through `Capabilities` and is not here.
+ * and the rest is arithmetic. What needs a program the app did not write —
+ * reading handwriting — is asked for through `Capabilities` and is not here.
  */
 
 import type { Point, Rect } from "../drawing/shapes"

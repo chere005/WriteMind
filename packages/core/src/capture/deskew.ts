@@ -1,17 +1,19 @@
 /**
  * Putting a picture, and the boxes a reader drew on it, in the SAME frame.
  *
- * Windows' OCR engine straightens a tilted picture before it reads and reports
- * every line and word box in the STRAIGHTENED frame, together with the angle it
- * turned by (`OcrResult.TextAngle`, degrees, positive = the text runs downhill,
- * i.e. clockwise on screen). The picture's own pixels are not straightened, so
- * the ink under a word's box is somewhere else: a 5 degree page puts the end
- * of a line 56 pixels away from where its box says, and every rule that looks
- * at the ink under a box (a bar through a word, an arrow in a gap, a ring)
- * misfires. Vision on the Mac gives no angle and nothing here changes for it.
+ * A reader that straightens a tilted picture before it reads reports every
+ * line and word box in the STRAIGHTENED frame, together with the angle it
+ * turned by (degrees, positive = the text runs downhill, i.e. clockwise on
+ * screen). The picture's own pixels are not straightened, so the ink under a
+ * word's box is somewhere else: a 5 degree page puts the end of a line 56
+ * pixels away from where its box says, and every rule that looks at the ink
+ * under a box (a bar through a word, an arrow in a gap, a ring) misfires. The
+ * bundled reader gives no angle (it reads the tilted line as it lies) and
+ * nothing here changes for it; the machinery stays for a reader that does,
+ * and its tests run on recorded readings.
  *
  * Two ways to bring the two together, and each caller takes the cheaper one:
- *   - the INK is turned the way the engine turned the picture (`deskewGray`),
+ *   - the INK is turned the way the reader turned the picture (`deskewGray`),
  *     which is what the marks of a whole page want: the boxes then sit on the
  *     ink, lines are horizontal again, and the rules need no idea of a tilt;
  *   - a BOX is turned back (`boxToPicture`), which is what a word standing on
@@ -21,7 +23,7 @@
 
 import type { Rect } from "../drawing/shapes"
 
-/** Below this the engine's own estimate is noise and nothing is turned. */
+/** Below this the reader's own estimate is noise and nothing is turned. */
 export const MIN_SKEW_DEGREES = 0.4
 
 /** The angle to act on: null, not finite or negligible is no angle at all. */

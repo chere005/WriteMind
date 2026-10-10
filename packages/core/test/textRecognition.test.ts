@@ -11,8 +11,7 @@ import { Canvas } from "./raster"
  * The words of a picture put together as markdown. Transcribed from
  * `WriteMindTests/TextRecognitionTests.swift`: the Swift tests draw a page
  * and ask Vision; here the reader's answer is written out by hand (boxes as
- * fractions of the picture, y down - the shape `wm-ocr.ps1` and `wm-vision`
- * give) and the page's ink is drawn in code, so the rules that put the two
+ * fractions of the picture, y down - the shape the bundled reader gives) and the page's ink is drawn in code, so the rules that put the two
  * together are the ones under test.
  */
 const W = 700, H = 200
@@ -71,15 +70,14 @@ describe("what counts as text", () => {
 describe("the reader's JSON", () => {
   it("is parsed into lines with their words, boxes kept inside the picture", () => {
     const parsed = parseOcrJson(JSON.stringify({
-      language: "en-US", installed: ["en-US"], japanese: false,
       lines: [{
         text: "Buy milk", confidence: 1, x: 0.1, y: 0.2, width: 0.5, height: 0.1,
         words: [{ text: "Buy", x: 0.1, y: 0.2, width: 0.1, height: 0.1 }, { text: "milk", x: 0.9, y: 0.2, width: 0.5, height: 0.1 }],
       }],
     }))
     if (!("reading" in parsed)) throw new Error("expected a reading")
-    expect(parsed.reading.language).toBe("en-US")
-    expect(parsed.reading.japanese).toBe(false)
+    // CHANGED 2026-10-10: a reading no longer carries the reader's language, installed languages or engine (one reader).
+    expect(Object.keys(parsed.reading)).toEqual(["lines"])
     expect(parsed.reading.lines[0]!.words).toHaveLength(2)
     // "milk" started at 0.9 and was 0.5 wide: it is cut to the picture's edge.
     expect(parsed.reading.lines[0]!.words![1]!.width).toBeCloseTo(0.1, 6)
@@ -209,7 +207,7 @@ describe("marks drawn over the words", () => {
     expect(out).toEqual(["Paris → Lyon"])
   })
   it("an arrow between two readings the engine split at the gap joins them into one line", () => {
-    // Windows' engine hands "Paris" and "Lyon" back as two lines, and says nothing of the arrow between.
+    // A reader that splits at the gap hands "Paris" and "Lyon" back as two lines, and says nothing of the arrow between.
     const { page } = pageOf((c) => {
       c.fillRect(30, 70, 150, 30)
       c.fillRect(420, 70, 120, 30)
@@ -387,11 +385,12 @@ describe("the flow chart's words", () => {
 })
 
 /**
- * PORT ONLY: the same marks, for a reader whose word boxes hug the ink (`engine: "windows"`). The rules were made
- * for Vision's line-high boxes; see `StrikeReader` and `ocrPictures.test.ts` (real readings of real pictures).
+ * PORT ONLY: the same marks, for a reader whose word boxes hug the ink (`tight: true`; it was `engine: "windows"`
+ * until 2026-10-10, when the engine left the app and the reading says what matters - how its boxes sit). The rules
+ * were made for Vision's line-high boxes; see `StrikeReader` and `ocrPictures.test.ts` (real readings of real pictures).
  */
 describe("marks on a reading whose boxes hug the ink", () => {
-  const windows = (...lines: OcrLine[]): OcrReading => ({ engine: "windows", lines })
+  const windows = (...lines: OcrLine[]): OcrReading => ({ tight: true, lines })
 
   it("a letter-sized blob the size of its word is not a ring round it", () => {
     // 'TV': one hollow-ish blob as big as the box the reader gave it.
@@ -452,7 +451,7 @@ describe("the reader's angle", () => {
       const parsed = parseOcrJson(JSON.stringify({ lines: [{ text: "hi", x: 0, y: 0, width: 0.1, height: 0.1 }], ...extra }))
       return "reading" in parsed ? parsed.reading : null
     }
-    expect(one({ angle: -2.5, engine: "windows" })).toMatchObject({ angle: -2.5, engine: "windows" })
+    expect(one({ angle: -2.5 })).toMatchObject({ angle: -2.5 })
     expect(one({ angle: null })?.angle).toBeUndefined()
     expect(one({ angle: "x" })?.angle).toBeUndefined()
   })

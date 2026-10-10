@@ -2,20 +2,17 @@
  * WHAT THIS BUILD CAN DO, in one place.
  *
  * The app runs on macOS, Windows and Linux, and it runs the same: the
- * notebook, the drawing layer, the camera, the ink lifted off the paper and
- * Export ▸ PDF are every platform's. What is NOT every platform's is the
- * one thing that needs a program the app did not write — reading
- * handwriting — and the honest question there is not "which system is
- * this" but "IS THE HELPER INSTALLED".
+ * notebook, the drawing layer, the camera, the ink lifted off the paper,
+ * reading handwriting and Export ▸ PDF are every platform's. Reading is ONE
+ * engine everywhere (the reader bundled in the app, docs/OCR-BUNDLED.md), so
+ * the only question left is not "which system is this" but "ARE ITS FILES
+ * THERE": a build made offline without the models has no reader.
  *
  * So there is no table of operating systems here. There is one rule, asked
- * once, and the shell answers the helper part by looking for a file: the
- * bundled reader's folder (every platform, when the build had its models),
- * `wm-vision` (built by `tools/build-vision.sh`) on macOS, Windows' own
- * engine, `tesseract` anywhere - in the order `OCR_ORDER` of main/helpers.ts.
- * With none of them there is no handwriting reading and nothing is shown
- * for it (no Aa on a picture, no Text in the camera's box). Nothing else in
- * the app asks `process.platform`.
+ * once, and the shell answers the helper part by looking for a file (the
+ * reader's folder, main/helpers.ts `canRead`). With none there is no
+ * handwriting reading and nothing is shown for it (no Aa on a picture, no
+ * Text in the camera's box). Nothing else in the app asks `process.platform`.
  *
  * The rule for a build that cannot do something: SAY NOTHING AND SHOW
  * NOTHING. A button that is there but dead, or a dialog explaining what
@@ -30,28 +27,15 @@
 
 import { wolframClipboardFor, type WolframClipboard } from "../export/wolfram/clipboard"
 
-/**
- * Which reader is behind `handwritingOCR`. "bundled" is the one shipped inside the app (PP-OCRv5 on onnxruntime's
- * WebAssembly build, docs/OCR-BUNDLED.md), used on every platform when its files are there.
- */
-export type OcrEngine = "bundled" | "vision" | "windows" | "tesseract"
-
 export interface Capabilities {
-  /** Reading handwriting off a captured page into markdown. */
+  /**
+   * Reading handwriting (and print, English and Japanese) off a picture into markdown: the bundled reader, the same
+   * on every platform, true when its files are beside the app.
+   */
   handwritingOCR: boolean
   /**
-   * WHICH reader: the bundled one on every platform when its files are there,
-   * else Vision on a Mac, `Windows.Media.Ocr` on Windows (nothing to install
-   * for the user's own languages), tesseract if it is on the PATH.
-   * Null when there is none.
-   */
-  ocrEngine: OcrEngine | null
-  /** Whether that reader can read Japanese here (Windows needs its optional Japanese OCR capability). */
-  japaneseOCR: boolean
-  /**
    * Finding the page in the camera's view by itself. EVERYWHERE since
-   * 2026-10-03: the Mac's Vision does it for the Mac app, and `findPage`
-   * (capture/findPage.ts, plain arrays) does it on every platform, with the
+   * 2026-10-03: `findPage` (capture/findPage.ts, plain arrays) does it, with the
    * perspective undone by `warpToPage` - so the page is found and squared up
    * with nothing installed.
    */
@@ -77,12 +61,8 @@ export interface Capabilities {
 
 /** What the shell found on this machine. */
 export interface Helpers {
-  /** The bundled reader, `wm-vision` on macOS, Windows' own OCR engine on Windows, `tesseract` anywhere. */
+  /** The bundled reader's files are beside the app. */
   ocr: boolean
-  /** Which of them answered. */
-  engine?: OcrEngine | null
-  /** Whether the reader has Japanese. */
-  japanese?: boolean
   /** Language Setup's helpers (main/helpers.ts `toolsScript`, `winget`): the shipped script, and winget. */
   languageSetup?: { script: boolean; winget: boolean }
 }
@@ -92,8 +72,6 @@ export function capabilitiesFor(platform: string, helpers: Helpers = { ocr: fals
   return {
     wolframClipboard: wolframClipboardFor(platform),
     handwritingOCR: helpers.ocr,
-    ocrEngine: helpers.ocr ? (helpers.engine ?? null) : null,
-    japaneseOCR: helpers.ocr && helpers.japanese === true,
     findsThePage: true,
     camera: true,
     pdfExport: true,

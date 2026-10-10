@@ -260,10 +260,10 @@ describe("maths", () => {
 })
 
 /**
- * PORT ONLY (no Swift twin): Windows' OCR engine boxes each word to its ink, where Vision's boxes are line-high,
+ * PORT ONLY (no Swift twin): an OCR engine (Windows' was one) that boxes each word to its ink, where Vision's boxes are line-high,
  * and the rules above - made for line-high boxes - invented marks on plain typed text. See `StrikeReader`.
  */
-describe("when the reader's word boxes hug the ink (Windows)", () => {
+describe("when the reader's word boxes hug the ink", () => {
   // A 5-letter word whose tight box is 60 x 24: one 3-wide stem to a letter, 12 columns to a letter.
   const word = r(20, 10, 60, 24)
   const letters = (): Rect[] => [0, 1, 2, 3, 4].map((i) => r(20 + i * 12, 10, 3, 24))

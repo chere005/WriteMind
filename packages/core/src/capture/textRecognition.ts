@@ -1,26 +1,24 @@
 /**
  * The words in a picture, put together as markdown. Ported from
  * `WriteMind/Camera/TextRecognition.swift` (everything in it that is not the
- * call into Vision): the reader's lines and the words in them, sorted onto
+ * call into the reader): the reader's lines and the words in them, sorted onto
  * the marks drawn on the page — a line through a word, a ring round one, an
  * arrow, a box at the head of a line, a sum — and written as the markdown the
  * Mac writes. Tests: `packages/core/test/textRecognition.test.ts`
  * (`WriteMindTests/TextRecognitionTests.swift`).
  *
- * WHICH READER IS NOT THIS FILE'S BUSINESS. macOS gives Vision's lines,
- * Windows gives `Windows.Media.Ocr`'s (apps/desktop/src/helpers/wm-ocr.ps1),
- * tesseract gives text and nothing else; all of them arrive as an
- * `OcrReading`, boxes as FRACTIONS of the picture with y DOWN, and the same
- * rules turn it into a note. A reader with no word boxes gets estimated ones
+ * WHICH READER IS NOT THIS FILE'S BUSINESS. There is one on every platform
+ * (the bundled one, apps/desktop/src/main/bundledOcr.ts); its answer arrives
+ * as an `OcrReading`, boxes as FRACTIONS of the picture with y DOWN, and these
+ * rules turn it into a note. A line with no word boxes gets estimated ones
  * (a line's box shared out by letters), enough to say which word has a bar
- * through it. A reader with no per-character boxes (Windows) cannot raise a
+ * through it. A reader with no per-character boxes (this one) cannot raise a
  * digit into a power; that is the one rule of the Mac's that this data
  * cannot carry.
  */
 
 import type { Rect } from "../drawing/shapes"
 import { mathInline } from "../math/typesetter"
-import type { OcrEngine } from "../platform/capabilities"
 import { componentFill, darkerThanPaper, localMean, marks as findMarks, type Marks } from "./ink"
 import { boxToPicture, deskewGray, paperLevel, usableAngle } from "./deskew"
 import {
@@ -36,7 +34,7 @@ import type { FlowWord } from "./flowGrouping"
 /** One word with its box, as fractions of the picture (y down). */
 export interface OcrWord { text: string; x: number; y: number; width: number; height: number }
 
-/** One line of the reading. `words` may be absent (Vision's `text` command, tesseract). */
+/** One line of the reading. `words` may be absent (they are then estimated). */
 export interface OcrLine {
   text: string
   confidence: number
@@ -50,22 +48,17 @@ export interface OcrLine {
 export interface OcrReading {
   lines: OcrLine[]
   /**
-   * Which reader made it. It matters to the mark rules: Windows' word boxes hug the
-   * ink, Vision's (and the estimated ones) are line-high (see `StrikeReader`).
+   * The reader's word boxes hug the ink, where the bundled reader's (and the estimated ones) are line-high. It
+   * matters to the mark rules (see `StrikeReader`). Absent for every reader the app has; the tests set it for the
+   * recorded readings of an engine whose boxes were tight (fixtures/ocr).
    */
-  engine?: OcrEngine | null
+  tight?: boolean
   /**
    * How far the reader turned a tilted picture to read it, in degrees (clockwise
-   * positive; Windows' `TextAngle`). Every box in the reading is in THAT frame:
-   * see deskew.ts. Null/absent: the boxes are on the picture as it is.
+   * positive). Every box in the reading is in THAT frame: see deskew.ts.
+   * Null/absent: the boxes are on the picture as it is (so for the bundled reader).
    */
   angle?: number | null
-  /** The language the reading was made in, when the reader says (BCP-47). */
-  language?: string | null
-  /** Every language the reader can read on this machine. */
-  installed?: string[]
-  /** Whether Japanese is among them. */
-  japanese?: boolean
 }
 
 const finite = (value: unknown, fallback: number): number =>
@@ -114,13 +107,7 @@ export function parseOcrJson(json: string): { reading: OcrReading } | { error: s
   return {
     reading: {
       lines,
-      ...(object.engine === "bundled" || object.engine === "vision" || object.engine === "windows" || object.engine === "tesseract"
-        ? { engine: object.engine } : {}),
       ...(typeof object.angle === "number" && Number.isFinite(object.angle) ? { angle: object.angle } : {}),
-      language: typeof object.language === "string" ? object.language : null,
-      installed: Array.isArray(object.installed)
-        ? object.installed.filter((tag): tag is string => typeof tag === "string") : [],
-      japanese: object.japanese === true,
     },
   }
 }
@@ -147,7 +134,7 @@ export const isJapanese = (text: string): boolean =>
 export const isStrokeLike = (c: string): boolean => "ー一ノ丶丿亅乀乁〇々〜・。、".includes(c)
 
 /**
- * Vision finds "text" in a doodle, a dot grid, a diagram: a few stray
+ * A reader finds "text" in a doodle, a dot grid, a diagram: a few stray
  * characters read with little confidence. Only what is read with some
  * confidence, has a word in it, and is mostly letters and digits counts.
  * Japanese counts too: one kana is a word, so 「え」 is kept — but the strokes
@@ -195,8 +182,8 @@ const boxOf = (item: { x: number; y: number; width: number; height: number }): R
 
 /**
  * A line's words. A reader with no word boxes gets its line's box shared out
- * by letters, which is enough to say which word is the struck one. Windows'
- * Japanese reading comes one CHARACTER to a word ("会 議"), which would put
+ * by letters, which is enough to say which word is the struck one. A Japanese
+ * reading can come one CHARACTER to a word ("会 議"), which would put
  * a line through each; runs of Japanese characters are put back together.
  */
 export function wordsOf(line: OcrLine): OcrWord[] {
@@ -232,14 +219,14 @@ export function wordsOf(line: OcrLine): OcrWord[] {
 
 /**
  * Lines in reading order: top to bottom, and lines on the same band left to
- * right. Each line's text is made from its words so Windows' spaced-out
- * Japanese reads as Japanese.
+ * right. Each line's text is made from its words so a spaced-out
+ * Japanese reading reads as Japanese.
  *
  * ON THE SAME BAND is `sameBand` (the boxes overlap by most of the shorter
  * one's height), not "the middles are close": a line's box is the box of its
  * words, so a word with a descender (the p of "pay") sits lower than one
  * without ("rent") and a middle-to-middle test splits one line of writing in
- * two. And Windows' engine splits a line where the gap is wide - "pay    rent
+ * two. And a reader may split a line where the gap is wide - "pay    rent
  * today" comes back as three lines - so neighbours on a band that are no more
  * than a line-height and a half apart are put back into one line (further
  * apart they stay separate readings: a column, or an arrow's worth of gap,
@@ -435,7 +422,7 @@ export function place(box: Rect, lines: { box: Rect; words: MarkWord[] }[], amon
     const line = lines[index]!
     // A reader whose boxes hug the ink: a mark that sits INSIDE a word's box is one of the word's own
     // letters (the l, the t, the f - tall and a little lopsided, which is what an arrow is), never an
-    // arrow. Vision's boxes are loose, an arrow in a gap IS mostly inside one, so they do not get this.
+    // arrow. Line-high boxes are loose, an arrow in a gap IS mostly inside one, so they do not get this.
     if (tight && line.words.some((word) => word.box !== null && mostlyInside(box, word.box))) return { kind: "read" }
     // The reader may have read this very arrow: putting a second one in
     // gave "Paris → → Lyon".
@@ -512,9 +499,9 @@ export function joinAcrossArrows(pieces: Piece[]): Piece[] {
 
 /**
  * An arrow drawn in the gap between two readings that sit on one band, which
- * the reader did not read and which is therefore on no line of its own: Vision
- * reads such an arrow and breaks the line there (`joinAcrossArrows` mends
- * that); Windows' engine splits a line at a wide gap and says nothing of what
+ * the reader did not read and which is therefore on no line of its own: a reader
+ * may read such an arrow and break the line there (`joinAcrossArrows` mends
+ * that), or split a line at a wide gap and say nothing of what
  * was drawn in it. The arrow goes between the two, whatever the gap - the arrow
  * IS the evidence that they are one line. `pieces` are in reading order.
  * Returns the pieces, and the arrows that were nobody's to place.
@@ -594,7 +581,7 @@ export function markedLine(line: Reading1, page: ReadingPage, ringed: Rect[], ig
 export function composeLines(raw: OcrReading, drawn: ReadingPage | null): string[] {
   // The ink in the frame the reader's boxes are in (a tilted picture is straightened by the engine).
   const page = drawn === null ? null : pageInReaderFrame(drawn, raw.angle)
-  const tight = raw.engine === "windows"
+  const tight = raw.tight === true
   // A ring the reader took for a letter is not a letter: dropped BEFORE the
   // lines are tidied, or it would be put into the line it sits beside.
   const ringed = page === null ? [] : rings(page)

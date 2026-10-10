@@ -1,9 +1,9 @@
 /**
  * FINDING THE PAGE IN THE FRAME, with no platform in it.
  *
- * On the Mac this is Vision's document segmentation (then a rectangle search)
- * in `NotebookCapture.pageQuad`; that is Apple's and does not exist on Windows
- * or Linux. This is the same job in plain arrays, so it runs in the renderer on
+ * The Swift app does this with Vision's document segmentation (then a rectangle
+ * search) in `NotebookCapture.pageQuad`; that is Apple's. This is the same job
+ * in plain arrays, the same on every platform, so it runs in the renderer on
  * a canvas's `ImageData`, and in the test runner, which has no canvas at all.
  *
  * TWO WAYS TO FIND IT, the second only when the first is not sure:

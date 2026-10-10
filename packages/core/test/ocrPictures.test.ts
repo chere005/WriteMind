@@ -7,14 +7,15 @@ import {
 import { loadOcrFixture } from "./ocrFixtures"
 
 /**
- * Windows' OCR engine on real pictures (fixtures/ocr: a reading of a picture Chromium drew, see ocrFixtures.ts).
+ * A reader whose word boxes hug the ink, on real pictures (fixtures/ocr: a reading of a picture Chromium drew, made
+ * by Windows' own engine before it left the app; see ocrFixtures.ts).
  *
  * The rules that sort a reading onto the marks drawn on the page - a bar through a word, a ring round one, an
- * arrow in a gap - were made for Vision, whose word boxes are line-high. Windows' boxes hug the glyphs, and on
+ * arrow in a gap - were made for line-high boxes (Vision's; the bundled reader's). Tight boxes hug the glyphs, and on
  * PLAIN TYPED TEXT with nothing drawn on it they invented ~~strikes~~, **bold** and arrows (measured on the live
  * reader: 34 of 81 lines of ordinary prose). And the engine straightens a tilted picture and reports its boxes in
  * the straightened frame (`angle`), so on a hand-held photo the ink was nowhere near its boxes.
- * Nothing here is a hand-made box: these are what the engine said.
+ * Nothing here is a hand-made box: these are what that engine said.
  */
 
 const MARKS = /~~|\*\*|[↑↓→←↔]/
@@ -22,7 +23,7 @@ const MARKS = /~~|\*\*|[↑↓→←↔]/
 /** The text of every line the reader read, in the order the note gets them. */
 const readAs = (reading: OcrReading): string[] => tidyReading(reading).lines.map((line) => line.text.trim())
 
-describe("plain typed text grows no marks (Windows' tight word boxes)", () => {
+describe("plain typed text grows no marks (tight word boxes)", () => {
   // Each of these pictures has words that used to be struck (a, to, at, see, up, from, station) or ringed
   // (A, TV, T, B) and arrows between words (the l, t, k of a word); none has anything drawn on it.
   const typed = [
@@ -76,15 +77,13 @@ describe("what is really drawn on the page is still read", () => {
 })
 
 describe("a tilted picture (the reader's angle)", () => {
-  it("the engine reports the angle it straightened by, and parseOcrJson keeps it", () => {
+  it("the reader reports the angle it straightened by, and parseOcrJson keeps it", () => {
     expect(loadOcrFixture("tilt-5").reading.angle).toBeCloseTo(4.9, 1)
     expect(loadOcrFixture("tilt--4").reading.angle).toBeCloseTo(-4.1, 1)
-    const parsed = parseOcrJson(JSON.stringify({ angle: 3.5, engine: "windows", lines: [{ text: "hi", words: [{ text: "hi", x: 0, y: 0, width: 0.1, height: 0.1 }] }] }))
+    const parsed = parseOcrJson(JSON.stringify({ angle: 3.5, lines: [{ text: "hi", words: [{ text: "hi", x: 0, y: 0, width: 0.1, height: 0.1 }] }] }))
     expect("reading" in parsed && parsed.reading.angle).toBe(3.5)
-    expect("reading" in parsed && parsed.reading.engine).toBe("windows")
-    const odd = parseOcrJson(JSON.stringify({ angle: "tilted", engine: "morse", lines: [{ text: "hi" }] }))
+    const odd = parseOcrJson(JSON.stringify({ angle: "tilted", lines: [{ text: "hi" }] }))
     expect("reading" in odd && odd.reading.angle).toBeUndefined()
-    expect("reading" in odd && odd.reading.engine).toBeUndefined()
   })
 
   /** The share of the ink that lies inside some word's box (a pixel of slack). */

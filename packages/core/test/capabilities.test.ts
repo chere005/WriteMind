@@ -25,26 +25,17 @@ describe("what this build can do", () => {
     }
   })
 
-  it("says which reader is behind the capability, and whether it has Japanese", () => {
-    const windows = capabilitiesFor("win32", { ocr: true, engine: "windows", japanese: false })
-    expect(windows.ocrEngine).toBe("windows")
-    expect(windows.japaneseOCR).toBe(false)
-    expect(capabilitiesFor("win32", { ocr: true, engine: "windows", japanese: true }).japaneseOCR).toBe(true)
-    // No reader: no engine, and no Japanese however the helper was asked.
-    const none = capabilitiesFor("win32", { ocr: false, engine: "windows", japanese: true })
-    expect(none.ocrEngine).toBeNull()
-    expect(none.japaneseOCR).toBe(false)
-  })
-
-  it("gives every platform a reader when the bundled one is there, and shows nothing for reading where none works", () => {
+  // CHANGED 2026-10-10 (it was "says which reader is behind the capability, and whether it has Japanese", and one
+  // that gave every platform a reader "when the bundled one is there"): there is ONE reader on every platform, so a
+  // capability says only whether it works - which engine, and whether Japanese, are no longer questions.
+  it("gives every platform the same reader answer, and shows nothing for reading where none works", () => {
     for (const platform of platforms) {
-      const bundled = capabilitiesFor(platform, { ocr: true, engine: "bundled", japanese: true })
-      expect(bundled).toMatchObject({ handwritingOCR: true, ocrEngine: "bundled", japaneseOCR: true })
-      // The English recogniser alone: a reader, without Japanese.
-      expect(capabilitiesFor(platform, { ocr: true, engine: "bundled", japanese: false }).japaneseOCR).toBe(false)
-      // A Linux (or any) machine with no reader at all: nothing to offer, whatever else the helpers said.
-      const none = capabilitiesFor(platform, { ocr: false, engine: "bundled", japanese: true })
-      expect(none).toMatchObject({ handwritingOCR: false, ocrEngine: null, japaneseOCR: false })
+      expect(capabilitiesFor(platform, { ocr: true })).toMatchObject({ handwritingOCR: true })
+      // A machine with no reader at all (a build made offline without the models): nothing to offer.
+      const none = capabilitiesFor(platform, { ocr: false })
+      expect(none.handwritingOCR).toBe(false)
+      expect(Object.keys(none)).not.toContain("ocrEngine")
+      expect(Object.keys(none)).not.toContain("japaneseOCR")
     }
   })
 

@@ -25,7 +25,8 @@ const isNull = (box: Rect | null): box is null => box === null
 /**
  * What `struckThrough` is told about the reader whose box it was given.
  *
- * VISION'S WORD BOXES ARE LINE-HIGH, Windows' hug the glyphs. The bar rule was
+ * LINE-HIGH WORD BOXES (Vision's, in the Swift app; the bundled reader's here) or
+ * boxes that hug the glyphs (Windows.Media.Ocr's, once). The bar rule was
  * made for the first: in a line-high box a single row 80% inked in the middle
  * half is a pen line, because no letter fills a row. In a box that hugs the ink
  * the same row is a letter's own crossbar (the t and the o of "to", the top of
@@ -221,7 +222,7 @@ export function encircles(ring: Rect, word: Rect): boolean {
 }
 
 /**
- * `encircles` for a reader whose word boxes hug the ink (Windows). There the
+ * `encircles` for a reader whose word boxes hug the ink (`OcrReading.tight`). There the
  * box of a CAPITAL, a short word in capitals ("TV"), a letter with a loop, is the
  * very blob `isRing` takes for a ring - hollow, squarish, as big as the word - and
  * "a ring that covers 80% of the word" is the word itself: plain typed "Call Bob
@@ -481,7 +482,7 @@ export function wolfram(text: string): string {
 /**
  * `x²` written by hand comes back as "x2" with the 2 sitting high and small;
  * put the caret back in. `characters` are in reading order with their boxes
- * in mask pixels. (Windows' reader gives word boxes only, so there nothing
+ * in mask pixels. (The bundled reader gives word boxes only, so there nothing
  * is raised; a reader that gives character boxes gets its powers back.)
  */
 export function superscripted(characters: { character: string; box: Rect | null }[]): string {
