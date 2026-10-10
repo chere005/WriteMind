@@ -15,6 +15,7 @@
 
 import { useMemo, useRef, useState } from "react"
 import { chordCaps } from "../shared/chord"
+import { commandForKey } from "../shared/commands"
 import { keyList } from "../shared/keyList"
 import { searchKeys, withNumberKeysFirst } from "../shared/keyGroups"
 import { Modal } from "./Modal"
@@ -38,8 +39,10 @@ export function KeyList({ platform, onClose }: { platform: string; onClose(): vo
 
   return (
     <Modal hook="keys" className="key-list" label="Keyboard Shortcuts" onClose={onClose}
-           // F1 again puts it away, from the search field too (the page's own key handler leaves a field's keys alone).
-           onKeyDown={(event) => { if (event.key === "F1") { event.preventDefault(); onClose() } }}
+           // The list's own key again puts it away, from the search field too (the page's own key handler leaves a field's
+           // keys alone). It is asked of the command table, not hard-coded: F1 on a PC, ⇧⌘/ on a Mac (a press of F1 on a Mac
+           // laptop is brightness, and the e2e harness sends a Mac the chord the Mac listens for).
+           onKeyDown={(event) => { if (commandForKey(event.nativeEvent, platform)?.id === "keyList") { event.preventDefault(); onClose() } }}
            onEscape={() => { if (query !== "") { setQuery(""); field.current?.focus() } else onClose() }}>
       <div className="key-head">
         <h3>Keyboard Shortcuts</h3>
