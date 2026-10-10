@@ -7,7 +7,7 @@
 // The pen comes through the native feed (the inject backend: samples -> manager -> IPC -> the page's synthesiser, the path
 // Wintab's samples take); the box and the buttons get REAL mouse input (CDP).
 import {
-  js, ok, finish, sleep, freshNote, noGrab, showVideoPane, pickTablet, setSelect, tabletBox, waitFor, shot, mouse, drag, click,
+  js, ok, finish, sleep, freshNote, noGrab, showVideoPane, pickTablet, setOrientation, tabletBox, waitFor, shot, mouse, drag, click,
   typeText, key, sidecar, saved,
 } from "../../lib/harness.mjs"
 import { feedConfig, inject, sample, sheetStrokes, strokeSamples } from "../../lib/penfeed.mjs"
@@ -17,7 +17,7 @@ await noGrab()
 const file = await freshNote({ video: true })
 await showVideoPane()
 await pickTablet()
-await setSelect("[data-tablet=orientation]", "0"); await sleep(350)   // the feed's samples land on the sheet as given
+await setOrientation(0); await sleep(350)   // the feed's samples land on the sheet as given
 
 // ---- the note's words (the cell goes after the caret's paragraph)
 const cm = JSON.parse(await js(`(()=>{const r=document.querySelector('.cm-content').getBoundingClientRect();return JSON.stringify({x:r.x,y:r.y})})()`))
@@ -163,18 +163,26 @@ ok("...and Erase was not clicked (the boxed stroke is still there, the box stays
 await mouse("mouseMoved", t.x + t.w - 10, t.y + 10, { buttons: 0 })
 await shot("window-pen-from-row")
 
-// 5. the header's Bring in ▾ (Sean, 2026-10-06): "To docked cell" makes Writing dock a drawing cell; the sheet keeps it
+// 5. the header's Bring in (Sean, 2026-10-06 "To docked cell", 2026-10-10 "its menu Writing / As drawing cell"): the button brings the
+// writing the way it was last asked to; a pick in its menu brings it THAT way now and makes it what the button does next.
 await key("Escape"); await sleep(100)
-const cellsBefore = ((await js(`document.querySelector('.cm-content').cmTile.view.state.doc.toString()`)).match(/!\[ink\]/g) ?? []).length
-await js(`document.querySelector('[data-tablet=bring-to]').click(); true`); await sleep(150)
-ok("Bring in ▾ offers To writing and To docked cell", await js(`[...document.querySelectorAll('[data-bring-to]')].map(b => b.textContent).join('|')`) === "To writing|To docked cell")
-await js(`document.querySelector('[data-bring-to=cell]').click(); true`); await sleep(150)
+const docText = () => js(`document.querySelector('.cm-content').cmTile.view.state.doc.toString()`)
+const cellsIn = async () => ((await docText()).match(/!\[ink\]/g) ?? []).length
+const cellsBefore = await cellsIn()
+await js(`document.querySelector('.camera-bar [data-capture=ink]').dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true })); true`); await sleep(200)
+ok("Bring in's menu offers Writing, As Drawing Cell and Sheet as Picture",
+  await js(`[...document.querySelectorAll('.float-menu [data-bar^=bring-] .float-label')].map(b => b.textContent).join('|')`) === "Writing|As Drawing Cell|Sheet as Picture")
+ok("...with the current default ticked (Writing)", await js(`document.querySelector('.float-menu [data-bar=bring-writing]').getAttribute('aria-checked')`) === "true")
+await js(`document.querySelector('.float-menu [data-bar=bring-cell]').click(); true`); await sleep(900)
 ok("...the choice is remembered", await js(`localStorage.getItem('writemind.bringInTo')`) === '"cell"')
+ok("As Drawing Cell brings the writing in at once: a new drawing cell in the note", (await cellsIn()) === cellsBefore + 1, JSON.stringify(await docText()))
 const kept = (await sheetStrokes()).length
 await js(`document.querySelector('.camera-bar [data-capture=ink]').click(); true`); await sleep(900)
-const after5 = await js(`document.querySelector('.cm-content').cmTile.view.state.doc.toString()`)
-ok("To docked cell: Writing docks a new drawing cell in the note", (after5.match(/!\[ink\]/g) ?? []).length === cellsBefore + 1, JSON.stringify(after5))
+ok("...and the button now does that: another drawing cell", (await cellsIn()) === cellsBefore + 2, JSON.stringify(await docText()))
 ok("...and the sheet keeps the writing", (await sheetStrokes()).length === kept && kept > 0)
-await js(`document.querySelector('[data-tablet=bring-to]').click(); true`); await sleep(100)
-await js(`document.querySelector('[data-bring-to=writing]').click(); true`); await sleep(100)
+const itemsBeforeWriting = (await sidecar(file)).items.length
+await js(`document.querySelector('.camera-bar [data-capture=ink]').dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true })); true`); await sleep(200)
+await js(`document.querySelector('.float-menu [data-bar=bring-writing]').click(); true`); await sleep(900)
+ok("Writing in the menu brings the strokes onto the page and is the default again",
+  (await sidecar(file)).items.length > itemsBeforeWriting && await js(`localStorage.getItem('writemind.bringInTo')`) === '"writing"' && (await cellsIn()) === cellsBefore + 2)
 finish()

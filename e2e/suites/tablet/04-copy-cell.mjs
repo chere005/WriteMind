@@ -10,7 +10,7 @@
 import fs from "node:fs"
 import { spawnSync } from "node:child_process"
 import {
-  js, ok, note, skip, finish, send, sleep, freshNote, noGrab, showVideoPane, pickTablet, setSelect, tabletBox, waitFor, mouse, drag, click,
+  js, ok, note, skip, finish, send, sleep, freshNote, noGrab, showVideoPane, pickTablet, setOrientation, tabletBox, waitFor, mouse, drag, click,
   setDoc, focus, key, sidecar, saved, until, META, CTRL, VIEW,
 } from "../../lib/harness.mjs"
 import { feedConfig, inject, sample, sheetStrokes, strokeSamples } from "../../lib/penfeed.mjs"
@@ -33,7 +33,7 @@ try {
   const file = await freshNote({ video: true })
   await showVideoPane()
   await pickTablet()
-  await setSelect("[data-tablet=orientation]", "0"); await sleep(350)
+  await setOrientation(0); await sleep(350)
 
   // ---- the note's words, the pen feed
   const cm = JSON.parse(await js(`(()=>{const r=document.querySelector('.cm-content').getBoundingClientRect();return JSON.stringify({x:r.x,y:r.y})})()`))
@@ -62,7 +62,7 @@ try {
   await boxOver({ x: 0.42, y: 0.15 }, { x: 0.8, y: 0.45 })
   ok("the box and its row are up", !!(await rect(".camera .tablet .box")) && !!(await rect("[data-tablet=box-actions]")))
   const labels = JSON.parse(await js(`JSON.stringify([...document.querySelectorAll('[data-tablet=box-actions] button')].map(b => [b.dataset.boxAction, b.textContent, b.disabled]))`))
-  ok("the row has a fourth button, Copy Cell, after the three", JSON.stringify(labels.map((l) => l[0])) === JSON.stringify(["erase", "ink", "cell", "copy"]) && labels[3][1] === "Copy Cell", JSON.stringify(labels))
+  ok("the row has Copy after the two Bring ins, and Erase (which destroys) last", JSON.stringify(labels.map((l) => l[0])) === JSON.stringify(["ink", "cell", "copy", "erase"]) && labels[2][1] === "Copy", JSON.stringify(labels))
   const row = await rect("[data-tablet=box-actions]")
   ok("the row (four buttons) stays on the sheet", row.x >= t.x - 1 && row.x + row.w <= t.x + t.w + 1, JSON.stringify({ row, t }))
 
@@ -158,7 +158,7 @@ try {
   await click(empty.x, empty.y); await sleep(600)
   const left = (await clip())["text/plain"] ?? ""
   ok("a box with nothing written in it copies nothing (the clipboard is as it was)", !left.startsWith("<svg"), left.slice(0, 60))
-  ok("...and says so", /nothing written in that box/.test(await js(`document.querySelector('.camera .trouble')?.textContent ?? ''`)))
+  ok("...and says so", /nothing written in that box/i.test(await js(`document.querySelector('.camera [data-toast=error]')?.textContent ?? ''`)))
 } finally {
   await js(`window.wm.e2eClipboard("restore")`)
 }

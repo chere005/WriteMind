@@ -1668,6 +1668,7 @@ export function App() {
       {showCamera && (
         <CameraPane
           platform={platform}
+          kind={kind}
           penColour={penColour}
           penWidth={penWidth}
           pane={currentPane(view, lastPane)}
@@ -1685,6 +1686,7 @@ export function App() {
           onToggleEditor={toggleEditorPane}
           onReadText={readCameraText}
           note={current}
+          noteTitle={open.find((one) => one.path === current)?.title ?? null}
           fullWindow={cameraFullWindow}
           onFullWindow={toggleCameraFullWindow}
         />

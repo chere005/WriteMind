@@ -19,7 +19,7 @@ const file = await freshNote({ video: true })
 await showVideoPane()
 await pickCamera()
 const live = async () => waitFor(`(() => { const v = document.querySelector('.camera video'); return v && v.videoWidth > 0 && v.readyState >= 2 })()`, 15000)
-ok("the (fake) camera is delivering frames", await live(), await js(`document.querySelector('.camera .trouble')?.textContent ?? ''`))
+ok("the (fake) camera is delivering frames", await live(), await js(`document.querySelector('.camera [data-toast=error]')?.textContent ?? ''`))
 await sleep(600)
 
 // Where the dark block starts on row 410 of the frame (frame pixels), in the live video, a page's picture, or a capture.
@@ -106,7 +106,7 @@ await pageReady(p2.id)
 await pressBar(".camera-bar [data-capture=raw]")
 await sleep(1500)
 let pics = await images()
-ok("Raw on Page 2 took one picture", pics.length === 1, JSON.stringify(pics.map((i) => i.file)) + " | " + await js(`(document.querySelector('.camera .trouble')?.textContent ?? '') + ' | ' + document.querySelector('.camera .note').innerText + ' | disabled=' + document.querySelector('.camera-bar [data-capture=raw]').disabled`))
+ok("Raw on Page 2 took one picture", pics.length === 1, JSON.stringify(pics.map((i) => i.file)) + " | " + await js(`(document.querySelector('.camera [data-toast=error]')?.textContent ?? '') + ' | ' + document.querySelector('.camera [data-camera=status]').innerText + ' | disabled=' + document.querySelector('.camera-bar [data-capture=raw]').disabled`))
 const raw = pics[0] && await pictureBlock(pics[0].file)
 ok("it is Page 2's frame, not the live one", raw && near(raw.x, block2, 2) && raw.w === 640, JSON.stringify({ raw, block2, liveNow: await videoBlock() }))
 ok("the page stays: the tab is still there, open", (await tabs()).length === 3 && (await tabs())[2].on)
@@ -119,7 +119,7 @@ if (choice) await click(choice.x + choice.w / 2, choice.y + choice.h / 2)
 await waitFor(`!document.querySelector('.camera .box-clip .box')`, 15000)
 await sleep(400)
 pics = await images()
-ok("Writing from the box on Page 1 came in", pics.length === 2, (await js(`(document.querySelector('.camera .trouble')?.textContent ?? '') + ' | ' + document.querySelector('.camera .note').innerText`)))
+ok("Writing from the box on Page 1 came in", pics.length === 2, (await js(`(document.querySelector('.camera [data-toast=error]')?.textContent ?? '') + ' | ' + document.querySelector('.camera [data-camera=status]').innerText`)))
 ok("the box is spent (the page keeps none now) and the page stays open", (await set()).pages[0].box === null && (await tabs())[1].on)
 await shot("page-1-after-writing")
 
@@ -181,7 +181,7 @@ ok("the second closes it: the page and its picture file are gone, the neighbour 
 // A "Close?" that is not followed up goes by itself
 await js(`document.querySelector('[data-scan-close="${p2.id}"]').click()`)
 await sleep(3400)
-ok("a Close? that nobody confirms takes itself back", (await js(`document.querySelector('[data-scan-close="${p2.id}"]').textContent`)) === "×" && (await set()).pages.length === 2)
+ok("a Close? that nobody confirms takes itself back", (await js(`document.querySelector('[data-scan-close="${p2.id}"]').textContent`)) !== "Close?" && (await set()).pages.length === 2)
 
 // "+" from a page takes the LIVE camera picture
 const before = (await set()).pages.length
@@ -257,5 +257,5 @@ const again = await rectOf(".camera .box-choices [data-section=image]")
 if (again) await click(again.x + again.w / 2, again.y + again.h / 2)
 await waitFor(`!document.querySelector('.camera .box-clip .box')`, 15000)
 await sleep(400)
-ok("Image from a restored page's box comes in", (await images()).length === 3, `${!!again} | ${(await images()).length} | ${await js(`(document.querySelector('.camera .trouble')?.textContent ?? '') + ' | ' + document.querySelector('.camera .note').innerText + ' | open=' + !!document.querySelector('.wm-canvas')`)}`)
+ok("Image from a restored page's box comes in", (await images()).length === 3, `${!!again} | ${(await images()).length} | ${await js(`(document.querySelector('.camera [data-toast=error]')?.textContent ?? '') + ' | ' + document.querySelector('.camera [data-camera=status]').innerText + ' | open=' + !!document.querySelector('.wm-canvas')`)}`)
 finish()

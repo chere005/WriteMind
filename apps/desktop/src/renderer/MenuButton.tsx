@@ -32,6 +32,8 @@ interface Props {
   className?: string
   /** Test hook. */
   dataBar?: string
+  /** More test hooks, `data-<name>`: `{ tablet: "undo" }` is `data-tablet="undo"` (the video pane's buttons keep theirs). */
+  data?: Record<string, string>
   style?: React.CSSProperties
   children?: ReactNode
 }
@@ -39,7 +41,7 @@ interface Props {
 const HOLD_MS = 500
 const CORNER = 12
 
-export function MenuButton({ icon, label, title, items, onMain, on, tint, disabled, chevron, noMark, className, dataBar, style, children }: Props) {
+export function MenuButton({ icon, label, title, items, onMain, on, tint, disabled, chevron, noMark, className, dataBar, data, style, children }: Props) {
   const button = useRef<HTMLButtonElement>(null)
   const [at, setAt] = useState<{ x: number; y: number } | null>(null)
   const hold = useRef<number | null>(null)
@@ -58,6 +60,7 @@ export function MenuButton({ icon, label, title, items, onMain, on, tint, disabl
   return (
     <>
       <button ref={button} type="button" className={classes} style={style} disabled={disabled} data-bar={dataBar}
+              {...Object.fromEntries(Object.entries(data ?? {}).map(([name, value]) => [`data-${name}`, value]))}
               aria-label={label === undefined ? title : undefined} title={title}
               aria-haspopup="menu" aria-expanded={at !== null} aria-pressed={onMain ? !!on : undefined}
               onPointerDown={(event) => {

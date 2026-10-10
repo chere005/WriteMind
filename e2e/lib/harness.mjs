@@ -444,7 +444,24 @@ export async function pickCamera() {
   await js(`document.querySelector('.video-pop button:not([data-source])').click()`)
 }
 export const tabletBox = async () => JSON.parse(await js(`(()=>{const b=document.querySelector('.camera .tablet').getBoundingClientRect();return JSON.stringify({x:b.x,y:b.y,w:b.width,h:b.height})})()`))
-export const barBtn = (k) => js(`document.querySelector('.camera-bar [data-tablet=${k}]').click()`)
+/**
+ * Open the menu of a bar button (a right-click opens every MenuButton's menu, split or not) and click its item by
+ * `data-bar`. The video pane's header keeps its menus in MenuButtons, so a script drives them the way a person does.
+ */
+export async function pickFromMenu(buttonSelector, itemBar) {
+  await js(`document.querySelector(${JSON.stringify(buttonSelector)}).dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true }))`)
+  await waitFor(`!!document.querySelector('.float-menu [data-bar=${itemBar}]')`)
+  await js(`document.querySelector('.float-menu [data-bar=${itemBar}]').click()`)
+  await sleep(150)
+}
+/** Wipe the sheet: the Undo button's menu, "Clear the Sheet". */
+export const clearSheet = () => pickFromMenu(".camera-bar [data-tablet=undo]", "clear")
+/** Turn the tablet (0..3, Orientation): the header's orientation menu when the sheet is up, else the Pen menu's dropdown. */
+export async function setOrientation(turns) {
+  if (await js(`!!document.querySelector('.camera-bar [data-tablet=orientation-menu]')`)) await pickFromMenu(".camera-bar [data-tablet=orientation-menu]", `orientation-${turns}`)
+  else await setSelect("[data-tablet=orientation]", String(turns))
+}
+export const barBtn = (k) => (k === "clear" ? clearSheet() : js(`document.querySelector('.camera-bar [data-tablet=${k}]').click()`))
 export const takeBtn = (title) => js(`[...document.querySelectorAll('.camera-bar button')].find(b=>b.title.startsWith(${JSON.stringify(title)})).click()`)
 
 // ---- restarting the whole app (same profile, same notes), e.g. to check that a session comes back
