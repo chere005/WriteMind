@@ -37,6 +37,9 @@ import {
 /** Puts one file or folder in the Recycle Bin / Trash. */
 export type Trash = (file: string) => Promise<void>
 
+/** Keeps a picture's bytes (the note, the entry's name) so that Clean Up can be undone; a throw means it was not kept. */
+export type Kept = (note: string, entry: string, bytes: Uint8Array) => Promise<void>
+
 const io = limiter(32)
 
 // MARK: - What is under a folder
@@ -194,7 +197,7 @@ Promise<UnusedScan> {
  * taken out of the note (one write per note, through the store's own queue and guard).
  */
 export async function trashUnused(root: string, folders: string[], paths: string[], held: Held, trash: Trash,
-  options: Omit<ScanOptions, "only"> = {}): Promise<TrashResult> {
+  options: Omit<ScanOptions, "only"> = {}, kept?: Kept): Promise<TrashResult> {
   const moved: string[] = []
   const failed: string[] = []
   const first = await findUnused(root, folders, held, { ...options, only: new Set(paths) })
@@ -218,6 +221,8 @@ export async function trashUnused(root: string, folders: string[], paths: string
         const folder = await fs.mkdtemp(path.join(staging, "p-"))
         const copy = path.join(folder, path.basename(`${path.basename(note, path.extname(note))} — ${path.basename(one.entry)}`))
         try {
+          // Kept for Undo BEFORE anything leaves the note (main/undoJournal.ts): a picture that cannot be kept is not taken out.
+          await kept?.(note, one.entry, found.data)
           await fs.writeFile(copy, found.data)
           await trash(copy)
           gone.push(one.entry)

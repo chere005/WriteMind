@@ -128,6 +128,13 @@ declare global {
       languages?: import("../shared/languages").LanguagesApi
       /** Help ▸ About WriteMind (shared/about.ts, AboutDialog.tsx); absent in an old preload. */
       about?: import("../shared/about").AboutApi
+      /** The undo journal of file steps (main/undoJournal.ts, docs/PLAN-undo.md). */
+      undo: {
+        state(): Promise<import("../shared/undo").UndoState>
+        run(which: "undo" | "redo"): Promise<import("../shared/undo").UndoOutcome>
+        cutRedo(): Promise<void>
+        onChanged(listener: (state: import("../shared/undo").UndoState) => void): () => void
+      }
       onNotesChanged(listener: () => void): () => void
       onFlushRequest(listener: () => Promise<void> | void): () => void
       onEdit(listener: (which: "undo" | "redo") => void): () => void
