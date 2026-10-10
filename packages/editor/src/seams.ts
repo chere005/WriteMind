@@ -22,7 +22,7 @@ import {
 import { barCaret, sameLineOnScreen, shownBeyond, sideMove, verticalMove, type BarMove } from "./barWalk"
 import { insideHidden, revealAt } from "./fold"
 import { setHolding } from "./preview/hold"
-import { cellWritten, notebook } from "./notebook"
+import { cellWritten, itemOpened, notebook } from "./notebook"
 import { gapAt } from "./apart"
 import { renderedField } from "./rendered"
 
@@ -615,7 +615,14 @@ function rewrite(view: EditorView, markdown: string, caret: number): void {
   // hidden", queued for the edit, leaves it where it is.)
   const head = view.state.selection.main.head
   if (revealAt(view, head)) view.dispatch({ selection: EditorSelection.cursor(head), scrollIntoView: true })
+  // A list opened empty (`- `, `* `, `1. `): the words typed after its marker are the item's, not a text cell's literal
+  // (notebook.ts `itemOpened`).
+  const line = view.state.doc.lineAt(view.state.selection.main.head)
+  if (view.state.selection.main.head === line.to && OPEN_ITEM.test(line.text)) view.dispatch({ effects: itemOpened.of(line.from) })
 }
+
+/** An item's marker and nothing else, as `openCell` writes one. */
+const OPEN_ITEM = /^\s*([-+*]|\d{1,4}[.)])\s*$/
 
 /**
  * Open the cell an armed bar stands for, with `written` already in it. `literal`: it was typed (a text cell takes it by
