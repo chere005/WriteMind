@@ -16,6 +16,22 @@ import type { FindRequest } from "./FindBar"
 /** How long a result waits for its note to be on the page. */
 const WAIT_MS = 5000
 
+/** What the page's `view` is, as far as this file needs to know. */
+export interface LiveView { connected: boolean; doc: string }
+
+/**
+ * Whether the page is ready for a wanted result to be shown: "ready" when the view in hand is the live editor of the note
+ * wanted (its words are the page's), "wait" while it is not, "expired" when the wait has gone on too long. A view that is no
+ * longer on the page is not the note's: the page keeps the last editor it was handed after its tab is closed, and a result
+ * opened next in a note with the same words as that note matched ITS words, put the caret on the dead editor and the Find bar
+ * on a live one that never got the caret (found by e2e/suites/integration/06).
+ */
+export function readiness(want: { path: string; at: number }, now: number, current: string | null, view: LiveView | null, words: string): "ready" | "wait" | "expired" {
+  if (now - want.at > WAIT_MS) return "expired"
+  if (!view || current !== want.path || !view.connected) return "wait"
+  return view.doc === words ? "ready" : "wait"
+}
+
 /** The words to find in `text` for a result, and where the first of them is (null when the note has changed so that they are not there). */
 export function firstMatch(text: string, hit: { matched: string }, typed: string): { seed: string; first: Range | null } {
   const seed = findSeed(text, hit, typed)
@@ -49,11 +65,12 @@ export function useOpenFound({ view, current, text, openNote, finding, setFindin
 
   useEffect(() => {
     const want = wanted.current
-    if (!want || !view || current !== want.path) return
-    if (Date.now() - want.at > WAIT_MS) { wanted.current = null; return }
+    if (!want) return
     const words = latest.current.text()
-    // The view still holds the note that was in front before (its words are not the page's): the next view is the one.
-    if (view.state.doc.toString() !== words) return
+    // (Not the view of the note that was in front before, nor one whose tab has gone: the next view is the one.)
+    const state = readiness(want, Date.now(), current, view ? { connected: view.dom.isConnected, doc: view.state.doc.toString() } : null, words)
+    if (state === "expired") { wanted.current = null; return }
+    if (state === "wait" || !view) return
     wanted.current = null
     const { seed, first } = firstMatch(words, want.hit, want.typed)
     if (first) {
