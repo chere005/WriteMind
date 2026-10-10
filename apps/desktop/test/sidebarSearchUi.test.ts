@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest"
 import { makeNote } from "@writemind/core"
-import { firstMatch } from "../src/renderer/foundOpen"
+import { firstMatch, readiness } from "../src/renderer/foundOpen"
 import { addRowDrop, moveTargets, stepResult } from "../src/renderer/sidebarTree"
 import { noteMenu, projectMenu, sectionMenu, type RowActions } from "../src/renderer/SidebarProject"
 import type { Section } from "../src/renderer/wm"
@@ -142,5 +142,29 @@ describe("the sidebar's menus", () => {
     const alone = projectMenu("darwin", { ...project, folders: [project.folders[0]!], excluded: [] }, tree(), recorder().actions)
     expect(labelsOf(alone)).not.toContain("Hidden Sections")
     expect((alone[1] as { disabled?: boolean }).disabled).toBe(true)
+  })
+})
+
+describe("a result waits for the live editor of its note (foundOpen.readiness)", () => {
+  const want = { path: "/n/a.wm", at: 1000 }
+  const words = "the first needle"
+  const live = { connected: true, doc: words }
+
+  it("is ready when the note in front is the one wanted and its editor holds its words", () => {
+    expect(readiness(want, 1100, "/n/a.wm", live, words)).toBe("ready")
+  })
+  it("waits while the note is not the one in front, there is no editor, or the editor holds other words", () => {
+    expect(readiness(want, 1100, "/n/b.wm", live, words)).toBe("wait")
+    expect(readiness(want, 1100, "/n/a.wm", null, words)).toBe("wait")
+    expect(readiness(want, 1100, "/n/a.wm", { connected: true, doc: "another note" }, words)).toBe("wait")
+  })
+  it("waits for an editor that is no longer on the page, even when its words are the words wanted", () => {
+    // The page keeps the last editor it was handed after its tab is closed: a result opened next in a note with the
+    // same words must not put the caret on that dead editor (the live one never got it).
+    expect(readiness(want, 1100, "/n/a.wm", { connected: false, doc: words }, words)).toBe("wait")
+  })
+  it("gives up after a few seconds, so it can never fire on a note opened by hand later", () => {
+    expect(readiness(want, 1000 + 5001, "/n/a.wm", null, words)).toBe("expired")
+    expect(readiness(want, 1000 + 4999, "/n/a.wm", null, words)).toBe("wait")
   })
 })

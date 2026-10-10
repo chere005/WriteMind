@@ -93,6 +93,26 @@ describe("a New Note is a step", () => {
     expect(await writeNote(file, "and more")).toMatchObject({ written: true })
   })
 
+  it("can be taken away, brought back and taken away AGAIN (Undo, Redo, Undo: the second copy kept does not collide with the first)", async () => {
+    // Found by the integration suite (e2e/suites/integration/02): Undo of a Duplicate, Redo, then Undo again said
+    // "something with that name is already there (EEXIST)", because the second Undo kept its copy under the name the first had used.
+    const w = world()
+    const file = await w.ops.createNote(w.root)
+    expect(await writeNote(file, "first words")).toMatchObject({ written: true })
+    expect(await w.journal.undo()).toMatchObject({ ok: true })
+    expect(await w.journal.redo()).toMatchObject({ ok: true })
+    expect(readWm(file).text).toBe("first words")
+    expect(await writeNote(file, "second words")).toMatchObject({ written: true })
+    const again = await w.journal.undo()
+    expect(again).toMatchObject({ ok: true, which: "undo", label: "New Note" })
+    expect(existsSync(file)).toBe(false)
+    // …and Redo brings back what was there at the SECOND Undo, not the first.
+    expect(await w.journal.redo()).toMatchObject({ ok: true })
+    expect(readWm(file).text).toBe("second words")
+    expect(await w.journal.undo()).toMatchObject({ ok: true })
+    expect(existsSync(file)).toBe(false)
+  })
+
   it("is not removed when another program has changed it: the step says so and is dropped, the file stays", async () => {
     const w = world()
     const file = await w.ops.createNote(w.root)
@@ -131,6 +151,9 @@ describe("Duplicate, Rename, Move and Reorder", () => {
     await w.journal.redo()
     expect(existsSync(copy)).toBe(true)
     expect(orderOf(w.root)).toContain("a copy.wm")
+    // Undo, Redo, Undo: the second Undo keeps its copy beside the first (it used to collide, EEXIST).
+    expect(await w.journal.undo()).toMatchObject({ ok: true })
+    expect(existsSync(copy)).toBe(false)
   })
 
   it("Rename keeps its place in the order, and Undo gives name and place back", async () => {

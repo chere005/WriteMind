@@ -31,6 +31,7 @@ import type { EditorView } from "@codemirror/view"
 import { inkCellPlaces, pictureCellLine, repaintInkCells, type DropTarget } from "@writemind/editor"
 import type { DrawingHistory } from "./drawingHistory"
 import { dockedAsCell, dockInto, undockLine, type DockDeps, type Words } from "./dock"
+import { returnFocusSoon } from "./focusReturn"
 import { Inspector } from "./Inspector"
 import { Icon } from "./icons"
 import {
@@ -2280,7 +2281,8 @@ export function Canvas({
                 onChange={(event) => typeIntoBox(labelling.id, event.target.value, labelling.on)}
                 onKeyDown={(event) => {
                   event.stopPropagation()
-                  if (event.key === "Escape") { event.preventDefault(); openBox.current = false; setLabelling(null) }
+                  // (The field goes away under the keyboard: it is the note's again, as after any bar action — focusReturn.ts.)
+                  if (event.key === "Escape") { event.preventDefault(); openBox.current = false; setLabelling(null); returnFocusSoon() }
                 }}
                 onBlur={() => { openBox.current = false; setLabelling(null) }} />
     )
@@ -2303,8 +2305,8 @@ export function Canvas({
              onChange={(event) => setLabelling({ id: labelling.id, text: event.target.value, on: labelling.on })}
              onKeyDown={(event) => {
                event.stopPropagation()
-               if (event.key === "Enter") { event.preventDefault(); commit() }
-               else if (event.key === "Escape") { labelCancelled.current = true; setLabelling(null) }
+               if (event.key === "Enter") { event.preventDefault(); commit(); returnFocusSoon() }
+               else if (event.key === "Escape") { labelCancelled.current = true; setLabelling(null); returnFocusSoon() }
              }}
              onBlur={commit} />
     )

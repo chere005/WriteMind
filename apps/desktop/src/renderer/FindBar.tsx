@@ -97,6 +97,24 @@ export function FindBar({ view, request, onQuery, onClose }: Props) {
     view?.focus()
   }
 
+  // ESCAPE IS THE CARD'S WHEREVER THE KEYBOARD IS NOWHERE. Replace All turns itself off when nothing is left to replace; the
+  // button under the focus goes disabled and the focus falls to the page, where the card's own onKeyDown below never hears
+  // the key, and the card stayed up with the keyboard in no field at all (found by e2e/suites/integration/03). With the
+  // keyboard in the note or in another field Escape is theirs, as it was. (A press on a button still takes the focus, so Ctrl+Z
+  // after Replace All is the note's Undo and not the Replace field's: cells/14.)
+  useEffect(() => {
+    const away = (event: KeyboardEvent) => {
+      if (event.key !== "Escape" || event.defaultPrevented) return
+      const active = document.activeElement
+      if (active && active !== document.body) return
+      event.preventDefault()
+      onClose()
+      view?.focus()
+    }
+    window.addEventListener("keydown", away)
+    return () => window.removeEventListener("keydown", away)
+  }, [view, onClose])
+
   const keys = (event: React.KeyboardEvent) => {
     if (event.key === "Escape") { event.preventDefault(); close(); return }
     const control = event.ctrlKey || event.metaKey

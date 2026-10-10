@@ -2,7 +2,7 @@ import { EditorSelection, EditorState } from "@codemirror/state"
 import { describe, expect, it } from "vitest"
 import { pictureMarkdown } from "@writemind/core"
 import {
-  barCaret, cellAtCaret, cellBeside, sameLineOnScreen, seamBeneath, shownBeyond, sideMove, verticalMove,
+  barCaret, cellAtCaret, cellBeside, lastBlock, sameLineOnScreen, seamBeneath, shownBeyond, sideMove, verticalMove,
 } from "../src/barWalk"
 import { foldField, foldSection, hiddenNow } from "../src/fold"
 import { notebook, notebookField } from "../src/notebook"
@@ -222,5 +222,33 @@ describe("one line on screen", () => {
     expect(sameLineOnScreen({ top: 10, bottom: 30 }, { top: 10.5, bottom: 30 })).toBe(true)
     expect(sameLineOnScreen({ top: 4, bottom: 40 }, { top: 12, bottom: 30 })).toBe(true)
     expect(sameLineOnScreen({ top: 10, bottom: 30 }, { top: 30, bottom: 50 })).toBe(false)
+  })
+})
+
+describe("the end block of the page (the rendered page's Down and Up arm the bar under / above the note)", () => {
+  // Found by e2e/suites/integration: on the rendered page Down from the last block walked onto the empty line a note that ends
+  // with its newline has (every saved note does) instead of arming the bar under the note.
+  const body = "Alpha\n\nBeta\n\nGamma"
+  const lastEnd = (doc: string) => doc.indexOf("Gamma") + "Gamma".length
+
+  it("is the last block with nothing on show below it, with or without the newline that ends the note", () => {
+    for (const doc of [body, body + "\n", body + "\n\n\n"]) {
+      const state = make(doc)
+      expect(lastBlock(state, lastEnd(doc) + 1, false)).toBe(true)
+    }
+  })
+
+  it("is not a block with another below it", () => {
+    const state = make(body + "\n")
+    expect(lastBlock(state, body.indexOf("Alpha") + "Alpha".length + 1, false)).toBe(false)
+    expect(lastBlock(state, body.indexOf("Beta") + "Beta".length + 1, false)).toBe(false)
+  })
+
+  it("is the first block with nothing above it, also when the note starts with empty lines", () => {
+    for (const doc of [body, "\n\n" + body]) {
+      const state = make(doc)
+      expect(lastBlock(state, doc.indexOf("Alpha"), true)).toBe(true)
+      expect(lastBlock(state, doc.indexOf("Beta"), true)).toBe(false)
+    }
   })
 })

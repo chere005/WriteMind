@@ -198,12 +198,22 @@ export class Draft {
     }
   }
 
-  /** Bytes kept as a file of the step. */
+  /**
+   * Bytes kept as a file of the step. A step is taken back more than once (Undo, Redo, Undo again), and each Undo of a
+   * creation keeps what is there at that moment: the name is the first free one in the step's folder, never one an earlier
+   * Undo used (that collided: "something with that name is already there (EEXIST)" on the second Undo of a redone note).
+   */
   async keep(name: string, bytes: Uint8Array): Promise<string> {
-    const copy = path.join(this.dir, `${++this.count}-${cleanName(name)}`)
     await fs.mkdir(this.dir, { recursive: true })
-    await fs.writeFile(copy, bytes, { flag: "wx" })
-    return copy
+    for (;;) {
+      const copy = path.join(this.dir, `${++this.count}-${cleanName(name)}`)
+      try {
+        await fs.writeFile(copy, bytes, { flag: "wx" })
+        return copy
+      } catch (error) {
+        if (codeOf(error) !== "EEXIST") throw error
+      }
+    }
   }
 
   /** The work failed: this step's backups go (the step was never recorded). */
@@ -464,7 +474,12 @@ export class UndoJournal {
     const kept = copy as string | null
     return {
       rollback: async () => { if (kept) await restoreBytes(part.path, await fs.readFile(kept)) },
-      settle: () => { part.copy = kept },
+      // (The copy an earlier Undo kept is out of date now: Redo brings back what this Undo kept. It goes, inside the step's own folder.)
+      settle: () => {
+        const old = part.copy
+        part.copy = kept
+        if (old && old !== kept && path.dirname(old) === step.dir) void fs.rm(old, { force: true }).catch(() => undefined)
+      },
     }
   }
 
