@@ -5,6 +5,9 @@
 import { ok, finish, js, sleep, waitFor, freshNote, setDoc, key, click, rightClick, drag, mouse, hover, focus, shot, centerOf, menuClick, showVideoPane, insertText, doc, clickEl, penMenu } from "../../lib/harness.mjs"
 import { MAC, mod, box, keyboardIn } from "../../lib/overlays.mjs"
 
+// (The scripts of a suite share one app: the pen's width, colour and tool are what 08-toolbar-pen left in the page's storage.)
+await js(`localStorage.clear()`)
+await js(`location.reload()`); await sleep(1500)
 await freshNote()
 await setDoc("Alpha para\n\nBeta para\n\nGamma", 0); await focus(); await sleep(300)
 const gone = (selector) => js(`!document.querySelector(${JSON.stringify(selector)})`)
