@@ -3,8 +3,11 @@
 // four corner handles and its row, Hold's frame and badge, Zoom's magnification, the footer's one line and its fact, the
 // toast for what an action did, and the "What should this pane show?" cards when there is no source.
 // @e2e video=chart
-import { showVideoPane, pickCamera, js, ok, finish, sleep, drag, freshNote, shot, waitFor, rectOf, key, pickFromMenu } from "../../lib/harness.mjs"
+import { showVideoPane, pickCamera, js, ok, finish, sleep, drag, freshNote, shot, waitFor, rectOf, key, pickFromMenu, openVideoMenu } from "../../lib/harness.mjs"
 
+// (The lifted take is remembered between launches, and the scripts of this suite share one profile: this one starts from the
+// default, Writing, whatever an earlier script last took.)
+await js(`localStorage.removeItem('writemind.captureMode')`)
 await freshNote()
 await showVideoPane()
 await pickCamera()
@@ -98,8 +101,9 @@ await pickFromMenu(".camera-head [data-camera-zoom=square]", "zoom-original")
 ok("Original Size in Zoom's menu puts the whole picture back", await js(`!document.querySelector('[data-camera-zoom=square]').classList.contains('on')`))
 
 // 8. no source: the pane asks, with a card for each way
-await js(`document.querySelector('[data-bar=video-options]').click()`); await sleep(200)
-await js(`[...document.querySelectorAll('.video-pop button')].find((b) => b.textContent.includes('Turn Camera Off')).click()`)
+// (The source is turned off in the video button's menu, in the tab row: `video-options` is that menu since the tab row took it over.)
+await openVideoMenu()
+await js(`document.querySelector('.float-menu [data-bar=video-off]').click()`)
 await sleep(800)
 ok("with no source the pane asks What should this pane show?", /What should this pane show\?/.test(await js(`document.querySelector('.camera .placeholder .title')?.textContent ?? ''`)))
 ok("...with a card for the tablet, Refresh devices and Hide this pane", await js(`!!document.querySelector('.camera .source-card[data-source=tablet]') && !!document.querySelector('.camera [data-action=refresh]') && !!document.querySelector('.camera [data-action=hide]')`))
