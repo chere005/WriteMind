@@ -151,33 +151,6 @@ button { font: inherit; color: inherit; }
 
 .pane { flex: 1; display: flex; flex-direction: column; min-width: 0; }
 
-.tab-bar {
-  display: flex;
-  align-items: stretch;
-  height: 30px;
-  background: var(--wm-chrome);
-  border-bottom: 1px solid var(--wm-rule);
-  -webkit-app-region: drag;
-  overflow: hidden;
-}
-.tab-bar > * { -webkit-app-region: no-drag; }
-.tab {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  padding: 0 10px;
-  border: 0;
-  border-right: 1px solid var(--wm-rule);
-  background: transparent;
-  color: var(--wm-soft);
-  font-size: 12px;
-  cursor: pointer;
-  max-width: 200px;
-}
-.tab.open { background: var(--wm-page); color: var(--wm-text); }
-.tab .close { opacity: 0.5; }
-.tab .close:hover { opacity: 1; }
-
 .top-bar {
   display: flex;
   flex-wrap: wrap;
@@ -614,18 +587,6 @@ select.chevron {
 }
 select.chevron:hover, select.chevron:disabled { background-image: var(--chev); background-repeat: no-repeat; background-position: center; }
 select.chevron option { color: var(--wm-text); background: var(--wm-chrome); }
-.video-pop {
-  position: absolute; top: calc(100% + 4px); right: 0; z-index: 30; min-width: 210px; padding: 4px;
-  border: 1px solid var(--wm-rule); border-radius: 8px; background: var(--wm-chrome);
-  box-shadow: 0 8px 24px var(--wm-shadow); font-size: 12.5px;
-}
-.video-pop button { display: flex; width: 100%; text-align: left; border: 0; background: transparent;
-  padding: 4px 8px; border-radius: 5px; cursor: pointer; }
-.video-pop button:hover:not(:disabled) { background: var(--wm-accent); color: #fff; }
-.video-pop button:disabled { opacity: 0.4; cursor: default; }
-.video-pop .tick { width: 16px; flex: none; }
-.video-pop .none { padding: 4px 8px; color: var(--wm-faint); }
-.video-pop hr { border: 0; border-top: 1px solid var(--wm-rule); margin: 4px 2px; }
 
 /* Rows: edit mode puts duplicate and a two-click trash on each. */
 .note-row, .section-row { display: flex; align-items: center; gap: 6px; }

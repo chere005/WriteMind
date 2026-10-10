@@ -3,15 +3,13 @@
  * could not be type-checked on the Mac and would be slower here, and the
  * flat list is what both sides draw.
  *
- * The bar above it reads edit · add section · separator · markdown · video,
- * and NEW NOTE IS NOT ON IT: it is the add row, a box split down the middle
+ * The bar above it reads edit · add section, and NEW NOTE IS NOT ON IT: it is the add row, a box split down the middle
  * at the top of the list and at the top of every section, so the way to make
  * a note is where the note will land.
  */
 
 import { memo, useEffect, useMemo, useRef, useState } from "react"
 import { stem, type Note } from "@writemind/core"
-import { shown, TABLET_SOURCE } from "../shared/commands"
 import { tip } from "./TopBar"
 import { FloatingMenu, type MenuItem } from "./FloatingMenu"
 import {
@@ -471,62 +469,25 @@ const CheckIcon = () => (
   </svg>
 )
 
-const DocIcon = ({ rich }: { rich: boolean }) => (
-  <svg width="12" height="14" viewBox="0 0 12 14" fill="none" aria-hidden>
-    <path d="M1.5 1h6l3 3v9h-9z" stroke="currentColor" strokeWidth="1.2" strokeLinejoin="round" />
-    {rich
-      ? <path d="M3.6 6.2h4.8M3.6 8.4h4.8M3.6 10.6h3" stroke="currentColor" strokeWidth="1.1" strokeLinecap="round" />
-      : <path d="M3.6 7h4.8M3.6 9.4h4.8" stroke="currentColor" strokeWidth="1.1" strokeLinecap="round" opacity="0.7" />}
-  </svg>
-)
-
-const VideoIcon = ({ on }: { on: boolean }) => (
-  <svg width="16" height="12" viewBox="0 0 16 12" fill="none" aria-hidden>
-    <rect x="0.8" y="1.8" width="9.4" height="8.4" rx="1.8" stroke="currentColor" strokeWidth="1.2"
-          fill={on ? "currentColor" : "none"} />
-    <path d="M10.6 5l4-2.2v6.4l-4-2.2z" stroke="currentColor" strokeWidth="1.2" strokeLinejoin="round"
-          fill={on ? "currentColor" : "none"} />
-    {!on && <path d="M1 11.5L15 .5" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" />}
-  </svg>
-)
-
 export interface SidebarBarProps {
   platform: string
   editing: boolean
   onEditing(on: boolean): void
   onNewSection(): void
   newSectionIn: string
-  rendered: boolean
-  hasNote: boolean
-  onToggleRendered(): void
-  camera: boolean
-  onToggleCamera(): void
-  cameras: { id: string; name: string }[]
-  cameraId: string | null
-  onPickCamera(id: string): void
-  onCameraOff(): void
-  onRefreshCameras(): void
-  /** The notes pane is showing, and the video menu's way to put it away (the Mac's "Whole Screen"; here it is the window, never the display). */
-  notesPane?: boolean
-  onToggleNotesPane?(): void
 }
 
 /**
  * The bar over the list — the Mac's `SidebarView.header`: a spacer, Edit
- * Notes, New Section, a separator, the markdown toggle and the video's
- * switch, right-aligned, 44 points tall. New Note is not here: it is the
- * add row at the top of the list and of every section. The sidebar's own
- * switch is not here either: it is the first button of the text bar.
+ * Notes and New Section, right-aligned, 44 points tall. New Note is not here:
+ * it is the add row at the top of the list and of every section. The sidebar's
+ * own switch is not here either, and neither are the markdown toggle and the
+ * video's switch: they moved to the TAB ROW (TabBar.tsx), which is always
+ * there, so shutting the sidebar no longer takes them away (Sean, 2026-10-10:
+ * "keep the rendered and video buttons to the right of the sidebar always").
  */
 export function SidebarBar(props: SidebarBarProps) {
-  const [videoMenu, setVideoMenu] = useState(false)
-  useEffect(() => {
-    if (!videoMenu) return
-    const close = () => setVideoMenu(false)
-    window.addEventListener("pointerdown", close)
-    return () => window.removeEventListener("pointerdown", close)
-  }, [videoMenu])
-  const { platform, editing, camera } = props
+  const { editing } = props
   return (
     <div className="sidebar-bar">
       <div className="spacer" />
@@ -539,76 +500,6 @@ export function SidebarBar(props: SidebarBarProps) {
       <button className="icon-button" data-bar="new-section" aria-label="New Section"
               title={tip("New Section", "", `New section in ${props.newSectionIn}`)}
               onClick={props.onNewSection}><FolderIcon /></button>
-      <div className="bar-divider" />
-      <button className={`icon-button${props.rendered ? " on" : ""}`} data-bar="markdown"
-              disabled={!props.hasNote}
-              aria-label={props.rendered ? "Rendered" : "Markdown"} aria-pressed={props.rendered}
-              title={tip(props.rendered ? "Rendered" : "Markdown", shown("toggleMode", platform),
-                props.rendered ? "Showing the note rendered — click for the markdown behind it"
-                  : "Showing the markdown — click to render it and go on typing")}
-              onClick={props.onToggleRendered}><DocIcon rich={props.rendered} /></button>
-      {/* A PANE'S SWITCH LIVES ON A DIFFERENT PANE: the video's is here, and
-          its chevron lists the cameras, as the Input Devices menu does. */}
-      <span className={`bar-split${camera ? " on" : ""}`}>
-        <button className={`icon-button${camera ? " on" : ""}`} data-bar="video"
-                aria-label={camera ? "Hide Video" : "Show Video"} aria-pressed={camera}
-                title={tip(camera ? "Hide Video" : "Show Video", shown("toggleCamera", platform),
-                  camera ? "Put the camera pane away" : "Bring the camera pane back")}
-                onClick={props.onToggleCamera}><VideoIcon on={camera} /></button>
-        <button className="icon-button chevron-button" data-bar="video-options" aria-label="Video Options"
-                title={tip("Video Options", "", "Which camera (or the tablet), and turning it off")}
-                onPointerDown={(event) => event.stopPropagation()}
-                onClick={() => setVideoMenu((was) => !was)}>▾</button>
-        {videoMenu && (
-          <div className="video-pop" onPointerDown={(event) => event.stopPropagation()}>
-            {props.cameras.length === 0 && <div className="none">No cameras found</div>}
-            {props.cameras.map((one) => (
-              <button key={one.id} onClick={() => { props.onPickCamera(one.id); setVideoMenu(false) }}>
-                <span className="tick">{props.cameraId === one.id ? "✓" : ""}</span>{one.name}
-              </button>
-            ))}
-            <button data-source="tablet" onClick={() => { props.onPickCamera(TABLET_SOURCE); setVideoMenu(false) }}>
-              <span className="tick">{props.cameraId === TABLET_SOURCE ? "✓" : ""}</span>Tablet
-            </button>
-            <hr />
-            <button disabled={props.cameraId === null}
-                    onClick={() => { props.onCameraOff(); setVideoMenu(false) }}>
-              <span className="tick" />Turn Camera Off
-            </button>
-            <button onClick={() => { props.onRefreshCameras() }}>
-              <span className="tick" />Refresh Device List
-            </button>
-            {/* The Mac's "Picture" panel: turn it, put it back to its own size, zoom into a box. The pane owns the picture. */}
-            <hr />
-            {([
-              ["turn-left", "Turn Left", "A quarter turn anticlockwise", false],
-              ["turn-right", "Turn Right", "A quarter turn clockwise", false],
-              ["original-size", "Original Size", "The whole camera picture again, at the size it comes in", false],
-              ["resize-by-square", "Resize by Square", "Drag a box on the picture and the pane shows just that much", true],
-            ] as const).map(([action, label, help, close]) => (
-              <button key={action} data-camera-action={action} title={help}
-                      disabled={props.cameraId === null || props.cameraId === TABLET_SOURCE}
-                      onClick={() => {
-                        window.dispatchEvent(new CustomEvent("wm:camera-action", { detail: action }))
-                        // Turning is done two or three times in a row: the panel stays up. A box is finished on the picture.
-                        if (close) setVideoMenu(false)
-                      }}>
-                <span className="tick" />{label}
-              </button>
-            ))}
-            {props.onToggleNotesPane && (
-              <>
-                <hr />
-                <button data-camera-action="notes-pane" disabled={!camera}
-                        title={props.notesPane === false ? "The notes and the video side by side again" : "Put the notes away and give the window to the video"}
-                        onClick={() => { props.onToggleNotesPane?.(); setVideoMenu(false) }}>
-                  <span className="tick" />{props.notesPane === false ? "Back to Side by Side" : "Video Only (Hide Notes Pane)"}
-                </button>
-              </>
-            )}
-          </div>
-        )}
-      </span>
     </div>
   )
 }
