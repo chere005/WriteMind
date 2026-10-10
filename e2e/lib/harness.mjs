@@ -429,19 +429,31 @@ export async function showVideoPane() {
   await js(`!document.querySelector('.camera') && document.querySelector('[data-bar=video]')?.click()`)
   await waitFor(`!!document.querySelector('.camera')`)
 }
+/**
+ * Open the video button's menu in the tab row the way a person does: a right-click on the button (its corner and a held
+ * press do the same; a plain click shows or hides the pane). The menu is `[data-bar=video-options]`; its rows carry
+ * `video-show`, `video-source` (one per camera), `video-tablet`, `video-off`, `video-turn-left`, `video-turn-right`,
+ * `video-refresh` and `video-only`.
+ */
+export async function openVideoMenu() {
+  if (await js(`!!document.querySelector('[data-bar=video-options]')`)) return
+  const at = await centerOf("[data-bar=video]")
+  if (!at) throw new Error("no video button")
+  await rightClick(at.x, at.y)
+  await waitFor(`!!document.querySelector('[data-bar=video-options]')`)
+  await sleep(100)
+}
 /** Choose the pen tablet as the video pane's source. */
 export async function pickTablet() {
-  await js(`document.querySelector('[data-bar=video-options]').click()`)
-  await sleep(150)
-  await js(`document.querySelector('.video-pop [data-source=tablet]').click()`)
+  await openVideoMenu()
+  await js(`document.querySelector('[data-bar=video-tablet]').click()`)
   await waitFor(`!!document.querySelector('.camera .tablet')`)
   await sleep(300)
 }
 /** Choose the (fake) camera as the video pane's source. */
 export async function pickCamera() {
-  await js(`document.querySelector('[data-bar=video-options]').click()`)
-  await sleep(150)
-  await js(`document.querySelector('.video-pop button:not([data-source])').click()`)
+  await openVideoMenu()
+  await js(`document.querySelector('[data-bar=video-source]').click()`)
 }
 export const tabletBox = async () => JSON.parse(await js(`(()=>{const b=document.querySelector('.camera .tablet').getBoundingClientRect();return JSON.stringify({x:b.x,y:b.y,w:b.width,h:b.height})})()`))
 export const barBtn = (k) => js(`document.querySelector('.camera-bar [data-tablet=${k}]').click()`)
@@ -498,7 +510,7 @@ export async function closeAllTabs() {
   }
 }
 
-/** Switch the rendered page on or off with the sidebar's markdown button and wait until it has really changed. */
+/** Switch the rendered page on or off with the tab row's rendered button and wait until it has really changed. */
 export async function setRendered(want) {
   const is = () => js(`document.querySelector('.cm-editor')?.classList.contains('wm-rendered') ?? false`)
   if ((await is()) !== want) await js(`document.querySelector('[data-bar=markdown]')?.click()`)

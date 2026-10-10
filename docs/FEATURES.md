@@ -239,9 +239,12 @@ is how the code is put together.
   occurrence per press, all editable at once. ⌃⌘G takes every one.
 - **It opens side by side.** Every launch shows the notes and the video
   together, whatever was put away last time.
-- **Collapse what you're not using.** The notes list and the video from the
-  sidebar's header; the notes pane from the corner of the video. ⌃⌘S, ⌃⌘E,
-  ⌃⌘C.
+- **Collapse what you're not using.** The notes list, the rendered page and
+  the video each have a button at the left of the tab row, always in that
+  order, whether the sidebar is open or shut; the video button's corner
+  (or a right-click) opens its menu — Show video, the cameras, the tablet
+  sheet, Turn left / Turn right, Refresh devices, Video Only. The notes pane
+  is put away from the corner of the video. ⌃⌘S, ⌃⌘E, ⌃⌘C.
 - **Two modes over one page, and one button between them.** The drawing
   layer is there in the markdown and on the rendered page alike — the
   drawing belongs to the note, not to one way of looking at it — and the
@@ -295,8 +298,13 @@ is how the code is put together.
   folding a section never takes its keys with it. Hovering a button names
   it, shows its keys and says what it does.
 - **Tabs for the notes you have open.** The wheel walks along them, and the
-  button at the right-hand end lists every open note — the way back to one
-  that has scrolled off the end.
+  button at the right-hand end — a list icon and how many are open — lists
+  every open note, the one in front checked: the way back to one that has
+  scrolled off the end. The tab in front is the colour of the page and runs
+  into the toolbar under it; its × shows on it and on whichever tab the
+  pointer is over. Right-click a tab for Close, Close Other Tabs, Rename…,
+  Duplicate, Move to ▸, Reveal and Move to Trash… (the sidebar row's own
+  actions).
 
 ## Wolfram notebooks (port-only)
 

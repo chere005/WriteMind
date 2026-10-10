@@ -67,6 +67,7 @@ against it, each as its own node process:
 | `camera` | a fake camera: the flow-chart reader, squaring a tilted page through four corners |
 | `tablet` | the tablet sheet as the video source: writing, box, chart, page, undo, erase, pen buttons on the sheet |
 | `format` | a note is a `.wm`: a legacy folder converts on launch (originals moved to a backup, a notice), typing, a pen stroke and a pasted picture land inside the file (read back by `e2e/lib/wm.mjs` and the system's `unzip -t`), a restart brings them back, the export reads it |
+| `tabs` | the tab row: the sidebar / rendered / video switches (sidebar open and shut), the video button's menu, the tabs, the +, the open-notes list and count at 460px and wide, and a tab's right-click menu (Rename, Duplicate, Move to, Trash) checked on disk. A script that presses a key uses Cmd on a Mac (the older `chrome` scripts press Ctrl and several of them fail on a Mac at the foundation commit, with or without this suite) |
 | `chrome` | the three bars and their groups, one-press-one-action keys, the application menu, edit mode, projects |
 | `perf` | typing / scroll / pen frame times on a long note (generous limits; numbers are printed as notes) |
 

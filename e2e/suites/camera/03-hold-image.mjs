@@ -5,7 +5,7 @@
 // @e2e video=moving
 import { MOVING_DX, MOVING_X0 } from "../../lib/fixtures.mjs"
 import {
-  showVideoPane, pickCamera, pickTablet, key, js, ok, finish, sleep, freshNote, saved, shot, waitFor, click, drag, rectOf,
+  showVideoPane, pickCamera, pickTablet, openVideoMenu, key, js, ok, finish, sleep, freshNote, saved, shot, waitFor, click, drag, rectOf,
 } from "../../lib/harness.mjs"
 
 const file = await freshNote({ video: true })
@@ -139,9 +139,8 @@ ok("pressing it again lets go", (await state()).pressed === "false")
 
 // ANOTHER SOURCE LETS GO: the camera turned off, the tablet.
 await pressHold()
-await js(`document.querySelector('[data-bar=video-options]').click()`)
-await sleep(150)
-await js(`[...document.querySelectorAll('.video-pop button')].find(b => b.textContent.includes('Turn Camera Off')).click()`)
+await openVideoMenu()
+await js(`document.querySelector('[data-bar=video-off]').click()`)
 await sleep(600)
 await pickCamera()
 await waitFor(`(() => { const v = document.querySelector('.camera video'); return v && v.videoWidth > 0 && v.readyState >= 2 })()`, 15000)

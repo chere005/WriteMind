@@ -443,10 +443,13 @@ A press on the words lets go of the pick, which gives the keys back.
 |---|---|---|
 | Divider between the notes and the video (when it has the keyboard: Tab to it) | Left / Right | the video 24 px wider / narrower |
 | same | Home, or double-click | back to the Mac default share (720 : 420) |
-| A sidebar or tab menu, the Folder menu | Up / Down, Enter, Escape, Right / Left | move, choose, close, open / close a submenu; the caret returns to the notes |
+| A sidebar or tab menu, the video button's menu, the open-notes list, the Folder menu | Up / Down, Enter, Escape, Right / Left | move, choose, close, open / close a submenu; the caret returns to the notes |
 | The font-and-colour popover, the Pen popover (the Pen chip), the sheet's Paper menu | Escape, or a click anywhere else | close |
 | Ctrl+K / Ctrl+Shift+Y | | Hide or Show the sidebar / the video (the notes pane: View menu, no key; never both panes) |
 | A tab | middle click | closes it |
+| A tab | right-click | Close, Close Other Tabs, Rename…, Duplicate, Move to ▸, Reveal, Move to Trash… |
+| The video button | click | shows or hides the video pane; its corner, a right-click, a half-second hold or Down opens the menu (sources, Turn left / right, Refresh devices, Video Only) |
+| The rendered button | click | the same as the rendered-page key (lit while rendered) |
 | The tab row | wheel | walks along the tabs |
 
 ## The camera pane (c2-camera-parity)
