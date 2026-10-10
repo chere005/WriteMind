@@ -1,0 +1,1 @@
+{ "description": "Undo across words, drawing and FILE operations (docs/PLAN-undo.md): five steps and back, six file operations and the third-step boundary, text and file steps interleaved, tabs and disk reloads, the Edit menu's names" }

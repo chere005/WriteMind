@@ -444,6 +444,49 @@ export async function createFile(file: string, wm: WmFile, when: Date = new Date
   touched(file)
 }
 
+/**
+ * A note's BYTES put back at a name nothing has (Undo of a trash, Redo of a New Note; main/undoJournal.ts): the exclusive
+ * writer, so a name that was taken since is EEXIST and never overwritten. The app then knows them (digest and container),
+ * exactly as after `createFile`. Bytes that are no note any more (a damaged `.wm` that was trashed) are put back all the
+ * same and the app is told nothing about them: it will not write over a file it has not read.
+ */
+export async function restoreBytes(file: string, bytes: Uint8Array): Promise<void> {
+  let wm: WmFile | null = null
+  try { wm = parseNote(bytes) } catch { wm = null }
+  await fs.mkdir(path.dirname(file), { recursive: true })
+  remember(file)
+  remember(partialOf(file))
+  await inTurn(file, () => createNow(file, [bytes]))
+  remember(file)
+  if (wm === null) return
+  const key = keyOf(file)
+  digests.set(key, sha256([bytes]))
+  remembered(key, wm)
+  fileTimes.set(key, Date.now())
+  touched(file)
+}
+
+/**
+ * A note taken away on the strength of the app owning it (Undo of a New Note, Duplicate or Import; main/undoJournal.ts): in
+ * the note's own write queue, only while the bytes on disk are exactly the bytes the app last read or wrote (the same
+ * digest every save is guarded by), `keep` is handed those bytes to put somewhere safe BEFORE the file is removed.
+ * "changed": the file is somebody else's now, or the app never read it, and it is left alone. "gone": nothing was there.
+ * The app's digest of the name is kept, so a late save of the removed note is refused as "gone", never put back.
+ */
+export function takeOwned(file: string, keep?: (bytes: Uint8Array) => Promise<void>): Promise<"removed" | "changed" | "gone"> {
+  return inTurn(`${file}`, async () => {
+    const there = await disk(file)
+    if (there === null) return "gone"
+    const known = digests.get(keyOf(file)) ?? null
+    if (known === null || there.digest !== known) return "changed"
+    if (keep) await keep(there.bytes)
+    remember(file)
+    await fs.rm(file)
+    remember(file)
+    return "removed"
+  })
+}
+
 /** A new, empty note. */
 export const newNoteFile = (text = ""): WmFile => newWmFile(Date.now(), app, text)
 

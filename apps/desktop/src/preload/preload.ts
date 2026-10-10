@@ -10,6 +10,7 @@ import { EVAL_CHANNELS, type EvalApi } from "../shared/eval"
 import { UPDATE_CHANNELS, type UpdateApi } from "../shared/update"
 import { LANGUAGE_CHANNELS, type LanguagesApi } from "../shared/languages"
 import { ABOUT_CHANNELS, type AboutApi } from "../shared/about"
+import type { UndoOutcome, UndoState } from "../shared/undo"
 
 /** window.wm.pen: the tablet pen's feed (shared/pen.ts PenApi; every channel name is spelled once there). The E2E hooks exist only under WRITEMIND_E2E. */
 const listen = <T>(channel: string, listener: (payload: T) => void): (() => void) => {
@@ -202,6 +203,16 @@ const api = {
     e2eTold: () => ipcRenderer.invoke("e2e:told"),
     e2eClipboard: (command: "read" | "save" | "restore") => ipcRenderer.invoke("e2e:clipboard", command),
   } : {}),
+  /**
+   * The undo journal of FILE steps (main/undoJournal.ts, docs/PLAN-undo.md): what is on top of its stacks, take the top one
+   * back / bring it back, and the word that a new edit ended the redo path. `onChanged` hears every change of the stacks.
+   */
+  undo: {
+    state: (): Promise<UndoState> => ipcRenderer.invoke("undo:state"),
+    run: (which: "undo" | "redo"): Promise<UndoOutcome> => ipcRenderer.invoke("undo:run", which),
+    cutRedo: (): Promise<void> => ipcRenderer.invoke("undo:cutRedo"),
+    onChanged: (listener: (state: UndoState) => void) => listen<UndoState>("undo:changed", listener),
+  },
   /** Edit ▸ Undo / Redo in the app's own menu. */
   onEdit: (listener: (which: "undo" | "redo") => void) => {
     const wrapped = (_event: unknown, which: "undo" | "redo") => listener(which)

@@ -14,6 +14,7 @@
 import type { MenuItemConstructorOptions } from "electron"
 import { CAMERA_ASPECTS, cameraAspectTitle, HEADING_LADDER, headingName } from "@writemind/core"
 import { acceleratorFor, HEADING_COMMANDS, TABLET_SOURCE, type MenuState } from "../shared/commands"
+import { menuText } from "../shared/undo"
 
 
 export interface ProjectInfo {
@@ -54,6 +55,10 @@ export function buildMenu(options: MenuOptions): MenuItemConstructorOptions[] {
       ...extra,
     }
   }
+
+  /** Undo and Redo name the step the next press takes; null (nothing to take) greys the item, undefined (not said yet) leaves it plain. */
+  const historyItem = (id: string, verb: "Undo" | "Redo", label: string | null | undefined) =>
+    item(id, label === undefined ? verb : menuText(verb, label), { enabled: label !== null })
 
   const file: MenuItemConstructorOptions[] = [
     item("newNote", "New Note"),
@@ -99,8 +104,9 @@ export function buildMenu(options: MenuOptions): MenuItemConstructorOptions[] {
   ]
 
   const edit: MenuItemConstructorOptions[] = [
-    item("undo", "Undo"),
-    item("redo", "Redo"),
+    // The step the next press takes is named ("Undo Rename Note", "Undo Typing"); with nothing to take the item is greyed.
+    historyItem("undo", "Undo", state.undoLabel),
+    historyItem("redo", "Redo", state.redoLabel),
     item("undoDrawing", "Undo Drawing", { enabled: state.canUndoDrawing }),
     item("redoDrawing", "Redo Drawing", { enabled: state.canRedoDrawing }),
     SEPARATOR,
