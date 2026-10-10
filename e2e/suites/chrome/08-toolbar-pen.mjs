@@ -4,7 +4,7 @@
 // caret, a right-click, a half-second hold or ArrowDown open the menu: Pen / Eraser (checked, with their keys), Colour,
 // Width, Pen always draws, and the tablet's sheet. The keys (Alt+Cmd/Ctrl+1 / 2) and the menu and the button stay in step.
 import {
-  ok, finish, freshNote, js, sleep, shot, clickEl, centerOf, rightClick, mouse, hover, key, MOD, setRendered, setInput, saved,
+  ok, finish, freshNote, js, sleep, shot, clickEl, centerOf, rightClick, mouse, hover, key, MOD, ALT, setRendered, setInput, saved,
   canvasBox, drag, eraserState, penMenu, menu,
 } from "../../lib/harness.mjs"
 
@@ -19,7 +19,7 @@ const menuRows = () => js(`JSON.stringify([...document.querySelectorAll('.float-
 const menuOpen = () => js(`!!document.querySelector('.float-menu')`)
 const focusIsNotes = () => js(`document.activeElement?.classList.contains('cm-content') ?? false`)
 const mac = await js(`navigator.userAgent.includes('Mac')`)
-const chord = (digit) => key(String(digit), { ...MOD, alt: true })
+const chord = (digit) => key(String(digit), { modifiers: MOD | ALT })
 const closeMenu = async () => { if (await menuOpen()) { await key("Escape"); await sleep(250) } }
 
 // ---- the bar has no Select button, colour well, swatch strip, width select or ink dot any more

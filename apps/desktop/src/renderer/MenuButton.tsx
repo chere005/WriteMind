@@ -41,6 +41,13 @@ interface Props {
   /** The caret button's name and test hook. */
   caretTitle?: string
   caretDataBar?: string
+  /**
+   * The menu FOLLOWS the state while it is up: its rows are asked for again on every render, not once when it opens. For a
+   * menu whose rows change under the person's hand and which stays up for it (the pen's colour, width and switch, Sean,
+   * 2026-10-10: "[colour and width] should be under this dropdown"). The rows keep their keys, so the row the person is on
+   * keeps the keyboard; a menu that does not change while open leaves this off and is built once.
+   */
+  live?: boolean
   className?: string
   /** Test hook. */
   dataBar?: string
@@ -55,7 +62,7 @@ interface Props {
 const HOLD_MS = 500
 const CORNER = 12
 
-export function MenuButton({ icon, label, title, name, items, onMain, on, tint, disabled, chevron, noMark, caret, caretTitle, caretDataBar, className, dataBar, menuBar, data, style, children }: Props) {
+export function MenuButton({ icon, label, title, name, items, onMain, on, tint, disabled, chevron, noMark, caret, caretTitle, caretDataBar, live, className, dataBar, menuBar, data, style, children }: Props) {
   const button = useRef<HTMLButtonElement>(null)
   const split = useRef<HTMLSpanElement>(null)
   // The menu is built when it is opened and kept: a render of the page behind it (a clock, a save) must not rebuild its
@@ -140,7 +147,7 @@ export function MenuButton({ icon, label, title, name, items, onMain, on, tint, 
           </button>
         </span>
       ) : main}
-      {at && <FloatingMenu x={at.x} y={at.y} items={at.items} right={caret} dataBar={menuBar} onClose={close} />}
+      {at && <FloatingMenu x={at.x} y={at.y} items={live ? list() : at.items} right={caret} dataBar={menuBar} onClose={close} />}
     </>
   )
 }

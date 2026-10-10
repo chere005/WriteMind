@@ -79,7 +79,7 @@ for (const [row, name, want, where] of CASES) {
   if (where === "newcell") ok(`${name}: the caret is inside the new empty cell`, head > d.indexOf("```", 20) && head <= d.lastIndexOf("```"), String(head))
   ok(`${name}: the button then says ${name}`, (await label()) === name, String(await label()))
   ok(`${name}: the keyboard is the notes' again`, await focusIsNotes())
-  await key("z", MOD); await sleep(250)
+  await key("z", { modifiers: MOD }); await sleep(250)
   ok(`${name}: ONE undo takes it back whole`, (await doc()) === START, JSON.stringify(await doc()))
   ok(`${name}: and the caret is where it was`, JSON.stringify(await sel()) === JSON.stringify(before), JSON.stringify([before, await sel()]))
 }
@@ -89,7 +89,7 @@ await startAt(START, WORDS)
 await openMenu(); await pick("ink")
 const inked = await doc()
 ok("Style > Drawing makes a drawing cell after the caret's cell (the line names its snapshot)", /^alpha\n\nbeta words here\n\n!\[ink\]\(snapshots\/ink-[0-9a-f-]{36}\.svg\)\n\ngamma$/.test(inked), JSON.stringify(inked))
-await key("z", MOD); await sleep(300)
+await key("z", { modifiers: MOD }); await sleep(300)
 ok("one undo takes the drawing cell back", (await doc()) === START, JSON.stringify(await doc()))
 
 // ---- a list kind is the list button's style from now on, and the button's icon says so
@@ -108,7 +108,7 @@ await openMenu(); await pick("quote")
 const atBar = await doc()
 ok("Style > Quote at the bar opens a quote cell there, the bar gone", /^alpha\n\n> \n\nbeta$/.test(atBar) && !(await armed()), JSON.stringify(atBar))
 ok("the caret is in the new quote cell (after its marker) and the button says Quote", (await sel())[1] === "alpha\n\n> ".length && (await label()) === "Quote", JSON.stringify([await sel(), await label()]))
-await key("z", MOD); await sleep(250)
+await key("z", { modifiers: MOD }); await sleep(250)
 ok("one undo takes the cell back", (await doc()) === "alpha\n\nbeta", JSON.stringify(await doc()))
 
 // ---- with no note open the button greys
