@@ -16,7 +16,7 @@ import {
   ctcDecode, detectorSize, lineFrom, linesInMap, minAreaRect, pickReading, readPicture, type BundledLine, type Engine,
 } from "../src/main/bundledOcr/pipeline"
 import { decodePng } from "../src/main/bundledOcr/png"
-import { forgetOcrProbe, probeWindowsOcr, readerFor, readWords } from "../src/main/helpers"
+import { forgetOcrProbe, probeWindowsOcr, readerFor, readWords, tesseract, visionHelper } from "../src/main/helpers"
 import { OcrService } from "../src/main/ocr"
 
 /**
@@ -214,11 +214,14 @@ describe("the order the readers are asked in", () => {
     // Windows' engine stands behind it (the real script, beside the fake app as the build puts it).
     copyFileSync(path.join(here, "../src/helpers/wm-ocr.ps1"), path.join(folder, "..", "wm-ocr.ps1"))
     forgetOcrProbe()
-    const out = await readWords(main, path.join(fixtures, "ocr-english.png"))
-    expect(out.engine).not.toBe("bundled")
     if (process.platform === "win32" && (await probeWindowsOcr(main)).ok) {
+      const out = await readWords(main, path.join(fixtures, "ocr-english.png"))
       expect(out.engine).toBe("windows")
       expect(out.lines.map((line) => line.text).join(" ").toLowerCase()).toContain("plumber")
+    } else if (!tesseract() && !visionHelper(main)) {
+      // Nothing stands behind it here: that is a reader that FAILED (the page says so), not a picture with no words.
+      // (It returned an empty reading, quietly, before the order became a table: test/ocrOrder.test.ts.)
+      await expect(readWords(main, path.join(fixtures, "ocr-english.png"))).rejects.toThrow("the models are broken")
     }
   }, 60000)
 })
