@@ -73,21 +73,18 @@ this. Nothing else asks `process.platform`.
 | The notebook, the drawing layer, the files | yes | yes | yes |
 | Export ▸ PDF | yes | yes | yes (Chromium prints the page) |
 | The camera, the box, and the ink lifted off the paper | yes | yes | yes |
-| Reading a picture's words | `wm-vision` (Vision) | Windows' own OCR engine (`Windows.Media.Ocr`, nothing to install; Japanese is an optional Windows capability, `docs/OCR-WINDOWS.md`), else `tesseract` if installed | `tesseract` if installed |
-| Finding the page in the frame by itself | `findPage` (plain arrays, `capture/findPage.ts`) - the Mac app keeps Vision | yes, the same code | yes, the same code |
+| Reading a picture's words | the bundled reader (PP-OCRv5 on WebAssembly, `docs/OCR-BUNDLED.md`) | the same | the same |
+| Finding the page in the frame by itself | `findPage` (plain arrays, `capture/findPage.ts`) - the Swift app keeps Vision | yes, the same code | yes, the same code |
 
 **A CAPABILITY IS A FILE BEING THERE, and that is the whole rule.** There is
 no table of operating systems in the code: `capabilitiesFor(platform,
-{ocr, engine, japanese})` asks one question, and the shell answers the helper half by looking
-for `wm-vision` (built by `tools/build-vision.sh` on macOS), Windows' engine (a probe of
-`helpers/wm-ocr.ps1` that works) or `tesseract`
-on the PATH — Arch's `tesseract` and `tesseract-data-eng`, which the package
-lists as OPTIONAL. A Mac with no helper built is a Mac without OCR. Nothing
-anywhere else asks `process.platform`.
-
-Vision reads handwriting and tesseract does not, much — so the Mac keeps
-its extra feature rather than everyone being levelled down to the worst
-reader, which is what a "one codebase" port usually costs.
+{ocr})` asks one question, and the shell answers the helper half by looking
+for the bundled reader's folder (`out/helpers/bundled-ocr`). Reading a picture
+is ONE technology on every platform (Sean, 2026-10-10: "OCR should use the
+exact same technology cross platform"); Vision, `Windows.Media.Ocr` and
+tesseract, which this port used before the bundled reader, are gone. A build
+made without the reader's files (offline, no model cache) is a build without
+OCR. Nothing anywhere else asks `process.platform`.
 
 **The rule for the side that cannot do it: say nothing and show nothing.** A
 button that is there but dead, or a dialog explaining what this build cannot

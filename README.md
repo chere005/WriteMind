@@ -32,7 +32,7 @@ Runnable cells use the Python, Wolfram, C, C++ and Rust you have installed; File
 
 WriteMind is BSD 3-Clause licensed ([LICENSE](LICENSE)). [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md) lists every library it ships with and their licences, and Help ▸ About WriteMind shows the same list.
 
-Words in a picture are read by an OCR engine bundled in the app, the same on macOS, Windows and Linux with nothing to install: PaddleOCR's PP-OCRv5 mobile models (Apache-2.0, as converted to ONNX by RapidOCR) running on onnxruntime-web (MIT, WebAssembly). [docs/OCR-BUNDLED.md](docs/OCR-BUNDLED.md) is the design; the platform's own reader (Apple Vision, `Windows.Media.Ocr`, Tesseract) is the fallback.
+Words in a picture are read by an OCR engine bundled in the app, the same on macOS, Windows and Linux with nothing to install: PaddleOCR's PP-OCRv5 mobile models (Apache-2.0, as converted to ONNX by RapidOCR) running on onnxruntime-web (MIT, WebAssembly). [docs/OCR-BUNDLED.md](docs/OCR-BUNDLED.md) is the design. It is the only reader, so a note reads the same on every platform; there is no platform reader behind it.
 
 WriteMind is independent of Wolfram Research, Inc. and uses Wolfram software only as a user of it, by running the Wolfram Engine or Mathematica you have installed and licensed; Wolfram, Mathematica, the Wolfram logo and the spikey are trademarks and/or copyrights of Wolfram Research, Inc., and all Wolfram software and logos belong to Wolfram Research.
 

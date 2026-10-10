@@ -180,7 +180,7 @@ Export... (Ctrl+E) and Help > Keyboard Shortcuts (F1). Still open from it: the w
   (synthetic pen events only: see "Needs Sean's hands").
 * Maths: palette, inline and block typesetting, 2D editing.
 * The camera pane: the page found and squared up by itself, writing lifted off the paper as outlines, flow charts
-  read into nodes and arrows, reading words with Windows' OCR (English).
+  read into nodes and arrows, reading words with the bundled OCR reader (English and Japanese, the same on every platform).
 * The tablet as a source: the sheet, Send Writing / Page / Chart, box, erase, pen buttons and ExpressKeys, orientation.
 * No full screen anywhere, by design. No Pad mode.
 

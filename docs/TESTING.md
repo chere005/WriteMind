@@ -71,7 +71,7 @@ against it, each as its own node process:
 | `export` | File ▸ Export… ▸ Wolfram Notebook (with the real engine when this machine has one, and with a stand-in that never answers), and a copied drawing cell on the system clipboard (Mac), pasted back: `export/01`, `02`. The engine half of the fixture: `node node_modules/vite-node/vite-node.mjs apps/desktop/scripts/check-wolfram.ts` |
 | `pen` | stroke with pressure, eraser end, barrel button; the bar and the pen chip; every pen button action and the ExpressKeys; the pen cursor; palm rejection and finger scroll |
 | `maths` | the palette, insertion inline / as a block, typesetting (MathML), source back on click |
-| `camera` | a fake camera: the flow-chart reader, squaring a tilted page through four corners |
+| `camera` | a fake camera: the flow-chart reader, squaring a tilted page through four corners. Reading words needs the bundled reader (`WM_REQUIRE_OCR_MODELS=1 npm run build`): it is the only reader, so a build without the models shows no Aa and no Text, and the scripts that read pictures (`camera`, `drawing`'s Aa, `tablet`'s chart words) need it |
 | `tablet` | the tablet sheet as the video source: writing, box, chart, page, undo, erase, pen buttons on the sheet |
 | `format` | a note is a `.wm`: a legacy folder converts on launch (originals moved to a backup, a notice), typing, a pen stroke and a pasted picture land inside the file (read back by `e2e/lib/wm.mjs` and the system's `unzip -t`), a restart brings them back, the export reads it |
 | `undo` | Ctrl+Z through FILE operations (`docs/PLAN-undo.md`): five things (type, rename, move, trash another note, type) and five Ctrl+Z / Ctrl+Shift+Z checking text, names, folder and sidebar after each press; six trashes and the third-step boundary with the backups; text and file steps interleaved across two notes; a tab switch, a disk reload, a taken name, a failing undo, the open note's own creation undone, a restart |
@@ -80,6 +80,15 @@ against it, each as its own node process:
 | `sidebar` | the sidebar: its 36px bar, the search (⇧⌘F, typing, results, accents, the arrow keys, Enter into the Find bar, Escape), row ⋯ and right-click menus, Move to, the + menu and New Section, edit mode and the arming trash, the footer's project menu, the add row as a drop target (`sidebar/_lib.mjs` seeds the notes; each script gets its own app) |
 | `integration` | the merged app from its NEW surfaces (docs/PLAN-bars-2026-10.md; Sean, 2026-10-10: "make sure the cell behavior, moving the input cursor, search, and undo are all implemented properly"). **Every step, and every press of Ctrl+Z / Ctrl+Shift+Z, reads the whole picture** (`integration/_lib.mjs`: the tab in front, the words, the caret, whether the keyboard is in the notes, the files on disk and what each holds, the sidebar's rows, the drawing objects in each note) and compares it with what the steps so far must have made. 01: type-rename-move-trash-type of the plan's P8 done through the Style menu, the tab menu, the sidebar row menu and the seam's +; 02: six file operations from the tab menu, the row menu and the + menu, only three undo, the oldest backup gone, bystander files untouched; 03: twelve steps across two open notes (Find / Replace All, Table, Move Section, rename, the seam's +, a text box, a shape and the inspector's duplicate and delete, Duplicate, New Section) undone and redone in the order the rule gives; 04: the keyboard and the caret after every menu, dialog, field and popover; 05: cells made by the Style menu, the seam and Table (caret, one undo, Redo), the arrows cell-bar-cell, a held cell, Move Section; 06: the sidebar's search while notes come and go (rename, trash, undo, a damaged .wm), Enter into the Find card, the Find card over cells of every kind. Each script is its own app (`isolation: script`); they take minutes, not seconds |
 | `perf` | typing / scroll / pen frame times on a long note (generous limits; numbers are printed as notes) |
+
+### Reading a picture
+
+OCR is ONE technology on every platform (`docs/OCR-BUNDLED.md`): the unit tests read the three fixtures with the real reader when the
+model cache is there (`apps/desktop/.cache/ocr-models`; `bundledOcr.test.ts`), and `oneReader.test.ts` checks, with stand-ins, that no other
+reader is ever used. The real-app checks are `apps/desktop/scripts/ocr-compare/*.e2e.mjs` (`aa-picture`, `camera-text`,
+`tablet-chart-words`, and `no-reader`, which is meant to be run against a build WITHOUT the reader), run with
+`npm run e2e -- --snapshot --file <script>`; `compare.ts` there measures the reader on a set of pictures. Build with the models first:
+`WM_REQUIRE_OCR_MODELS=1 npm run build`.
 
 Each suite folder has an optional `suite.json`:
 

@@ -30,11 +30,12 @@ Sean, 2026-10-06: "the mac agent will take over ocr work". The work is on branch
 until Sean says. Merge origin/main into it now and then (main wins conflicts) and push the branch.
 `docs/OCR-BUNDLED.md` is the design: PaddleOCR PP-OCRv5 mobile on onnxruntime-web (WASM), models fetched at build
 time by `apps/desktop/scripts/fetch-ocr-models.mjs`, pinned with SHA-256 in `ocr-models.json`. The reader is used
-first on every platform, and Vision / Windows OCR / tesseract are the fallback.
+on every platform, and it is the ONLY reader: Apple Vision, Windows OCR and tesseract were removed on 2026-10-10
+(Sean: "OCR should use the exact same technology cross platform").
 
 Done and tested on Windows:
 - 20 tests in `apps/desktop/test/bundledOcr.test.ts`: CTC decoding, line finding, box orientation, input sizing,
-  the Japanese-pass rule, PNG decoding, the reader order and the fallback, cancel through the OCR service, and
+  the Japanese-pass rule, PNG decoding, when a folder is the reader, cancel through the OCR service, and
   real reads of the three fixtures (printed English, handwriting, Japanese).
 - The full `npm test` (2452), the typecheck, and the camera and tablet e2e suites (124 checks) pass.
 - A scratch e2e in the real app reports engine "bundled".
@@ -45,16 +46,17 @@ Done on the Mac, 2026-10-10 (branch `agent/ocr-package`): the build with the mod
 engine "bundled", the sizes (the dmg grows 28.3 MiB), the one notices generator; `notesFolderMove` passes on the Mac
 (main had already fixed it). The numbers are in `docs/OCR-BUNDLED.md`.
 
-Done on the Mac too (compare lane): the comparison with Apple Vision, `docs/OCR-BUNDLED.md` "Against Vision": the bundled reader
-STAYS FIRST on a Mac (mixed data on one real hand and fonts: Vision a handful of characters ahead on English handwriting, the
-bundled reader ahead on Japanese and maths); the order is one table, `OCR_ORDER` in `main/helpers.ts`, and
-`WRITEMIND_OCR_ORDER=vision` tries Vision first. Also fixed: `wm-vision` read Japanese as noise (en-US only).
+Done on the Mac too (compare lane): the comparison with Apple Vision, `docs/OCR-BUNDLED.md` "Against Vision" (mixed data on one
+real hand and fonts: Vision a handful of characters ahead on English handwriting, the bundled reader ahead on Japanese and maths).
+It was kept as a fallback for a day, then REMOVED with Windows OCR and tesseract (branch `agent/one-ocr`, 2026-10-10): one
+technology on every platform, no `OCR_ORDER`, no `WRITEMIND_OCR_ORDER`, `tools/vision` deleted.
 
 To do:
 1. **The Mac CI job** (`mac-package`, and release.yml's `mac`) has not run with the models: push the branch or dispatch
    ci.yml and get it green. The same steps pass by hand on a Mac.
 2. **A real hand on the Mac:** a real Wacom sheet, a real notebook photo and real Japanese handwriting read both ways
-   (`apps/desktop/scripts/ocr-compare/compare.ts` takes any `.png` with a `.txt` beside it); flip `OCR_ORDER` if Vision wins there.
+   (`apps/desktop/scripts/ocr-compare/compare.ts` takes any `.png` with a `.txt` beside it); if the bundled reader is weak there, the
+   fix is the reader (a better model, a tuning), not a second engine.
 3. **Linux:** untested.
 4. **Maths:** no formula recogniser is shipped; linear maths ("x = 2y + 1") already comes through. The candidate
    is Pix2Text MFR 1.5 (MIT, ~120 MB fp32, outputs LaTeX, which needs a LaTeX → Wolfram step). It is too big
@@ -191,7 +193,7 @@ batch in flight on that day. After it, roughly in this order:
   into `e2e/suites/tablet/`, turning the sheet's eraser on with Ctrl+Alt+2 after a pen hover on the sheet.
 - **Other platforms and trust.** Linux builds; code-signing the Windows installer so SmartScreen stops warning.
 - **The Mac release (packaging lane, 2026-10-05): built, NOT yet run on a Mac.** v1.0.0 ships two AD-HOC signed dmgs
-  (`WriteMind-<v>-mac-arm64.dmg`, `-mac-x64.dmg`, macOS 13+, no hardened runtime, universal Vision helper) on the
+  (`WriteMind-<v>-mac-arm64.dmg`, `-mac-x64.dmg`, macOS 13+, no hardened runtime) on the
   same release as the Windows installer (release.yml's mac job; ci.yml's mac-package job on main; checked by
   `tools/verify-mac.sh` on the runner; docs/INSTALL-MAC.md). Still to do: (1) an **Apple Developer ID** and
   **notarization** (hardened runtime on, with the camera entitlement; the APPLE_* secrets in the release job), so
@@ -353,8 +355,8 @@ green, orange) are swapped for black in these images, as in the PDF (`readableIn
   a band under the picture, the arrows routed on arrival, and one Undo takes
   the picture and the chart back together) all work. E2E with Chromium's fake
   capture device playing a .y4m: `e2e/lib/fixtures.mjs` (the feeds),
-  `e2e/suites/camera`. READING THE WORDS is done on Windows too (Windows' own
-  OCR engine, `docs/OCR-WINDOWS.md`): the Aa handle with the Mac's
+  `e2e/suites/camera`. READING THE WORDS is done on every platform (the bundled reader,
+  `docs/OCR-BUNDLED.md`; it began on Windows' own engine): the Aa handle with the Mac's
   struck / ringed / arrow / task / maths rules, and a chart's nodes arrive
   labelled with the words inside them from a camera or tablet capture
   (`chartFromLabelled`). **FINDING the page by itself: DONE** (c2-camera-parity,
@@ -375,13 +377,12 @@ green, orange) are swapped for black in these images, as in the PDF (`readableIn
   synthetic projected scenes and Chromium's fake device only — focus,
   exposure, lens distortion, a hand on the page, a coloured cover, hot-plug of
   a real USB camera and Windows' privacy switch are untried; (2) Japanese OCR on
-  Windows is built but never run on a real engine (it needs the Windows
-  Japanese OCR capability, which the development machine lacks), and raised
-  digits do not become powers there (no per-character boxes); (3) the chart
+  Windows was built on Windows' own engine, since replaced by the bundled
+  reader (which reads Japanese everywhere), and raised
+  digits do not become powers (no per-character boxes); (3) the chart
   reading is not yet run from the Aa handle on a picture (the Swift
-  `flowChart(from:under:)`) — only on captures; (4) the Mac's own reader
-  (`wm-vision text`) still reads English only, with no word boxes, so on a
-  Mac the marks are read off estimated word boxes; (5) the flow-chart
+  `flowChart(from:under:)`) — only on captures; (4) (was: the Mac's Vision
+  reader had no word boxes; Vision is gone, and the bundled reader has them); (5) the flow-chart
   classifier is borderline on thick or soft pen lines (a box of three was
   refused at one down-scale and read at another; reading now runs at 1200 px) —
   a chart photographed at an angle in poor light may still come in as ink only;

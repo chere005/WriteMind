@@ -14,17 +14,15 @@ url="https://github.com/chere005/WriteMind"
 license=('BSD-3-Clause')
 depends=('electron' 'gtk3' 'nss' 'alsa-lib' 'glib2' 'xdg-utils')
 makedepends=('npm' 'nodejs' 'git')
-optdepends=(
-  'tesseract: reading the words out of a captured page'
-  'tesseract-data-eng: the English data tesseract reads with'
-)
 source=("git+https://github.com/chere005/WriteMind.git")
 sha256sums=('SKIP')
 
 build() {
   cd "$srcdir/WriteMind"
   npm install --no-audit --no-fund
-  npm -w @writemind/desktop run build
+  # The bundled reader is the ONLY reader (docs/OCR-BUNDLED.md): a package built without its models would not read
+  # a picture at all, so a failed model download stops the build instead of quietly leaving them out.
+  WM_REQUIRE_OCR_MODELS=1 npm -w @writemind/desktop run build
 }
 
 check() {

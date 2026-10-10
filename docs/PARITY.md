@@ -557,47 +557,49 @@ t10 t11 t12 t17 t18 re-run against this build, all passing).
 | Handles on hover, before a click | not built (the Mac has it, for the mouse; a pen does not hover here) |
 | A selection that includes an arrow can never say Ungroup (an arrow takes no group) | same as the Swift (`testAConnectorTakesNoGroupOfItsOwn`) |
 
-## Reading a picture's words on Windows (c1-ocr, 2026-10-03)
+## Reading a picture's words (c1-ocr, 2026-10-03; ONE reader on every platform since 2026-10-10)
 
 Source of truth: `docs/FEATURES.md` "The words in a picture", `WriteMind/Camera/{TextRecognition,HandwritingMarks,FlowChartReading}.swift`,
-`WriteMindTests/{HandwritingMarks,TextRecognition}Tests.swift`. How it is built and what it cannot do: `docs/OCR-WINDOWS.md`.
+`WriteMindTests/{HandwritingMarks,TextRecognition}Tests.swift`. The reader: `docs/OCR-BUNDLED.md`. (c1-ocr first did this with Windows' own engine, `Windows.Media.Ocr`; that engine, Apple Vision and tesseract were removed on 2026-10-10 and the Windows-specific rows below are kept as the record of what the rules were measured on.)
 Evidence: `packages/core/test/handwritingMarks.test.ts` (35, the Swift HandwritingMarksTests transcribed),
 `packages/core/test/textRecognition.test.ts` (41: the TextRecognitionTests that need no Vision, with the reader's answer written out by
 hand and the ink drawn in code; JSON parsing, word grouping, Japanese joining), `flow.test.ts` (labelled chart, `mayHoldChart`),
-`apps/desktop/test/ocr.test.ts` (the helper's contract with a stand-in PowerShell, the queue / cache / cancel, and the REAL engine
-reading a fixture), and the e2e scripts in `C:\CLAUDIO\agents\e2e\ocr\` (`aa.mjs`, `camera-chart.mjs` with `makechart.mjs`,
-`tablet-chart.mjs`; test port 9414). A shell for the next run: `restart.ps1 [-Video]`.
+`apps/desktop/test/ocr.test.ts` (the queue / cache / cancel, with a stand-in reader), `bundledOcr.test.ts` (the REAL reader on fixtures),
+and the e2e scripts in `C:\CLAUDIO\agents\e2e\ocr\` (`aa.mjs`, `camera-chart.mjs` with `makechart.mjs`,
+`tablet-chart.mjs`; test port 9414) and now `apps/desktop/scripts/ocr-compare/*.e2e.mjs`. A shell for the next run: `restart.ps1 [-Video]`.
 
 | Feature | Status |
 |---|---|
-| A reader on Windows: `Windows.Media.Ocr` through `helpers/wm-ocr.ps1`, no install for the profile's languages; capability = a probe that works (`readerFor`); order: the table `OCR_ORDER` (bundled, Vision, Windows, tesseract; since `ocr-bundled`) | built; `capabilities.ocrEngine` / `japaneseOCR` say which and whether Japanese |
+| ONE reader on every platform: the bundled PP-OCRv5 on onnxruntime-web (`main/bundledOcr*`, `docs/OCR-BUNDLED.md`); capability = its folder being there (`canRead`); no table of readers, no fallback, no `ocrEngine` / `japaneseOCR` (it reads Japanese everywhere). Removed 2026-10-10 on Sean's word: Apple Vision (`wm-vision`), `Windows.Media.Ocr` (`wm-ocr.ps1`, `ADD_JAPANESE_OCR`, the probe) and tesseract | built (replaced the Windows reader this section began with) |
 | Aa handle on a picture, Windows: lines in reading order, a dot grid painted out first, put in the note as a cell UNDER the picture, the picture stays (the Swift `readText`; was: at the caret, picture hidden), a "Reading..." / "Read N lines" / "No text could be read in that picture." line in the footer, the result dropped (reader aborted) if another note is opened meanwhile, the prepared upright canvas always sent (EXIF-turned photos and transparent PNGs read) | built, e2e (Arial / Times / Courier / Segoe Print, 4 lines in ~0.1-0.5 s) |
 | ...a word with a line through it as `~~struck~~`, a ringed word as `**bold**`, a drawn arrow as `→` (inline between two readings, or on a line of its own), a box at the head of a line as `- [ ]` / `- [x]`, a line of algebra as `` `wl:...` `` | built (ported `HandwritingMarks` + `TextRecognition.compose`), e2e on drawn pictures |
-| Japanese: Japanese first when installed and kept only if it found any, per-character words put back together, no spaces between kana/kanji | built, **UNVERIFIED on a real engine** (this Windows has no Japanese OCR; `ocr.test.ts` draws a Japanese picture and reads it on a machine that has it) |
-| Raised digits become powers (`x2` to `x^2`) | not on Windows: the engine gives no per-character boxes (`superscripted` is ported and tested for readers that do) |
+| Japanese: read in the same pass as English, a line's Japanese reading kept only when it found Japanese (`pickReading`), per-character words put back together, no spaces between kana/kanji | built; the real reader reads the Japanese fixture (`bundledOcr.test.ts`) and printed Japanese was read in the packaged Mac apps; real Japanese handwriting is NOT verified |
+| Raised digits become powers (`x2` to `x^2`) | not built: the reader gives no per-character boxes (`superscripted` is ported and tested for readers that do) |
 | Flow-chart labels: a camera or tablet capture that holds a chart (`mayHoldChart`) is read for its words; the words label the nodes ("Read a flow chart: 3 nodes, 3 labelled."); drawn outlines are rubbed out of the picture the reader sees (thick box lines defeat it) | built, e2e on the camera (fake device playing a labelled chart) and on the tablet sheet |
 | ...ink written INSIDE a node no longer stops it being named a rectangle (`componentOf` leaves out the label's words) | fixed; the Swift has the same hole (a behaviour change from the Swift, tested in `flow.test.ts`) |
-| Reading never blocks the page: PowerShell in the main process, a queue of two, a cache by picture bytes, `ocr:cancel` kills the engine when nobody else wants the picture; a second click on Aa while reading does nothing; leaving the app cancels | built, unit + e2e |
-| Reading order by BAND (`sameBand`), and neighbours a line-height and a half apart are one line (the engine splits "pay    rent today" into three lines; the Mac's middle-to-middle sort would too) | built (a port improvement; Vision's lines never needed it) |
+| Reading never blocks the page: the reader's worker threads, a queue of two, a cache by picture bytes, `ocr:cancel` kills the engine when nobody else wants the picture; a second click on Aa while reading does nothing; leaving the app cancels | built, unit + e2e |
+| Reading order by BAND (`sameBand`), and neighbours a line-height and a half apart are one line (a reader may split "pay    rent today" into three lines, as Windows' engine did; the Mac's middle-to-middle sort would too) | built (a port improvement; Vision's lines never needed it) |
 | Finding the page by itself | built since (see "The camera, beyond OCR (c2-camera-parity)": `capture/findPage.ts`) |
-| Real pen handwriting through this engine | **weaker than Vision** (a printed-text engine); not measurable here without Sean's hand |
+| Real pen handwriting through the bundled reader | read well on the one real hand available (the public-domain scan); not measurable on Sean's hand without his pen |
 
-## The bundled reader against Vision, on a Mac (ocr-compare, 2026-10-10)
+## One reader (ocr-compare and one-ocr, 2026-10-10)
 
-The full measured table, how it was made and what it cannot say: `docs/OCR-BUNDLED.md` "Against Vision". Evidence:
-`apps/desktop/scripts/ocr-compare/` (`compare.ts` reads every picture with both readers through `readWords`; `make-pictures.swift`
-draws the made pictures with the Mac's own handwriting-style fonts; `sheet-capture.e2e.mjs` writes on the tablet sheet with the
-e2e pen and takes its Page picture; `prepare-pictures.e2e.mjs` runs the real `prepareForReading` in the real app),
-`apps/desktop/test/ocrOrder.test.ts` (the order table and its fallbacks, with stand-in readers on every platform and the real Vision
-helper where it is built).
+The bundled reader was measured against Apple Vision on a Mac (`docs/OCR-BUNDLED.md` "Against Vision": the full table, how it was made
+and what it cannot say), kept first with Vision as a fallback for a day, and then Vision, `Windows.Media.Ocr` and tesseract were
+REMOVED on Sean's word: "OCR should use the exact same technology cross platform." Evidence: `apps/desktop/scripts/ocr-compare/`
+(`compare.ts` reads every picture with the reader through `readWords`; `make-pictures.swift` draws the made pictures with the Mac's own
+handwriting-style fonts; `sheet-capture.e2e.mjs` writes on the tablet sheet with the e2e pen and takes its Page picture;
+`prepare-pictures.e2e.mjs` runs the real `prepareForReading` in the real app; `aa-picture`, `camera-text`, `tablet-chart-words` and
+`no-reader` are the real-app checks), `apps/desktop/test/oneReader.test.ts` (one reader and no way round it, with stand-ins on every
+platform), `bundledOcr.test.ts` (the real reader).
 
 | Feature | Status |
 |---|---|
-| Which reader is first is one table, `OCR_ORDER` (bundled, Vision, Windows, tesseract), and a reader that fails stands aside for the next; `WRITEMIND_OCR_ORDER=vision,bundled` flips it without a rebuild | built, `ocrOrder.test.ts` |
-| **The bundled reader stays first on a Mac** (the data is mixed: Vision a handful of characters ahead on the one real English hand, 1.8% against 3.6% of 111; the bundled reader ahead on Japanese, 0% against 12%, and on maths on a line, 21% against 39%; a tie on printed, felt-tip, cursive-font, a 3000x4000 notebook-page photo, a struck word; 0.3 s against 0.55-0.9 s on a small picture, 1.3 s against 1.0 s on a 2400x3200 page) | decided 2026-10-10 on ONE real hand and fonts: no real Wacom sheet, notebook photo or Japanese handwriting was available to read both ways |
-| Vision reads Japanese again: `wm-vision text` asked for en-US only (a Mac read the Japanese fixture 88% wrong while `readerFor` said it could read Japanese); it now tries ja-JP first and keeps it only when it found Japanese, as `Camera/TextRecognition.swift` `readBest` does, and takes languages | fixed, `ocrOrder.test.ts` (against the built helper) |
-| Reading nothing at all (no bundled files, no Vision, no tesseract, e.g. a Linux machine): `capabilitiesFor` says `handwritingOCR: false`, and the page shows no Aa on a picture and no Text in the camera's box | built, `capabilities.test.ts`, `ocrOrder.test.ts` |
-| One behaviour change: with the bundled reader failing and nothing behind it, `readWords` throws (the page says the reader failed) where it used to return an empty reading | changed, `bundledOcr.test.ts` |
+| One reader: the table `OCR_ORDER` and `WRITEMIND_OCR_ORDER` are gone, and so are `wm-vision` (`tools/vision`), `wm-ocr.ps1`, the probe, `ADD_JAPANESE_OCR`, tesseract and the `OcrEngine` union; `ocr:status` is `{ ocr, busy, reads }` | built, `oneReader.test.ts` (replaced `ocrOrder.test.ts`) |
+| A folder counts as the reader only with ALL THREE models (the Japanese recogniser included); without the reader's files (a dev build offline with no model cache) OCR is unavailable: `capabilitiesFor` says `handwritingOCR: false` and the page shows no Aa on a picture and no Text in the camera's box, with no fallback | built, `capabilities.test.ts`, `oneReader.test.ts`, `no-reader.e2e.mjs` |
+| With the reader failing and nothing behind it, `readWords` throws (the page says the reader failed) where it used to return an empty reading | built, `bundledOcr.test.ts`, `oneReader.test.ts` |
+| Bundled-vs-Vision: Vision a handful of characters ahead on the one real English hand (1.8% against 3.6% of 111 characters), the bundled reader ahead on Japanese (0% against 12%) and on maths on a line (21% against 39%), a tie elsewhere | measured 2026-10-10 on ONE real hand and fonts; the record of why one reader, not an argument for two |
+| `OcrReading.engine` became `OcrReading.tight` ("the reader's word boxes hug the ink"): the rules for tight boxes (the strike, ring and arrow rules, the angle/deskew machinery) were made for Windows' engine and are exercised only by its recorded readings; the bundled reader's boxes are line-high and it gives no angle, so none of it runs in the app | changed (a test that had to change: `engine: "windows"` is `tight: true` in `textRecognition.test.ts` and `ocrFixtures.ts`); the rules are kept, and could be removed in a later change |
 
 ## The rendered page: Write in the preview (e1-preview, 2026-10-03)
 
@@ -673,7 +675,7 @@ which undid the wrong thing for interleaved edits. **Now: one timeline per note.
 | How: every edit takes a stamp from the note's `EditClock` (`editTimeline.ts`). CodeMirror's history stays the engine for words; a state field mirrors its undo/redo stacks with stamps (it reads the change in `undoDepth` to tell a new group from a joined one from an undo); `DrawingHistory` entries carry stamps. Undo = highest stamp of the two tops, Redo = lowest of the two undone tops | built | as above |
 | Typing that follows a drawing edit starts a group of its own (`isolateHistory("before")` added by a transaction extender), so a group never spans a drawing edit | built | test "typing is grouped as CodeMirror groups it, but a drawing edit ends the group" |
 | A new edit on either side ends every Redo on both sides (a redo is valid only if it was undone after the newest new edit) | built | tests "a new edit on either side ends every redo" |
-| Words + drawing as ONE edit when the app does both: a picture read with Aa (words into the note, picture put away) is one Ctrl+Z (`clock.together()`) | built | test, `agents/e2e/d2/u3.mjs` with the real Windows OCR engine |
+| Words + drawing as ONE edit when the app does both: a picture read with Aa (words into the note, picture put away) is one Ctrl+Z (`clock.together()`) | built | test, `agents/e2e/d2/u3.mjs` with the Windows OCR engine of its day (since removed) |
 | A captured page / camera or tablet capture (picture + strokes + chart) is ONE edit; a text box's typing session is one; a burst of nudges / colour changes is one (and a word edit ends the burst) | works | `editDrawing`, `Canvas.burst`; `t6.mjs` |
 | Per note: each open note keeps its own clock, its own drawing history and (behind its tab) its own editor state, so switching tabs no longer wipes Ctrl+Z, and an edit in one note never touches another's undo / redo. A closed note forgets; a renamed one keeps its drawing history | built | tests "each note has its own timeline", `u2.mjs` |
 | Edit ▸ Undo Drawing / Redo Drawing keep working as the drawing's own pair (and the drawing edit they undo keeps its place in the timeline) | works | tests, `u4.mjs` (real menu items) |
@@ -738,7 +740,7 @@ capture device playing one; `y4mpng.mjs` turns a frame into a PNG to look at.
 
 | Feature | Status | Evidence |
 |---|---|---|
-| **Finding the page by itself** (`capture/findPage.ts`, plain arrays, every platform; the Mac keeps Vision): the frame shrunk (the dot grid melts into the paper's tone), 16 thresholds plus Otsu, opening, hole fill, the largest page-shaped blob, its convex hull cut to the four enclosing edges, scored by fill and edge contrast; a Hough line vote with edge support when the desk is as pale as the paper; either answer refined along the real edge at 480 px with a robust line fit | built; 20-60 ms for 1280x720 | `findPage.test.ts` (14, scenes in `scene.ts`: tilted, rolled to landscape, shadow gradient with a pen across the edge, clutter, off the frame, pale on pale by a thin shadow line, nothing, noise, the page IS the frame, 40 random views all within 1.5% of the diagonal, 1-2 px on a large clean view, and a vignette / glare / bright sheet beside the page / heavy noise / out-of-focus lens); e2e: corners within 0.3% of the diagonal on `page-desk` (`page-find.mjs`), a pale desk 0.8% (`pale.mjs`) |
+| **Finding the page by itself** (`capture/findPage.ts`, plain arrays, every platform; the Swift app keeps Vision): the frame shrunk (the dot grid melts into the paper's tone), 16 thresholds plus Otsu, opening, hole fill, the largest page-shaped blob, its convex hull cut to the four enclosing edges, scored by fill and edge contrast; a Hough line vote with edge support when the desk is as pale as the paper; either answer refined along the real edge at 480 px with a robust line fit | built; 20-60 ms for 1280x720 | `findPage.test.ts` (14, scenes in `scene.ts`: tilted, rolled to landscape, shadow gradient with a pen across the edge, clutter, off the frame, pale on pale by a thin shadow line, nothing, noise, the page IS the frame, 40 random views all within 1.5% of the diagonal, 1-2 px on a large clean view, and a vignette / glare / bright sheet beside the page / heavy noise / out-of-focus lens); e2e: corners within 0.3% of the diagonal on `page-desk` (`page-find.mjs`), a pale desk 0.8% (`pale.mjs`) |
 | ...feeds **Straighten**: turning it on puts the four corners ON the page (drag any of them; **Find page** looks again; turning the picture looks again) | built | `page-find.mjs` |
 | ...and every capture finds and squares the page by itself with Straighten off (the Mac's `pageQuad`); a page that fills the frame (over 96%) counts as not found | built | `page-find.mjs`, `section.mjs` (a chart on a crooked page is squared up, then read as 3 nodes and 2 arrows) |
 | **No page found**: the Mac refuses a whole-page capture (`.page` with no quad and no box returns nil); here it takes the whole picture and the line under the viewfinder says "No page found, so it took the whole picture." (a document camera looking straight down at a page that fills the frame would otherwise never work) | **different on purpose** | |

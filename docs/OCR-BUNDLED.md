@@ -4,6 +4,13 @@ Sean, 2026-10-06: "start cross platform ocr with minimal changes to existing cod
 bundled reader** - an engine shipped inside the app, so macOS, Windows and Linux read a picture the same way with
 nothing to install. Branch `ocr-bundled`.
 
+Sean, 2026-10-10: "OCR should use the exact same technology cross platform. make sure there are no usages of x86 code on macos,
+only silicon compatible code should be shipping". So the bundled reader is now the **only** reader (branch `agent/one-ocr`): the
+platform readers that stood behind it - Apple Vision (`wm-vision`, a universal Mac helper), `Windows.Media.Ocr` (`wm-ocr.ps1`) and
+tesseract - were removed, with the table that ordered them (`OCR_ORDER`, `WRITEMIND_OCR_ORDER`), the Windows probe and its
+"add Japanese" instructions, the `OcrEngine` union and the capability fields that said which reader there was. What is left is one
+engine, one file check, and an app that shows nothing for reading where the files are not there (see "One technology" below).
+
 ## The choice: PaddleOCR PP-OCRv5 (mobile) on onnxruntime-web (WebAssembly)
 
 | | |
@@ -42,12 +49,10 @@ better, and reads Japanese as the digits beside it. Asking with `languages` that
 warm for two minutes. **Cancel terminates the worker** (a WASM run cannot be stopped otherwise); the next picture
 gets a fresh one. PNGs are decoded in the worker (`bundledOcr/png.ts`); other formats by Electron's `nativeImage`.
 
-`helpers.ts`: the order the readers are asked in is ONE table, `OCR_ORDER` - bundled, Vision, Windows' engine, tesseract - and
-`readerFor` / `readWords` walk it: the first reader that is on this machine (a file being there; Windows' by a probe that
-works) reads, and one that FAILS stands aside for the next (a cancel is not a failure; when every reader there is has
-failed the last one's error is thrown, so the page can say the reader failed rather than that nothing was written).
-`OcrEngine` gained `"bundled"`. On a Mac the table puts the bundled reader before Vision: "Against Vision" below is why, and
-`WRITEMIND_OCR_ORDER=vision,bundled` (names left out follow in the table's order) tries the other way round with no rebuild.
+`helpers.ts`: `canRead(here)` is a file check (the reader's folder holds the worker, the runtime and all three models, Japanese
+included), and `readWords` is the reader or nothing: with the files there it reads, and a read that FAILS throws what the worker
+said (so the page can say the reader failed rather than that nothing was written; a cancel is an AbortError, not a failure);
+with the files missing it returns no words and the app never asks (the capability is false). There is no second reader to try.
 
 ## Where the files come from (nothing is downloaded at runtime)
 
@@ -55,7 +60,7 @@ failed the last one's error is thrown, so the page can say the reader failed rat
 SHA-256; `scripts/fetch-ocr-models.mjs` downloads, verifies and caches them in `apps/desktop/.cache/ocr-models`
 (git-ignored); `scripts/build.mjs` bundles the worker and copies the runtime and the models into
 `out/helpers/bundled-ocr`, which `asarUnpack: out/helpers/**` already takes out of the archive. A dev build offline
-with an empty cache warns and leaves the folder out (the app then uses the platform's reader);
+with an empty cache warns and leaves the folder out (the app then has NO reader and offers nothing that reads);
 `WM_REQUIRE_OCR_MODELS=1` (the release jobs) makes that fatal. CI caches the folder by the manifest's hash.
 
 | File | SHA-256 | Source |
@@ -70,7 +75,7 @@ were re-verified on download.
 
 ## Measured (2026-10-06, Windows 10, 4 WASM threads)
 
-| Picture | Bundled | Windows.Media.Ocr |
+| Picture | Bundled | Windows.Media.Ocr (measured for the choice; since removed) |
 |---|---|---|
 | Printed Arial (`test/fixtures/ocr-english.png`) | exact | exact |
 | Handwriting, felt-tip print (`ocr-handwriting.png`, public domain, Wikimedia Commons "Handwriting.png") | exact, all three lines | "The quick brown FOX / ivmps over+e lazy dog. / 01234-66789" |
@@ -110,10 +115,11 @@ compile is what Rosetta makes slow; an Intel Mac will not pay that).
 
 ## Against Vision, on a Mac (2026-10-10)
 
-TODO item 4 asked whether the bundled reader stays first on a Mac, where Vision is also there. Measured on an Apple M1 Pro
-(8 cores), macOS 26, both readers forced through the app's own `readWords` (`apps/desktop/scripts/ocr-compare/compare.ts`; it gives
-`readWords` an app folder with only one reader beside it, so the path is the app's, the Vision helper is `out/helpers/wm-vision`
-and the bundled one is `main/bundledOcr.ts` with its worker). The pictures are read **as the app hands them to a reader**: the
+TODO item 4 asked whether the bundled reader stays first on a Mac, where Vision is also there. This table is the record of WHY the answer
+became one reader. Measured on an Apple M1 Pro
+(8 cores), macOS 26, both readers forced through the app's own `readWords` (`apps/desktop/scripts/ocr-compare/compare.ts`, as it was
+then: it gave `readWords` an app folder with only one reader beside it, so the path was the app's, the Vision helper was
+`out/helpers/wm-vision` and the bundled one `main/bundledOcr.ts` with its worker; the script now measures the bundled reader alone). The pictures are read **as the app hands them to a reader**: the
 real `prepareForReading` ran in the real app (`prepare-pictures.e2e.mjs`: flattened on white, no side over 3200, a printed dot
 grid painted out). Score = characters wrong per character of the ground truth written beside each picture (CER; both folded:
 lower case, no `^`, white space squeezed; the app's own `composeLines` tidy of the lines); "(n/m)" is lines read exactly.
@@ -159,16 +165,17 @@ What it does say:
 - **Speed:** a capture box is a small picture, and there the bundled reader is the faster (0.3 s against 0.55-0.9 s, Vision's
   process start and second pass included); on a 2400x3200 page it is slower (1.3 s against 1.0 s).
 
-**The decision: the bundled reader stays first on a Mac, and Vision fills in where the bundled one is missing or fails.** The
-data is mixed (a little behind on English handwriting, ahead on Japanese and maths, a tie everywhere else, one real hand), so the
-safe default is the one engine that every platform shares: a note read on the Mac and on Windows gives the same words, and that
-was the point of the branch. Vision is not the safer first choice either, since without the fix above it could not read Japanese
-at all. What Sean can flip, and where: `OCR_ORDER` in `apps/desktop/src/main/helpers.ts` (one line, tested in
-`apps/desktop/test/ocrOrder.test.ts`), or for a try without a rebuild, launch with `WRITEMIND_OCR_ORDER=vision` (Vision, then
-the bundled reader, then the rest). Worth doing once there is a real Wacom sheet and a real notebook photo to read both ways:
-`ocr-compare/compare.ts` takes any `.png` with a `.txt` beside it.
+**What was decided, in two steps.** On 2026-10-10 the data was mixed (a little behind on English handwriting, ahead on Japanese and
+maths, a tie everywhere else, one real hand), so the bundled reader was kept first on a Mac and Vision stayed behind it as a
+fallback, for the day it took to ask. Then Sean settled it: OCR is ONE technology on every platform ("make sure there are no usages
+of x86 code on macos, only silicon compatible code should be shipping"; Vision's helper was a universal binary with an x86_64
+slice). Vision, `Windows.Media.Ocr` and tesseract were removed. The table is kept as the measurement behind that: a note read on the
+Mac and on Windows now gives the same words, which was the point of the branch, at the price of a handful of characters on one
+real English hand. Worth doing once there is a real Wacom sheet and a real notebook photo to read: if the bundled reader is weak
+there, the fix is the reader (a better model, a tuning), not a second engine. `ocr-compare/compare.ts` takes any `.png` with a
+`.txt` beside it.
 
-How to re-run: `WM_REQUIRE_OCR_MODELS=1 npm run build`; `npm run e2e -- --file apps/desktop/scripts/ocr-compare/sheet-capture.e2e.mjs`
+How to re-run (the bundled reader alone): `WM_REQUIRE_OCR_MODELS=1 npm run build`; `npm run e2e -- --file apps/desktop/scripts/ocr-compare/sheet-capture.e2e.mjs`
 (the sheet) and `.../prepare-pictures.e2e.mjs` (every picture as the app hands it over); then
 `node node_modules/vite-node/vite-node.mjs apps/desktop/scripts/ocr-compare/compare.ts --prepared`. `make-pictures.swift` draws
 the made pictures with the Mac's own fonts (nothing downloaded) into `apps/desktop/.cache/ocr-compare`.
@@ -193,9 +200,28 @@ goes to the first line "under the picture", which is the top of the note, so the
 
 **A build without the models** (a dev build offline: `WM_OCR_MODELS_CACHE` an empty folder, `WM_REQUIRE_OCR_MODELS` unset, the network refused
 with `NODE_USE_ENV_PROXY=1 HTTPS_PROXY=http://127.0.0.1:9`, in a scratch copy): the three downloads fail three times each, the
-build warns "goes on WITHOUT the bundled reader" and leaves `out/helpers/bundled-ocr` out; the app then reads with Vision
-(`aa-picture.e2e.mjs`: engine "vision", 8 / 8). With the Vision helper taken away too (what a Linux machine with no tesseract is),
-`no-reader.e2e.mjs` passes: capabilities say no reader, a picked picture's bar has no Aa, the camera's box row has no Text.
+build warns "goes on WITHOUT the bundled reader" and leaves `out/helpers/bundled-ocr` out. (That day the app read with Vision; it has
+no other reader now.) With no reader `no-reader.e2e.mjs` passes: capabilities say no reader, a picked picture's bar has no Aa, the
+camera's box row has no Text.
+
+## One technology (2026-10-10)
+
+What the change removed, so the next reader of this file knows what is NOT there:
+
+| Gone | Was |
+|---|---|
+| `tools/vision/wm-vision.swift` and `readWithVision` | Apple Vision, `wm-vision text <file>`, a universal (arm64 + x86_64) Mac helper; its second command `wm-vision page` (`findPage` in `helpers.ts`) had no caller |
+| `apps/desktop/src/helpers/wm-ocr.ps1`, `probeWindowsOcr`, `readWithWindowsOcr`, `windowsOcr`, `ADD_JAPANESE_OCR`, `OcrProbe`, `Runner` | `Windows.Media.Ocr` through PowerShell, its probe, and the "add Japanese OCR" instructions (also `docs/OCR-WINDOWS.md`) |
+| `tesseract()` and `readWithTesseract` | tesseract on the PATH (also the Arch package's optional dependencies) |
+| `OCR_ORDER`, `ocrOrder`, `WRITEMIND_OCR_ORDER`, `readerFor`, `hasReader` | the order the readers were asked in, and the fallback from one to the next |
+| `OcrEngine`, `Capabilities.ocrEngine`, `Capabilities.japaneseOCR`, `Helpers.engine`, `Helpers.japanese`, `Words.engine / language / installed / japanese`, the `ocr:status` fields `engine`, `japanese`, `probe`, `addJapanese` | everything that said WHICH reader there was; the UI needs only whether one works (`handwritingOCR`), and Japanese is always read |
+| `OcrReading.engine` (`"windows"` made the mark rules treat word boxes as tight round the ink) | now `OcrReading.tight`: a property of the boxes, not of a vendor; the app's reader never sets it (its boxes are line-high), the recorded Windows readings in the tests do |
+
+What a reader needs now: `out/helpers/bundled-ocr` with the worker, `ort/ort-wasm-simd-threaded.{mjs,wasm}` and all three models
+(`bundledOcrFolder`: Japanese is part of "all"). Nothing else on the machine is looked at - not the PATH, not the platform. The
+chip does not matter either: the runtime is WebAssembly, so an Apple-silicon Mac runs no x86 code for reading (the Intel dmg runs the same
+files under an Intel CPU). The tests: `oneReader.test.ts` puts a fake `tesseract`, `wm-vision` and `wm-ocr.ps1` where they used to be
+found and shows none is used, even when the bundled reader fails.
 
 ## Maths
 
@@ -232,4 +258,6 @@ bundled-ocr`, not empty, and the models exactly the pinned size. Proved to fail 
 Linux runs (the code is platform-free: Node worker threads and WASM; CI's macOS job runs the unit tests, including the real
 reads); the CI jobs themselves (the Mac half was done by hand on one Mac, not by GitHub Actions); a real notebook photo and a
 real Wacom sheet written by a person (the Mac comparison above used fonts and a synthetic pen except for one scan); real
-Japanese handwriting (the Japanese pictures are printed or a font); a Mac with an Intel chip (only Rosetta numbers exist).
+Japanese handwriting (the Japanese pictures are printed or a font); a Mac with an Intel chip (only Rosetta numbers exist); the
+packaged dmgs after the platform readers were removed (the packaged-app reads above were made before; the package check in
+`tools/verify-mac.sh` is the other half's and still lists the Vision helper).

@@ -65,12 +65,11 @@ export const OTHER_NAMES = [
 
 /** What WriteMind itself ships beside the app's code, and what it does not. */
 export const OWN_TOOLS = [
-  "The macOS helpers wm-vision (reads handwriting with Apple's Vision framework) and wm-pen (reads a Wacom tablet) "
-    + "are WriteMind's own code, under WriteMind's licence; they link only Apple's system frameworks.",
-  "The Windows helpers wm-ocr.ps1 and installer-tools.ps1 are WriteMind's own scripts; the OCR engine they call is "
-    + "Windows' own.",
+  "The macOS helper wm-pen (reads a Wacom tablet) is WriteMind's own code, under WriteMind's licence; it links only "
+    + "Apple's system frameworks.",
+  "The Windows helper installer-tools.ps1 is WriteMind's own script.",
   "The Windows installer is made with NSIS, through electron-builder (MIT); both keep their own licences.",
-  "Python, Tesseract and the Wolfram Engine are never shipped: WriteMind runs the copy a person has installed.",
+  "Python and the Wolfram Engine are never shipped: WriteMind runs the copy a person has installed.",
   "The bundled text reader (the PP-OCRv5 models and onnxruntime-web, listed below) is shipped inside the app. "
     + "onnxruntime's WebAssembly build statically contains components of its own under permissive licences, which "
     + "Microsoft lists in the ThirdPartyNotices.txt at https://github.com/microsoft/onnxruntime.",
