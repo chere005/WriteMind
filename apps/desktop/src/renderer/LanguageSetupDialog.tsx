@@ -15,7 +15,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react"
 import { EVALUATORS, type Evaluator, type TestAnswer } from "@writemind/core"
-import { returnFocus } from "./focusReturn"
+import { Modal } from "./Modal"
 import {
   ALWAYS_SHOWN, keyboardHome, LANGUAGE_SETUP_INTRO, LANGUAGE_SETUP_TITLE, MORE, moreOpen, NO_MEMORY, rowView,
   type RowMemory, type RowView, type SetupCaps,
@@ -80,7 +80,6 @@ export function LanguageSetupDialog({ platform, capabilities, focus, onClose }: 
       live = false
       window.removeEventListener("focus", look)
       off()
-      window.setTimeout(returnFocus, 0)
     }
   }, [])
 
@@ -271,26 +270,22 @@ export function LanguageSetupDialog({ platform, capabilities, focus, onClose }: 
     report ? list.map((evaluator) => row(rowView(evaluator, report, memory[evaluator] ?? NO_MEMORY, caps, started))) : null
 
   return (
-    <div className="modal-backdrop" data-modal="languages" data-platform={platform}
-         onMouseDown={(event) => { if (event.target === event.currentTarget) close() }}>
-      <div ref={dialog} className="modal languages" role="dialog" aria-modal="true" aria-label={LANGUAGE_SETUP_TITLE}
-           onKeyDown={(event) => { if (event.key === "Escape") { event.preventDefault(); event.stopPropagation(); close() } }}>
-        <h3>{LANGUAGE_SETUP_TITLE}</h3>
-        <div className="languages-body">
-          <p>{LANGUAGE_SETUP_INTRO}</p>
-          {views(ALWAYS_SHOWN)}
-          {report && (
-            <details data-language-more open={more ?? false}
-                     onToggle={(event) => { const opened = event.currentTarget.open; setMore((was) => (was === null ? was : opened)) }}>
-              <summary>C, C++ and Rust</summary>
-              {views(MORE)}
-            </details>
-          )}
-        </div>
-        <div className="buttons">
-          <button ref={done} data-modal="ok" className="default" onClick={close}>Done</button>
-        </div>
+    <Modal hook="languages" className="languages" label={LANGUAGE_SETUP_TITLE} sheetRef={dialog} backdropData={{ "data-platform": platform }} onClose={close}>
+      <h3>{LANGUAGE_SETUP_TITLE}</h3>
+      <div className="languages-body">
+        <p>{LANGUAGE_SETUP_INTRO}</p>
+        {views(ALWAYS_SHOWN)}
+        {report && (
+          <details data-language-more open={more ?? false}
+                   onToggle={(event) => { const opened = event.currentTarget.open; setMore((was) => (was === null ? was : opened)) }}>
+            <summary>C, C++ and Rust</summary>
+            {views(MORE)}
+          </details>
+        )}
       </div>
-    </div>
+      <div className="buttons">
+        <button ref={done} data-modal="ok" className="default" onClick={close}>Done</button>
+      </div>
+    </Modal>
   )
 }

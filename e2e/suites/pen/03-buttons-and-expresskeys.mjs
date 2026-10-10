@@ -165,12 +165,12 @@ const text = JSON.parse(await js(`(()=>{const l=[...document.querySelectorAll('.
 await mouse("mouseMoved", text.x, text.y, { buttons: 0, pen: true })
 await mouse("mousePressed", text.x, text.y, { button: "right", pen: true })
 await mouse("mouseReleased", text.x, text.y, { button: "right", pen: true }); await sleep(250)
-ok("a pen right-click (lower button at contact) on the words opens no menu", (await js(`!document.querySelector('.context-menu')`)) && (await js(`window.__ctx`)) === 0, `ctx=${await js(`window.__ctx`)}`)
+ok("a pen right-click (lower button at contact) on the words opens no menu", (await js(`!document.querySelector('#context-menu')`)) && (await js(`window.__ctx`)) === 0, `ctx=${await js(`window.__ctx`)}`)
 // (b) the driver's hover click: a MOUSE right click at the pen just after the pen's own events
 await hover(text.x, text.y); await airTap("upper", text.x, text.y)
 await mouse("mousePressed", text.x, text.y, { button: "right" })
 await mouse("mouseReleased", text.x, text.y, { button: "right" }); await sleep(250)
-ok("a right click just after a pen button opens no menu either", (await js(`!document.querySelector('.context-menu')`)) && (await js(`window.__ctx`)) === 0)
+ok("a right click just after a pen button opens no menu either", (await js(`!document.querySelector('#context-menu')`)) && (await js(`window.__ctx`)) === 0)
 // (c) the driver's hover click as the ONLY sign of the button (Windows Ink delivers no pen event for it): a double one = Redo
 await holdDrag("upper", [X + 75, Y - 20], [X + 75, Y + 25])
 ok("(erased one for the echo test)", (await strokes()) === 1)
@@ -185,9 +185,9 @@ await sleep(1700)
 await mouse("mouseMoved", text.x + 5, text.y, { buttons: 0 }); await sleep(300)
 await mouse("mousePressed", text.x, text.y, { button: "right" })
 await mouse("mouseReleased", text.x, text.y, { button: "right" }); await sleep(300)
-ok("a plain mouse right click (no pen near) still opens the Cut / Copy / Paste menu", await js(`!!document.querySelector('.context-menu')`))
+ok("a plain mouse right click (no pen near) still opens the Cut / Copy / Paste menu", await js(`!!document.querySelector('#context-menu')`))
 await js(`document.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true}))`); await sleep(150)
-ok("(the menu closes with Esc)", await js(`!document.querySelector('.context-menu')`))
+ok("(the menu closes with Esc)", await js(`!document.querySelector('#context-menu')`))
 
 // ---- the popover: another job per column, kept across a reload
 await setting("dbl-upper", "nextColour"); await setting("btn-upper", "select"); await closePop()

@@ -1,16 +1,25 @@
 /**
- * Find in the note: the bar the Mac's text view puts over its pane (`usesFindBar`), with
+ * Find in the note: what the Mac's text view puts over its pane (`usesFindBar`), with
  * Find and Replace. Ctrl+F opens it, Enter / F3 go to the next match and Shift+Enter /
  * Shift+F3 to the previous (it wraps round), Esc puts it away and gives the note back
- * its caret. Every match is lit while it is open and the count says where you are.
+ * its caret, with the match it was on selected. Every match is lit while it is open and
+ * the count says where you are ("1 of 3"; a live region, so it is heard).
  * The model is the core's `text/find`; the highlights and the moves are the editor
  * package's `find`.
+ *
+ * IT FLOATS (docs/PLAN-bars-2026-10.md, P6; the wireframe "Find and the link picker float over the note"): a card at the top
+ * right of the page, over the words, so the note's top edge never moves when it opens or goes (it was a strip between the
+ * bar and the page, and the whole note jumped down a row). The page puts it in `.float-cards`, which ignores the pointer
+ * everywhere but on a card.
  */
 
 import { useEffect, useRef, useState } from "react"
 import { EditorView } from "@codemirror/view"
 import { findAll, nextMatch } from "@writemind/core"
 import { findCount, findNextMatch, replaceEvery, replaceMatch, setFind } from "@writemind/editor"
+import { Icon } from "./icons"
+import { hostPlatform } from "./hostPlatform"
+import { commandForKey } from "../shared/commands"
 
 export interface FindRequest {
   /** "replace" also shows the replace row. */
@@ -99,6 +108,13 @@ export function FindBar({ view, request, onQuery, onClose }: Props) {
     if (event.key === "Escape") { event.preventDefault(); close(); return }
     const control = event.ctrlKey || event.metaKey
     if (event.key === "Enter" && !control && event.target === input.current) { event.preventDefault(); go(event.shiftKey); return }
+    // Find and Replace from inside the card: the page's key handler leaves a field's keys alone, so the card answers its own.
+    if (commandForKey(event.nativeEvent, hostPlatform())?.id === "findReplace") {
+      event.preventDefault()
+      setReplacing(true)
+      window.setTimeout(() => { replaceInput.current?.focus(); replaceInput.current?.select() }, 0)
+      return
+    }
     if (event.key === "F3") { event.preventDefault(); go(event.shiftKey); return }
     if (event.key === "Enter" && event.target === replaceInput.current) {
       event.preventDefault()
@@ -110,22 +126,19 @@ export function FindBar({ view, request, onQuery, onClose }: Props) {
   const label = query.length === 0 ? "" : count.total === 0 ? "Not found" : count.index > 0 ? `${count.index} of ${count.total}` : `${count.total} found`
 
   return (
-    <div className="find-bar" role="search" onKeyDown={keys} data-bar="find">
+    <div className="find-card" role="search" aria-label="Find in the note" onKeyDown={keys} data-bar="find">
       <div className="find-row">
         <input ref={input} className="find-input" placeholder="Find" value={query} spellCheck={false}
                aria-label="Find" onChange={(event) => setQuery(event.target.value)} />
-        <button className={`find-toggle${caseSensitive ? " on" : ""}`} aria-pressed={caseSensitive} title="Match case"
-                data-find="case" onClick={() => setCaseSensitive((was) => !was)}>Aa</button>
-        <button className={`find-toggle${wholeWord ? " on" : ""}`} aria-pressed={wholeWord} title="Whole words"
-                data-find="word" onClick={() => setWholeWord((was) => !was)}>ab</button>
-        <span className={`find-count${query.length > 0 && count.total === 0 ? " none" : ""}`} data-find="count">{label}</span>
+        <span className={`find-count${query.length > 0 && count.total === 0 ? " none" : ""}`} data-find="count"
+              role="status" aria-live="polite">{label}</span>
         <button className="find-step" title="Previous match (Shift+Enter)" aria-label="Previous match" data-find="prev"
-                onClick={() => go(true)} disabled={count.total === 0}>↑</button>
+                onClick={() => go(true)} disabled={count.total === 0}><Icon name="chevu" /></button>
         <button className="find-step" title="Next match (Enter)" aria-label="Next match" data-find="next"
-                onClick={() => go(false)} disabled={count.total === 0}>↓</button>
-        <button className={`find-toggle${replacing ? " on" : ""}`} aria-pressed={replacing} title="Replace" data-find="replace-toggle"
-                onClick={() => setReplacing((was) => !was)}>⇄</button>
-        <button className="find-step" title="Close (Esc)" aria-label="Close find" data-find="close" onClick={close}>×</button>
+                onClick={() => go(false)} disabled={count.total === 0}><Icon name="chev" /></button>
+        <button className={`find-step${replacing ? " on" : ""}`} aria-pressed={replacing} title="Replace" aria-label="Replace" data-find="replace-toggle"
+                onClick={() => setReplacing((was) => !was)}><Icon name="replace" /></button>
+        <button className="find-step" title="Close (Esc)" aria-label="Close find" data-find="close" onClick={close}><Icon name="close" size={12} /></button>
       </div>
       {replacing && (
         <div className="find-row">
@@ -133,10 +146,16 @@ export function FindBar({ view, request, onQuery, onClose }: Props) {
                  aria-label="Replace with" onChange={(event) => setReplacement(event.target.value)} />
           <button className="find-action" data-find="replace" disabled={count.total === 0}
                   onClick={() => { if (view) { replaceMatch(view, replacement); setCount(findCount(view.state)) } }}>Replace</button>
-          <button className="find-action" data-find="replace-all" disabled={count.total === 0}
-                  onClick={() => { if (view) { replaceEvery(view, replacement); setCount(findCount(view.state)) } }}>Replace All</button>
+          <button className="find-action" data-find="replace-all" disabled={count.total === 0} title="Replace All" aria-label="Replace All"
+                  onClick={() => { if (view) { replaceEvery(view, replacement); setCount(findCount(view.state)) } }}>All</button>
         </div>
       )}
+      <div className="find-row find-options">
+        <button className={`find-toggle${caseSensitive ? " on" : ""}`} aria-pressed={caseSensitive} title="Match case" aria-label="Match case"
+                data-find="case" onClick={() => setCaseSensitive((was) => !was)}>Aa</button>
+        <button className={`find-toggle${wholeWord ? " on" : ""}`} aria-pressed={wholeWord} title="Whole words" aria-label="Whole words"
+                data-find="word" onClick={() => setWholeWord((was) => !was)}>ab</button>
+      </div>
     </div>
   )
 }

@@ -266,6 +266,19 @@ is how the code is put together.
   writes a `<span style="…">`, so other markdown apps still read the note.
 - **⌘D, as in Sublime Text.** The word under the cursor, then one more
   occurrence per press, all editable at once. ⌃⌘G takes every one.
+- **Find, the link picker and the dialogs float or hold the page.** Find
+  and Replace is a card over the top right of the note (the note never
+  moves when it opens): Enter and Shift+Enter walk the matches and wrap, "1
+  of 3" says where you are, Aa / ab are match case and whole words, Esc
+  closes it with the caret back in the note on the match it was on, and
+  Replace All is one Undo. `/link` shows its picker the same way. Every
+  dialog (the key list, Rename, Move to Trash, Clean Up, About, Updates,
+  Language Setup) is one modal: the page behind it is inert, Tab goes round
+  inside it, Esc closes it and the caret returns to the notes; Move to Trash
+  starts on **Cancel**, and Enter answers only the button that has the
+  keyboard. The key list is searchable ("Search keys…") and draws its keys as
+  caps in Apple's order on a Mac. The divider between the notes and the video
+  is a visible 6px column with a grip, and takes the accent while you drag it.
 - **It opens side by side.** Every launch shows the notes and the video
   together, whatever was put away last time.
 - **Collapse what you're not using.** The notes list, the rendered page and
@@ -290,7 +303,11 @@ is how the code is put together.
   the pointer is a pencil over that pane and nowhere else. In either mode,
   hold **⌘ and drag** to pull a rectangle over the page: it takes
   everything it *touches*, whole or not. The mode is remembered between
-  launches and the footer names it whenever the pen is down.
+  launches and the footer names it whenever the pen, the Eraser, the Select
+  tool or an armed shape is on ("Pen · 3 px", "Eraser", "Select tool",
+  "Placing: Rectangle"; a live region, so a screen reader hears it change),
+  and a chip over the page says it too with how to stop — "Pen · 3 px · Esc
+  to stop": **Esc** puts it down, when nothing else wanted the press.
 - **Several things held as one.** Pick two or more — a marquee, or ⇧-click
   — and **⌃G** holds them together; the same key on a group you have picked
   takes it apart, and a button beside the selection says which it will do.

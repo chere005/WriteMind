@@ -101,7 +101,7 @@
 .sheet-tab:hover .sheet-close, .sheet-tab.on .sheet-close, .sheet-tab.asking .sheet-close { display: inline-flex; }
 .sheet-tab.on .sheet-close { background: transparent; }
 .sheet-close:hover { color: #fff; background: rgba(255, 255, 255, 0.2); }
-.sheet-tab.asking .sheet-close { background: #c0392b; color: #fff; font-size: 10.5px; }
+.sheet-tab.asking .sheet-close { background: var(--wm-danger); color: #fff; font-size: 10.5px; }
 .sheet-add {
   flex: none; align-self: center; width: 24px; height: 24px; padding: 0; border: 0; border-radius: 6px; cursor: pointer;
   background: transparent; color: rgba(255, 255, 255, 0.7); display: inline-flex; align-items: center; justify-content: center;

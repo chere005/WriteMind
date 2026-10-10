@@ -4,67 +4,70 @@
  * to by a test). The Mac keeps the same list in its README (2026-09-21); on a
  * PC a list you can open from Help is where people look for it.
  *
- * Escape, F1 again, Close or a click outside put it away, and the keyboard
- * goes back to the notes.
+ * SEARCHABLE (docs/PLAN-bars-2026-10.md, P6; the wireframe's "Search keys…"): the field has the keyboard when the list
+ * opens, every word typed must be in a row's name, its menu or its key (`searchKeys`: "save", "cmd shift", "⌥").
+ * Escape clears the field first and closes the list on the second press. The keys are drawn as caps in the order the
+ * machine writes them — on a Mac ⌃⌥⇧⌘ and then the key (`chordCaps`). The list scrolls with a gutter kept for its bar,
+ * so no keycap is ever under it.
+ *
+ * Close, Escape on an empty field, or a click outside put it away (the `Modal` around it), and the keyboard goes back to the notes.
  */
 
-import { useEffect, useRef } from "react"
+import { useMemo, useRef, useState } from "react"
+import { chordCaps } from "../shared/chord"
 import { keyList } from "../shared/keyList"
-import { withNumberKeysFirst } from "../shared/keyGroups"
-import { returnFocus } from "./focusReturn"
+import { searchKeys, withNumberKeysFirst } from "../shared/keyGroups"
+import { Modal } from "./Modal"
 import "./keyList.css"
 
 /** "Ctrl+Shift+Up" → the keys to press, one cap each. */
-function Chord({ keys }: { keys: string }) {
-  const parts = keys.split("+").map((part, index, all) =>
-    // "Ctrl++" would be a plus key; none is bound today, but keep it whole if one ever is.
-    part === "" && index === all.length - 1 ? "+" : part).filter((part) => part !== "")
+function Chord({ keys, platform }: { keys: string; platform: string }) {
   return (
     <span className="chord">
-      {parts.map((part, index) => <kbd key={index}>{part}</kbd>)}
+      {chordCaps(keys, platform).map((cap, index) => <kbd key={index}>{cap}</kbd>)}
     </span>
   )
 }
 
 export function KeyList({ platform, onClose }: { platform: string; onClose(): void }) {
-  const sheet = useRef<HTMLDivElement>(null)
+  const [query, setQuery] = useState("")
+  const field = useRef<HTMLInputElement>(null)
   // The ten number keys (the cell kinds) first, as one group; then every other key by its menu.
-  const groups = withNumberKeysFirst(keyList(platform), platform)
-
-  useEffect(() => {
-    sheet.current?.focus()
-    return () => { window.setTimeout(returnFocus, 0) }
-  }, [])
+  const all = useMemo(() => withNumberKeysFirst(keyList(platform), platform), [platform])
+  const groups = useMemo(() => searchKeys(all, query, platform), [all, query, platform])
 
   return (
-    <div className="modal-backdrop" data-modal="keys" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose() }}>
-      <div ref={sheet} className="modal key-list" role="dialog" aria-modal="true" aria-label="Keyboard Shortcuts" tabIndex={-1}
-           onKeyDown={(event) => {
-             if (event.key === "Escape") { event.preventDefault(); event.stopPropagation(); onClose() }
-           }}>
+    <Modal hook="keys" className="key-list" label="Keyboard Shortcuts" onClose={onClose}
+           // F1 again puts it away, from the search field too (the page's own key handler leaves a field's keys alone).
+           onKeyDown={(event) => { if (event.key === "F1") { event.preventDefault(); onClose() } }}
+           onEscape={() => { if (query !== "") { setQuery(""); field.current?.focus() } else onClose() }}>
+      <div className="key-head">
         <h3>Keyboard Shortcuts</h3>
-        <p>Every key WriteMind binds: the number keys that make cells first, then the rest by the menu they are in. A command with no key is in its menu only.</p>
-        <div className="key-groups">
-          {groups.map((group) => (
-            <section key={group.menu} className="key-group" data-menu={group.menu}>
-              <h4>{group.menu}</h4>
-              <table>
-                <tbody>
-                  {group.rows.map((row) => (
-                    <tr key={row.id} data-command={row.id}>
-                      <td className="key-name">{row.name}</td>
-                      <td className="key-keys"><Chord keys={row.keys} /></td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </section>
-          ))}
-        </div>
-        <div className="buttons">
-          <button data-modal="ok" className="default" onClick={onClose}>Close</button>
-        </div>
+        <input ref={field} type="search" className="key-search" placeholder="Search keys…" aria-label="Search keys" value={query}
+               autoFocus spellCheck={false} data-keys="search" onChange={(event) => setQuery(event.target.value)} />
       </div>
-    </div>
+      <p>Every key WriteMind binds: the number keys that make cells first, then the rest by the menu they are in. A command with no key is in its menu only.</p>
+      <div className="key-groups" data-keys="groups">
+        {groups.map((group) => (
+          <section key={group.menu} className="key-group" data-menu={group.menu}>
+            <h4>{group.menu}</h4>
+            <table>
+              <tbody>
+                {group.rows.map((row) => (
+                  <tr key={row.id} data-command={row.id}>
+                    <td className="key-name">{row.name}</td>
+                    <td className="key-keys"><Chord keys={row.keys} platform={platform} /></td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </section>
+        ))}
+        {groups.length === 0 && <p className="key-none" data-keys="none" role="status">No key matches “{query.trim()}”.</p>}
+      </div>
+      <div className="buttons">
+        <button data-modal="ok" className="default" onClick={onClose}>Close</button>
+      </div>
+    </Modal>
   )
 }

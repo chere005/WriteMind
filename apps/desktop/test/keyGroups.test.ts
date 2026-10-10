@@ -31,3 +31,48 @@ describe("the number keys, grouped first", () => {
     ])
   })
 })
+
+// The key list's own search ("Search keys…", docs/PLAN-bars-2026-10.md P6).
+import { searchKeys } from "../src/shared/keyGroups"
+
+describe("searching the key list", () => {
+  const rows = (groups: ReturnType<typeof keyList>) => groups.flatMap((group) => group.rows.map((row) => row.id))
+
+  it("an empty query is the whole list, untouched", () => {
+    const all = keyList("darwin")
+    expect(searchKeys(all, "", "darwin")).toBe(all)
+    expect(searchKeys(all, "   ", "darwin")).toBe(all)
+  })
+
+  it("finds a command by its name, case and accents aside, and drops the groups with nothing left", () => {
+    const found = searchKeys(keyList("win32"), "SAVE", "win32")
+    expect(rows(found)).toContain("save")
+    expect(rows(found)).not.toContain("newNote")
+    expect(found.every((group) => group.rows.length > 0)).toBe(true)
+    expect(searchKeys(keyList("win32"), "sàve", "win32").length).toBeGreaterThan(0)
+  })
+
+  it("finds a command by its key, in the words a person types and in the caps a Mac prints", () => {
+    expect(rows(searchKeys(keyList("win32"), "ctrl+s", "win32"))).toContain("save")
+    expect(rows(searchKeys(keyList("darwin"), "cmd s", "darwin"))).toContain("save")
+    // ⌘ is also "command".
+    expect(rows(searchKeys(keyList("darwin"), "command", "darwin"))).toContain("save")
+    expect(rows(searchKeys(keyList("darwin"), "⌘", "darwin"))).toContain("save")
+    const option = rows(searchKeys(keyList("darwin"), "⌥", "darwin"))
+    expect(option).toContain("findReplace")
+    expect(option).not.toContain("save")
+    expect(rows(searchKeys(keyList("darwin"), "option", "darwin"))).toEqual(option)
+  })
+
+  it("every word must match: a name and a key narrow each other, and a stranger finds nothing", () => {
+    const found = rows(searchKeys(keyList("win32"), "find shift", "win32"))
+    expect(found).toContain("findPrevious")
+    expect(found).not.toContain("find")
+    expect(searchKeys(keyList("win32"), "zzzz nothing", "win32")).toEqual([])
+  })
+
+  it("a menu's name finds its rows", () => {
+    const found = searchKeys(keyList("win32"), "pen", "win32")
+    expect(found.some((group) => group.menu === "Pen")).toBe(true)
+  })
+})

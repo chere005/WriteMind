@@ -11,6 +11,12 @@
  * commands of `commands.ts` and its chords are `acceleratorFor()` of them, the source the menu bar and the key
  * handler read, so a key that moves moves here too. The test holds every row to a command that has a key, and the one
  * row that is not a menu command (Shift+Enter runs a cell) to the editor keymap that binds it.
+ *
+ * ONE SOURCE FOR THE KEYS, AND ONE COLUMN (docs/PLAN-bars-2026-10.md, P6; Sean's audit, 2026-10-10): the feature lines used to
+ * type "Ctrl+7" by hand — a key that does nothing on a Mac — while the table beside them had a column for each platform.
+ * Now both the lines and the table are built from the command table for THE MACHINE THE NOTE IS WRITTEN FOR
+ * (`welcomeNote(platform)`: Ctrl on a PC, ⌘ on a Mac) and the table has one column of keys, this computer's. The note is
+ * written by the machine that shows it, so each machine's copy is its own.
  */
 
 import { HEADING_LADDER, headingName } from "@writemind/core"
@@ -27,21 +33,21 @@ export const WELCOME_FILE = "WriteMind Quick Reference.wm"
  * typed, so nothing in it is markup.
  */
 export const WELCOME_INTRO =
-  "What WriteMind does, then the keys that matter. Keys are written for Windows (Ctrl); the table at the end gives the Mac's too. " +
+  "What WriteMind does, then the keys that matter, written for this computer. " +
   "Help ▸ Quick Reference opens this page again and brings it up to date, so keep your own words in notes of your own."
 
 /**
  * What the app has, in a line or two each (Sean's approved style: a bold lead, brief): kept to what is built. Menu
  * items and buttons are named as the menu bar and the panes name them.
  */
-export const WELCOME_FEATURES: string[] = [
+export const welcomeFeatures = (mac: boolean): string[] => [
   "**Cells:** headings, text, markdown, lists, quotes, code, runnable code, maths, tables and drawings; the + on the bar between two cells adds one.",
-  "**Text and markdown cells:** Ctrl+7 makes a text cell, shown exactly as typed; Ctrl+Shift+7 a markdown cell, read as markdown.",
-  "**Maths cells:** Ctrl+9 makes one, or turns a cell's words into one; Wolfram Language, typeset when the caret leaves. Ctrl+Shift+M opens the palette.",
+  `**Text and markdown cells:** ${key("heading:0", mac)} makes a text cell, shown exactly as typed; ${key("markdownCell", mac)} a markdown cell, read as markdown.`,
+  `**Maths cells:** ${key("mathsCell", mac)} makes one, or turns a cell's words into one; Wolfram Language, typeset when the caret leaves. ${key("insertMath", mac)} opens the palette.`,
   "**Tables:** a pipe table (`| a | b |`) is one cell, a real table on the rendered page; Tab and Return move along it.",
-  "**Rendered page:** Ctrl+T shows the note as a finished page you can still type in.",
-  "**Drawing:** ink, shapes, arrows, text boxes and pictures float over the note; Dock in a picked one's bar makes it a cell. Ctrl+0 makes a drawing cell.",
-  "**Runnable cells:** Python, Wolfram, C, C++ and Rust, each with its icon and In[n] / Out[n]; Shift+Enter runs one.",
+  `**Rendered page:** ${key("toggleMode", mac)} shows the note as a finished page you can still type in.`,
+  `**Drawing:** ink, shapes, arrows, text boxes and pictures float over the note; Dock in a picked one's bar makes it a cell. ${key("insertInkCell", mac)} makes a drawing cell.`,
+  `**Runnable cells:** Python, Wolfram, C, C++ and Rust, each with its icon and In[n] / Out[n]; ${chordText("Shift-Enter", mac)} runs one.`,
   "**Language Setup:** File ▸ Language Setup… shows which program runs each language, tests it, lets you choose another and helps you get a missing one.",
   "**Video pane:** a document camera: its box and the Writing, Image and Raw buttons bring a page in as ink or a picture; + keeps each scanned page as a tab.",
   "**Wacom tablet:** Input Devices ▸ Tablet makes the video pane sheets (tabs) to write on; Bring in and the box's As drawing cell take them into the note.",
@@ -55,6 +61,7 @@ export const WELCOME_FEATURES: string[] = [
   "**Updates:** Help ▸ Check for Updates… looks now; an installed copy also looks at launch. Windows installs it; a Mac that cannot replace itself opens the release page.",
   "**About:** Help ▸ About WriteMind shows the version, the licence, the Wolfram statement and every library with its licence text.",
 ]
+
 
 /**
  * One row of the keys table. `ids` are commands (`commands.ts`); `range` shows the first and the last ("Ctrl+1 …
@@ -76,7 +83,7 @@ export interface WelcomeGroup { title: string; keys: WelcomeKey[] }
  */
 export const WELCOME_GROUPS: WelcomeGroup[] = [
   {
-    title: "Cell types — Ctrl / ⌘ (+ Shift) + a number",
+    title: "Cell types — the number keys",
     keys: [
       ...HEADING_LADDER.map((level, index) => ({ what: `${index + 1} ${headingName(level)}`, ids: [headingId(level)] })),
       // docs/PLAN-text-cells.md: 7 plain Text, Shift+7 its markdown twin; 8 Code block, Shift+8 Runnable code; 9 Maths;
@@ -156,6 +163,19 @@ export function chordFor(accelerator: string, mac: boolean): Chord {
   return { mods: mods.map((one) => `${one}+`).join(""), key: GLYPHS[key.toLowerCase()] ?? (key.length === 1 ? key.toUpperCase() : key) }
 }
 
+/** A chord as the table draws it, one string: "Ctrl+7" on a PC, "⌘7" on a Mac. */
+function chordText(accelerator: string, mac: boolean): string {
+  const chord = chordFor(accelerator, mac)
+  return chord.mods + chord.key
+}
+
+/** The chord of a COMMAND on one platform (the feature lines name keys through this, never by hand). */
+function key(id: string, mac: boolean): string {
+  const accelerator = acceleratorFor(id, mac ? "darwin" : "win32")
+  if (!accelerator) throw new Error(`the quick reference names ${id}, which has no key on ${mac ? "a Mac" : "a PC"}`)
+  return chordText(accelerator, mac)
+}
+
 /** One row's keys on one platform: "Ctrl+Z / Ctrl+Y", "Ctrl+1 … Ctrl+7", "⌘B / I / U"; "—" when it has none there. */
 export function welcomeKeys(row: WelcomeKey, mac: boolean): string {
   const platform = mac ? "darwin" : "win32"
@@ -174,25 +194,30 @@ export function welcomeKeys(row: WelcomeKey, mac: boolean): string {
 const cell = (text: string): string => text.replace(/\|/g, "\\|")
 
 /**
- * The keys as a markdown pipe table: What | Windows | Mac. Its columns are padded to one width, so the markdown pane
- * (a monospaced grid, never re-padded) shows them lined up as Sean's note did; the rendered page draws a real table.
+ * The keys as a markdown pipe table: What | Keys, the keys being this computer's (one column; a PC and a Mac used to have a
+ * column each). Its columns are padded to one width, so the markdown pane (a monospaced grid, never re-padded) shows them
+ * lined up as Sean's note did; the rendered page draws a real table.
  */
-export function welcomeKeyTable(): string {
+export function welcomeKeyTable(mac: boolean): string {
   const lines = [
-    ["What", "Windows", "Mac"],
+    ["What", "Keys"],
     ...WELCOME_GROUPS.flatMap((group) => [
-      [groupTitleCell(cell(group.title)), "", ""],
-      ...group.keys.map((row) => [row.what, welcomeKeys(row, false), welcomeKeys(row, true)].map(cell)),
+      [groupTitleCell(cell(group.title)), ""],
+      ...group.keys.map((row) => [row.what, welcomeKeys(row, mac)].map(cell)),
     ]),
   ]
-  const widths = [0, 1, 2].map((column) => Math.max(...lines.map((one) => [...one[column]!].length)))
+  const widths = [0, 1].map((column) => Math.max(...lines.map((one) => [...one[column]!].length)))
   const pad = (text: string, column: number) => text + " ".repeat(widths[column]! - [...text].length)
   const row = (cells: string[]) => `| ${cells.map(pad).join(" | ")} |`
   return [row(lines[0]!), `|${widths.map((width) => "-".repeat(width + 2)).join("|")}|`, ...lines.slice(1).map(row)].join("\n")
 }
 
-/** The whole note. */
-export function welcomeNote(): string {
+/** The feature lines as a PC reads them (the tests hold every line to the source). */
+export const WELCOME_FEATURES: string[] = welcomeFeatures(false)
+
+/** The whole note, written for the machine that will show it: `platform` is Electron's (`darwin` is a Mac). */
+export function welcomeNote(platform: string = "win32"): string {
+  const mac = platform === "darwin"
   return [
     "# WriteMind Quick Reference",
     "",
@@ -200,11 +225,11 @@ export function welcomeNote(): string {
     "",
     "## Features",
     "",
-    ...WELCOME_FEATURES.map((one) => `- ${one}`),
+    ...welcomeFeatures(mac).map((one) => `- ${one}`),
     "",
     "## Most important keys",
     "",
-    welcomeKeyTable(),
+    welcomeKeyTable(mac),
     "",
   ].join("\n")
 }

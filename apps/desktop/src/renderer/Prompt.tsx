@@ -3,11 +3,14 @@
  * confirmation before something goes to the Trash (`SidebarView`'s `.alert` and `.confirmationDialog`). They
  * are the page's own, not the shell's, so a script can answer them and so the caret can be put back.
  *
- * Enter says yes, Escape says no, a click outside says no; a name field starts with its text selected.
+ * A name field starts with its text selected, and Enter in it says yes. A confirmation starts on CANCEL when what it asks
+ * is dangerous (Move to Trash), and Enter acts only on the button that has the keyboard (docs/PLAN-bars-2026-10.md, P6:
+ * "Move to Trash defaults to Cancel"): a key held down from the sidebar's Delete cannot answer it. Escape says no, a
+ * click outside says no. The shell around all this is `Modal` (Tab trapped, the page behind inert, the keyboard handed back).
  */
 
 import { useEffect, useRef, useState } from "react"
-import { returnFocus } from "./focusReturn"
+import { Modal } from "./Modal"
 
 export interface PromptSpec {
   title: string
@@ -30,14 +33,14 @@ export function Prompt({ spec, onClose }: { spec: PromptSpec; onClose(): void })
   const [busy, setBusy] = useState(false)
   const field = useRef<HTMLInputElement>(null)
   const ok = useRef<HTMLButtonElement>(null)
+  const cancel = useRef<HTMLButtonElement>(null)
   const needsName = spec.value !== undefined
 
   useEffect(() => {
-    const target = needsName ? field.current : ok.current
+    const target = needsName ? field.current : spec.destructive ? cancel.current : ok.current
     target?.focus()
     if (needsName) field.current?.select()
-    return () => { window.setTimeout(returnFocus, 0) }
-  }, [needsName])
+  }, [needsName, spec.destructive])
 
   const submit = async () => {
     if (busy || (needsName && value.trim() === "")) return
@@ -56,25 +59,23 @@ export function Prompt({ spec, onClose }: { spec: PromptSpec; onClose(): void })
   }
 
   return (
-    <div className="modal-backdrop" data-modal="prompt" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose() }}>
-      <div className="modal" role="dialog" aria-modal="true" aria-label={spec.title}
+    <Modal hook="prompt" label={spec.title} onClose={onClose}
            onKeyDown={(event) => {
-             if (event.key === "Escape") { event.preventDefault(); event.stopPropagation(); onClose() }
-             else if (event.key === "Enter" && event.target !== ok.current) { event.preventDefault(); void submit() }
+             // Enter answers from the name field, and from a button it presses itself; never from the dialog at large.
+             if (event.key === "Enter" && event.target === field.current) { event.preventDefault(); void submit() }
            }}>
-        <h3>{spec.title}</h3>
-        {spec.message && <p>{spec.message}</p>}
-        {needsName && (
-          <input ref={field} type="text" value={value} aria-label="Name" spellCheck={false}
-                 onChange={(event) => { setValue(event.target.value); setProblem(null) }} />
-        )}
-        {problem && <p className="problem" role="alert" data-modal="problem">{problem}</p>}
-        <div className="buttons">
-          <button data-modal="cancel" onClick={onClose}>Cancel</button>
-          <button ref={ok} data-modal="ok" className={spec.destructive ? "destructive" : "default"}
-                  disabled={busy || (needsName && value.trim() === "")} onClick={() => { void submit() }}>{spec.ok}</button>
-        </div>
+      <h3>{spec.title}</h3>
+      {spec.message && <p>{spec.message}</p>}
+      {needsName && (
+        <input ref={field} type="text" value={value} aria-label="Name" spellCheck={false}
+               onChange={(event) => { setValue(event.target.value); setProblem(null) }} />
+      )}
+      {problem && <p className="problem" role="alert" data-modal="problem">{problem}</p>}
+      <div className="buttons">
+        <button ref={cancel} data-modal="cancel" onClick={onClose}>Cancel</button>
+        <button ref={ok} data-modal="ok" className={spec.destructive ? "destructive" : "default"}
+                disabled={busy || (needsName && value.trim() === "")} onClick={() => { void submit() }}>{spec.ok}</button>
       </div>
-    </div>
+    </Modal>
   )
 }

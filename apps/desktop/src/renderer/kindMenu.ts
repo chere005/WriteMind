@@ -99,3 +99,14 @@ export function kindMenuItems(platform: string, current: CurrentKind, onPick: (p
     { header: "Cells" }, ...all.cells.map(item),
   ]
 }
+
+/**
+ * The cell kind a pick makes, for the seam's + (it opens a cell of that kind at the bar). null for the pick the app
+ * makes by itself: Runnable code (which environment is the notebook's own preference) — the caller asks the editor.
+ */
+export function kindOfPick(pick: KindPick): CellKind | null {
+  const all = kindEntries()
+  const entry = [all.text, ...all.levels, ...all.lists, ...all.cells]
+    .find((one) => one.command === pick.command && one.listStyle === pick.listStyle)
+  return entry && entry.kind.kind !== "evaluation" ? entry.kind as CellKind : null
+}

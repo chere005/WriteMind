@@ -1800,7 +1800,10 @@ export function Canvas({
       const picked = latest.current.selection
       // Escape during a dock drag: nothing is docked, the drop bar goes away.
       const docking = live.current
+      // (Each Escape the layer uses says so by preventing the default: the pen's "Esc to stop" (App.tsx) is for the press
+      // nobody used, and one Escape is one thing.)
       if (event.key === "Escape" && docking?.kind === "docking") {
+        event.preventDefault()
         latest.current.dock?.clear()
         live.current = null
         owner.current = null
@@ -1808,9 +1811,10 @@ export function Canvas({
         return
       }
       // (The inspector's popover closes itself on Escape first and stops the key; this is the belt.)
-      if (event.key === "Escape" && latest.current.pop) { setPop(null); return }
-      if (event.key === "Escape" && latest.current.crop) { setCrop(null); return }
+      if (event.key === "Escape" && latest.current.pop) { event.preventDefault(); setPop(null); return }
+      if (event.key === "Escape" && latest.current.crop) { event.preventDefault(); setCrop(null); return }
       if (event.key === "Escape" && latest.current.compact) {
+        event.preventDefault()
         // The heads row is the arrow's moment (just drawn): Escape puts it, and the pick, away.
         setCompact(null)
         setSelection(new Set())
@@ -1833,6 +1837,8 @@ export function Canvas({
         return
       }
       if (event.key === "Escape" && (picked.size > 0 || latest.current.placing)) {
+        // A placement armed with nothing picked is cancelled by this press, and the pen stays (the chip says "Esc to cancel").
+        event.preventDefault()
         setSelection(new Set())
         if (latest.current.placing) onPlaced()
       }

@@ -349,13 +349,29 @@ describe("the ExpressKey commands", () => {
     // Not the heading ladder's Ctrl+4.
     expect(commandForKey({ ...event, altKey: false }, "win32")).toBeNull()
   })
-  it("still means its physical key where Ctrl+Alt is AltGr and types another character", () => {
-    expect(matches({ key: "¡", code: "Digit1", ctrlKey: true, metaKey: false, altKey: true, shiftKey: false },
-      "CmdOrCtrl+Alt+1", "win32")).toBe(true)
-    expect(matches({ key: "¡", code: "Digit2", ctrlKey: true, metaKey: false, altKey: true, shiftKey: false },
-      "CmdOrCtrl+Alt+1", "win32")).toBe(false)
-    // A plain Ctrl chord never takes the fallback.
+  // CHANGED 2026-10-10 (docs/PLAN-bars-2026-10.md, P6; Sean's audit: `{ [ ] } @ \ |` must type on European layouts). This
+  // was "still means its physical key where Ctrl+Alt is AltGr and types another character": a press that made "¡" or "{"
+  // ran the pen command of its key. Now the chord stands down whenever AltGr is held or the layout made a character of it.
+  it("stands down where Ctrl+Alt is AltGr, so a European layout types its braces", () => {
+    const press = (more: object) => ({ key: "1", code: "Digit1", ctrlKey: true, metaKey: false, altKey: true, shiftKey: false, ...more })
+    // AltGr held: typing, whatever the key says.
+    expect(matches(press({ key: "1", getModifierState: (k: string) => k === "AltGraph" }), "CmdOrCtrl+Alt+1", "win32")).toBe(false)
+    // The layout turned the press into a character that is not the chord's: typing.
+    expect(matches(press({ key: "¡" }), "CmdOrCtrl+Alt+1", "win32")).toBe(false)
+    expect(matches(press({ key: "{", code: "Digit7" }), "CmdOrCtrl+Alt+7", "win32")).toBe(false)
+    expect(matches(press({ key: "@", code: "KeyQ" }), "CmdOrCtrl+Alt+Q", "win32")).toBe(false)
+    // The chord's own key, on a layout with no AltGr (the US one, an ExpressKey): a command.
+    expect(matches(press({}), "CmdOrCtrl+Alt+1", "win32")).toBe(true)
+    expect(matches(press({ getModifierState: () => false }), "CmdOrCtrl+Alt+1", "win32")).toBe(true)
+    // No character made of it at all (a dead key, a driver that sends no key): the physical key still answers.
+    expect(matches(press({ key: "Dead", code: "Digit1" }), "CmdOrCtrl+Alt+1", "win32")).toBe(true)
+    expect(matches(press({ key: "Unidentified", code: "Digit2" }), "CmdOrCtrl+Alt+1", "win32")).toBe(false)
+    expect(matches(press({ key: "Dead", code: "KeyW", shiftKey: false }), "CmdOrCtrl+Alt+W", "win32")).toBe(true)
+    // A plain Ctrl chord never takes the physical-key fallback.
     expect(matches({ key: "ß", code: "KeyS", ctrlKey: true, metaKey: false, altKey: false, shiftKey: false },
       "CmdOrCtrl+S", "win32")).toBe(false)
+    // A Mac's Cmd+Option chords are not AltGr: the digit is still its physical key under the Option's symbol.
+    expect(matches({ key: "¡", code: "Digit1", ctrlKey: false, metaKey: true, altKey: true, shiftKey: false },
+      "CmdOrCtrl+Alt+1", "darwin")).toBe(true)
   })
 })

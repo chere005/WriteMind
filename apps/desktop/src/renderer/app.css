@@ -305,7 +305,7 @@ button { font: inherit; color: inherit; }
   font-size: 11px;
   font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   color: #fff;
-  background: #c0392b;
+  background: var(--wm-danger);
 }
 #wm-error .text { flex: 1; overflow-wrap: anywhere; user-select: text; }
 #wm-error .close {
