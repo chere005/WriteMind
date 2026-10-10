@@ -29,6 +29,7 @@ import {
 import { codeOf, createNow, inTurn, partialOf, writeNow } from "./atomic"
 import { keyOf, remember } from "./echo"
 import { readZip, zipParts, ZipError } from "./zip"
+import { readEntryHead } from "./zipHead"
 
 // MARK: - The app's stamp
 
@@ -179,6 +180,29 @@ export function freshNote(file: string): Promise<WmFile> {
     const there = await disk(file)
     if (there === null) throw Object.assign(new Error(`ENOENT: no such file or directory, open '${file}'`), { code: "ENOENT" })
     try { return parseNote(there.bytes) } catch (error) { throw refusal(file, error) }
+  })
+}
+
+/** How much of a note's words the search reads: a note longer than this is searched as far as here (8 MiB of text). */
+export const SEARCH_TEXT_LIMIT = 8 * 1024 * 1024
+
+/**
+ * The note's WORDS as the file has them now, for the sidebar's search: the text entry alone is read and inflated (a note
+ * with pictures and ink is mostly those, and a search looks at every note of the project). A look and nothing else — the
+ * app's knowledge of the note (its digest, what it holds) is not touched, like `freshNote` — and in the note's own turn, so
+ * it never sees a note between two of the writer's steps (the writer renames a finished file into place, so a look sees the
+ * whole old note or the whole new one). A file that is no note (no end record, no text entry, a damaged directory) throws.
+ */
+export function lookText(file: string): Promise<string> {
+  return inTurn(`${file}`, async () => {
+    let found: Awaited<ReturnType<typeof readEntryHead>>
+    try { found = await readEntryHead(file, WM_TEXT, SEARCH_TEXT_LIMIT) } catch (error) {
+      if (codeOf(error) === "ENOENT" || codeOf(error) === "ENOTDIR") throw error
+      throw refusal(file, error)
+    }
+    if (found === null) throw refusal(file, new Error("it has no text"))
+    const text = found.head.toString("utf8")
+    return text.charCodeAt(0) === 0xfeff ? text.slice(1) : text
   })
 }
 
