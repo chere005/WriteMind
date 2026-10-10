@@ -1,7 +1,7 @@
 /**
  * THE QUICK REFERENCE (Sean, 2026-10-05: a new install opens on it; 2026-10-07: it ships rendered and correct). It is
  * app-owned reference material: `WriteMind Quick Reference.wm` in the notes root, a Note like any other whose text is
- * `welcomeNote()` (`shared/welcome.ts`).
+ * `welcomeNote(platform)` (`shared/welcome.ts`): written for THIS machine's keys (Ctrl on a PC, ⌘ on a Mac).
  *
  * TWO WAYS IT GETS WRITTEN, both through the `.wm` store (wmStore.ts: `createFile`, and `writeText` under the store's one
  * serialised writer and its guard, so nothing is written over bytes the app did not read):
@@ -11,7 +11,7 @@
  *    deleted, and a folder that already holds notes is marked and gets nothing. An existing install is NOT given the file
  *    here.
  *  - FROM HELP ▸ QUICK REFERENCE (`ensureQuickReference`): the file is written when it is missing, and REWRITTEN with
- *    the current app's text when its text differs from `welcomeNote()`, so an upgraded install gets the updated reference.
+ *    the current app's text when its text differs from `welcomeNote(platform)`, so an upgraded install gets the updated reference.
  *    That overwrites any edit made to it: it is not the person's note, and they should keep their own words elsewhere (the
  *    page says so). Nothing else ever touches it, and nothing writes it unasked into an install that has the marker.
  *
@@ -72,7 +72,7 @@ async function holdsNotes(folder: string, budget = { dirs: 400 }, depth = 0): Pr
  * alone — and `convertGuard.ts` takes ONLY the named one as proof that this app made the folder (the Swift app's folder
  * got the date alone at the first launch and was converted at the second, when any marker counted).
  */
-export async function welcomeOnce(root: string, folders: string[] = []): Promise<string | null> {
+export async function welcomeOnce(root: string, folders: string[] = [], platform: string = process.platform): Promise<string | null> {
   const marker = welcomeMarker(root)
   try {
     await fs.access(marker)
@@ -86,7 +86,7 @@ export async function welcomeOnce(root: string, folders: string[] = []): Promise
   if (fresh) {
     await fs.mkdir(root, { recursive: true })
     // Never over a file of that name (the folder was empty of notes a moment ago, but not of everything): `createFile` links.
-    await createFile(note, newNoteFile(welcomeNote())).catch((error: NodeJS.ErrnoException) => {
+    await createFile(note, newNoteFile(welcomeNote(platform))).catch((error: NodeJS.ErrnoException) => {
       if (error.code !== "EEXIST") throw error
       fresh = false
     })
@@ -109,7 +109,7 @@ const lines = (text: string): string => text.replace(/\r\n?/g, "\n")
  * same: left alone. A file the store refuses (not a note, a newer WriteMind's, changed under us) throws with the words
  * the page shows.
  */
-export async function ensureQuickReference(root: string, text: string = welcomeNote()): Promise<{ file: string; change: QuickReferenceChange }> {
+export async function ensureQuickReference(root: string, text: string = welcomeNote(process.platform)): Promise<{ file: string; change: QuickReferenceChange }> {
   const file = quickReferencePath(root)
   // (Twice: a file that appears between the read that found none and the create is read, not written over.)
   for (let attempt = 0; attempt < 2; attempt++) {

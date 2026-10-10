@@ -62,5 +62,7 @@ export const unpluggedProblem = (): CameraProblem => ({
 /** The pane when no source is chosen (the Mac's "No camera selected"). */
 export const idleProblem = (): CameraProblem => ({
   kind: "other", title: "No camera selected",
-  detail: "Pick one from the Input Devices menu.",
+  // It points at the list drawn UNDER it (docs/PLAN-bars-2026-10.md, P6): the old line sent a person to a menu that is not on this
+  // pane (a Mac's menu bar, the video button) while the list they could press was right there.
+  detail: "Pick one from the list below.",
 })

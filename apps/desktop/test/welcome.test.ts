@@ -24,6 +24,7 @@ import { readWm, writeWm } from "./wmFiles"
 
 const ROOT = path.resolve(__dirname, "../../..")
 const row = (what: string) => WELCOME_KEYS.find((one) => one.what === what)!
+const mac = (platform: string) => platform === "darwin"
 
 describe("the quick reference's keys come from the command table", () => {
   it("every row names commands that exist, and each has a chord on Windows", () => {
@@ -90,18 +91,42 @@ describe("the quick reference's keys come from the command table", () => {
     expect(chordFor("Shift-Enter", false)).toEqual({ mods: "Shift+", key: "Enter" })
   })
 
-  it("the note's keys are ONE markdown table (What | Windows | Mac): a title row per group, then a row per key", () => {
-    const tables = blocks(welcomeNote()).filter((one) => one.kind === "table")
-    expect(tables.length).toBe(1)
-    const table = tables[0] as Extract<ReturnType<typeof blocks>[number], { kind: "table" }>
-    expect(table.header).toEqual(["What", "Windows", "Mac"])
-    const expected = WELCOME_GROUPS.flatMap((group) => [
-      [groupTitleCell(group.title), "", ""],
-      ...group.keys.map((one) => [one.what, welcomeKeys(one, false), welcomeKeys(one, true)]),
-    ])
-    expect(table.rows.length).toBe(WELCOME_KEYS.length + WELCOME_GROUPS.length)
-    expect(table.rows.map((cells) => [cells[0], cells[1] ?? "", cells[2] ?? ""])).toEqual(expected)
-  })
+  // CHANGED 2026-10-10 (docs/PLAN-bars-2026-10.md, P6): the table was What | Windows | Mac; it is What | Keys, THIS computer's
+  // keys, and the note is written for the machine that shows it (welcomeNote(platform)).
+  for (const platform of ["win32", "darwin"]) {
+    it(`on ${platform} the note's keys are ONE markdown table (What | Keys): a title row per group, then a row per key`, () => {
+      const mac = platform === "darwin"
+      const tables = blocks(welcomeNote(platform)).filter((one) => one.kind === "table")
+      expect(tables.length).toBe(1)
+      const table = tables[0] as Extract<ReturnType<typeof blocks>[number], { kind: "table" }>
+      expect(table.header).toEqual(["What", "Keys"])
+      const expected = WELCOME_GROUPS.flatMap((group) => [
+        [groupTitleCell(group.title), ""],
+        ...group.keys.map((one) => [one.what, welcomeKeys(one, mac)]),
+      ])
+      expect(table.rows.length).toBe(WELCOME_KEYS.length + WELCOME_GROUPS.length)
+      expect(table.rows.map((cells) => [cells[0], cells[1] ?? ""])).toEqual(expected)
+    })
+
+    it(`on ${platform} no feature line types a key by hand: every chord it names is this machine's, from the command table`, () => {
+      const text = welcomeNote(platform)
+      if (mac(platform)) {
+        // A Mac's note never says Ctrl or Windows' Shift+Enter: it is ⌘ and ⇧↩ all through.
+        expect(text).not.toMatch(/Ctrl\+/)
+        expect(text).toContain("⌘7 makes a text cell")
+        expect(text).toContain("⇧⌘7 a markdown cell")
+        expect(text).toContain("⇧↩ runs one")
+      } else {
+        expect(text).toContain("Ctrl+7 makes a text cell")
+        expect(text).toContain("Ctrl+Shift+7 a markdown cell")
+        expect(text).toContain("Shift+Enter runs one")
+        expect(text).not.toMatch(/⌘[0-9A-Z]/)
+      }
+      // One column, this machine's: the other platform's chords are not in the table.
+      expect(text).not.toContain("| Windows")
+      expect(text).not.toContain("| Mac ")
+    })
+  }
   it("the number keys come first, as one group, each digit's Shift chord after it (Sean: group the ctrl/cmd + 1-0 keystrokes)", () => {
     const first = WELCOME_GROUPS[0]!
     expect(first.keys.map((one) => welcomeKeys(one, false))).toEqual(
@@ -110,7 +135,7 @@ describe("the quick reference's keys come from the command table", () => {
   })
 
   it("the feature list names what is built, the pen buttons as Sean set them", () => {
-    const text = welcomeNote()
+    const text = welcomeNote(process.platform)
     expect(text.startsWith("# WriteMind Quick Reference\n")).toBe(true)
     for (const name of [
       "Cells", "Text and markdown cells", "Maths cells", "Tables", "Rendered page", "Drawing", "Runnable cells", "Language Setup", "Video pane",
@@ -129,7 +154,7 @@ describe("the quick reference's keys come from the command table", () => {
   })
 
   it("the intro is one plain line under the title (a text cell: nothing in it is markup), and says the page is the app's", () => {
-    const parsed = blocks(welcomeNote())
+    const parsed = blocks(welcomeNote(process.platform))
     expect(parsed[0]).toMatchObject({ kind: "heading" })
     expect(parsed[1]).toMatchObject({ kind: "paragraph" })
     expect(WELCOME_INTRO).not.toMatch(/[*_`\[\]<>|#]/)
@@ -240,7 +265,7 @@ describe("a new install, once (main/welcome.ts)", () => {
     const root = path.join(temp(), "WriteMind") // not made yet, as on a first launch
     const note = await welcomeOnce(root, [root])
     expect(note).toBe(path.join(root, WELCOME_FILE))
-    expect(readWm(note!).text).toBe(welcomeNote())
+    expect(readWm(note!).text).toBe(welcomeNote(process.platform))
     expect((await fs.stat(welcomeMarker(root))).isFile()).toBe(true)
     writeWm(note!, "# Mine now\n")
     expect(await welcomeOnce(root, [root])).toBeNull()
@@ -300,7 +325,7 @@ describe("a new install, once (main/welcome.ts)", () => {
     expect(quickReferencePath(root)).toBe(path.join(root, WELCOME_FILE))
     const first = await ensureQuickReference(root)
     expect(first).toEqual({ file: path.join(root, WELCOME_FILE), change: "created" })
-    expect(readWm(first.file).text).toBe(welcomeNote())
+    expect(readWm(first.file).text).toBe(welcomeNote(process.platform))
     expect(readWm(first.file).names).toContain("note.mdwm")
     // no marker, nothing else: only the file
     expect(await fs.readdir(root)).toEqual([WELCOME_FILE])
@@ -308,7 +333,7 @@ describe("a new install, once (main/welcome.ts)", () => {
     expect((await ensureQuickReference(root)).change).toBe("current")
     expect(readFileSync(first.file).equals(bytes)).toBe(true)
     // the same words in CRLF lines are the same words
-    writeWm(first.file, welcomeNote().replace(/\n/g, "\r\n"))
+    writeWm(first.file, welcomeNote(process.platform).replace(/\n/g, "\r\n"))
     expect((await ensureQuickReference(root)).change).toBe("current")
   })
 
@@ -320,14 +345,14 @@ describe("a new install, once (main/welcome.ts)", () => {
     const out = await ensureQuickReference(root)
     expect(out).toEqual({ file, change: "updated" })
     const after = readWm(file)
-    expect(after.text).toBe(welcomeNote())
+    expect(after.text).toBe(welcomeNote(process.platform))
     expect(after.manifest.id).toBe(before.manifest.id)
     expect(after.entries["media/0123456789abcdef.png"]?.toString()).toBe("picture")
     expect((await ensureQuickReference(root)).change).toBe("current")
     // edited by the person: overwritten, as the page says it will be
-    writeWm(file, `${welcomeNote()}\nMy own line.\n`)
+    writeWm(file, `${welcomeNote(process.platform)}\nMy own line.\n`)
     expect((await ensureQuickReference(root)).change).toBe("updated")
-    expect(readWm(file).text).toBe(welcomeNote())
+    expect(readWm(file).text).toBe(welcomeNote(process.platform))
     // and a text of another app version is written as given
     expect((await ensureQuickReference(root, "# Next version\n")).change).toBe("updated")
     expect(readWm(file).text).toBe("# Next version\n")
