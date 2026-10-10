@@ -2,7 +2,8 @@
 # now: they drive the real app, and they publish their report and screenshots either way).
 # On pushes to main (and a manual run), the Mac package too: macos-15 typechecks, runs the unit tests (they must pass
 # there as well), and builds the two ad-hoc dmgs exactly as a release
-# would (apps/desktop's package:mac:adhoc), checks them with tools/verify-mac.sh and keeps them as an artifact for 14
+# would (apps/desktop's package:mac:adhoc, the bundled OCR reader's models required), checks them with
+# tools/verify-mac.sh (the reader's files unpacked from the asar included) and keeps them as an artifact for 14
 # days. It never publishes anything; releases are .github/workflows/release.yml's.
 # The Swift side of the repo is the macOS app's reference copy and is built and tested on a Mac, not here.
 name: CI
@@ -92,6 +93,9 @@ jobs:
       # Ad hoc, from package:mac:adhoc's own overrides: never go looking for a certificate (and there are no APPLE_*
       # variables, so nothing is notarized).
       CSC_IDENTITY_AUTO_DISCOVERY: "false"
+      # A release's own rule: the build fails rather than leave the bundled reader out, and verify-mac.sh then checks
+      # its files are unpacked in both apps (docs/OCR-BUNDLED.md).
+      WM_REQUIRE_OCR_MODELS: "1"
     defaults:
       run:
         shell: bash
@@ -119,7 +123,7 @@ jobs:
         run: npm run build
       - name: The two dmgs, signed ad hoc
         run: npm -w @writemind/desktop run package:mac:adhoc
-      - name: Check them (signature, chips, helper, Info.plist, the dmgs)
+      - name: Check them (signature, chips, helper, bundled reader, Info.plist, the dmgs)
         run: bash tools/verify-mac.sh
       - name: The dmgs as an artifact
         uses: actions/upload-artifact@v4

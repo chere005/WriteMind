@@ -40,21 +40,21 @@ Done and tested on Windows:
 - A scratch e2e in the real app reports engine "bundled".
 - The branch's Windows CI is green.
 
-To do on the Mac:
-1. **The Mac CI job has not run since the last main merge**, so the dmg build with the models is untried. Run it
-   (push the branch or dispatch ci.yml) and get it green.
-2. **`notesFolderMove` is a Mac-only path-separator bug, on main too.** It failed in the branch's macOS CI run.
-   Fix it on main's side first, then merge.
-3. **`tools/verify-mac.sh` does not check for the OCR files**: the onnxruntime-web `.wasm` and the model `.onnx`
-   files unpacked from the asar. Add the check.
-4. **Read on a real Mac and compare with Vision** on the same pictures: a notebook page under the camera at full
+Done on the Mac, 2026-10-10 (branch `agent/ocr-package`): the build with the models, both ad-hoc dmgs,
+`tools/verify-mac.sh` (now checking the OCR files), the packaged apps (arm64 and x64) reading the three fixtures with
+engine "bundled", the sizes (the dmg grows 28.3 MiB), the one notices generator; `notesFolderMove` passes on the Mac
+(main had already fixed it). The numbers are in `docs/OCR-BUNDLED.md`.
+
+To do:
+1. **The Mac CI job** (`mac-package`, and release.yml's `mac`) has not run with the models: push the branch or dispatch
+   ci.yml and get it green. The same steps pass by hand on a Mac.
+2. **Read on a real Mac and compare with Vision** on the same pictures: a notebook page under the camera at full
    resolution, a Wacom sheet, cursive, Japanese handwriting. Vision may beat it on a Mac. Decide whether the
    bundled reader stays first there or only fills in where Vision is missing.
-5. **Linux:** untested.
-6. **Maths:** no formula recogniser is shipped; linear maths ("x = 2y + 1") already comes through. The candidate
+3. **Linux:** untested.
+4. **Maths:** no formula recogniser is shipped; linear maths ("x = 2y + 1") already comes through. The candidate
    is Pix2Text MFR 1.5 (MIT, ~120 MB fp32, outputs LaTeX, which needs a LaTeX → Wolfram step). It is too big
    unless int8 quantisation keeps its handwriting accuracy. Measure before shipping.
-7. **Size:** the reader adds about 44 MB on disk, about 28 MB compressed. Check the real installer and dmg sizes.
 
 ## Next, Sean's backlog (2026-10-05)
 

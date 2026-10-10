@@ -21,6 +21,12 @@ the shell (esbuild → `out/main/main.mjs` and `out/preload/preload.cjs`), and
 run on a Mac and **does nothing anywhere else** — that is not a failure, it
 is the capability rule: see `docs/PORT.md`.
 
+**The bundled OCR reader's models** (about 29 MB, `docs/OCR-BUNDLED.md`) are fetched by the build from the URLs
+pinned in `apps/desktop/scripts/ocr-models.json`, checked against their SHA-256 and cached in
+`apps/desktop/.cache/ocr-models` (git-ignored). Offline with an empty cache a dev build warns and goes on without the
+reader; `WM_REQUIRE_OCR_MODELS=1` (CI's mac-package and the release jobs) makes that an error. The reader adds
+28.3 MiB to each dmg, and `tools/verify-mac.sh` fails a package whose copy of it is missing or damaged.
+
 ## Notices (licences and attribution)
 
 ```sh
@@ -30,7 +36,10 @@ npm run notices      # rewrites THIRD-PARTY-NOTICES.md from package-lock.json an
 `tools/gen-notices.mjs` writes `THIRD-PARTY-NOTICES.md` (the Wolfram statement,
 WriteMind's own licence, then every library that ships with its licence text).
 Run it after any dependency change; a unit test fails while the file is stale
-or a shipped package has no licence text. The build also writes
+or a shipped package has no licence text. The bundled OCR reader's parts are not production dependencies,
+so the generator names them itself (`bundledReader()`: onnxruntime-web and -common, MIT, and the PP-OCRv5
+models, Apache-2.0, text in `tools/licenses/Apache-2.0.txt`); a new model or runtime file in the build has to be
+added there. The build also writes
 `out/notices.json` from the same generator, which Help ▸ About WriteMind reads.
 Packages carry `LICENSE` and `THIRD-PARTY-NOTICES.md` in the app's resources
 folder (`extraResources` in `electron-builder.yml`, plus Chromium's
@@ -52,7 +61,7 @@ published. It packages the existing build, so:
 ```sh
 npm run build                                   # with the universal Vision helper (tools/build-vision.sh)
 npm -w @writemind/desktop run package:mac:adhoc
-bash tools/verify-mac.sh                        # the signature, the chips, the helper, Info.plist, the dmgs
+bash tools/verify-mac.sh                        # the signature, the chips, the helper, the bundled OCR reader, Info.plist, the dmgs
 ```
 
 They land in `dist-electron/`. `apps/desktop/electron-builder.yml` is the

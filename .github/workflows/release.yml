@@ -9,7 +9,8 @@
 #                        installed Windows copy's updater reads (apps/desktop/src/main/updater.ts).
 #   mac      (macos-15)  build (with the universal Vision helper); electron-builder makes WriteMind-<version>-mac-arm64.dmg
 #                        and -mac-x64.dmg, AD-HOC signed (there is no Developer ID, so nothing is notarized) and never
-#                        published by electron-builder; tools/verify-mac.sh checks them; gh uploads both into the draft.
+#                        published by electron-builder; tools/verify-mac.sh checks them (the bundled OCR reader's files
+#                        unpacked from the asar included); gh uploads both into the draft.
 #   publish  (ubuntu)    every file is on the draft, then it is published (Latest; a version with a "-" is a pre-release).
 #
 # A failed windows or mac job leaves the release a DRAFT that no installed copy sees: fix it, then re-run the failed job
@@ -259,7 +260,7 @@ jobs:
             npm run package:mac:adhoc
           fi
 
-      - name: Check them (signature, chips, helper, Info.plist, the dmgs)
+      - name: Check them (signature, chips, helper, bundled reader, Info.plist, the dmgs)
         run: bash tools/verify-mac.sh
 
       # Signed: the zips and latest-mac.yml too, which a Mac copy's updater installs from (an ad-hoc build makes none).

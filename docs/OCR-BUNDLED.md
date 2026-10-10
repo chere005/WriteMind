@@ -79,6 +79,32 @@ were re-verified on download.
 
 About 0.3-0.7 s a picture once the worker is warm (load: 0.3 s).
 
+## Measured on the Mac (2026-10-10, Apple silicon, macOS 26, ad-hoc dmgs of `package:mac:adhoc`)
+
+| | arm64 | x64 |
+|---|---|---|
+| dmg with the reader | 162 726 362 B (155.2 MiB) | 169 723 600 B (161.9 MiB) |
+| same dmg built without `out/helpers/bundled-ocr` | 133 035 122 B (126.9 MiB) | 140 020 094 B (133.5 MiB) |
+| **the reader adds to the dmg** | **29 691 240 B (28.3 MiB)** | **29 703 506 B (28.3 MiB)** |
+| WriteMind.app on disk, with / without | 376 232 / 334 116 KiB | 383 580 / 340 840 KiB |
+
+The unpacked folder (`app.asar.unpacked/out/helpers/bundled-ocr`, identical in both apps) is 44 039 025 B (42.0 MiB):
+the wasm 14 239 897, the three models 4 819 576 + 7 872 351 + 16 631 306, the worker 101 365 (+ 350 149 of source
+map), the loader 24 381. So the earlier estimate (44 MB on disk, about 28 MB compressed) holds: the dmg grows by 28 MiB,
+18 % over the 127 MiB dmg without it. (The "without" dmgs are the same build with the folder moved away before
+electron-builder ran, for comparison only; the app's notices were the same in both.)
+
+The PACKAGED apps read (a scratch script drove each `WriteMind.app` exactly as `e2e/lib/instance.mjs` drives the
+repo's electron: temp `WRITEMIND_NOTES` and `--user-data-dir`, `WRITEMIND_OFFSCREEN=1`, `WRITEMIND_E2E=1`, then
+`window.wm.ocrStatus()` and `window.wm.ocrRead` with each fixture's bytes). Both report `engine: "bundled"`,
+`japanese: true`, and read the three fixtures to the same text: "Buy milk and / eggs / call the plumber"; the handwriting
+picture as on Windows ("The quich broungox / jumps over the lazy / dog. / 0123456789" and the print half exact);
+"会議メモ2026 / こんにちはhello / 東京へ行く". The worker threads and the wasm path from inside an asar are therefore
+fine. Time per picture: arm64, 1.4-2.0 s for the first read (the worker starts, the wasm compiles) and 0.34-0.5 s
+after; the x64 app under Rosetta 2 on the same machine, 36 s for the first read and 2.1-3.7 s after (the wasm
+compile is what Rosetta makes slow; an Intel Mac will not pay that).
+`tools/verify-mac.sh` now fails a package that lacks any of these files (see below).
+
 ## Maths
 
 Linear maths written on a line ("x = 2y + 1", "E = mc^2") already comes through the text recogniser and the app's own
@@ -91,8 +117,26 @@ near 30 MB (a third-party quantised v1, Brian314/pix2text-mfr-quantized, is 53 M
 and would need its accuracy measured on handwriting before it earns a place. RapidLatexOCR (pix2tex, MIT, 179 MB,
 mainly printed) is larger and weaker on handwriting.
 
+## Notices
+
+`tools/gen-notices.mjs` (the one generator; `npm run notices`) names the reader's parts itself, because onnxruntime-web
+is a devDependency (esbuild bundles it into the worker) and the models are not npm packages: onnxruntime-web and
+-common (MIT, Microsoft) and the PP-OCRv5 models (Apache-2.0, PaddlePaddle Authors; converted by RapidOCR, also
+Apache-2.0) are in `THIRD-PARTY-NOTICES.md`, in `out/notices.json` (Help > About) and so in every package, with their
+licence texts. A new model or runtime file in the build needs adding to `bundledReader()` there; the notices test
+checks every manifest file is named. onnxruntime-web's npm package ships no licence file: the MIT text is the standard
+one with Microsoft Corporation as holder (as onnxruntime's repository LICENSE has it, from memory, not re-fetched), and
+the wasm's own statically linked components are pointed to (onnxruntime's ThirdPartyNotices.txt), not reproduced.
+
+## The package check
+
+`tools/verify-mac.sh` checks, in BOTH `mac/` and `mac-arm64/` apps, that `worker.mjs`, `ort/ort-wasm-simd-threaded.mjs`,
+`ort/ort-wasm-simd-threaded.wasm` and each model in `ocr-models.json` are files under `app.asar.unpacked/out/helpers/
+bundled-ocr`, not empty, and the models exactly the pinned size. Proved to fail on a scratch copy of both apps
+(a deleted wasm, an emptied model, a moved model, a truncated model: four failures, exit 1).
+
 ## Not verified here
 
-macOS and Linux runs (the code is platform-free: Node worker threads and WASM; CI's macOS job runs the unit tests,
-including the real reads); a camera photo of a notebook page at full resolution (the e2e camera suite reads its
+Linux runs (the code is platform-free: Node worker threads and WASM; CI's macOS job runs the unit tests, including the
+real reads); the CI jobs themselves (this was done by hand on one Mac, not by GitHub Actions); a camera photo of a notebook page at full resolution (the e2e camera suite reads its
 synthetic chart through the bundled reader); Japanese handwriting.
