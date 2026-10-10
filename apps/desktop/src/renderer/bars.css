@@ -1,0 +1,118 @@
+/*
+ * THE BARS (docs/PLAN-bars-2026-10.md; the wireframes are docs/ui-2026-10/Final*.png).
+ *
+ * One height for every bar across the window — the sidebar's, the notes' tab row, the toolbar, the video's
+ * header — one button (28px, a 16px line icon from icons.tsx), twelve pixels of air between groups and no
+ * borders. Loaded AFTER app.css and chrome.css: where a rule here and one there are the same strength this
+ * one wins. The colours are the app's own (--wm-*), so light and dark follow the system as the rest does.
+ *
+ * Classes, for whoever builds on them:
+ *   .bar-row      a 36px bar            .bar-btn     a 28px icon button (.on lit, .tint softly lit)
+ *   .bar-btn.menu a button that opens a menu: a small triangle in its lower-right corner (MenuButton.tsx)
+ *   .bar-split    a main button and its caret (the pen)          .bar-seg   a segmented control
+ *   .bar-air      12px between groups   .bar-rule  the one hairline   .bar-label  a bordered text button
+ */
+
+:root {
+  --bar-h: 36px;
+  --bar-btn: 28px;
+  --bar-strip: var(--wm-chrome);
+  --bar-page: var(--wm-page);
+  --bar-icon: var(--wm-text);
+  --bar-tint: color-mix(in srgb, var(--wm-accent) 18%, transparent);
+  --bar-fill: color-mix(in srgb, var(--wm-text) 9%, transparent);
+}
+
+.bar-row {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  height: var(--bar-h);
+  min-height: var(--bar-h);
+  padding: 0 6px;
+  flex: none;
+  min-width: 0;
+  overflow: hidden;
+  background: var(--bar-strip);
+}
+.bar-row.page { background: var(--bar-page); }
+.bar-row > * { flex: none; }
+.bar-row > .grow { flex: 1 1 auto; min-width: 0; }
+
+.bar-btn {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+  height: var(--bar-btn);
+  min-width: var(--bar-btn);
+  padding: 0 5px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--bar-icon);
+  font-size: 12px;
+  line-height: 1;
+  white-space: nowrap;
+  cursor: default;
+}
+.bar-btn:hover:not(:disabled) { background: var(--bar-fill); }
+.bar-btn.tint { background: var(--bar-tint); color: var(--wm-accent); }
+.bar-btn.on, .bar-btn[aria-pressed="true"].lit { background: var(--wm-accent-fill, var(--wm-accent)); color: #fff; }
+.bar-btn.on:hover:not(:disabled) { background: var(--wm-accent-fill, var(--wm-accent)); }
+.bar-btn:disabled { opacity: 0.35; cursor: default; background: transparent; }
+.bar-btn:focus-visible { outline: 2px solid var(--wm-accent); outline-offset: -2px; }
+.bar-btn .sub { font-size: 10px; color: var(--wm-faint); margin-left: 1px; }
+.bar-btn.on .sub { color: rgba(255, 255, 255, 0.85); }
+.bar-btn.label { padding: 0 7px 0 8px; }
+.bar-btn.bordered { border: 1px solid var(--wm-rule); justify-content: space-between; }
+.bar-btn .wm-icon { flex: none; }
+.bar-btn .chev { width: 10px; height: 10px; opacity: 0.7; }
+
+/* A button that opens a menu is marked by a small triangle, the way Pages and Freeform mark one. */
+.bar-btn.menu::after {
+  content: "";
+  position: absolute;
+  right: 3px;
+  bottom: 3px;
+  border-style: solid;
+  border-width: 0 0 4px 4px;
+  border-color: transparent transparent currentColor transparent;
+  opacity: 0.55;
+}
+
+/* A main button and its caret: one rounded shape, the pen's. */
+.bar-split { display: inline-flex; align-items: center; border-radius: 6px; flex: none; }
+.bar-split > .bar-btn:first-child { border-radius: 6px 0 0 6px; }
+.bar-split > .bar-btn.caret { border-radius: 0 6px 6px 0; min-width: 16px; width: 16px; padding: 0; color: var(--wm-soft); }
+.bar-split.on { background: var(--wm-accent-fill, var(--wm-accent)); }
+.bar-split.on > .bar-btn, .bar-split.on > .bar-btn.caret { color: #fff; background: transparent; }
+.bar-split.on > .bar-btn.caret { box-shadow: inset 1px 0 0 rgba(255, 255, 255, 0.35); }
+.bar-split .ink { position: absolute; left: 8px; right: 8px; bottom: 4px; height: 2px; border-radius: 1px; background: currentColor; }
+
+.bar-seg { display: inline-flex; align-items: center; padding: 2px; border-radius: 7px; background: var(--bar-fill); flex: none; }
+.bar-seg > .bar-btn { height: 24px; min-width: 26px; border-radius: 5px; }
+.bar-seg > .bar-btn.on { background: var(--wm-accent-fill, var(--wm-accent)); color: #fff; }
+
+.bar-air { width: 12px; flex: none; }
+.bar-rule { width: 1px; height: 18px; margin: 0 6px; background: var(--wm-rule); flex: none; }
+
+/* The macOS traffic lights sit over the sidebar's bar: the bar starts after them. */
+.mac .bar-row.under-lights { padding-left: 78px; }
+
+/* THE PAGE'S MENUS, as the wireframes draw them: roomy rows, a column for a check or an icon, captions, switches. */
+.float-menu { padding: 5px; border-radius: 9px; font-size: 12px; min-width: 200px; }
+.float-menu button { align-items: center; gap: 8px; min-height: 24px; padding: 0 8px; justify-content: flex-start; }
+.float-menu button .float-label { flex: 0 1 auto; }
+.float-menu button .hint { margin-left: auto; padding-left: 18px; font-size: 11px; }
+.float-mark { width: 14px; flex: none; display: inline-flex; align-items: center; justify-content: center; color: var(--wm-accent); font-size: 11px; }
+.float-menu button:hover:not(:disabled) .float-mark, .float-menu button:focus-visible:not(:disabled) .float-mark { color: #fff; }
+.float-menu button.danger { color: #c0392b; }
+.float-menu button.danger:hover:not(:disabled), .float-menu button.danger:focus-visible:not(:disabled) { color: #fff; background: #c0392b; }
+.float-header { padding: 6px 8px 3px; font-size: 10px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: var(--wm-faint); }
+.float-custom { padding: 2px 8px 6px; display: flex; align-items: center; gap: 8px; }
+.float-switch { margin-left: auto; position: relative; width: 26px; height: 15px; border-radius: 8px; background: var(--wm-rule); flex: none; }
+.float-switch::after { content: ""; position: absolute; left: 2px; top: 2px; width: 11px; height: 11px; border-radius: 50%; background: #fff; transition: transform 0.1s; }
+.float-switch.on { background: var(--wm-accent-fill, var(--wm-accent)); }
+.float-switch.on::after { transform: translateX(11px); }
