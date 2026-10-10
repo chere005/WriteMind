@@ -17,6 +17,11 @@
 #     LSMinimumSystemVersion 13.0 and the package's version; the Vision
 #     helper (Contents/Resources/app.asar.unpacked/out/helpers/wm-vision) is
 #     there, executable, signed, universal (x86_64 + arm64) with minos 13.0;
+#   - the bundled OCR reader (docs/OCR-BUNDLED.md) is UNPACKED from the asar, in
+#     Contents/Resources/app.asar.unpacked/out/helpers/bundled-ocr: worker.mjs, ort/ort-wasm-simd-threaded.{mjs,wasm}
+#     and the three models/*.onnx that apps/desktop/scripts/ocr-models.json lists, each there, not empty, and (the
+#     models) exactly the pinned size - in BOTH apps (a worker thread cannot load a file out of an asar, and an
+#     app that lost them would silently read with Vision instead);
 #   - each dmg passes `hdiutil verify`, and mounted read-only it holds a
 #     WriteMind.app whose signature verifies and an Applications link.
 #
@@ -154,6 +159,35 @@ check_app() {
   fi
 }
 
+# The bundled OCR reader's files in one app (see the header). The model names and sizes come from the manifest the
+# build copies them by, so a model added there is checked here without an edit.
+ocr_manifest="apps/desktop/scripts/ocr-models.json"
+check_ocr() {
+  local app="$1"
+  local name="${app#"$dist"/}"
+  local folder="$app/Contents/Resources/app.asar.unpacked/out/helpers/bundled-ocr"
+  local want file size expected
+  # "<relative path> <expected bytes or 0 for any non-empty size>", one per line.
+  want="$(printf '%s 0\n%s 0\n%s 0\n' worker.mjs ort/ort-wasm-simd-threaded.mjs ort/ort-wasm-simd-threaded.wasm
+    node -e 'for (const m of JSON.parse(require("fs").readFileSync(process.argv[1], "utf8")).models) console.log("models/" + m.file, m.bytes)' "$ocr_manifest")" \
+    || { fail "$name: could not read $ocr_manifest"; return; }
+  while read -r file expected; do
+    [ -n "$file" ] || continue
+    if [ ! -f "$folder/$file" ]; then
+      fail "$name: no app.asar.unpacked/out/helpers/bundled-ocr/$file (the bundled reader is not unpacked from the asar; was the build run with WM_REQUIRE_OCR_MODELS=1?)"
+      continue
+    fi
+    size="$(wc -c < "$folder/$file" | tr -d ' ')"
+    if [ "$size" -eq 0 ]; then
+      fail "$name: bundled-ocr/$file is empty"
+    elif [ "$expected" != 0 ] && [ "$size" != "$expected" ]; then
+      fail "$name: bundled-ocr/$file is $size bytes, the manifest pins $expected"
+    else
+      ok "$name: bundled-ocr/$file ($size bytes)"
+    fi
+  done <<< "$want"
+}
+
 # The apps electron-builder left: mac/ is the Intel build, mac-arm64/ Apple silicon's.
 shopt -s nullglob
 apps=("$dist"/mac*/WriteMind.app)
@@ -162,8 +196,8 @@ if [ "${#apps[@]}" -eq 0 ]; then
 else
   for app in "${apps[@]}"; do
     case "$(basename "$(dirname "$app")")" in
-      mac-arm64) check_app "$app" "arm64" ;;
-      mac | mac-x64) check_app "$app" "x86_64" ;;
+      mac-arm64) check_app "$app" "arm64"; check_ocr "$app" ;;
+      mac | mac-x64) check_app "$app" "x86_64"; check_ocr "$app" ;;
       *) fail "${app#"$dist"/}: a folder this release does not make (only mac/ and mac-arm64/)" ;;
     esac
   done
