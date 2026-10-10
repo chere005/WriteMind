@@ -178,3 +178,9 @@
 .find-step:disabled, .find-action:disabled { opacity: 0.45; cursor: default; }
 .find-count { min-width: 64px; color: var(--wm-soft); font-variant-numeric: tabular-nums; }
 .find-count.none { color: var(--wm-text); }
+
+/* Find on the rendered page: the words in the blocks that are DRAWN (packages/editor/src/find.ts, drawnHighlights). */
+::highlight(wm-find) {
+  background-color: rgba(255, 213, 0, 0.38);
+  color: inherit;
+}

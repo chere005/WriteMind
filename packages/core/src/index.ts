@@ -10,6 +10,7 @@
 
 export * from "./text/range"
 export * from "./text/find"
+export * from "./text/findVisible"
 // The parser re-exports `Range` from there; everything else is its own.
 export {
   blocks, positioned, positionedUpdate, linesOf, heading, isRule, todoItem, bulletItem, dashItem, numberedItem,

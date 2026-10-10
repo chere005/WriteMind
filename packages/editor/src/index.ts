@@ -20,7 +20,7 @@ export { textCells, markerField, hiddenMarkers, plainSelection, redoWaiting } fr
 export { codeTypingKeys } from "./codeTyping"
 export { notebookTheme } from "./theme"
 export { textConventions } from "./conventions"
-export { find, findField, setFind, findCount, findNextMatch, replaceMatch, replaceEvery } from "./find"
+export { find, findField, setFind, findCount, findNextMatch, findStep, findFromSelection, replaceMatch, replaceEvery } from "./find"
 export { hiddenMarkerDeletion } from "./markerDeletion"
 export { pasteHtmlAsText, htmlToPlain, takesPastedPicture, DRAWING_MIME, drawingPasted, pasteDrawing } from "./paste"
 export {

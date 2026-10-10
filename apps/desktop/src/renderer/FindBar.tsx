@@ -8,9 +8,9 @@
  */
 
 import { useEffect, useRef, useState } from "react"
-import { EditorView } from "@codemirror/view"
-import { findAll, nextMatch } from "@writemind/core"
-import { findCount, findNextMatch, replaceEvery, replaceMatch, setFind } from "@writemind/editor"
+import type { EditorView } from "@codemirror/view"
+import { findCount, findFromSelection, findNextMatch, replaceEvery, replaceMatch, setFind } from "@writemind/editor"
+import { findSession } from "./findSession"
 
 export interface FindRequest {
   /** "replace" also shows the replace row. */
@@ -30,12 +30,16 @@ interface Props {
 }
 
 export function FindBar({ view, request, onQuery, onClose }: Props) {
-  const [query, setQuery] = useState(request.seed ?? "")
-  const [replacement, setReplacement] = useState("")
-  const [caseSensitive, setCaseSensitive] = useState(false)
-  const [wholeWord, setWholeWord] = useState(false)
+  // (What it held when it was last closed, until the app quits: findSession.ts.)
+  const [query, setQuery] = useState(request.seed ?? findSession.query)
+  const [replacement, setReplacement] = useState(findSession.replacement)
+  const [caseSensitive, setCaseSensitive] = useState(findSession.caseSensitive)
+  const [wholeWord, setWholeWord] = useState(findSession.wholeWord)
   const [replacing, setReplacing] = useState(request.mode === "replace")
   const [count, setCount] = useState({ total: 0, index: 0 })
+  useEffect(() => { findSession.replacement = replacement }, [replacement])
+  // Typing (or a switch) moves the selection to the first match as it goes; opening the bar on words it remembers does not.
+  const typed = useRef(false)
   const input = useRef<HTMLInputElement | null>(null)
   const replaceInput = useRef<HTMLInputElement | null>(null)
 
@@ -53,21 +57,10 @@ export function FindBar({ view, request, onQuery, onClose }: Props) {
     if (!view) return
     view.dispatch({ effects: setFind.of({ query, caseSensitive, wholeWord }) })
     onQuery(query)
+    Object.assign(findSession, { query, caseSensitive, wholeWord })
     // Incremental, as the Mac's bar is: the first match from where the selection starts is selected as it is typed.
-    if (query.length > 0) {
-      const text = view.state.doc.toString()
-      const matches = findAll(text, query, { caseSensitive, wholeWord })
-      const main = view.state.selection.main
-      const at = nextMatch(matches, main.from)
-      if (at !== null) {
-        const match = matches[at]!
-        view.dispatch({
-          selection: { anchor: match.location, head: match.location + match.length },
-          effects: [],
-        })
-        scrollTo(view, match.location)
-      }
-    }
+    if (query.length > 0 && typed.current) findFromSelection(view)
+    typed.current = false
     setCount(findCount(view.state))
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [view, query, caseSensitive, wholeWord])
@@ -113,11 +106,11 @@ export function FindBar({ view, request, onQuery, onClose }: Props) {
     <div className="find-bar" role="search" onKeyDown={keys} data-bar="find">
       <div className="find-row">
         <input ref={input} className="find-input" placeholder="Find" value={query} spellCheck={false}
-               aria-label="Find" onChange={(event) => setQuery(event.target.value)} />
+               aria-label="Find" onChange={(event) => { typed.current = true; setQuery(event.target.value) }} />
         <button className={`find-toggle${caseSensitive ? " on" : ""}`} aria-pressed={caseSensitive} title="Match case"
-                data-find="case" onClick={() => setCaseSensitive((was) => !was)}>Aa</button>
+                data-find="case" onClick={() => { typed.current = true; setCaseSensitive((was) => !was) }}>Aa</button>
         <button className={`find-toggle${wholeWord ? " on" : ""}`} aria-pressed={wholeWord} title="Whole words"
-                data-find="word" onClick={() => setWholeWord((was) => !was)}>ab</button>
+                data-find="word" onClick={() => { typed.current = true; setWholeWord((was) => !was) }}>ab</button>
         <span className={`find-count${query.length > 0 && count.total === 0 ? " none" : ""}`} data-find="count">{label}</span>
         <button className="find-step" title="Previous match (Shift+Enter)" aria-label="Previous match" data-find="prev"
                 onClick={() => go(true)} disabled={count.total === 0}>↑</button>
@@ -139,12 +132,4 @@ export function FindBar({ view, request, onQuery, onClose }: Props) {
       )}
     </div>
   )
-}
-
-/** Bring a place into the middle of the window without taking the keyboard from the bar. */
-function scrollTo(view: EditorView, position: number): void {
-  const box = view.coordsAtPos(position)
-  const scroller = view.scrollDOM.getBoundingClientRect()
-  if (box && box.top >= scroller.top + 20 && box.bottom <= scroller.bottom - 20) return
-  view.dispatch({ effects: EditorView.scrollIntoView(position, { y: "center" }) })
 }
