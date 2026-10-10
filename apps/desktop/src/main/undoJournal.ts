@@ -26,15 +26,12 @@ import { codeOf } from "./atomic"
 import { notesUnder, readOrder, uniquePath, writeOrder } from "./notes"
 import { commit, movedNote, restoreBytes, takeOwned } from "./wmStore"
 import {
-  EMPTY_UNDO, STEP_LABELS, UNDO_DEPTH, noEffects, takenNotice,
+  EMPTY_UNDO, STEP_LABELS, UNDO_DEPTH, noEffects, takenNotice, wallNow,
   type StepInfo, type StepKind, type UndoEffects, type UndoOutcome, type UndoState,
 } from "../shared/undo"
 
 /** Puts one file or folder in the Recycle Bin / Trash (housekeeping's type again, so this file imports nothing of it). */
 export type Trash = (file: string) => Promise<void>
-
-/** The wall-clock both processes order steps by: sub-millisecond, and the same instant source in the page and here. */
-export const wallNow = (): number => performance.timeOrigin + performance.now()
 
 // MARK: - Errors
 
@@ -480,7 +477,7 @@ export class UndoJournal {
     if (!(await exists(path.dirname(target)))) throw new StepError(`the folder “${path.basename(path.dirname(target))}” is not there any more`, true)
     if (part.dir) await fs.mkdir(target)
     else await restoreBytes(target, await fs.readFile(part.copy!))
-    effects.restored.push(target)
+    effects.restored.push({ path: target, was: part.path })
     if (notice) effects.notices.push(notice)
     return {
       rollback: async () => { if (part.dir) await fs.rmdir(target); else await takeOwned(target) },
@@ -495,7 +492,7 @@ export class UndoJournal {
     if (await exists(target)) { target = await uniqueSibling(target, part.dir); notice = takenNotice(stem(part.path, part.dir), stem(target, part.dir)) }
     if (!(await exists(path.dirname(target)))) throw new StepError(`the folder “${path.basename(path.dirname(target))}” is not there any more`, true)
     await copyIn(part, target)
-    effects.restored.push(target)
+    effects.restored.push({ path: target, was: part.path })
     if (notice) effects.notices.push(notice)
     return {
       // (only ever what this call made: the name was free a moment ago and the copy refuses an existing one)

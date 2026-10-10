@@ -7,6 +7,13 @@
  * keeping file backups until undo goes out of scope."
  */
 
+/**
+ * The wall-clock both processes order steps by: the epoch in milliseconds with the browser's sub-millisecond fraction. The
+ * page and the main process read the same machine clock, and an IPC hop is longer than its resolution, so a text edit and the
+ * file operation that follows it never tie in practice (on a tie the file step counts as the newer: `pickStep`).
+ */
+export const wallNow = (): number => performance.timeOrigin + performance.now()
+
 /** How many FILE steps back the journal keeps (and keeps backups for). Text keeps at least 200 (the note's own history). */
 export const UNDO_DEPTH = 3
 
@@ -58,8 +65,8 @@ export interface UndoEffects {
   moved: { from: string; to: string }[]
   /** Files or folders that are gone (a tab on one closes). */
   removed: string[]
-  /** Files or folders that are back (a note trashed while open is reopened). */
-  restored: string[]
+  /** Files or folders that are back (a note trashed while open is reopened). `was` is the path they had when they went. */
+  restored: { path: string; was: string }[]
   /** Said to the person (a name that was taken, a note that was left alone). */
   notices: string[]
 }

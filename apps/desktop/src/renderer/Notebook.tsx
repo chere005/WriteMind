@@ -6,9 +6,9 @@
  */
 
 import { useEffect, useLayoutEffect, useRef, useState } from "react"
-import { Compartment, EditorState, type Extension, type StateEffect } from "@codemirror/state"
+import { Compartment, EditorState, StateEffect, type Extension } from "@codemirror/state"
 import { EditorView, drawSelection, rectangularSelection } from "@codemirror/view"
-import { history, historyKeymap, defaultKeymap, standardKeymap } from "@codemirror/commands"
+import { history, historyKeymap, defaultKeymap, isolateHistory, standardKeymap } from "@codemirror/commands"
 import { keymap } from "@codemirror/view"
 import {
   cellBrackets, folding, foldField, foldedKeys, linkClicks, linkTrigger, mathRendering, notebookDecorations, notebookKeys,
@@ -121,7 +121,8 @@ export function Notebook({ file, text, version, restore, readOnly, rendered: sho
     if (!host.current) return
     const extensions: Extension[] = [
       readOnlySwitch.of(EditorState.readOnly.of(readOnlyRef.current)),
-      history(),
+      // (Sean, 2026-10-10: Undo reaches back at least 200 steps of typing; CodeMirror keeps between this and twice it.)
+      history({ minDepth: 200 }),
       // Every edit of the words is numbered on the note's clock, so one Undo
       // can take back the words and the drawing in the order they were made.
       textTimeline(historyOf(file).clock),
@@ -182,9 +183,11 @@ export function Notebook({ file, text, version, restore, readOnly, rendered: sho
         }
       }),
     ]
+    // A note coming back to the front finds its undo where it was left — under the same name or a new one (a rename or a move
+    // carries it: noteHistory.ts). The state that was put aside is given THIS path's extensions (the closures name `file`).
+    const aside = takeText(file, text)
     const editor = new EditorView({
-      // A note coming back to the front finds its undo where it was left.
-      state: takeText(file, text) ?? EditorState.create({ doc: text, extensions }),
+      state: aside ? aside.update({ effects: StateEffect.reconfigure.of(extensions) }).state : EditorState.create({ doc: text, extensions }),
       parent: host.current,
     })
     // A note coming back where it was left: its closed sections, and its caret.
@@ -220,7 +223,10 @@ export function Notebook({ file, text, version, restore, readOnly, rendered: sho
     const editor = view.current
     if (!editor) return
     if (editor.state.doc.length === text.length && editor.state.doc.toString() === text) return
-    editor.dispatch({ changes: { from: 0, to: editor.state.doc.length, insert: text } })
+    // Its own undo step, never joined to typing: Undo brings the words that were there back ("Undo Edit"). Not an edit that
+    // was not wanted: the same words arriving again change nothing (the early return above), so a reload that did not change
+    // the text leaves the note's history alone.
+    editor.dispatch({ changes: { from: 0, to: editor.state.doc.length, insert: text }, annotations: isolateHistory.of("full") })
     // `version` is a dependency on purpose: the same words arriving twice
     // are still an instruction to replace what is in the editor.
     // eslint-disable-next-line react-hooks/exhaustive-deps

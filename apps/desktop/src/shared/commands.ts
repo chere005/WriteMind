@@ -274,6 +274,12 @@ export interface MenuState {
   markers: boolean
   canUndoDrawing: boolean
   canRedoDrawing: boolean
+  /**
+   * What Edit ▸ Undo and Redo name, from the page (docs/PLAN-undo.md): "Rename Note", "Typing", "Move to Trash"; null when
+   * there is nothing to take (the item is greyed and plain). Absent: not said yet, so the plain items stay enabled.
+   */
+  undoLabel?: string | null
+  redoLabel?: string | null
   /** "Dots", "Dashes", "Numbers", "To-do": the style the list button writes. */
   listStyle: string
   /** The language a new code block is tagged with, or null for plain. */

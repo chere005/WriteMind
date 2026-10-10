@@ -30,6 +30,7 @@ import { useUndo } from "./useUndo"
 import { lazyText } from "./lazyText"
 import { reloadFromDisk } from "./diskReload"
 import { forgetAll, historyOf, keepOnly as keepHistory, renameNote } from "./noteHistory"
+import type { UndoOutcome } from "../shared/undo"
 import { readPictureResult } from "./ocrClient"
 import { CameraPane, type Capture } from "./CameraPane"
 import { PaneDivider } from "./PaneDivider"
@@ -241,8 +242,11 @@ export function App() {
   }, [view])
 
   const lastTree = useRef("")
+  /** The tree as `reload` last read it (the state follows at the next render; an Undo that reopens a note needs it now). */
+  const treeNow = useRef<Section | null>(null)
   const reload = useCallback(async () => {
     const next = await window.wm.tree()
+    treeNow.current = next
     // A tree that has not changed is not a new tree: the sidebar keeps its
     // rows instead of re-rendering all of them after every save.
     const fingerprint = JSON.stringify(next)
@@ -544,7 +548,13 @@ export function App() {
     history.record(drawingRef.current)
     changeDrawing(next)
   }, [changeDrawing, history])
-  useUndo({ view, history, drawing, platform: platform?.platform ?? null, apply: changeDrawing })
+  // ONE Undo for the words, the drawing and the FILE operations (useUndo.ts, docs/PLAN-undo.md): a file step is the journal's
+  // (main/undoJournal.ts), run by `undoFileStep` below.
+  const fileStepRef = useRef<(which: "undo" | "redo") => Promise<boolean>>(async () => false)
+  const undoLabels = useUndo({
+    view, history, drawing, platform: platform?.platform ?? null, apply: changeDrawing,
+    fileStep: (which) => fileStepRef.current(which),
+  })
 
   // INK CELLS (docs\PLAN-docking-ink-cells.md). The editor draws each cell's line as a widget and paints its canvas
   // with this one painter, from the drawing as it is now; a resize by the cell's bottom edge is one undo step.
@@ -1168,9 +1178,12 @@ export function App() {
     const front = openRef.current
     if (front && rename(front) !== front) {
       openRef.current = rename(front)
+      // The editor is built again for the new path, from the words IN HAND (not the words that last arrived from outside
+      // the editor, which can be older): that is what lets it take its undo history along (noteHistory.ts, Notebook.tsx).
+      setDocument(textRef.current)
       setCurrent(rename(front))
     }
-  }, [])
+  }, [setDocument])
 
   const placeNote = useCallback(async (file: string, folder: string, before: string | null) => {
     await flushNow(false)
@@ -1269,13 +1282,35 @@ export function App() {
     }
   }, [])
 
+  /**
+   * Open notes that went to the bin (or were taken away by an Undo) with the note or section they were in, and whether each was
+   * the one in front: when the Undo of that puts the note back, its tab comes back (noteHistory.ts keeps its Ctrl+Z).
+   */
+  const goneOpen = useRef(new Map<string, boolean>())
+
   const trashNote = useCallback(async (note: Note) => {
+    // What is typed goes into the file FIRST, so the copy kept for Undo has it (it used to be thrown away: letGo).
+    await flushNow(false)
+    // No save while the note is on its way to the bin (a write after it would be refused as "gone" and say so).
+    const front = openRef.current === note.path
+    if (front) {
+      if (timer.current) window.clearTimeout(timer.current)
+      if (drawingTimer.current) window.clearTimeout(drawingTimer.current)
+    }
+    try {
+      await window.wm.trashNote(note.path)
+    } catch (error) {
+      // Nothing changed (a copy for Undo could not be made, or the system would not take it): the note stays, as it was.
+      if (front && dirty.current) saveRef.current()
+      say(`“${leaf(note.path).replace(/\.[^.]+$/, "")}” was not moved to the trash: ${friendly(error)}.`)
+      return
+    }
+    if (openList.current.some((one) => one.path === note.path)) goneOpen.current.set(note.path, front)
     letGo((path) => path === note.path)
-    await window.wm.trashNote(note.path)
     await close(note.path)
     lastTree.current = ""
     await reload()
-  }, [close, letGo, reload])
+  }, [close, flushNow, letGo, reload, say])
 
   const trashSection = useCallback(async (section: Section) => {
     const inside = (path: string) => path.startsWith(section.path + "/") || path.startsWith(section.path + "\\")
@@ -1286,18 +1321,28 @@ export function App() {
       if (timer.current) window.clearTimeout(timer.current)
       if (drawingTimer.current) window.clearTimeout(drawingTimer.current)
     }
-    const trashed = await window.wm.trashSection(section.path)
+    // (What is typed goes into its file first, so the copy kept for Undo has it.)
+    if (front && inside(front)) await flushNow(false)
+    let trashed = false
+    try {
+      trashed = await window.wm.trashSection(section.path)
+    } catch (error) {
+      if (front && inside(front) && dirty.current) saveRef.current()
+      say(`“${section.name}” was not moved to the trash: ${friendly(error)}.`)
+      return
+    }
     if (!trashed) {
       // A project folder (or anything outside the project) is not the sidebar's to bin: nothing changed.
       if (front && inside(front) && dirty.current) saveRef.current()
       say(`“${section.name}” is a project folder, so it was not moved to the bin. Remove Folder from Project takes it out of the project and leaves it on disk.`)
       return
     }
+    for (const note of openList.current) if (inside(note.path)) goneOpen.current.set(note.path, note.path === front)
     letGo(inside)
     await closeWhere(inside)
     lastTree.current = ""
     await reload()
-  }, [closeWhere, letGo, reload, say])
+  }, [closeWhere, flushNow, letGo, reload, say])
 
   const duplicate = useCallback(async (note: Note) => {
     await flushNow(false)
@@ -1305,6 +1350,69 @@ export function App() {
     lastTree.current = ""
     await reload()
   }, [flushNow, reload])
+
+  /**
+   * UNDO OR REDO OF A FILE STEP (main/undoJournal.ts, docs/PLAN-undo.md): what is typed is written first (the files must be
+   * what the page holds), the journal takes the step, and the page follows what it did: what moved (the tabs, their carets and
+   * their Ctrl+Z go along), what is gone (its tabs close, and are remembered), what is back (a tab that went with a trash
+   * comes back), and a notice for a name that was taken. A step that cannot be taken says why and changes nothing.
+   */
+  const undoFileStep = useCallback(async (which: "undo" | "redo"): Promise<boolean> => {
+    await flushNow(false)
+    let out: UndoOutcome
+    try {
+      out = await window.wm.undo.run(which)
+    } catch (error) {
+      say(`Could not ${which}: ${friendly(error)}.`, null, "undo")
+      return false
+    }
+    if (out.ok === null) return false
+    if (!out.ok) {
+      say(`Could not ${which} ${out.label}: ${out.why}.`, null, "undo")
+      // (a step that was dropped, or a tree that moved under it: the sidebar shows what is there)
+      lastTree.current = ""
+      await reload()
+      return false
+    }
+    clearProblem("undo")
+    const { moved, removed, restored, notices } = out.effects
+    for (const { from, to } of moved) followMoved(from, to)
+    const within = (folder: string) => (path: string) =>
+      path === folder || path.startsWith(folder + "/") || path.startsWith(folder + "\\")
+    for (const gone of removed) {
+      const inside = within(gone)
+      for (const note of openList.current) if (inside(note.path)) goneOpen.current.set(note.path, note.path === openRef.current)
+      letGo(inside)
+      await closeWhere(inside)
+    }
+    lastTree.current = ""
+    await reload()
+    // The tabs that went with what is back come back with it (under the name it came back with), the one that was in front last.
+    const reopen: { path: string; front: boolean }[] = []
+    for (const { path: landed, was } of restored) {
+      const inside = within(was)
+      for (const [old, wasFront] of [...goneOpen.current]) {
+        if (!inside(old)) continue
+        goneOpen.current.delete(old)
+        const target = landed + old.slice(was.length)
+        if (target !== old) renameNote(old, target)
+        reopen.push({ path: target, front: wasFront })
+      }
+    }
+    reopen.sort((a, b) => Number(a.front) - Number(b.front))
+    const tree = treeNow.current
+    const stay = reopen.some((one) => one.front) ? null : openRef.current
+    for (const { path } of reopen) {
+      const known = tree ? notesIn(tree).find((note) => note.path === path) : undefined
+      if (known) await openNote(known)
+    }
+    // A tab that was not in front when it went comes back behind the one that is.
+    const kept = stay ? openList.current.find((note) => note.path === stay) : undefined
+    if (kept && openRef.current !== stay) await openNote(kept)
+    for (const text of notices) tellRead(text, 9000)
+    return true
+  }, [clearProblem, closeWhere, flushNow, followMoved, letGo, openNote, reload, say, tellRead])
+  fileStepRef.current = undoFileStep
 
   // MARK: - The cameras (Input Devices)
 
@@ -1509,6 +1617,8 @@ export function App() {
       markers,
       canUndoDrawing: history.canUndo,
       canRedoDrawing: history.canRedo,
+      undoLabel: undoLabels.undo,
+      redoLabel: undoLabels.redo,
       listStyle: listTitle(listStyle),
       codeLanguage: codeLanguage === "plain" ? null : languageTitle(codeLanguage),
       cameras,

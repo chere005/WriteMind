@@ -87,7 +87,7 @@ describe("a New Note is a step", () => {
     expect(w.journal.state()).toMatchObject({ undo: null, redo: { label: "New Note" } })
 
     const back = await w.journal.redo()
-    expect(back.ok && back.effects.restored).toEqual([file])
+    expect(back.ok && back.effects.restored).toEqual([{ path: file, was: file }])
     expect(readWm(file).text).toBe("hello there")
     // The app owns it again: the next save is accepted.
     expect(await writeNote(file, "and more")).toMatchObject({ written: true })
@@ -110,7 +110,7 @@ describe("a New Note is a step", () => {
     await w.journal.undo()
     w.note("Untitled.wm", "# somebody's\n")
     const back = await w.journal.redo()
-    expect(back.ok && back.effects.restored).toEqual([path.join(w.root, "Untitled 2.wm")])
+    expect(back.ok && back.effects.restored).toEqual([{ path: path.join(w.root, "Untitled 2.wm"), was: file }])
     expect(back.ok && back.effects.notices).toEqual([takenNotice("Untitled", "Untitled 2")])
     expect(readWm(file).text).toBe("# somebody's\n")
   })
@@ -241,7 +241,7 @@ describe("the bin: Move to Trash is kept until it is out of scope", () => {
 
     const back = await w.journal.undo()
     expect(back).toMatchObject({ ok: true, label: "Move to Trash" })
-    expect(back.ok && back.effects.restored).toEqual([a])
+    expect(back.ok && back.effects.restored).toEqual([{ path: a, was: a }])
     expect(readWm(a).text).toBe("precious")
     expect(readdirSync(w.binDir)).toHaveLength(1)
     // the restored note is the app's: it saves
@@ -264,7 +264,7 @@ describe("the bin: Move to Trash is kept until it is out of scope", () => {
     w.note("a.wm", "a new one")
     const back = await w.journal.undo()
     const second = path.join(w.root, "a 2.wm")
-    expect(back.ok && back.effects.restored).toEqual([second])
+    expect(back.ok && back.effects.restored).toEqual([{ path: second, was: a }])
     expect(back.ok && back.effects.notices).toEqual([takenNotice("a", "a 2")])
     expect(readWm(second).text).toBe("the first")
     expect(readWm(a).text).toBe("a new one")
@@ -285,7 +285,7 @@ describe("the bin: Move to Trash is kept until it is out of scope", () => {
     await w.ops.trashSection(path.join(w.root, "S"), w.bin)
     expect(w.tree()).toEqual([])
     const back = await w.journal.undo()
-    expect(back.ok && back.effects.restored).toEqual([path.join(w.root, "S")])
+    expect(back.ok && back.effects.restored).toEqual([{ path: path.join(w.root, "S"), was: path.join(w.root, "S") }])
     expect(w.tree()).toEqual(before)
     expect(readWm(path.join(w.root, "S", "Deep", "two.wm")).text).toBe("2")
     await w.journal.redo()

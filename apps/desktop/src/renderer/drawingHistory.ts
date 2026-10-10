@@ -15,9 +15,10 @@
 
 import type { Drawing } from "@writemind/core"
 import { EditClock } from "./editTimeline"
+import { wallNow } from "../shared/undo"
 
-/** `at` is the edit's stamp on the note's clock; `undoneAt` is when an Undo took it (future only). */
-interface Entry { drawing: Drawing; at: number; undoneAt?: number }
+/** `at` is the edit's stamp on the note's clock; `undoneAt` is when an Undo took it (future only), `undoneWhen` the same in wall-clock time. */
+interface Entry { drawing: Drawing; at: number; undoneAt?: number; undoneWhen?: number }
 
 export class DrawingHistory {
   private past: Entry[] = []
@@ -38,6 +39,12 @@ export class DrawingHistory {
   redoStamp(clock: EditClock = this.clock): number | null {
     const top = this.future.at(-1)
     return top && (top.undoneAt ?? 0) > clock.lastEdit ? top.at : null
+  }
+
+  /** The wall-clock time the edit the app's Redo would bring back was undone (null when none, or a newer edit killed it). */
+  redoWhen(clock: EditClock = this.clock): number | null {
+    const top = this.future.at(-1)
+    return top && (top.undoneAt ?? 0) > clock.lastEdit ? (top.undoneWhen ?? 0) : null
   }
 
   /** `before` is what the drawing was just before an edit. */
@@ -73,7 +80,7 @@ export class DrawingHistory {
     this.burst = null
     const back = this.past.pop()
     if (!back) return null
-    this.future.push({ drawing: current, at: back.at, undoneAt: this.clock.tick() })
+    this.future.push({ drawing: current, at: back.at, undoneAt: this.clock.tick(), undoneWhen: wallNow() })
     return back.drawing
   }
 
