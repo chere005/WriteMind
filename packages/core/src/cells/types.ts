@@ -21,7 +21,10 @@ import {
 import { insertBlock } from "./editing"
 import { MARKDOWN_MARKER, escapePlain } from "../markdown/plainText"
 import { evaluatorFence, evaluatorTitle, type Evaluator } from "../eval/evaluator"
-import { MATH_FENCE } from "../math/typesetter"
+import { MATH_FENCE, isMathFence } from "../math/typesetter"
+import { DEFAULT_EVALUATOR, evaluatorFrom, isEvaluation } from "../eval/evaluator"
+import type { Block } from "../markdown/parser"
+import { tableBlock } from "./tableCells"
 
 export type CellKind =
   /** A paragraph — the default, and what an ordinary click on the bar arms. */
@@ -55,6 +58,11 @@ export type CellKind =
    * writes, so a dock at an armed bar goes through the one block builder every other kind does. Not in the menu.
    */
   | { kind: "picture"; line: string }
+  /**
+   * A GitHub-style pipe table (`markdown/table.ts`), written by the toolbar's Table button (`tableBlock`). Not in the
+   * menu: its own button makes it, and the Style button names it when the caret is in one.
+   */
+  | { kind: "table" }
 
 /** A rung of the ladder as a kind — Body Text being the plain paragraph. */
 export function kindForHeading(level: Heading): CellKind {
@@ -74,6 +82,32 @@ export function kindName(kind: CellKind): string {
     case "evaluation": return `${evaluatorTitle(kind.evaluator)} Evaluation Cell`
     case "ink": return "Drawing Cell"
     case "picture": return "Picture"
+    case "table": return "Table"
+  }
+}
+
+/**
+ * The kind of cell a parsed block is — what the toolbar's Style button names when the caret is in it. Null where the
+ * block is no cell the Style menu knows (a rule, the blank lines the note holds on purpose). An answer under a runnable
+ * cell (the ```out fence) is code, as it is drawn; a picture line that names an ink cell is a drawing cell.
+ */
+export function kindOfBlock(block: Block | null | undefined): CellKind | null {
+  if (!block) return null
+  switch (block.kind) {
+    case "paragraph": return block.markdown ? { kind: "markdown" } : { kind: "text" }
+    case "heading": return kindForHeading(block.level as Heading)
+    case "bullets": return { kind: "list", style: "dots" }
+    case "dashes": return { kind: "list", style: "dashes" }
+    case "numbered": return { kind: "list", style: "numbered" }
+    case "todos": return { kind: "list", style: "todo" }
+    case "quote": return { kind: "quote" }
+    case "code":
+      if (isMathFence(block.language)) return { kind: "maths" }
+      if (isEvaluation(block.language)) return { kind: "evaluation", evaluator: evaluatorFrom(block.language) ?? DEFAULT_EVALUATOR }
+      return { kind: "code" }
+    case "picture": return block.ink !== null ? { kind: "ink" } : { kind: "picture", line: `![${block.alt}](${block.path})` }
+    case "table": return { kind: "table" }
+    case "rule": case "blank": return null
   }
 }
 
@@ -141,6 +175,8 @@ export function opening(kind: CellKind, markdown: string, caret: number): Edit |
       return null
     case "picture":
       return pictureOpening(kind.line, markdown, place)
+    case "table":
+      return tableBlock(markdown, selection)
   }
 }
 

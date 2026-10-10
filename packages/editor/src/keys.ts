@@ -17,7 +17,7 @@ import {
   caretLine, codeBlock, indent, listContinuation, mergeCells, moveSection, outdent,
   outdentForBackspace, setHeading, splitCell, substring, toggleList, toggleQuote, toggleWrap,
   kindForHeading, makeMarkdownCell, makeTextCell, positioned, viaMarkdownCells, wholeChange,
-  MATH_FENCE, mathsAsCode, mathsAsText, mathsCellPlan,
+  MATH_FENCE, mathsAsCode, mathsAsText, mathsCellPlan, tableBlock,
   type CellKind, type Edit, type Heading, type ListStyle, type Range,
 } from "@writemind/core"
 import { heldCells } from "./brackets"
@@ -168,6 +168,17 @@ export const mathsCell: Command = nameKind({ kind: "maths" }, (view) => {
     case "new": return makesCellAfter({ kind: "maths" }, run((text, at) => codeBlock(text, at, MATH_FENCE)))(view)
   }
 })
+
+/**
+ * INSERT ▸ TABLE (the toolbar's Table button): an empty two-column pipe table, a cell of its own, the caret in its first
+ * header cell (`tableBlock`, core). On an empty line it is written there; in a cell that has words it goes after that
+ * cell, as every command that makes a cell does (`makesCellAfter`); at an armed bar it is the cell the bar opens. One
+ * edit, so one Undo takes it back. The table is the editor's own (`tables.ts`): Tab walks its cells, Return adds a row.
+ */
+export const tableCell: Command = nameKind({ kind: "table" }, makesCellAfter({ kind: "table" }, (view) => {
+  applyEdit(view, tableBlock(view.state.doc.toString(), selection(view)), true)
+  return true
+}))
 export const indentLines: Command = run((text, where) => indent(text, where))
 export const outdentLines: Command = run((text, where) => outdent(text, where))
 export const splitTheCell: Command = run((text, where) => splitCell(text, where))

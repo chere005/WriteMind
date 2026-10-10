@@ -11,7 +11,7 @@ export { notebookState, notebookField, notebook, cellRanges, selectedRanges, app
 export { notebookDecorations, safeSpanStyle } from "./decorations"
 export { seamExtensions, armedField, armedTypeField, armSeam, setArmedType, pageSeams } from "./seams"
 export { cellBrackets, heldCells, GUTTER_WIDTH } from "./brackets"
-export { notebookKeys, wrap, heading, list, listStyleSource, quote, fence, mathsCell, indentLines, outdentLines, textCell, markdownCell, mergeTheCell } from "./keys"
+export { notebookKeys, wrap, heading, list, listStyleSource, quote, fence, mathsCell, tableCell, indentLines, outdentLines, textCell, markdownCell, mergeTheCell } from "./keys"
 // Held cells copied (the app copies their drawing cells for Mathematica too), and the cells' own clipboard type.
 export { cellsCopied, CELLS_MIME } from "./keys"
 // Text cells and markdown cells (docs/PLAN-text-cells.md): the hidden marker, literal typing, plain copy.
@@ -48,6 +48,8 @@ export { cursorSeam, dropTargetAt, insertCellLine, removeCellLine, columnBox, sh
 export { PICTURE_LINE, pictureCellDom, lastColumnWidth } from "./pictureDom"
 // Tables (the first part of "Tables, from scratch"): the grid in the markdown, Tab between cells, Return adds a row.
 export { tables, tableKeys, tableAt, tableTabCommand, tableReturnCommand } from "./tables"
+// What kind of cell the caret is in: the toolbar's Style button (docs/PLAN-bars-2026-10.md P1).
+export { cellKindAt, watchCellKind, sameCellKind } from "./cellKind"
 export { mathRendering, mathElement, mathDOM, installMathStyles, showsSource, MATH_CSS, MATHML_NS } from "./math"
 export {
   evaluationCells, evalHost, evalField, evaluationCell, runCell, evaluatesHere, groupsIn, type EvalHost,
