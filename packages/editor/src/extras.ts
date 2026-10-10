@@ -26,7 +26,7 @@ const selection = (view: EditorView): Range => {
  */
 export const applyTextStyle = (style: SpanStyle): Command => (view) => {
   const change = viaMarkdownCells(view.state.doc.toString(), selection(view), (text, where) => applySpan(text, where, style))
-  if (change) applyEdit(view, change)
+  if (change) applyEdit(view, change, true)
   return true
 }
 
@@ -102,8 +102,9 @@ export const tagFence = (language: string): Command => (view) => {
   // made after that cell (`makesCellAfter`); and then it is tagged like any block the caret is in.
   if ((view.state.field(armedField, false) ?? null) !== null) {
     view.dispatch({ effects: setArmedType.of({ kind: "code" }) })
-    openArmed(view, "")
-  } else if (!inCode()) makesCellAfter({ kind: "code" }, () => false)(view)
+    // (Not apart: the language is written into the fence in the next breath, and the two are ONE undo step.)
+    openArmed(view, "", true, false)
+  } else if (!inCode()) makesCellAfter({ kind: "code" }, () => false, false)(view)
   const cell = inCode()
   if (cell) {
     const line = view.state.doc.lineAt(cell.range.location)
@@ -112,7 +113,7 @@ export const tagFence = (language: string): Command => (view) => {
     view.focus()
     return true
   }
-  applyEdit(view, codeBlock(view.state.doc.toString(), selection(view), language))
+  applyEdit(view, codeBlock(view.state.doc.toString(), selection(view), language), true)
   return true
 }
 

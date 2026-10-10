@@ -1610,7 +1610,7 @@ export function App() {
                  }}>
               <Notebook file={current} text={loaded.text} version={loaded.version}
                         restore={viewStates.current.get(current) ?? null} rendered={rendered}
-                        markers={markers} listStyle={listStyle}
+                        markers={markers} listStyle={listStyle} codeLanguage={codeLanguage} platform={kind}
                         onChange={change} onReady={setView}
                         onViewState={onViewState} onLink={onLink} onFollow={onFollow}
                         readOnly={readOnly}

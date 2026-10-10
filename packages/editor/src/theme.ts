@@ -118,10 +118,11 @@ export const notebookTheme = EditorView.theme({
     pointerEvents: "none",
   },
   ".wm-seams": { left: "0", right: "0" },
+  // The bar runs along the words, from one margin to the other; the + stands in the left margin beside its line.
   ".wm-bar": {
     position: "absolute",
-    left: "22px",
-    right: "26px",
+    left: `${PAGE_LEFT}px`,
+    right: `${PAGE_RIGHT}px`,
     height: "2px",
     backgroundColor: "var(--wm-accent)",
     opacity: "0.85",
@@ -134,16 +135,24 @@ export const notebookTheme = EditorView.theme({
     borderRadius: "2px",
     boxShadow: "0 0 0 3px color-mix(in srgb, var(--wm-accent) 22%, transparent)",
   },
+  // The + (plusMarker.ts): a filled round marker, white cross, in the left margin (the wireframe, FinalMain.png).
   ".wm-plus": {
     position: "absolute",
+    boxSizing: "border-box",
     borderRadius: "50%",
-    border: "1px solid var(--wm-accent)",
-    color: "var(--wm-accent)",
-    fontSize: "9px",
-    lineHeight: "8px",
-    textAlign: "center",
-    backgroundColor: "var(--wm-page)",
+    backgroundColor: "var(--wm-accent)",
+    boxShadow: "0 1px 2px rgba(0, 0, 0, 0.25)",
   },
+  ".wm-plus::before, .wm-plus::after": {
+    content: '""',
+    position: "absolute",
+    left: "50%",
+    top: "50%",
+    backgroundColor: "#fff",
+    borderRadius: "1px",
+  },
+  ".wm-plus::before": { width: "10px", height: "2px", margin: "-1px 0 0 -5px" },
+  ".wm-plus::after": { width: "2px", height: "10px", margin: "-5px 0 0 -1px" },
 
   // The column is the gutter's alone: it sets the hand over a bracket and the arrow beside one (`bracketAt`), so
   // a bracket's own box — narrower than what a click reaches — says nothing about the pointer.

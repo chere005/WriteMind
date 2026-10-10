@@ -66,7 +66,7 @@ const onCells = (view: EditorView, make: (span: Range, text: string) => Edit | n
 const edit = (view: EditorView, make: (text: string, where: Range) => Edit | null): boolean => {
   const change = make(view.state.doc.toString(), selection(view))
   if (!change) return false
-  applyEdit(view, change)
+  applyEdit(view, change, true)
   return true
 }
 

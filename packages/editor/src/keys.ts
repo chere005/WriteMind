@@ -38,7 +38,9 @@ const selection = (view: EditorView): Range => {
 const run = (make: (text: string, where: Range) => Edit | null): Command => (view) => {
   const change = make(view.state.doc.toString(), selection(view))
   if (!change) return false
-  applyEdit(view, change)
+  // A command is ONE undo step of its own, however soon the next keystroke comes: CodeMirror joins input typed within
+  // half a second of a change beside it, and "Ctrl+1, then the title" must not undo as one.
+  applyEdit(view, change, true)
   return true
 }
 
