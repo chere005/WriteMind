@@ -245,7 +245,12 @@ const keyInfo = (k, o) => {
 export async function key(k, o = {}) {
   // On a Mac a chord written the Windows way is sent as that command's own Mac chord (macKeys.mjs); `{ raw: true }` sends it as written.
   let mods = modBits(o)
-  if (process.platform === "darwin" && !o.raw) ({ k, mods } = macChord(k, mods))
+  if (process.platform === "darwin" && !o.raw) {
+    // (A script that names the physical key — Shift+7 types "&" — is looked up by that key and keeps the key it typed.)
+    const found = macChord(o.code ? o.code.replace(/^Digit|^Key/, "") : k, mods)
+    mods = found.mods
+    if (!o.code) k = found.k
+  }
   const { vk, code } = keyInfo(k, o)
   const chord = [[mods & CTRL, "Control", "ControlLeft", 17, CTRL], [mods & SHIFT, "Shift", "ShiftLeft", 16, SHIFT], [mods & ALT, "Alt", "AltLeft", 18, ALT], [mods & META, "Meta", "MetaLeft", 91, META]].filter((m) => m[0])
   let acc = 0

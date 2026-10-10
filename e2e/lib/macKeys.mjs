@@ -44,5 +44,7 @@ export function macChord(k, mods) {
   const found = table.get(`${String(k).toLowerCase()}:${mods & (CTRL | SHIFT | ALT)}`)
   if (found) return { k: found.name, mods: found.mods | (mods & META) }
   if ((mods & CTRL) && !(mods & (ALT | META)) && EDITING.has(String(k).toLowerCase())) return { k, mods: (mods & ~CTRL) | META }
+  // A word at a time is Option on a Mac (Ctrl+Left / Right on a PC); Ctrl+Shift+Up / Down are the app's own cell moves and are in the table.
+  if ((mods & CTRL) && !(mods & (ALT | META)) && (k === "ArrowLeft" || k === "ArrowRight")) return { k, mods: (mods & ~CTRL) | ALT }
   return { k, mods }
 }

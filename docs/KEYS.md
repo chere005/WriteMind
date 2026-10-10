@@ -201,6 +201,42 @@ drawn blocks stay as they are; a cell opens only when an arrow (or a click) goes
 no blank line, where one is a fence, a table, a picture, a heading or a rule, have a bar of the page's own height
 between them (`apart.ts`): Down / Up stop there on both pages, cell, bar, cell.
 
+### The + on the bar (docs/PLAN-bars-2026-10.md P7 (b); the wireframe, `docs/ui-2026-10/FinalMain.png`)
+
+The + is a filled round marker, 20 px, in the page's left margin on the line of the bar it belongs to: wholly clear of the words
+(`packages/editor/src/plusMarker.ts`; a ten-point outline dot ON the bar until 2026-10-10). It is drawn on the bar that is up, else
+on the seam under the pointer. Its hit target is a 24 px square round it, NOT clipped to the seam (the margin beside the cells above
+and below has no words to promise anything about), and the pointer is a hand over all of it (`pointerPlace`: the cursor and the
+press read the same answer).
+
+| Key / click | Does |
+|---|---|
+| a press on the + | puts the bar up where it stands (the bar is the cursor: the caret hides) and opens the kinds beside the marker |
+| the kinds | `renderer/kindMenu.ts`, the one list the Style menu uses, in a `FloatingMenu`: arrow keys move, Enter picks, Escape closes the menu and leaves the bar up (a second Escape puts the bar out), a click away closes it. The keys are shown beside each kind |
+| a pick | runs THE command its key runs, at the bar: the cell is made now, the caret in it where its words go, the keyboard in the notes; one undo step (a Drawing Cell is made by the app, its pen focused; Code writes the language last picked) |
+
+### Undo steps in cells (docs/PLAN-bars-2026-10.md P7 (a))
+
+A command that makes or restyles a cell (a kind from the + or the Style menu, Ctrl+1 … 9, the list / quote / code buttons) is ONE undo step of its own, however soon the words typed into it follow: CodeMirror joins input typed within half
+a second of a change beside it, so `Ctrl+1` and the title used to undo together. A cell made then tagged (Code in a language) is one
+step. A list opened empty (`- `) takes the first word typed after its marker as the list's (it came out as `\- word`, a text
+cell's literal, before 2026-10-10). Move Section Up / Down keep the caret on the same words and the selection selected, are one
+undo step each, and swap the sections' words and not their trailing newlines (the last section of a note used to land glued to the
+text above it). The menu's Move Cell Up / Down and Duplicate Cell keep a caret on the same characters of its cell (of the copy, for
+Duplicate) instead of selecting the whole cell; held cells stay held through the key moves and through a click on a toolbar or pane
+button (on the rendered page the browser's own selection cannot hold a drawn block, and was read back as a caret: `holdGuard`).
+
+### Find (docs/PLAN-bars-2026-10.md P7 (e))
+
+| Key | Does |
+|---|---|
+| Ctrl+F / Ctrl+H (⌘F / ⌥⌘F) | the bar, on the selected words else the words last looked for; opening it does not move the selection, typing does (the first match from the selection is selected as you type) |
+| Enter / Shift+Enter, F3 / Shift+F3 (⌘G / ⇧⌘G) | the next / previous match, wrapping round; the match is SELECTED, the page scrolls only if it is off screen, a closed section hiding it opens. With the bar away ⌘G goes on from the selection and opens nothing |
+| what is looked in | the note as the page shows it: a markdown cell's hidden marker line is no match; a text cell's escaped `\*` is found as the `*` it shows (the match covers the backslash); on the rendered page a link's address is not there to find; code, maths source and every cell are |
+| the words | as typed: no regular expression (a dot is a dot). Case and whole-word switches; the words and the switches last until the app quits |
+| marks | every match on the markdown side; on the rendered page the words are marked where the blocks are drawn (the page's highlight) and the block the selection is in is open |
+| Replace / Replace All | the selected match / every match, as typed into the cell (a text cell escapes what would mean something), each ONE undo step; Escape closes the bar and the caret is at the match |
+
 ## The rendered page (Write in the preview)
 
 Ctrl+T (or the sidebar's document button). Everything in the table above works on the block that is
@@ -219,7 +255,7 @@ one of them declines on the markdown side:
 | Shift+Up / Shift+Down | off the edge of a block, extend the selection a whole block at a time |
 | Page Up / Page Down (+ Shift) | the window moves a page and the caret goes to the block at the same height |
 | Escape | at a bar, takes it back (the caret returns to the block above); over held cells, lets go of them; in an open block, closes it — the block is drawn again and the caret is put away (Mac `move(.out)`); the next arrow, Home or End only brings the caret back where it was, a character goes in where it was |
-| a character at a bar | opens a block there with that character in it; Return opens an empty one; the + on the bar chooses the kind first |
+| a character at a bar | opens a block there with that character in it; Return opens an empty one; the + on the bar makes the kind picked from its menu (see "The + on the bar") |
 | Ctrl+1…7, Ctrl+Shift+L, Ctrl+Q (quote), Ctrl+8 and the list / quote / code buttons at a bar | MAKES that kind of block at the bar now — on the markdown side too (2026-10-05) — its marker in and the caret where the words go (Mac 0fdd031); bold, indent and the other commands with no kind still do nothing at a bar. The + on a bar MAKES the chosen kind of cell at once, the caret in it (2026-10-05; the Mac only names the kind for the next character); Insert ▸ Maths… at a bar puts the maths in a new cell there |
 | a character over held cells | replaces them |
 | Alt-click on the words of a link | follows it from inside an open block (a plain click puts the caret in it) |
