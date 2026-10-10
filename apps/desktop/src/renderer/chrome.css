@@ -89,11 +89,9 @@ body:has(.pane-divider.dragging) iframe, body:has(.pane-divider.dragging) video 
   :root { --wm-faint: #92929e; --wm-accent-fill: #2f6fb8; --wm-hover: #31323a; }
 }
 .icon-button.on, .kind-menu button:hover, .math-foot button.default,
-.video-pop button:hover:not(:disabled), .context-menu button:hover:not(:disabled), .wm-style-btn.on,
+.context-menu button:hover:not(:disabled), .wm-style-btn.on,
 .link-banner { background: var(--wm-accent-fill); }
 .math-foot button.default, .wm-style-btn.on { border-color: var(--wm-accent-fill); }
-.tab .close { opacity: 1; color: var(--wm-soft); }
-.tab .close:hover { color: var(--wm-text); }
 
 /* The font-and-colour popover's own controls: the browser's dark buttons are #6b6b6b with light words (4.4:1). */
 .style-pop .actions button, .style-pop input[type="number"], .style-pop select {
@@ -105,24 +103,6 @@ body:has(.pane-divider.dragging) iframe, body:has(.pane-divider.dragging) video 
 }
 .style-pop .actions button { padding: 3px 12px; cursor: pointer; }
 .style-pop .actions button:hover { border-color: var(--wm-accent); }
-
-/* The tab row: the tabs walk along it, the + is a new note, the chevron lists what is open. */
-.tab-bar { align-items: stretch; height: 32px; }
-.tab-strip { display: flex; align-items: stretch; flex: 1 1 auto; min-width: 0; overflow: hidden; }
-.tab-strip > * { flex: none; }
-.tab { max-width: 190px; }
-.tab .name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.tab.open .name { font-weight: 600; }
-.tab-new {
-  align-self: center;
-  width: 24px; height: 22px; margin: 0 4px 0 6px; padding: 0;
-  border: 0; border-radius: 5px;
-  background: var(--wm-hover); color: var(--wm-soft);
-  font-size: 15px; line-height: 1; cursor: pointer;
-}
-.tab-new:hover { color: var(--wm-text); background: var(--wm-rule); }
-.tab-bar .bar-divider { align-self: center; flex: none; }
-.tab-bar .tab-list { align-self: center; flex: none; width: 26px; margin: 0 4px 0 0; font-size: 13px; }
 
 /* The small dialogs: Rename, and the Trash's "are you sure". */
 .modal-backdrop {

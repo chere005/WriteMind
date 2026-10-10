@@ -10,6 +10,7 @@
 
 import { useEffect, useRef, useState, type ReactNode } from "react"
 import { FloatingMenu, type MenuItem } from "./FloatingMenu"
+import { returnFocusSoon } from "./focusReturn"
 import { Icon, type IconName } from "./icons"
 
 interface Props {
@@ -18,6 +19,8 @@ interface Props {
   label?: ReactNode
   /** Tooltip, and the accessible name when there is no label. */
   title: string
+  /** The accessible name when the label is not a name (a count). */
+  name?: string
   items: MenuItem[] | (() => MenuItem[])
   /** The button's own click (a split button). Without it a click opens the menu. */
   onMain?: () => void
@@ -32,6 +35,8 @@ interface Props {
   className?: string
   /** Test hook. */
   dataBar?: string
+  /** Test hook on the menu this button opens (`data-bar` of the floating menu). */
+  menuBar?: string
   style?: React.CSSProperties
   children?: ReactNode
 }
@@ -39,28 +44,39 @@ interface Props {
 const HOLD_MS = 500
 const CORNER = 12
 
-export function MenuButton({ icon, label, title, items, onMain, on, tint, disabled, chevron, noMark, className, dataBar, style, children }: Props) {
+export function MenuButton({ icon, label, title, name, items, onMain, on, tint, disabled, chevron, noMark, className, dataBar, menuBar, style, children }: Props) {
   const button = useRef<HTMLButtonElement>(null)
-  const [at, setAt] = useState<{ x: number; y: number } | null>(null)
+  // The menu is built when it is opened and kept: a render of the page behind it (a clock, a save) must not rebuild its
+  // rows, which would take the keyboard from the row the person had moved to.
+  const [at, setAt] = useState<{ x: number; y: number; items: MenuItem[] } | null>(null)
   const hold = useRef<number | null>(null)
   const held = useRef(false)
+  /**
+   * When this button was pressed and when its menu last closed. A press that lands on the button while its menu is
+   * up closes the menu on the way in (the menu's own click-away runs first), so the click that follows must not
+   * open it again: the second press on a menu button is the way to put its menu away. (A render may come between
+   * the click-away and the press, so this cannot be read from the state.)
+   */
+  const pressedAt = useRef(-1)
+  const closedAt = useRef(-1)
 
+  const list = typeof items === "function" ? items : () => items
   const open = () => {
     const box = button.current?.getBoundingClientRect()
     if (!box) return
-    setAt({ x: box.left, y: box.bottom + 2 })
+    setAt({ x: box.left, y: box.bottom + 2, items: list() })
   }
   useEffect(() => () => { if (hold.current !== null) window.clearTimeout(hold.current) }, [])
 
   const classes = ["bar-btn", !noMark && onMain ? "menu" : "", label !== undefined ? "label" : "", on ? "on" : "", tint ? "tint" : "", className ?? ""]
     .filter(Boolean).join(" ")
-  const list = typeof items === "function" ? items : () => items
   return (
     <>
       <button ref={button} type="button" className={classes} style={style} disabled={disabled} data-bar={dataBar}
-              aria-label={label === undefined ? title : undefined} title={title}
-              aria-haspopup="menu" aria-expanded={at !== null} aria-pressed={onMain ? !!on : undefined}
+              aria-label={name ?? (label === undefined ? title : undefined)} title={title}
+              aria-haspopup="menu" aria-expanded={at !== null} aria-pressed={onMain ? !!(on || tint) : undefined}
               onPointerDown={(event) => {
+                pressedAt.current = performance.now()
                 if (!onMain || event.button !== 0) return
                 held.current = false
                 hold.current = window.setTimeout(() => { held.current = true; open() }, HOLD_MS)
@@ -75,17 +91,25 @@ export function MenuButton({ icon, label, title, items, onMain, on, tint, disabl
               onClick={(event) => {
                 if (disabled) return
                 if (held.current) { held.current = false; return }
-                if (!onMain) { open(); return }
                 const box = event.currentTarget.getBoundingClientRect()
                 const inCorner = event.clientX > box.right - CORNER && event.clientY > box.bottom - CORNER
-                if (inCorner) open(); else onMain()
+                if (!onMain || inCorner) {
+                  if (pressedAt.current - closedAt.current >= 0 && pressedAt.current - closedAt.current < 100) return
+                  open()
+                } else onMain()
               }}>
         {icon && <Icon name={icon} />}
         {label !== undefined && <span className="bar-label-text">{label}</span>}
         {chevron && <Icon name="chev" size={10} className="chev" />}
         {children}
       </button>
-      {at && <FloatingMenu x={at.x} y={at.y} items={list()} onClose={() => setAt(null)} />}
+      {at && <FloatingMenu x={at.x} y={at.y} items={at.items} dataBar={menuBar} onClose={() => {
+                    closedAt.current = performance.now()
+                    setAt(null)
+                    // The menu gave the keyboard back to this button (it had it when the menu opened); a bar's menu is a chrome
+                    // action, and the caret belongs in the notes afterwards (a field a menu item opened keeps it).
+                    returnFocusSoon()
+                  }} />}
     </>
   )
 }

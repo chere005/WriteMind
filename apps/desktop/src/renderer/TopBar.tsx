@@ -3,12 +3,13 @@
  * editor pane, never across the sidebar, and it has to FIT the pane it lives
  * in, so: small icons, no spacing, and wrapping rather than clipping.
  *
- * Left to right, as on the Mac: the SIDEBAR'S SWITCH (one spot, whether the
- * sidebar is open or shut), then six sections — Style, Structure, Insert,
+ * Left to right, as on the Mac: six sections — Style, Structure, Insert,
  * Maths, Flow Chart, Pen — each with a grip at its end that puts it away
  * (the bar's context menu lists them all, and `collapsed` is remembered).
- * The markdown toggle and the video's switch are on the SIDEBAR's bar, and
- * export is in the File menu: a pane's switch lives on a different pane.
+ * The sidebar's switch, the markdown toggle and the video's switch are in the
+ * TAB ROW above (TabBar.tsx; Sean, 2026-10-10: "keep the rendered and video
+ * buttons to the right of the sidebar always"), and export is in the File
+ * menu: a pane's switch lives on a different pane.
  *
  * Every button calls the same command its keyboard shortcut does, and every
  * tooltip names that key (`shown`, from the one table the menu bar uses).
@@ -46,8 +47,6 @@ interface Props {
   platform: string
   /** A note is open: the tools work on it. */
   hasNote: boolean
-  sidebar: boolean
-  onToggleSidebar(): void
   /** The sections that are put away. */
   collapsed: ToolGroupId[]
   onCollapse(group: ToolGroupId, collapsed: boolean): void
@@ -146,15 +145,8 @@ function Group({ id, collapsed, onCollapse, children }: {
   )
 }
 
-const SidebarIcon = () => (
-  <svg width="15" height="12" viewBox="0 0 15 12" fill="none" aria-hidden>
-    <rect x="0.75" y="0.75" width="13.5" height="10.5" rx="2" stroke="currentColor" strokeWidth="1.3" />
-    <path d="M5.2 1v10" stroke="currentColor" strokeWidth="1.3" />
-  </svg>
-)
-
 export function TopBar({
-  view, platform, hasNote, sidebar, onToggleSidebar, collapsed, onCollapse, listStyle, onListStyle,
+  view, platform, hasNote, collapsed, onCollapse, listStyle, onListStyle,
   codeLanguage, onCodeLanguage, mode, onToggleMode, penColour, onPenColour, penWidth, onPenWidth,
   placing, onPlace, onAddPicture,
 }: Props) {
@@ -199,16 +191,6 @@ export function TopBar({
       event.preventDefault()
       setMenu({ x: event.clientX, y: event.clientY })
     }}>
-      {/* ONE spot for the sidebar's switch, the one it has when the sidebar is
-          away: it does not move when the sidebar opens (Sean, 2026-09-19). */}
-      <button className={`icon-button${sidebar ? " on" : ""}`} data-bar="sidebar"
-              aria-label={sidebar ? "Hide Notes Sidebar" : "Show Notes Sidebar"}
-              aria-pressed={sidebar}
-              title={tip(sidebar ? "Hide Notes Sidebar" : "Show Notes Sidebar", key("toggleSidebar"),
-                sidebar ? "Put the notes list away" : "Bring the notes list back")}
-              onClick={onToggleSidebar}><SidebarIcon /></button>
-      <div className="bar-divider" />
-
       <Group id="style" collapsed={away("style")} onCollapse={(c) => onCollapse("style", c)}>
         <select className="icon-button bar-select narrow" disabled={off}
                 title={tip("Text Style", "Ctrl+1–7",

@@ -1681,13 +1681,22 @@ export function App() {
         />
       </div>)}
       <div className="pane" style={showEditor && !cameraFullWindow ? undefined : { display: "none" }}>
-        <TabBar platform={kind} open={open} current={current}
-                onSelect={(note) => { void openNote(note) }} onClose={close} onCloseOthers={closeOthers}
-                onNew={() => { void newNote(targetFolder()) }} onReveal={(path) => { void window.wm.reveal(path) }} />
-        {/* The bar is always there — the sidebar's switch is its first
-            button — and its tools wait for a note. */}
-        <TopBar view={view} platform={kind} hasNote={hasNote}
+        {/* The tab row carries the three switches — sidebar, rendered page, video — so they stay put, sidebar open or shut. */}
+        <TabBar platform={kind} open={open} current={current} root={root} hasNote={hasNote}
                 sidebar={showSidebar} onToggleSidebar={() => setShowSidebar((was) => !was)}
+                rendered={rendered} onToggleRendered={() => setRendered((was) => !was)}
+                camera={showCamera} onToggleCamera={toggleCameraPane}
+                cameras={cameras} cameraId={sourceId}
+                onPickCamera={(id) => run(`camera:${id}`)} onCameraOff={() => run("cameraOff")}
+                onRefreshCameras={() => run("cameraRefresh")}
+                notesPane={showEditor} onToggleNotesPane={toggleEditorPane}
+                onSelect={(note) => { void openNote(note) }} onClose={close} onCloseOthers={closeOthers}
+                onNew={() => { void newNote(targetFolder()) }} onReveal={(path) => { void window.wm.reveal(path) }}
+                onRename={renameNoteTo} onDuplicate={(note) => { void duplicate(note) }}
+                onMove={(note, folder) => { void placeNote(note.path, folder, null) }}
+                onTrash={(note) => { void trashNote(note) }} />
+        {/* The bar is always there and its tools wait for a note. */}
+        <TopBar view={view} platform={kind} hasNote={hasNote}
                 collapsed={collapsedGroups} onCollapse={collapseGroup}
                 listStyle={listStyle}
                 onListStyle={(style) => { setListStyle(style); remember("listStyle", style) }}

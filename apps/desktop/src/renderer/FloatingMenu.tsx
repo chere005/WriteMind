@@ -53,9 +53,11 @@ interface Props {
   onClose(): void
   /** The test hook: an id on the element. */
   id?: string
+  /** The test hook: `data-bar` on the menu itself (the video menu is `video-options`). */
+  dataBar?: string
 }
 
-export function FloatingMenu({ x, y, items, above, onClose, id }: Props) {
+export function FloatingMenu({ x, y, items, above, onClose, id, dataBar }: Props) {
   const box = useRef<HTMLDivElement>(null)
   const [at, setAt] = useState({ x, y })
   const was = useRef<Element | null>(document.activeElement)
@@ -96,7 +98,7 @@ export function FloatingMenu({ x, y, items, above, onClose, id }: Props) {
   }, [])
 
   return (
-    <div ref={box} className="float-menu" role="menu" id={id}
+    <div ref={box} className="float-menu" role="menu" id={id} data-bar={dataBar}
          style={{ left: at.x, top: at.y }}
          onContextMenu={(event) => event.preventDefault()}
          onKeyDown={(event) => {
