@@ -110,7 +110,7 @@
 .sheet-tab:hover .sheet-close, .sheet-tab.on .sheet-close, .sheet-tab.asking .sheet-close { display: block; }
 .sheet-tab.on .sheet-close { background: transparent; }
 .sheet-close:hover { color: #fff; background: rgba(255, 255, 255, 0.2); }
-.sheet-tab.asking .sheet-close { background: #c0392b; color: #fff; font-size: 10.5px; }
+.sheet-tab.asking .sheet-close { background: var(--wm-danger); color: #fff; font-size: 10.5px; }
 .sheet-add {
   flex: none; width: 22px; height: 22px; padding: 0; border: 0; border-radius: 6px; cursor: pointer;
   background: transparent; color: rgba(255, 255, 255, 0.7); font-size: 15px; line-height: 20px;

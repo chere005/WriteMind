@@ -20,6 +20,8 @@ const PATHS = {
   chevl: "<path d=\"M9.5 4.5 6 8l3.5 3.5\"/>",
   search: "<circle cx=\"7\" cy=\"7\" r=\"4.25\"/><path d=\"m10.5 10.5 3.5 3.5\"/>",
   plus: "<path d=\"M8 3.5v9M3.5 8h9\"/>",
+  chevu: "<path d=\"M4.5 9.5 8 6l3.5 3.5\"/>",
+  replace: "<path d=\"M2.5 5.5h9.5M9.75 3 12.25 5.5 9.75 8\"/><path d=\"M13.5 10.5H4M6.25 8 3.75 10.5 6.25 13\"/>",
   more: "<circle cx=\"3.5\" cy=\"8\" r=\"1.1\" fill=\"currentColor\" stroke=\"none\"/><circle cx=\"8\" cy=\"8\" r=\"1.1\" fill=\"currentColor\" stroke=\"none\"/><circle cx=\"12.5\" cy=\"8\" r=\"1.1\" fill=\"currentColor\" stroke=\"none\"/>",
   folder: "<path d=\"M1.75 4.5A1.5 1.5 0 0 1 3.25 3h3l1.5 1.5h5a1.5 1.5 0 0 1 1.5 1.5v6a1.5 1.5 0 0 1-1.5 1.5h-9.5a1.5 1.5 0 0 1-1.5-1.5z\"/>",
   doc: "<path d=\"M4 1.75h5.5L13 5.25v9H4z\"/><path d=\"M9.5 1.75v3.5H13\"/>",

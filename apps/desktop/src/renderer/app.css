@@ -421,7 +421,7 @@ button { font: inherit; color: inherit; }
   font-size: 11px;
   font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   color: #fff;
-  background: #c0392b;
+  background: var(--wm-danger);
 }
 #wm-error .text { flex: 1; overflow-wrap: anywhere; user-select: text; }
 #wm-error .close {
@@ -639,10 +639,10 @@ select.chevron option { color: var(--wm-text); background: var(--wm-chrome); }
   background: transparent; color: var(--wm-soft); cursor: pointer;
 }
 .row-button:hover { background: var(--wm-rule); }
-.row-button.trash.armed { background: #d9382c; color: #fff; }
+.row-button.trash.armed { background: var(--wm-danger); color: #fff; }
 .note-row.open .row-button { color: #fff; }
 .note-row.open .row-button:hover { background: rgba(255, 255, 255, 0.25); }
-.note-row.open .row-button.armed { background: #d9382c; }
+.note-row.open .row-button.armed { background: var(--wm-danger); }
 
 /* The text bar: sections, each with a grip that puts it away. */
 .bar-group { display: inline-flex; align-items: center; gap: 1px; flex: none; position: relative; }

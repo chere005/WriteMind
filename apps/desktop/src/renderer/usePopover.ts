@@ -61,7 +61,9 @@ export function usePopover({ ref, open, onClose, anchor, focus = "first" }: Opti
     }
   }, [open, focus, ref])
 
-  useEffect(() => {
+  // (A LAYOUT effect: listening starts in the commit that shows the popover, not a frame later — an Escape or a press that
+  // comes straight after it opens is heard.)
+  useLayoutEffect(() => {
     if (!open) return
     const away = (event: PointerEvent) => {
       const target = event.target

@@ -108,8 +108,8 @@
 .float-menu button .hint { margin-left: auto; padding-left: 18px; font-size: 11px; }
 .float-mark { width: 14px; flex: none; display: inline-flex; align-items: center; justify-content: center; color: var(--wm-accent); font-size: 11px; }
 .float-menu button:hover:not(:disabled) .float-mark, .float-menu button:focus-visible:not(:disabled) .float-mark { color: #fff; }
-.float-menu button.danger { color: #c0392b; }
-.float-menu button.danger:hover:not(:disabled), .float-menu button.danger:focus-visible:not(:disabled) { color: #fff; background: #c0392b; }
+.float-menu button.danger { color: var(--wm-danger); }
+.float-menu button.danger:hover:not(:disabled), .float-menu button.danger:focus-visible:not(:disabled) { color: #fff; background: var(--wm-danger); }
 .float-header { padding: 6px 8px 3px; font-size: 10px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: var(--wm-faint); }
 .float-custom { padding: 2px 8px 6px; display: flex; align-items: center; gap: 8px; }
 .float-switch { margin-left: auto; position: relative; width: 26px; height: 15px; border-radius: 8px; background: var(--wm-rule); flex: none; }

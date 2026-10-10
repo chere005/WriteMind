@@ -16,7 +16,7 @@
  * on the backdrop mean; the rest is here.
  */
 
-import { useEffect, useRef, type CSSProperties, type KeyboardEvent as ReactKeyboardEvent, type ReactNode, type Ref } from "react"
+import { useLayoutEffect, useRef, type CSSProperties, type KeyboardEvent as ReactKeyboardEvent, type ReactNode, type Ref } from "react"
 import { createPortal } from "react-dom"
 import { returnFocus } from "./focusReturn"
 import { ModalStack, tabTarget } from "./overlayRules"
@@ -97,7 +97,8 @@ export function Modal({ label, hook, className, backdropData, dialogData, style,
   const latest = useRef({ onClose, onEscape })
   latest.current = { onClose, onEscape }
 
-  useEffect(() => {
+  // A LAYOUT effect: the dialog is known to the key listener, and the page behind it inert, in the commit that shows it.
+  useLayoutEffect(() => {
     const id = Symbol(hook)
     const prior = document.activeElement
     stack.push(id)

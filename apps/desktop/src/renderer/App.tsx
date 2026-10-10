@@ -37,6 +37,8 @@ import { TabBar } from "./TabBar"
 import { Notebook, type ViewState } from "./Notebook"
 import { LinkBanner, type LinkRequest } from "./LinkBanner"
 import { FindBar, type FindRequest } from "./FindBar"
+import { chipLine, escapeStops, modeChip } from "./modeChip"
+import { Icon, type IconName } from "./icons"
 import { KeyList } from "./KeyList"
 import { Sidebar, SidebarBar } from "./Sidebar"
 import { TopBar, TOOL_GROUPS, type ToolGroupId } from "./TopBar"
@@ -106,6 +108,9 @@ function fingerprintOf(text: string): string {
   lastFingerprint = { text, print }
   return print
 }
+
+/** The icon in front of what the pen is doing. */
+const MODE_ICON: Record<"placing" | "select" | "eraser" | "pen", IconName> = { placing: "shapes", select: "select", eraser: "eraser", pen: "pen" }
 
 export function App() {
   const [platform, setPlatform] = useState<Platform | null>(null)
@@ -376,7 +381,8 @@ export function App() {
     const copy = outcome === "refused" || leaving ? await keepCopy(file, text, "note") : null
     if (copy) {
       if (openRef.current === file && textRef.current === text) dirty.current = false
-      say(`Could not save ${leaf(file)}: ${why}. Your text is kept in Recovered\\${leaf(copy)}`, copy, key)
+      // ("the Recovered folder", not a path in a Windows spelling: on a Mac and on Arch it is not one. Show reveals the copy.)
+      say(`Could not save ${leaf(file)}: ${why}. Your text is kept in the Recovered folder.`, copy, key)
       // The text is safe in Recovered: the newer file can come in now (nothing is in hand for it to replace).
       if (outcome === "refused" && !leaving) window.setTimeout(() => { void reloadOpenRef.current() }, 0)
     } else if (leaving) {
@@ -409,7 +415,7 @@ export function App() {
       const copy = leaving ? await keepCopy(file, json, "drawing") : null
       if (copy) {
         if (openRef.current === file && writeDrawing(drawingRef.current) === json) drawingDirty.current = false
-        say(`Could not save the drawing of ${leaf(file)}: ${why}. It is kept in Recovered\\${leaf(copy)}`, copy, key)
+        say(`Could not save the drawing of ${leaf(file)}: ${why}. It is kept in the Recovered folder.`, copy, key)
       } else if (leaving) {
         say(`Could not save the drawing of ${leaf(file)}: ${why}. It could not be kept either.`, null, key)
       } else {
@@ -471,7 +477,7 @@ export function App() {
     if (decoded.damaged) {
       const left = decoded.dropped > 0 ? ` (${decoded.dropped} object${decoded.dropped === 1 ? "" : "s"} left out)` : ""
       const where = kept
-        ? `The file is kept as it was in Recovered\\${leaf(kept)}.`
+        ? "The file is kept as it was in the Recovered folder."
         : "It could not be kept either, so the next change to the drawing replaces it."
       say(`The drawing of ${leaf(note.path)} could not be read in full${left}. ${where}`, kept, `drawing-unreadable:${note.path}`)
     }
@@ -1535,6 +1541,30 @@ export function App() {
     [readPicture])
   const title = current ? current.split(/[\\/]/).pop() ?? "" : ""
 
+  // WHAT THE PEN IS DOING, in words (modeChip.ts): the footer's chip and the page's. It reads the pen state the toolbar owns
+  // (the mode, the width, the Erase and Select tools) and an armed shape, and owns none of it.
+  const chip = modeChip({ pen: mode === "pen", penWidth, eraser: penTools.eraser, selectTool: penTools.selectTool, placing })
+  const chipOn = chip !== null
+  // ESCAPE PUTS IT DOWN, as the chip says ("Esc to stop"): only when the press was nobody else's — a menu, a dialog, the
+  // layer's own pick or crop (which say so by preventing the default) have it first. Decided after the press has been
+  // through every listener, so the order they were added in does not matter.
+  useEffect(() => {
+    if (!chipOn) return
+    const key = (event: KeyboardEvent) => {
+      if (event.key !== "Escape" || event.isComposing) return
+      const target = event.target instanceof Element ? event.target : null
+      const elsewhere = target !== null && target.closest("input, textarea, select, .camera, .sidebar, .tab-bar, .modal") !== null
+      window.setTimeout(() => {
+        if (!escapeStops({ handled: event.defaultPrevented, elsewhere, on: true })) return
+        setPlacing(null)
+        setMode("cursor")
+        putToolsDown()
+      }, 0)
+    }
+    window.addEventListener("keydown", key)
+    return () => window.removeEventListener("keydown", key)
+  }, [chipOn])
+
   return (
     <div className={`app${platform?.platform === "darwin" ? " mac" : ""}${showEditor && !cameraFullWindow ? "" : " no-editor"}`}>
       {/* The picture filling the window puts the sidebar out of sight, not away: it comes back as it was. */}
@@ -1594,12 +1624,6 @@ export function App() {
                 onPlace={arm} placing={placing} />
         {current ? (
           <>
-            {finding && (
-              <FindBar view={view} request={finding}
-                       onQuery={(query) => { lastQuery.current = query }} onClose={() => setFinding(null)} />
-            )}
-            <LinkBanner request={linking} current={current} view={view} root={root}
-                        openNote={openNote} onLanded={landed} onDone={doneLinking} />
             <div className="stack"
                  onDragOver={(event) => { event.preventDefault() }}
                  onDrop={(event) => {
@@ -1615,7 +1639,7 @@ export function App() {
                         onViewState={onViewState} onLink={onLink} onFollow={onFollow}
                         readOnly={readOnly}
                         inkPainter={painter.current} onInsertInkCell={(offset) => insertInk(offset)}
-                        onCellsCopied={onCellsCopied} onDrawingPasted={pasteSheetCell} />
+                        onCellsCopied={onCellsCopied} onDrawingPasted={pasteSheetCell} platform={kind} />
               {/* The page drawing layer belongs to the rendered notebook: unmount it in source mode so its marks
                   are hidden and none of its pointer or keyboard handlers can take input from the Markdown editor. */}
               {rendered && <Canvas key={current ?? ""} note={current} drawing={drawing} onChange={changeDrawing} mode={mode} history={history}
@@ -1624,22 +1648,40 @@ export function App() {
                                    scroller={view ? view.scrollDOM : null}
                                    onReadPicture={readOn ? onReadPicture : undefined}
                                    dock={dockHost} />}
+              {/* Find and the link picker FLOAT over the page (docs/PLAN-bars-2026-10.md, P6): the note's top edge never moves. */}
+              <div className="float-cards">
+                {finding && (
+                  <FindBar view={view} request={finding}
+                           onQuery={(query) => { lastQuery.current = query }} onClose={() => setFinding(null)} />
+                )}
+                <LinkBanner request={linking} current={current} view={view} root={root}
+                            openNote={openNote} onLanded={landed} onDone={doneLinking} />
+              </div>
+              {/* While the pen, a tool or an armed shape is on the page says so, and how to stop it (modeChip.ts). */}
+              {chip && <div className="page-chip" data-page="mode-chip" aria-hidden="true">
+                <Icon name={MODE_ICON[chip.kind]} size={13} />{chipLine(chip)}
+              </div>}
             </div>
-            <div className="footer">
-              <span>{title}</span>
+            <div className="footer" data-footer="bar">
+              {/* Three groups (docs/PLAN-bars-2026-10.md, P6): the file · what the pen is · the counts and the save. */}
+              <span className="footer-file" title={current}>{title}</span>
+              <span className="footer-rule" aria-hidden="true" />
+              {/* The chip is a live region, present when empty, so a change of mode is heard. */}
+              <span className="mode-chip" data-footer="mode" role="status" aria-live="polite">
+                {chip && <><Icon name={MODE_ICON[chip.kind]} size={11} />{chip.text}</>}
+              </span>
               <div className="spacer" />
               {stale && <span title="The file changed under the app; nothing was overwritten (what was typed is kept in Recovered)">
                 file changed on disk — not saved
               </span>}
               {readNotice && <span data-footer="read-notice" role="status">{readNotice}</span>}
-              {mode === "pen" && <span>Pen</span>}
               {/* (What floats on the page: an ink cell's item is in the note's flow, and a picture read into words is put away.) */}
               {(() => {
                 const objects = visibleItems(drawing).length
-                return objects > 0 && <span>{objects === 1 ? "1 object" : `${objects} objects`}</span>
+                return objects > 0 && <span className="footer-count">{objects === 1 ? "1 object" : `${objects} objects`}</span>
               })()}
-              <span>{words === 1 ? "1 word" : `${words} words`}</span>
-              {saved && <span>Saved {saved.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</span>}
+              <span className="footer-count">{words === 1 ? "1 word" : `${words} words`}</span>
+              {saved && <span className="footer-saved"><Icon name="check" size={11} />Saved {saved.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</span>}
             </div>
           </>
         ) : (

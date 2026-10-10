@@ -77,7 +77,7 @@ export function FloatingMenu({ x, y, items, above, onClose, id }: Props) {
     if (!element.contains(document.activeElement)) element.focus({ preventScroll: true })
   }, [x, y, above, items])
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     const away = (event: Event) => {
       if (box.current && event.target instanceof Node && box.current.contains(event.target)) return
       onClose()

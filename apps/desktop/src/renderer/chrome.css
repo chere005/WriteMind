@@ -217,7 +217,7 @@ body:has(.pane-divider.dragging) iframe, body:has(.pane-divider.dragging) video 
   background: var(--wm-page); color: var(--wm-text); font: inherit;
 }
 .modal input[type="text"]:focus { outline: 2px solid var(--wm-accent); outline-offset: -1px; }
-.modal p.problem { margin: 8px 0 0; color: #c0392b; font-size: 12px; }
+.modal p.problem { margin: 8px 0 0; color: var(--wm-danger); font-size: 12px; }
 .modal .buttons { display: flex; justify-content: flex-end; gap: 8px; }
 .modal .buttons button {
   min-width: 70px; padding: 4px 12px; border-radius: 6px; font: inherit; cursor: pointer;
@@ -225,5 +225,5 @@ body:has(.pane-divider.dragging) iframe, body:has(.pane-divider.dragging) video 
 }
 .modal .buttons button:focus-visible { outline: 2px solid var(--wm-accent); outline-offset: 1px; }
 .modal .buttons .default { background: var(--wm-accent-fill); border-color: var(--wm-accent-fill); color: #fff; }
-.modal .buttons .destructive { background: #c0392b; border-color: #c0392b; color: #fff; }
+.modal .buttons .destructive { background: var(--wm-danger); border-color: var(--wm-danger); color: #fff; }
 .modal .buttons button:disabled { opacity: 0.5; cursor: default; }
