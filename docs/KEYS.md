@@ -151,9 +151,15 @@ Notes, so nobody "fixes" them:
 - **Delete / Duplicate / Move Cell keys act on the cells whose brackets are held**, and decline otherwise. The
   *menu* items act on the held cells, or on the cell the caret is in when none is held — the Mac's
   `selectedCells`.
-- **Ctrl+Alt+letter is AltGr** on layouts that have one; Windows then sends Ctrl+Alt with a typed character. The
-  chord still arrives as Ctrl+Alt, but if a layout makes a letter unusable, change it in `shared/commands.ts` and
-  the menu, tooltips, handler, Help list and the test follow (and this table must be changed to match).
+- **Ctrl+Alt is AltGr** on a PC's layouts that have one (Windows reports AltGr as Ctrl+Alt), and AltGr + a digit or a
+  letter types `{ [ ] } @ \ |` there. So **a Ctrl+Alt chord STANDS DOWN while AltGr is held, or when the layout
+  turned the press into a character that is not the chord's own** (`matches` in `shared/commands.ts`): the brace types
+  and no pen command runs (2026-10-10, Sean's audit; before, the physical key still won and a German keyboard could
+  not type `{`). The physical key (`KeyboardEvent.code`) is asked only when the press made no character at all (a dead
+  key, a driver that sends none). The pen's chords are therefore not reachable from the keyboard on a layout where
+  those digits are AltGr characters — the Pen menu and the pen button still run every one. If a layout makes a letter
+  unusable, change it in `shared/commands.ts` and the menu, tooltips, handler, Help list and the test follow (and this
+  table must be changed to match).
 - **Ctrl+Alt+Arrows** are the screen-rotation hot keys of some Intel graphics drivers; where those are on, fold
   from the menu.
 - **Markdown Markers** (View menu, no key) and **Markdown Preview** (Ctrl+T) are two independent switches, as on
@@ -397,7 +403,7 @@ a keystroke. Every pen tool is a real command (Pen menu, `shared/commands.ts`,
 owner `page`, heard in `useChrome` in the window bubble phase, so focus in
 the editor, on the canvas or on a toolbar list all work; a held key's
 auto-repeat is ignored: one press = one action). On a layout where Ctrl+Alt
-is AltGr the chord still means its physical key.
+is AltGr the chord is typing, not a command (see above).
 
 | Command | Windows / Linux |
 |---|---|
@@ -444,7 +450,14 @@ A press on the words lets go of the pick, which gives the keys back.
 | Divider between the notes and the video (when it has the keyboard: Tab to it) | Left / Right | the video 24 px wider / narrower |
 | same | Home, or double-click | back to the Mac default share (720 : 420) |
 | A sidebar or tab menu, the Folder menu | Up / Down, Enter, Escape, Right / Left | move, choose, close, open / close a submenu; the caret returns to the notes |
-| The font-and-colour popover, the Pen popover (the Pen chip), the sheet's Paper menu | Escape, or a click anywhere else | close |
+| The font-and-colour popover, the Pen popover (the Pen chip), the sheet's Paper menu, the maths palette | Escape, or a click anywhere else | close (one popover hook, `usePopover`: capture phase, the window blurring or resizing closes too, kept inside the window, the keyboard returns to the notes) |
+| A menu (`FloatingMenu`: the notes' right-click menu, the + between cells, the bars' menus) | nothing is chosen when it opens; Down / Up move onto a row (the first press: the first / the last), Home / End, Enter | Enter on no row does nothing |
+| **Find** (a card at the top right of the page; the note does not move) | Ctrl+F / Ctrl+H (⌥⌘F on a Mac) open it; Enter / F3 next, Shift+Enter / Shift+F3 previous (they wrap); Esc | Esc closes it, the caret is the note's with the match it was on selected; "1 of 3" is a live region; Aa is match case, ab whole words; Replace All is one Undo |
+| The link picker (`/link`; a card over the page, like Find) | Esc | cancels |
+| **Dialogs** (key list, Rename, Move to Trash, Clean Up, About, Update, Language Setup: one `Modal`) | Tab / Shift+Tab, Esc, a click on the backdrop | Tab goes round inside (the page behind is inert), Esc or the backdrop closes, the keyboard returns to the notes |
+| Move to Trash | Enter | acts on the button that has the keyboard, which starts as **Cancel** |
+| Keyboard Shortcuts (F1) | typing, Esc, F1 | filters the list ("save", "cmd shift", "⌥"); Esc clears the field and then closes; F1 closes. Keys print as caps, in Apple's order (⌃⌥⇧⌘) on a Mac |
+| The pen, a tool or an armed shape is on (the footer's chip and the chip on the page say so: "Pen · 3 px · Esc to stop") | Esc | puts it down — when nothing else wanted the press (a menu, a dialog, a picked object or a crop on the layer, a field, the camera) |
 | Ctrl+K / Ctrl+Shift+Y | | Hide or Show the sidebar / the video (the notes pane: View menu, no key; never both panes) |
 | A tab | middle click | closes it |
 | The tab row | wheel | walks along the tabs |

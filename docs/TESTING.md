@@ -67,7 +67,7 @@ against it, each as its own node process:
 | `camera` | a fake camera: the flow-chart reader, squaring a tilted page through four corners |
 | `tablet` | the tablet sheet as the video source: writing, box, chart, page, undo, erase, pen buttons on the sheet |
 | `format` | a note is a `.wm`: a legacy folder converts on launch (originals moved to a backup, a notice), typing, a pen stroke and a pasted picture land inside the file (read back by `e2e/lib/wm.mjs` and the system's `unzip -t`), a restart brings them back, the export reads it |
-| `chrome` | the three bars and their groups, one-press-one-action keys, the application menu, edit mode, projects |
+| `chrome` | the three bars and their groups, one-press-one-action keys, the application menu, edit mode, projects; the overlays (07 the find card, 08 the seven dialogs: inert page, Tab trap, Esc, Move to Trash on Cancel, the key list's search, 09 popovers' Esc, the footer's mode chip and the Esc that stops the pen, the link card, the divider) |
 | `perf` | typing / scroll / pen frame times on a long note (generous limits; numbers are printed as notes) |
 
 Each suite folder has an optional `suite.json`:
@@ -137,6 +137,9 @@ git-ignored). With `WM_PORT` alone the notes folder is read from the app and scr
 * **Hover is `pointerenter`, and a synthetic `PointerEvent` does not produce one.** Features that depend on "the pen is
   over the sheet" (Ctrl+Z over the sheet, a button tap on the sheet) need a real move first:
   `hover(x, y, { pen: true })`.
+* **A script that presses a command key must press the machine's own**: the app's key table is `CmdOrCtrl`, so on a Mac
+  `key("f", { ctrl: true })` is a key that does nothing. `e2e/lib/overlays.mjs` has `mod` (Cmd on a Mac, Ctrl elsewhere) and
+  `replaceChord`; the older scripts that type Ctrl fail on a Mac today, before any change.
 * **The window is set to 1440x900** (offscreen) when the harness loads, so layout and coordinates are the same every
   run. Do not hard-code points that depend on the viewport; derive them from `rectOf` / `brackets()` / `lineBoxes()`.
   A click at the far right of a line lands on the cell brackets, not the text.
