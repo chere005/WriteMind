@@ -142,7 +142,9 @@ function Items({ items, onClose }: { items: MenuItem[]; onClose(): void }) {
                       else if (event.key === "ArrowLeft" && open !== null) { event.preventDefault(); event.stopPropagation(); setOpen(null) }
                     }}
                     onClick={() => {
-                      if (nested) { setOpen(open === index ? null : index); return }
+                      // (A click on a row with a submenu opens it and leaves it open: the pointer arriving already did, and a click
+                      // that then shut it again made the row feel dead.)
+                      if (nested) { setOpen(index); return }
                       if (!item.keepOpen && item.toggle === undefined) onClose()
                       item.onClick?.()
                     }}>

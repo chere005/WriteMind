@@ -102,11 +102,20 @@ function TextStyleMenu({ view, anchor, onClose }: { view: EditorView | null; anc
       if (event.target instanceof Node && (pop.current?.contains(event.target) || anchor?.contains(event.target))) return
       onClose()
     }
+    // Escape goes first and stops there (the keyboard is the notes' after a click on the bar, and the editor would take it).
+    const escape = (event: KeyboardEvent) => {
+      if (event.key !== "Escape") return
+      event.preventDefault(); event.stopPropagation()
+      onClose()
+      returnFocusSoon()
+    }
     window.addEventListener("pointerdown", away, true)
+    window.addEventListener("keydown", escape, true)
     window.addEventListener("resize", onClose)
     window.addEventListener("blur", onClose)
     return () => {
       window.removeEventListener("pointerdown", away, true)
+      window.removeEventListener("keydown", escape, true)
       window.removeEventListener("resize", onClose)
       window.removeEventListener("blur", onClose)
     }
@@ -117,8 +126,7 @@ function TextStyleMenu({ view, anchor, onClose }: { view: EditorView | null; anc
     onClose()
   }
   return (
-    <div ref={pop} className="style-pop" style={at} data-bar="font-pop" onMouseDown={(event) => event.stopPropagation()}
-         onKeyDown={(event) => { if (event.key === "Escape") { event.preventDefault(); event.stopPropagation(); onClose(); returnFocusSoon() } }}>
+    <div ref={pop} className="style-pop" style={at} data-bar="font-pop" onMouseDown={(event) => event.stopPropagation()}>
       <label><input type="checkbox" checked={useFont} onChange={(e) => setUseFont(e.target.checked)} /> Font</label>
       <select value={font} onChange={(e) => { setFont(e.target.value); setUseFont(true) }}>
         {FONTS.map((name) => <option key={name} value={name}>{name}</option>)}
@@ -479,6 +487,8 @@ export function TopBar({
            setCustomize({ x: event.clientX, y: event.clientY })
          }}>
       {barParts(level, sections).map((part) => renderPart(part.id))}
+      {/* The maths palette answers its key (Insert ▸ Maths…) and the dots' Maths row whether or not its button is on the bar. */}
+      {!barParts(level, sections).some((part) => part.id === "maths") && <MathPalette view={editor} showButton={false} />}
       {/* The pen's colour, kept in an input that outlives the pen menu: the system's picker is a window of its own,
           and the menu goes when this one takes the keyboard. (Its value is the pen's colour: the old bar's swatch.) */}
       <input ref={colourInput} type="color" className="pen-colour" tabIndex={-1} aria-hidden="true" value={penColour}
