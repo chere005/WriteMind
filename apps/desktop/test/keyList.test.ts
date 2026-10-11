@@ -90,6 +90,35 @@ describe("ShortcutTests", () => {
     expect(commandForKey(press("ArrowLeft", { ctrl: true, alt: true }), "win32")).toBeNull()
   })
 
+  // The notebook's tab row can be rearranged (Sean, 2026-10-10: "add rearranging tabs"); Move Tab Left / Right are the keys for it, in
+  // the Window menu. Their chords are free of every other command's (the clash test above holds that for the whole table), they have
+  // an owner the page hears, and they are in the F1 list and in docs/KEYS.md under Window (the tests below hold both).
+  it("Move Tab Left / Right: Ctrl+Shift+PageUp / PageDown on a PC and a Mac build, heard by the page, listed under Window", () => {
+    for (const platform of ["win32", "darwin"]) {
+      expect(shown("moveTabLeft", platform), platform).toBe("Ctrl+Shift+PageUp")
+      expect(shown("moveTabRight", platform), platform).toBe("Ctrl+Shift+PageDown")
+    }
+    expect(COMMANDS.find((one) => one.id === "moveTabLeft")).toMatchObject({ label: "Move Tab Left", owner: "page" })
+    expect(COMMANDS.find((one) => one.id === "moveTabRight")).toMatchObject({ label: "Move Tab Right", owner: "page" })
+    expect(commandForKey(press("PageUp", { ctrl: true, shift: true }), "win32")?.id).toBe("moveTabLeft")
+    expect(commandForKey(press("PageDown", { ctrl: true, shift: true }), "win32")?.id).toBe("moveTabRight")
+    const window = keyList("win32").find((group) => group.menu === "Window")!
+    expect(window.rows.map((row) => [row.id, row.name, row.keys])).toEqual([
+      ["moveTabLeft", "Move Tab Left", "Ctrl+Shift+PageUp"], ["moveTabRight", "Move Tab Right", "Ctrl+Shift+PageDown"],
+    ])
+    // The editor's own PageUp / PageDown (CodeMirror's keymaps) are not these: no editor binding takes the chord.
+    const files: string[] = []
+    const walk = (dir: string) => {
+      for (const name of readdirSync(dir)) {
+        const file = path.join(dir, name)
+        if (statSync(file).isDirectory()) walk(file)
+        else if (file.endsWith(".ts")) files.push(file)
+      }
+    }
+    walk(path.join(ROOT, "packages/editor/src"))
+    for (const file of files) expect(readFileSync(file, "utf8"), file).not.toMatch(/key: "(Mod|Ctrl)-Shift-Page(Up|Down)"/)
+  })
+
   it("every rung of the heading ladder has its own number", () => {
     const keys = HEADING_LADDER.map((level) => shown(HEADING_COMMANDS.find((h) => h.level === level)!.id, "win32"))
     expect(keys).toEqual(["Ctrl+1", "Ctrl+2", "Ctrl+3", "Ctrl+4", "Ctrl+5", "Ctrl+6", "Ctrl+7"])

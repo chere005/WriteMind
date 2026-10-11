@@ -261,6 +261,10 @@ export function buildMenu(options: MenuOptions): MenuItemConstructorOptions[] {
     { label: "Minimize", click: (_item, win) => win?.minimize() },
     { label: "Zoom", click: (_item, win) => { if (win?.isMaximized()) win.unmaximize(); else win?.maximize() } },
     SEPARATOR,
+    // The notebook's tab row (port-only): the tab in front goes one place over, greyed at the end it cannot go to.
+    item("moveTabLeft", "Move Tab Left", { enabled: state.canMoveTabLeft }),
+    item("moveTabRight", "Move Tab Right", { enabled: state.canMoveTabRight }),
+    SEPARATOR,
     { label: "Close Window", click: (_item, win) => win?.close() },
   ]
 

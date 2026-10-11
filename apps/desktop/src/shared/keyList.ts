@@ -53,6 +53,7 @@ export const KEY_MENUS: { menu: string; ids: string[] }[] = [
     ],
   },
   { menu: "Input Devices", ids: ["cameraOff", "cameraRefresh"] },
+  { menu: "Window", ids: ["moveTabLeft", "moveTabRight"] },
   { menu: "Help", ids: ["keyList"] },
 ]
 

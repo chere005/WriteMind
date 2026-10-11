@@ -87,6 +87,44 @@ describe("the application menu is the Mac's", () => {
     expect(labels(linux)).toEqual(["Quick Reference", "Keyboard Shortcuts", "-", "About WriteMind"])
   })
 
+  // Window ▸ Move Tab Left / Right (Sean, 2026-10-10: "add rearranging tabs"): the tab in front goes one place over. Page-owned
+  // commands with a key shown and not registered, greyed at the end of the row they cannot go to, on every platform.
+  it("Window: Minimize, Zoom, Move Tab Left / Right (Ctrl+Shift+PageUp / PageDown, greyed at the ends), Close Window", () => {
+    for (const platform of ["win32", "darwin", "linux"]) {
+      const window = sub(menu({}, platform), "Window")
+      expect(labels(window)).toEqual(["Minimize", "Zoom", "-", "Move Tab Left", "Move Tab Right", "-", "Close Window"])
+      const [left, right] = [window[3]!, window[4]!]
+      expect([left.id, right.id]).toEqual(["moveTabLeft", "moveTabRight"])
+      expect([left.accelerator, right.accelerator]).toEqual(["Ctrl+Shift+PageUp", "Ctrl+Shift+PageDown"])
+      expect([left.registerAccelerator, right.registerAccelerator]).toEqual([false, false])
+      // with no tab in front, or one that has no place over, they are greyed
+      expect([left.enabled, right.enabled]).toEqual([false, false])
+      const first = sub(menu({ hasNote: true, canMoveTabRight: true }, platform), "Window")
+      expect([first[3]!.enabled, first[4]!.enabled]).toEqual([false, true])
+      const last = sub(menu({ hasNote: true, canMoveTabLeft: true }, platform), "Window")
+      expect([last[3]!.enabled, last[4]!.enabled]).toEqual([true, false])
+      const middle = sub(menu({ hasNote: true, canMoveTabLeft: true, canMoveTabRight: true }, platform), "Window")
+      expect([middle[3]!.enabled, middle[4]!.enabled]).toEqual([true, true])
+    }
+    // a click is the page's command, the same one the key runs
+    const asked: string[] = []
+    const window = sub(buildMenu({ platform: "win32", state: { ...initialMenuState, canMoveTabLeft: true, canMoveTabRight: true }, project, run: (id) => asked.push(id) }), "Window")
+    ;(window[3]!.click as () => void)()
+    ;(window[4]!.click as () => void)()
+    expect(asked).toEqual(["moveTabLeft", "moveTabRight"])
+    expect(commandById("moveTabLeft")).toMatchObject({ label: "Move Tab Left", owner: "page" })
+    expect(commandById("moveTabRight")).toMatchObject({ label: "Move Tab Right", owner: "page" })
+    // and the keys reach them in the page (no one else wants the chord: keyList.test.ts)
+    const press = (key: string) => ({ key, ctrlKey: true, shiftKey: true, altKey: false, metaKey: false })
+    expect(commandForKey(press("PageUp"), "win32")?.id).toBe("moveTabLeft")
+    expect(commandForKey(press("PageDown"), "win32")?.id).toBe("moveTabRight")
+    expect(commandForKey({ ...press("PageUp"), ctrlKey: false, metaKey: true }, "darwin")).toBeNull()
+    expect(commandForKey(press("PageUp"), "darwin")?.id).toBe("moveTabLeft")
+    // plain and Shift PageUp / PageDown stay the editor's (the page does not take them)
+    expect(commandForKey({ ...press("PageUp"), ctrlKey: false }, "win32")).toBeNull()
+    expect(commandForKey({ ...press("PageUp"), shiftKey: false }, "win32")).toBeNull()
+  })
+
   // Help ▸ Quick Reference (shared/welcome.ts, main/welcome.ts): the page's command, no key, never greyed, on every platform;
   // it is in the command table (so the page's `run` and the key list's rules see it) and reaches the page when clicked.
   it("Help ▸ Quick Reference: id quickReference, no accelerator, never greyed, on every platform, and it reaches the page", () => {

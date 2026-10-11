@@ -22,17 +22,42 @@ const rows = (items: MenuItem[]) => items.filter((item): item is Extract<MenuIte
 const tree = (): Section => section("/n", 0, ["/n/a.md"], [section("/n/Ideas", 1, ["/n/Ideas/b.md"], [section("/n/Ideas/2026", 2)]), section("/n/Work", 1)])
 
 const actions = (over: Partial<TabMenuActions> = {}): TabMenuActions => ({
-  platform: "darwin", openCount: 3, root: tree(),
-  close: vi.fn(), closeOthers: vi.fn(), reveal: vi.fn(), rename: vi.fn(), duplicate: vi.fn(), moveTo: vi.fn(), trash: vi.fn(),
+  platform: "darwin", openCount: 3, position: 1, root: tree(),
+  close: vi.fn(), closeOthers: vi.fn(), step: vi.fn(), reveal: vi.fn(), rename: vi.fn(), duplicate: vi.fn(), moveTo: vi.fn(), trash: vi.fn(),
   ...over,
 })
 
 describe("a tab's right-click menu", () => {
-  it("has the sidebar row's four actions beside Close, Close Others and Reveal", () => {
+  it("has the sidebar row's four actions beside Close, Close Others and Reveal, and Move Tab Left / Right between", () => {
     const menu = tabMenu(note("/n/a.md"), actions())
     expect(labels(menu)).toEqual([
-      "Close Tab", "Close Other Tabs", "-", "Rename…", "Duplicate", "Move to", "Reveal in Finder", "-", "Move to Trash…",
+      "Close Tab", "Close Other Tabs", "-", "Move Tab Left", "Move Tab Right", "-",
+      "Rename…", "Duplicate", "Move to", "Reveal in Finder", "-", "Move to Trash…",
     ])
+  })
+
+  // REARRANGING THE ROW (Sean, 2026-10-10: "add rearranging tabs"): the menu's way to what a drag does, for the tab clicked.
+  it("Move Tab Left / Right move this tab one place, and are greyed at the ends of the row", () => {
+    const a = actions()
+    const one = note("/n/a.md")
+    const find = (over: Partial<TabMenuActions>, label: string) => rows(tabMenu(one, { ...a, ...over })).find((row) => row.label === label)!
+    find({}, "Move Tab Left").onClick!(); expect(a.step).toHaveBeenLastCalledWith(one, -1)
+    find({}, "Move Tab Right").onClick!(); expect(a.step).toHaveBeenLastCalledWith(one, 1)
+    expect(find({}, "Move Tab Left").disabled).toBe(false)
+    expect(find({}, "Move Tab Right").disabled).toBe(false)
+    // the first tab cannot go left; the last cannot go right; a lone tab cannot go either way
+    expect(find({ position: 0 }, "Move Tab Left").disabled).toBe(true)
+    expect(find({ position: 0 }, "Move Tab Right").disabled).toBe(false)
+    expect(find({ position: 2 }, "Move Tab Left").disabled).toBe(false)
+    expect(find({ position: 2 }, "Move Tab Right").disabled).toBe(true)
+    expect(find({ position: 0, openCount: 1 }, "Move Tab Left").disabled).toBe(true)
+    expect(find({ position: 0, openCount: 1 }, "Move Tab Right").disabled).toBe(true)
+  })
+
+  it("Move Tab Left / Right carry the keys of the commands (Ctrl+Shift+PageUp / PageDown)", () => {
+    const win = rows(tabMenu(note("C:\\n\\a.md"), actions({ platform: "win32" })))
+    expect(win.find((row) => row.label === "Move Tab Left")!.hint).toBe("Ctrl+Shift+PageUp")
+    expect(win.find((row) => row.label === "Move Tab Right")!.hint).toBe("Ctrl+Shift+PageDown")
   })
 
   it("each action is the handler the page gave it, with this tab's note", () => {

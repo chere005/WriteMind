@@ -12,6 +12,7 @@ import type { CSSProperties } from "react"
 import { shown } from "../shared/commands"
 import type { MenuItem } from "./FloatingMenu"
 import { fileManagerName, trashWord } from "./SidebarProject"
+import { canStep } from "./tabOrder"
 import type { Section } from "./wm"
 
 /** The `title` the open-notes button carries: the way to a tab that has been scrolled off the strip. */
@@ -56,9 +57,13 @@ export interface TabMenuActions {
   platform: string
   /** How many notes are open (Close Other Tabs needs a second one). */
   openCount: number
+  /** Where this tab stands in the row, from 0 (Move Tab Left / Right are greyed at the two ends). */
+  position: number
   root: Section | null
   close(path: string): void
   closeOthers(path: string): void
+  /** Move Tab Left (-1) / Right (+1): the tab goes one place over. The same arrangement a drag makes. */
+  step(note: Note, by: -1 | 1): void
   reveal(path: string): void
   rename(note: Note): void
   duplicate(note: Note): void
@@ -66,7 +71,7 @@ export interface TabMenuActions {
   trash(note: Note): void
 }
 
-/** The right-click menu on a tab. */
+/** The right-click menu on a tab. Move Tab Left / Right rearrange the row (the keys move the tab in front; this moves this one). */
 export function tabMenu(note: Note, a: TabMenuActions): MenuItem[] {
   const where: MenuItem[] = moveTargets(a.root, note).map((target): MenuItem => ({
     label: target.name, disabled: target.here, labelStyle: indented(target.depth),
@@ -75,6 +80,9 @@ export function tabMenu(note: Note, a: TabMenuActions): MenuItem[] {
   return [
     { label: "Close Tab", hint: shown("closeTab", a.platform), onClick: () => a.close(note.path) },
     { label: "Close Other Tabs", disabled: a.openCount < 2, onClick: () => a.closeOthers(note.path) },
+    "-",
+    { label: "Move Tab Left", hint: shown("moveTabLeft", a.platform), disabled: !canStep(a.openCount, a.position, -1), onClick: () => a.step(note, -1) },
+    { label: "Move Tab Right", hint: shown("moveTabRight", a.platform), disabled: !canStep(a.openCount, a.position, 1), onClick: () => a.step(note, 1) },
     "-",
     { label: "Rename…", onClick: () => a.rename(note) },
     { label: "Duplicate", onClick: () => a.duplicate(note) },

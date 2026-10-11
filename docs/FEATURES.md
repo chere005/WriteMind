@@ -381,14 +381,27 @@ is how the code is put together.
   every open note, the one in front checked: the way back to one that has
   scrolled off the end. The tab in front is the colour of the page and runs
   into the toolbar under it; its × shows on it and on whichever tab the
-  pointer is over. Right-click a tab for Close, Close Other Tabs, Rename…,
-  Duplicate, Move to ▸, Reveal and Move to Trash… (the sidebar row's own
-  actions). The video pane's tabs — the camera's Live tab and a tab for each
-  page you keep, or the tablet's sheets — are the same tabs on the SAME ROW
-  of the window, in the pane's dark: 36px, the tab in front the colour of
-  the pane's header under it with no underline, a × on it and on the tab the
-  pointer is over, and the same +. The pane's tools are the row under them,
-  as the notebook's toolbar is under its tabs.
+  pointer is over. Right-click a tab for Close, Close Other Tabs, Move Tab
+  Left / Right, Rename…, Duplicate, Move to ▸, Reveal and Move to Trash…
+  (the sidebar row's own actions). **Tabs can be rearranged**: press a tab
+  and drag it sideways (a few pixels first, so a plain click still opens it
+  and a middle click still closes it) — it follows the pointer, the tabs it
+  passes step aside, and where you let go it lands; Escape, or letting go
+  above or below the row, puts it back. On a row that scrolls, holding the
+  drag near either end scrolls the row under it. Move Tab Left / Right (the
+  tab's menu, the Window menu, Ctrl+Shift+PageUp / PageDown for the tab in
+  front) do the same a place at a time, greyed at the ends. The order is
+  kept: it survives a restart and a reload, closing and opening other tabs,
+  and the open-notes list shows it. The tab in front stays in front. It is
+  the arrangement of the window and not an edit: no undo step, and nothing
+  is written to a note. The video pane's tabs — the camera's Live tab and a
+  tab for each page you keep, or the tablet's sheets — are the same tabs on
+  the SAME ROW of the window, in the pane's dark: 36px, the tab in front
+  the colour of the pane's header under it with no underline, a × on it and
+  on the tab the pointer is over, and the same +. They drag the same way
+  and keep their order (the sheets and the kept pages each in their own
+  file); the Live tab stays first and is not draggable. The pane's tools are
+  the row under them, as the notebook's toolbar is under its tabs.
 
 ## Wolfram notebooks (port-only)
 

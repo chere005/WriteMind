@@ -41,6 +41,17 @@
 .tab .name { min-width: 0; flex: 1 1 auto; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-align: left; }
 .tab.open .name { font-weight: 600; }
 
+/* A tab being dragged (tabDrag.ts): it is lifted and follows the pointer, the tabs it passes step aside (their own inline
+   transform), and one let go outside the row is dimmed, for it will go home. The whole page shows the grab and selects nothing. */
+.tab-strip .tab[data-drag] { position: relative; z-index: 3; cursor: grabbing; }
+.tab-strip .tab[data-drag="lifted"] {
+  background: color-mix(in srgb, var(--wm-text) 12%, var(--bar-strip)); color: var(--wm-text);
+  box-shadow: 0 3px 10px rgba(0, 0, 0, 0.28); border-radius: 6px 6px 0 0;
+}
+.tab-strip .tab.open[data-drag="lifted"] { background: var(--bar-page); }
+.tab-strip .tab[data-drag="out"] { opacity: 0.45; }
+html[data-tab-dragging], html[data-tab-dragging] * { cursor: grabbing !important; user-select: none !important; }
+
 /* The × is on the tab in front and on the one the pointer is over; it keeps its room so a tab never changes width. */
 .tab .close {
   display: inline-grid; place-items: center; flex: none;

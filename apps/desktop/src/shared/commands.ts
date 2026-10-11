@@ -163,6 +163,10 @@ export const COMMANDS: CommandDef[] = [
   // Input Devices
   c("cameraOff", "Turn Camera Off", "page"),
   c("cameraRefresh", "Refresh Device List", "page", "CmdOrCtrl+Alt+R", "Alt+Cmd+R"),
+  // Window (port-only): the notebook's tab row can be rearranged by dragging, and this is the way for a hand that cannot (and for
+  // a test). The tab in front goes one place over; at the end of the row it stays. Literal Ctrl on a Mac too, as a browser has it.
+  c("moveTabLeft", "Move Tab Left", "page", "Ctrl+Shift+PageUp"),
+  c("moveTabRight", "Move Tab Right", "page", "Ctrl+Shift+PageDown"),
   // Help: every key in one list (shared/keyList.ts). F1 is a PC's help key; the Mac's is ⌘?.
   c("keyList", "Keyboard Shortcuts", "page", "F1", "Shift+Cmd+/"),
   // The Quick Reference note (shared/welcome.ts, main/welcome.ts): written or brought up to date, opened, shown rendered.
@@ -290,6 +294,9 @@ export interface MenuState {
   markers: boolean
   canUndoDrawing: boolean
   canRedoDrawing: boolean
+  /** The tab in front has a place to the left / right of it (Window ▸ Move Tab Left / Right are greyed at the ends). */
+  canMoveTabLeft: boolean
+  canMoveTabRight: boolean
   /**
    * What Edit ▸ Undo and Redo name, from the page (docs/PLAN-undo.md): "Rename Note", "Typing", "Move to Trash"; null when
    * there is nothing to take (the item is greyed and plain). Absent: not said yet, so the plain items stay enabled.
@@ -313,6 +320,6 @@ export interface MenuState {
 
 export const initialMenuState: MenuState = {
   hasNote: false, sidebar: true, rendered: false, camera: false, editorPane: true, markers: true,
-  canUndoDrawing: false, canRedoDrawing: false, listStyle: "Dots", codeLanguage: null,
+  canUndoDrawing: false, canRedoDrawing: false, canMoveTabLeft: false, canMoveTabRight: false, listStyle: "Dots", codeLanguage: null,
   cameras: [], cameraId: null, penDown: false, penErase: false, penSelect: false, penAlwaysDraws: true,
 }
