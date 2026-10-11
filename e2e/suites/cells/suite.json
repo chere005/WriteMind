@@ -1,1 +1,1 @@
-{ "description": "cells: brackets, holding, moving, clipboard, the seams between cells" }
+{ "description": "cells: brackets, holding, moving, clipboard, the seams between cells", "timeoutSec": 1800 }

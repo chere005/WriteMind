@@ -149,6 +149,11 @@ async function kindCase({ name, seamName, byKeys, row, label, cell, inside, look
 export async function runKinds({ rendered, pen }) {
   const file = await freshNote()
   await setRendered(rendered)
+  // What a new Runnable code cell is, and what Code writes, are the LAST ones picked and are remembered by the profile, which the
+  // scripts of a suite share: cells/09 leaves Rust remembered, and the cases below name the defaults (Wolfram, plain). Said here.
+  await js(`localStorage.removeItem("writemind.evaluator")`)
+  await setDoc("lang", 2); await focus(); await sleep(200)
+  await pickCodeLanguage("plain")
   await setPen(pen)
   const byKeys = rendered && pen
   const where = `${rendered ? "rendered" : "markdown"}, pen ${pen ? "down" : "up"}`
@@ -247,6 +252,7 @@ export async function runKinds({ rendered, pen }) {
       }
     })
   }
+  await js(`localStorage.removeItem("writemind.evaluator")`)
   await setPen(false)
   finish()
 }
