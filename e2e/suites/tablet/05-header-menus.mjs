@@ -22,7 +22,13 @@ await width(438)
 ok("it holds Paper, orientation, Undo, Bring in and close - and no Select, no Page, no Clear, no select box", await js(`(() => { const h = document.querySelector('.camera-head'); const q = (s) => !!h.querySelector(s); return q('[data-tablet=paper]') && q('[data-tablet=orientation-menu]') && q('[data-tablet=undo]') && q('[data-capture=ink]') && !q('select') && !q('[data-tablet=select]') && !q('[data-capture=page]') && !q('[data-tablet=clear]') && h.querySelectorAll('button').length === 5 })()`))
 ok("Bring in is the one filled button", await js(`document.querySelectorAll('.camera-head .bar-btn.primary').length === 1 && document.querySelector('.camera-head .bar-btn.primary').textContent.trim() === 'Bring in'`))
 const hd = await rectOf(".camera-head"), strip = await rectOf(".camera .sheet-tabs"), body = await rectOf(".camera-body"), sheet = await rectOf(".camera .tablet")
-ok("header, strip, then the picture's area: stacked, none over another", hd.b <= strip.y + 0.5 && strip.b <= body.y + 0.5, JSON.stringify({ hd, strip, body }))
+ok("the tabs, then the header, then the picture's area: stacked, none over another", strip.b <= hd.y + 0.5 && hd.b <= body.y + 0.5, JSON.stringify({ hd, strip, body }))
+// Sean, 2026-10-10: "the tabs should be on the same row of the app for the notebook and drawing panes". The pane's tabs are the
+// window's top row, level with the notebook's tab row (same top, same height); the header is the row under them.
+const notebookTabs = await rectOf(".tab-bar")
+ok("the pane's tabs are on the same row of the window as the notebook's tabs (same top, same height)", Math.abs(strip.y - notebookTabs.y) < 0.5 && Math.abs(strip.h - notebookTabs.h) < 0.5 && strip.h === 36, JSON.stringify({ strip, notebookTabs }))
+const notebookBar = await rectOf(".top-bar")
+ok("...and the header is on the row under them, level with the notebook's toolbar", Math.abs(hd.y - notebookBar.y) < 0.5 && Math.abs(hd.h - notebookBar.h) < 0.5, JSON.stringify({ hd, notebookBar }))
 ok("the sheet is entirely inside the area under the strip", sheet.y >= body.y - 0.5 && sheet.b <= body.b + 0.5 && sheet.x >= body.x - 0.5 && sheet.r <= body.r + 0.5, JSON.stringify({ sheet, body }))
 const top0 = body.y
 await setOrientation(1)

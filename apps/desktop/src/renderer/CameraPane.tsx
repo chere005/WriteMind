@@ -938,6 +938,14 @@ export function CameraPane({
          data-aspect={tablet ? undefined : aspect} ref={root}
          // The pane takes the keyboard when its picture is clicked, so Esc there lets go of a held picture.
          tabIndex={tablet ? undefined : -1}>
+      {/* THE TABS ARE THE PANE'S TOP ROW, level with the notebook's tab row across the window, and the header is the row under them,
+          as the notebook's toolbar is under its tabs (Sean, 2026-10-10: "the tabs should be on the same row of the app for the
+          notebook and drawing panes"). With no source and no kept page there is no live camera to name and nothing to switch to:
+          the pane asks what it should show (FinalStates.png "No source yet"), and the header (the close button alone) is the top row. */}
+      {!(showPlaceholder && kept.pages.length === 0) && (
+        <SheetStrip mode={tablet ? "tablet" : "camera"}
+                    scan={{ onAdd: () => { void keepNow() }, addOff: keepOff, live: running && deviceName(stream.label) ? deviceName(stream.label) : null }} />
+      )}
       {tablet
         ? (
           <TabletHeader canUndo={canUndoSheet} undoTitle={undoTitle}
@@ -961,12 +969,6 @@ export function CameraPane({
                         onHide={onHide} showEditor={showEditor} onToggleEditor={onToggleEditor}
                         empty={showPlaceholder && kept.pages.length === 0} />
         )}
-      {/* The tabs: one slim row under the header, so the sheet (below it) is never under it. With no source and no kept page there
-          is no live camera to name and nothing to switch to: the pane asks what it should show (FinalStates.png "No source yet"). */}
-      {!(showPlaceholder && kept.pages.length === 0) && (
-        <SheetStrip mode={tablet ? "tablet" : "camera"}
-                    scan={{ onAdd: () => { void keepNow() }, addOff: keepOff, live: running && deviceName(stream.label) ? deviceName(stream.label) : null }} />
-      )}
       {/* WHAT THE PANE SHOWS: the picture (or the sheet) in everything between the strip and the footer, and what is laid on it. */}
       <div className="camera-body" ref={host} data-camera="body"
            onPointerDown={pictureDown} onPointerMove={pictureMove} onPointerUp={pictureUp}

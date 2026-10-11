@@ -65,17 +65,22 @@
 
 /*
   THE TABS (SheetStrip.tsx): the notebook's tab row (tabs.css, TabBar.tsx) in the pane's dark, so the two rows read as one
-  thing. A 36px strip (--bar-h), never wrapping: tabs shrink, then the row scrolls sideways, so its height (and the sheet's
-  place under it) never moves. A tab is 84-190px wide, 12px type; the one in front takes the picture's colour (--cam-page, the
-  black it runs on into) with rounded top corners and no underline, and the hairline under the row stops where it is. The x
+  thing, and they are ONE ROW across the window: the pane's tabs are its top row, level with the notebook's, and the header is
+  the row under them (as the notebook's toolbar is under its tabs). A 36px strip (--bar-h), never wrapping: tabs shrink, then
+  the row scrolls sideways, so its height (and the sheet's place under it) never moves. A tab is 84-190px wide, 12px type; the
+  one in front takes the header's colour (--cam-page, which it runs on into) with rounded top corners and no underline, and the
+  hairline under the row stops where it is. Its empty part drags the window, as the notebook's does. The x
   sits in the tab, on the one in front and on the one the pointer is over, and keeps its room so no tab changes width; the
   "+" is a bar button (bars.css) outside the part that scrolls. (This file loads before bars.css and tabs.css, so a rule here
   that has to beat one of theirs names two classes.)
 */
 .camera > .sheet-tabs {
-  flex: none; padding: 0 6px; background: var(--cam-bar, #1e1e20);
-  box-shadow: inset 0 1px 0 var(--cam-hair, rgba(255, 255, 255, 0.09)), inset 0 -1px 0 var(--cam-hair, rgba(255, 255, 255, 0.09));
+  flex: none; padding: 0 6px; background: var(--cam-strip, #26272b);
+  /* The hairline under the row: it passes behind the tab in front, whose opaque fill covers it. */
+  box-shadow: inset 0 -1px 0 var(--cam-hair, rgba(255, 255, 255, 0.09));
+  -webkit-app-region: drag;
 }
+.camera > .sheet-tabs > * { -webkit-app-region: no-drag; }
 .sheet-tabs { display: flex; align-items: stretch; gap: 0; height: var(--bar-h, 36px); box-sizing: border-box; font-size: 12px; }
 .sheet-scroll {
   position: relative; flex: 0 1 auto; min-width: 0; display: flex; align-items: stretch;
@@ -95,7 +100,7 @@
 .sheet-tab:hover:not(.on) { color: var(--cam-ink, #e8e8ea); background: var(--bar-fill); }
 /* The one in front does not shrink: its name and its x stay readable however many there are. */
 .sheet-tab.on {
-  flex-shrink: 0; color: var(--cam-ink, #e8e8ea); background: var(--cam-page, #000);
+  flex-shrink: 0; color: var(--cam-ink, #e8e8ea); background: var(--cam-page, #1e1e20);
   box-shadow: none; border-radius: 6px 6px 0 0;
 }
 .sheet-tab .name { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-align: left; }

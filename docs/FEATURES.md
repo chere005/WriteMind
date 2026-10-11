@@ -367,9 +367,11 @@ is how the code is put together.
   pointer is over. Right-click a tab for Close, Close Other Tabs, Rename…,
   Duplicate, Move to ▸, Reveal and Move to Trash… (the sidebar row's own
   actions). The video pane's tabs — the camera's Live tab and a tab for each
-  page you keep, or the tablet's sheets — are this same row in the pane's
-  dark: 36px, the tab in front the colour of the picture under it with no
-  underline, a × on it and on the tab the pointer is over, and the same +.
+  page you keep, or the tablet's sheets — are the same tabs on the SAME ROW
+  of the window, in the pane's dark: 36px, the tab in front the colour of
+  the pane's header under it with no underline, a × on it and on the tab the
+  pointer is over, and the same +. The pane's tools are the row under them,
+  as the notebook's toolbar is under its tabs.
 
 ## Wolfram notebooks (port-only)
 

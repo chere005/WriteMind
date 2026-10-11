@@ -1,5 +1,5 @@
 /*
-  The video pane: a 36px header, a strip of tabs, the picture (or the tablet's sheet) in what is left, and ONE footer
+  The video pane: a 36px strip of tabs (the window's top row, level with the notebook's), a 36px header, the picture (or the tablet's sheet) in what is left, and ONE footer
   line (docs/PLAN-bars-2026-10.md P4; the wireframes in docs/ui-2026-10/). Stacked, not laid over each other: the
   picture is letterboxed in what is left under a header that never moves, so the sheet's top never jumps and nothing
   the header does can land on it. Dark in both themes, as the pane always was; the letterbox stays black.
@@ -14,8 +14,10 @@ div.camera {
   --cam-ink: #e8e8ea;
   --cam-faint: rgba(255, 255, 255, 0.58);
   --cam-hair: rgba(255, 255, 255, 0.09);
-  /* What the tab in front runs on into: the picture's black (the tab row, tablet.css). */
-  --cam-page: #000;
+  /* The tab row's strip, and what the tab in front runs on into: the header under it, as the notebook's tab joins its toolbar
+     (the notebook's dark: --wm-chrome and --wm-page; tablet.css). */
+  --cam-strip: #26272b;
+  --cam-page: var(--cam-bar);
   --bar-strip: var(--cam-bar);
   --bar-icon: var(--cam-ink);
   --bar-fill: rgba(255, 255, 255, 0.13);
@@ -24,6 +26,10 @@ div.camera {
   background: #000; color: var(--cam-ink); overflow: hidden;
 }
 .camera .camera-head { background: var(--cam-bar); color: var(--cam-ink); }
+/* With no source the header is alone and is the top row of the window, like the notebook's tab row: the strip's colour, and the way
+   to drag the window. */
+.camera .camera-head.empty { background: var(--cam-strip); -webkit-app-region: drag; }
+.camera .camera-head.empty > * { -webkit-app-region: no-drag; }
 .camera .camera-head .bar-btn:disabled { opacity: 0.38; }
 .camera .camera-head .bar-btn.dim { opacity: 0.38; }
 .camera .camera-head .bar-btn.dim:hover { background: var(--bar-fill); }
@@ -65,7 +71,7 @@ div.camera {
 /* The picture fills the WINDOW (double-click it): a faint way out over the top-left corner of the picture. The app's
    window only, never the display. On a Mac the header clears the window's traffic lights, which float over it. */
 .camera.full-window { border-left: 0; }
-.mac .camera.full-window .camera-head { padding-left: 78px; }
+.mac .camera.full-window > :first-child { padding-left: 78px; }
 .camera .full-window-exit {
   position: absolute; z-index: 5; top: 10px; left: 12px; width: 28px; height: 28px; padding: 0; border-radius: 50%;
   border: 1px solid rgba(255, 255, 255, 0.3); background: rgba(0, 0, 0, 0.35); color: rgba(255, 255, 255, 0.9);
