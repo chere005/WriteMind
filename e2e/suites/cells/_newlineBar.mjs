@@ -39,6 +39,9 @@ export async function runNewlineBar({ rendered }) {
 
   const side = rendered ? "rendered page" : "markdown side"
   await setRendered(rendered)
+  // A LIST'S OR A QUOTE'S empty item is not ended into the bar (Sean, 2026-10-11: "exiting bullet points shouldn't exit the cell though,
+  // just add a newline after it"): the second Return takes the marker off and leaves the line, the cell grown to it; the THIRD is the bar's.
+  const exitsOf = (kind) => ["list", "numbered list", "to-do list", "quote"].includes(kind.name)
 
   for (const kind of KINDS) {
     for (const tail of ["", "\n\nworld"]) {
@@ -63,9 +66,17 @@ export async function runNewlineBar({ rendered }) {
         if (kind.name === "text" && !tail) await shot(`${rendered ? "rendered" : "markdown"}-text-grown`)
         if (kind.name === "heading" && !tail) await shot(`${rendered ? "rendered" : "markdown"}-heading-grown`)
 
-        // --- the second Return: the bar
+        // --- a list's or a quote's second Return: the marker goes, the line stays, the cell is still the one
+        if (exitsOf(kind)) {
+          await key("Enter"); await sleep(400)
+          ok("the empty item's Return takes the marker off and keeps the line: a newline after the " + kind.name, (await doc()) === kind.cell + "\n" + tail && (await sel())[0] === kind.cell.length + 1, JSON.stringify([await doc(), await sel()]))
+          ok("no bar is up: the cell is not exited", !(await armed()), String(await armed()))
+          const stayed = await cellBrackets()
+          ok("the cell's bracket is still lit, and runs down to the line", stayed.length === before.length && stayed[0].lit && stayed[0].h > before[0].h + 8, JSON.stringify({ before, stayed }))
+        }
+        // --- the bar
         await key("Enter"); await sleep(400)
-        ok("the second Return takes the grown line away: the note is as it was", (await doc()) === kind.cell + tail, JSON.stringify(await doc()))
+        ok("the Return after it takes the grown line away: the note is as it was", (await doc()) === kind.cell + tail, JSON.stringify(await doc()))
         ok("the bar is up", await armed(), String(await armed()))
         ok("the bar is drawn with its +, and it is the cursor: no caret blinks", (await barShown()) && (await caretHidden()), JSON.stringify([await barShown(), await caretHidden()]))
         // The caret waits on the blank line the bar stands on, or at the end of the note.
@@ -90,18 +101,27 @@ export async function runNewlineBar({ rendered }) {
         await start(kind.cell + tail, at)
         await key("Enter"); await sleep(250)
         await key("Enter"); await sleep(300)
-        const grown = kind.cell + "\n" + kind.carry
+        if (exitsOf(kind)) { await key("Enter"); await sleep(300) }
+        // (A list's or a quote's marker was taken off by the second Return: the line the bar's Return takes away is the empty one.)
+        const grown = kind.cell + "\n" + (exitsOf(kind) ? "" : kind.carry)
         const caretOnLine = kind.caretIn ? kind.cell.length + 1 + kind.caretIn : grown.length
         ok("the bar is up", await armed(), String(await armed()))
         await key("z", { ctrl: true }); await sleep(350)
         ok("one Undo: the grown line is back, the caret on it, the bar gone", (await doc()) === grown + tail && (await sel())[0] === caretOnLine && !(await armed()), JSON.stringify([await doc(), await sel(), await armed()]))
+
         const back = await cellBrackets()
         ok("and the cell is lit and grown again", back[0].lit && (await litCount()) === 1, JSON.stringify(back))
+        // (On the rendered page a list's or a quote's marker coming off is a step of its own; on the markdown side it is one with the newline.)
+        const markerStep = exitsOf(kind) && rendered
+        if (markerStep) {
+          await key("z", { ctrl: true }); await sleep(350)
+          ok("the next Undo gives the marker back", (await doc()) === kind.cell + "\n" + kind.carry + tail, JSON.stringify(await doc()))
+        }
         await key("z", { ctrl: true }); await sleep(350)
         ok("the next Undo takes the newline back: the note and the caret as they were", (await doc()) === kind.cell + tail && (await sel())[0] === at && !(await armed()), JSON.stringify([await doc(), await sel(), await armed()]))
-        await key("z", { ctrl: true, shift: true }); await sleep(250)
-        await key("z", { ctrl: true, shift: true }); await sleep(350)
-        ok("Redo twice: the bar again, the note as it was", (await doc()) === kind.cell + tail, JSON.stringify(await doc()))
+        // (A list's or a quote's marker comes and goes with the newline that carried it: ONE step; the bar's Return is the other.)
+        for (let i = 0; i < (markerStep ? 3 : 2); i++) { await key("z", { ctrl: true, shift: true }); await sleep(300) }
+        ok("Redo all the way: the bar again, the note as it was", (await doc()) === kind.cell + tail, JSON.stringify(await doc()))
       })
     }
   }
@@ -122,12 +142,14 @@ export async function runNewlineBar({ rendered }) {
     ok("Backspace twice takes the character and the newline away", (await doc()) === "# Title" && (await sel())[0] === 7, JSON.stringify([await doc(), await sel()]))
   })
 
-  await test(`${side}: a list's second Return takes the empty item away and arms the bar under the list; a list that is only an empty item is not ended`, async () => {
+  await test(`${side}: a list's empty item: the Return takes the marker off and stays in the cell, the one after it arms the bar; a list that is only an empty item is not ended`, async () => {
     await start("- one\n- two", 11)
     await key("Enter"); await sleep(250)
     ok("the new item is the list's: ONE bracket, lit, three lines", (await doc()) === "- one\n- two\n- " && (await cellBrackets()).length === 1 && (await litCount()) === 1, JSON.stringify([await doc(), await cellBrackets()]))
     await key("Enter"); await sleep(300)
-    ok("the empty item is gone and the bar is up under the list", (await doc()) === "- one\n- two" && (await armed()), JSON.stringify([await doc(), await armed()]))
+    ok("the marker is gone, the line stays in the list's cell, no bar", (await doc()) === "- one\n- two\n" && !(await armed()) && (await litCount()) === 1 && (await cellBrackets()).length === 1, JSON.stringify([await doc(), await armed(), await cellBrackets()]))
+    await key("Enter"); await sleep(300)
+    ok("the next Return takes the line away and the bar is up under the list", (await doc()) === "- one\n- two" && (await armed()), JSON.stringify([await doc(), await armed()]))
     // A list just opened (the + menu) with nothing in it: Return takes the marker away, as it always did.
     await start("hello\n\n- ", 9)
     await key("Enter"); await sleep(300)

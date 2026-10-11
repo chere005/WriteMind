@@ -66,6 +66,12 @@ describe("the first Return grows every kind of cell, and the second ends it with
     for (const tail of ["", "\n\nworld"]) {
       describe(`${kind.name}${tail ? " with a cell below" : " at the end of the note"}`, () => {
         const start = kind.cell + tail
+        /**
+         * A LIST'S OR A QUOTE'S empty item is not ended into the bar (Sean, 2026-10-11: "exiting bullet points shouldn't exit the cell
+         * though, just add a newline after it"): the Return on it takes the marker away and leaves the line (carryTheListOn, keys.ts;
+         * returnInBlock on the rendered page), which the cell grows to; the Return AFTER that one is the bar's.
+         */
+        const exits = !!kind.carry && kind.label !== "table"
         const grow = (): EditorView => {
           const view = make(start, kind.cell.length)
           // (A table's Return is the table's own key; the empty row is what it writes, so the test writes it the same way.)
@@ -92,8 +98,22 @@ describe("the first Return grows every kind of cell, and the second ends it with
           }
         })
 
-        it("the second Return: the grown line goes, the bar is up under the cell, the note is as it was", () => {
+        /** The cell at the point where the NEXT Return is the bar's: grown, and for a list or a quote with its empty marker gone. */
+        const ready = (): EditorView => {
           const view = grow()
+          if (exits) {
+            expect(returnClosesTheCell(view), "an empty item is not the bar's: Return takes its marker away").toBe(false)
+            const at = head(view)
+            view.dispatch({ changes: { from: at - kind.carry!.length, to: at }, selection: EditorSelection.cursor(at - kind.carry!.length), userEvent: "input.newline" })
+            expect(doc(view)).toBe(kind.cell + "\n" + tail)
+            expect(armed(view)).toBeNull()
+            expect(grownCell(view.state), "the line the marker left is the cell's").not.toBeNull()
+          }
+          return view
+        }
+
+        it("the second Return: the grown line goes, the bar is up under the cell, the note is as it was", () => {
+          const view = ready()
           expect(returnClosesTheCell(view)).toBe(true)
           expect(doc(view)).toBe(start)
           const cell = notebook(view.state).cells[0]!
@@ -108,7 +128,7 @@ describe("the first Return grows every kind of cell, and the second ends it with
         })
 
         it("typing at that bar opens the next cell after it", () => {
-          const view = grow()
+          const view = ready()
           returnClosesTheCell(view)
           expect(openArmed(view, "x")).toBe(true)
           expect(armed(view)).toBeNull()
@@ -119,7 +139,7 @@ describe("the first Return grows every kind of cell, and the second ends it with
         })
 
         it("ONE Undo takes the arming back to the grown cell, the next takes the newline back", () => {
-          const view = grow()
+          const view = ready()
           const grown = doc(view)
           const caret = head(view)
           returnClosesTheCell(view)
@@ -127,6 +147,7 @@ describe("the first Return grows every kind of cell, and the second ends it with
           expect(doc(view)).toBe(grown)
           expect(head(view)).toBe(caret)
           expect(armed(view)).toBeNull()
+          if (exits) return // (the marker's own step and the newline's are the keys' and the history's: e2e/suites/cells/20, 21)
           undo(view)
           expect(doc(view)).toBe(start)
           expect(head(view)).toBe(kind.cell.length)
@@ -199,7 +220,7 @@ describe("the bar the second Return puts up", () => {
   })
 })
 
-describe("a list, a quote or a table is ended by its empty item, and never with nothing above it", () => {
+describe("a table is ended by its empty row, a list or a quote by the Return AFTER its empty marker went, never with nothing above it", () => {
   it("a list with a single empty item (just opened) is not ended by the rule: nothing is under it", () => {
     expect(returnClosesTheCell(make("one\n\n- ", 7))).toBe(false)
     expect(returnClosesTheCell(make("one\n\n> ", 7))).toBe(false)
@@ -209,12 +230,17 @@ describe("a list, a quote or a table is ended by its empty item, and never with 
     expect(returnClosesTheCell(make("- one\n- \n- three", 8))).toBe(false)
   })
 
-  it("an empty last item of a list followed by a cell: the bar goes between the two", () => {
+  it("an empty last item of a list followed by a cell: its Return takes the marker off and the line stays; the Return after it puts the bar between the two", () => {
     const view = make("- one\n- two\n\nbody", 11)
     firstReturn(view, "- ")
     expect(doc(view)).toBe("- one\n- two\n- \n\nbody")
     expect(cellKindAt(view.state)).toEqual({ kind: "list", style: "dots" })
     expect(notebook(view.state).cells[0]!.range).toEqual({ location: 0, length: 14 })
+    // The empty item is not the bar's: the editor's own Return takes the marker off (carryTheListOn, keys.ts).
+    expect(returnClosesTheCell(view)).toBe(false)
+    view.dispatch({ changes: { from: 12, to: 14 }, selection: EditorSelection.cursor(12), userEvent: "input.newline" })
+    expect(doc(view)).toBe("- one\n- two\n\n\nbody")
+    expect(grownCell(view.state), "the line the marker left is the list's").not.toBeNull()
     returnClosesTheCell(view)
     expect(doc(view)).toBe("- one\n- two\n\nbody")
     expect(armed(view)).toBe(13)

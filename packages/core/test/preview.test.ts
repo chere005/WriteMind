@@ -517,12 +517,18 @@ describe("Return in an open block", () => {
     expect(type(note, returnInBlock(note, range(13, 0)))).toBe("1. one\n2. two\n3. ")
   })
 
-  it("ends a list on an empty item, the next block opening after it", () => {
+  it("takes the marker off an empty LAST item and keeps its line, in the same cell (Sean, 2026-10-11: exiting a bullet is a newline after it)", () => {
     const note = "Top\n\n- one\n- two\n- \n\nBottom"
     const edit = returnInBlock(note, range(19, 0))
-    expect(type(note, edit)).toBe("Top\n\n- one\n- two\n\n\n\nBottom")
-    expect(kinds(type(note, edit))).toEqual(["p:Top", "bullets", "blank(1)", "p:Bottom"])
-    expect(edit!.selection.location).toBe(18)
+    expect(type(note, edit)).toBe("Top\n\n- one\n- two\n\n\nBottom")
+    expect(edit!.selection.location).toBe(17)
+  })
+
+  it("ends a list on an empty item in the MIDDLE of it, the next block opening after it", () => {
+    const note = "Top\n\n- one\n- \n- three\n\nBottom"
+    const edit = returnInBlock(note, range(14, 0))
+    expect(edit, "an empty item in the middle still splits the list").not.toBeNull()
+    expect(kinds(type(note, edit)).filter((k) => k === "bullets").length).toBe(2)
   })
 
   it("does the plain thing in a code block and on a line that is not a list item", () => {

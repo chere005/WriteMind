@@ -77,21 +77,33 @@ describe("Return on the empty line a newline opened ends the cell", () => {
   })
 })
 
-describe("Return on the empty item a list, a quote or a table was carried on with ends the cell", () => {
-  it("takes the item and the newline before it", () => {
-    for (const [marked, expected] of [
-      ["- one\n- |", "- one"], ["- one\n-|", "- one"], ["* one\n* |", "* one"], ["+ one\n+ |", "+ one"],
-      ["1. one\n2. |", "1. one"], ["1) one\n2)|", "1) one"], ["- [ ] one\n- [ ] |", "- [ ] one"], ["- [x] one\n- [ ]|", "- [x] one"],
-      ["> quoted\n> |", "> quoted"], ["> quoted\n>|", "> quoted"],
-      ["- one\n  - |", "- one"], ["- one\n- two\n- |\n\nbody", "- one\n- two\n\nbody"],
-    ] as const) {
-      expect(after(marked), JSON.stringify(marked)).toBe(expected)
+describe("Return on the empty item a list or a quote was carried on with is NOT the bar's (it takes the marker away and stays in the cell)", () => {
+  it("closingReturn declines it: the editor's own Return takes the marker off and the line stays", () => {
+    for (const marked of [
+      "- one\n- |", "- one\n-|", "* one\n* |", "+ one\n+ |", "1. one\n2. |", "1) one\n2)|", "- [ ] one\n- [ ] |", "- [x] one\n- [ ]|",
+      "> quoted\n> |", "> quoted\n>|", "- one\n  - |", "- one\n- two\n- |\n\nbody", "a\n\n- one\n- |",
+    ]) {
+      expect(closedBy(marked), JSON.stringify(marked)).toBeNull()
     }
   })
 
-  it("is the list, quote or table the bar goes under", () => {
-    expect(closedBy("a\n\n- one\n- |")).toEqual({ index: 1, remove: range(8, 3), below: true })
-    expect(closedBy("> quoted\n> |")).toEqual({ index: 0, remove: range(8, 3), below: true })
+  it("and once the marker is gone the line is the cell's and the NEXT Return is the bar's (Sean, 2026-10-11)", () => {
+    expect(after("- one\n- two\n|")).toBe("- one\n- two")
+    expect(after("> quoted\n|")).toBe("> quoted")
+    expect(after("1. one\n|\n\nbody")).toBe("1. one\n\nbody")
+  })
+
+  it("the rendered page's Return does the same on the LAST item: the marker goes, the line stays (a list is not exited)", () => {
+    for (const [marked, expected] of [
+      ["- one\n- |", "- one\n"], ["1. one\n2. |", "1. one\n"], ["- [ ] one\n- [ ] |", "- [ ] one\n"], ["> quoted\n> |", "> quoted\n"],
+      ["- one\n- two\n- |", "- one\n- two\n"],
+    ] as const) {
+      const { text, caret } = note(marked)
+      const edit = returnInBlock(text, range(caret, 0))
+      expect(edit, marked).not.toBeNull()
+      expect(replacing(text, edit!.range, edit!.replacement), marked).toBe(expected)
+      expect(edit!.selection.location, marked).toBe(expected.length)
+    }
   })
 
   it("is a table's empty last row, caret in any cell of it", () => {
@@ -148,12 +160,15 @@ describe("Return, then Return, gives the note back as it was", () => {
   ]
   const follows = ["", "\n", "\n\nworld", "\n\n\nworld", "\n\n# Next\n\nmore"]
 
-  /** What Return does at the end of the cell's last line, on the markdown side. */
+  /**
+   * What Return does at the end of the cell's last line, on the markdown side. A list's or a quote's carried-on marker is taken off by
+   * the NEXT Return (Sean, 2026-10-11: "exiting bullet points shouldn't exit the cell though, just add a newline after it"), which
+   * leaves the empty line the closing rule then ends: so for those the grown line is the empty one.
+   */
   const firstReturn = (cell: string, kind: string): string => {
     const last = cell.split("\n").pop()!
     if (kind === "a table") return cell + "\n|  |  |"
-    const next = kind === "a fence" || kind === "a maths cell" ? null : listContinuation(last)
-    return cell + "\n" + (next ?? "")
+    return cell + "\n"
   }
 
   for (const [kind, cell] of kinds) {

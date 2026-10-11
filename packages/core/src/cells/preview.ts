@@ -430,7 +430,8 @@ export function cellStatesSparse<T>(cells: readonly T[], of: (cell: T) => Range,
  *
  * A list, a to-do list or a quote carries on (and an empty item in the middle
  * of one ends it, the rest of the note after the caret becoming the next block;
- * the empty LAST item is `closingReturn`'s: the bar goes under the list);
+ * the empty LAST item loses its marker and keeps its line: the cell grows to it,
+ * and the Return after that is `closingReturn`'s, the bar);
  * anywhere else Return starts the next block — what is behind the caret stays,
  * what is in front of it becomes the next block. Only the block's own range is
  * rewritten.
@@ -460,7 +461,13 @@ export function returnInBlock(markdown: string, selection: Range): Edit | null {
     if (continuation !== "") {
       return edit(selection, "\n" + continuation, range(selection.location + 1 + continuation.length, 0))
     }
-    // An empty item: it goes, and what is above it and what is below it
+    // THE LAST ITEM, EMPTY (Sean, 2026-10-11: "exiting bullet points shouldn't exit the cell though, just add a newline after it"):
+    // its marker goes and the line stays, the empty line under the list that the cell grows to (growth.ts); the Return after
+    // that one is the bar's (newline.ts). The markdown side's carryTheListOn does the same.
+    if (line.location > at.location && end(at) === line.location + body.length) {
+      return edit(range(line.location, body.length), "", range(line.location, 0))
+    }
+    // An empty item in the MIDDLE of a list: it goes, and what is above it and what is below it
     // become two blocks. The list is every cell touching this one.
     const index = cells.findIndex((c) => c.range.location === at.location && c.range.length === at.length)
     const run = touchingRuns(cells.map((c) => c.range), (i) => staysClosed(cells[i]!.block) || standsAlone(cells[i]!.block))[index]

@@ -234,7 +234,8 @@ is how the code is put together.
   before anything is read — so a row of dots never arrives as "・・・".
 - **Lists that carry on.** Return at the end of a bullet or a numbered
   item starts the next one (the list's own cell grows to take it); Return
-  on that empty item ends the list: the item goes and the bar is under it. The
+  on that empty item takes its marker off and leaves the line, still in the same
+  cell (a newline after the list, not an exit); the Return after that puts the bar under it. The
   list button's menu picks dots, dashes, numbers or to-dos — `- `, `* `,
   `1. ` and `- [ ] ` on disk, a round bullet, a dash and a number on the page.
 - **Code blocks, in five languages.** The `</>` button (⌘8) fences the

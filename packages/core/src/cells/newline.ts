@@ -11,10 +11,13 @@
  *
  * Which lines are "the grown line":
  * - the empty line under a cell (`growth`);
- * - the last line of a list, a to-do list, a quote or a table when it is an item with nothing in it yet (`- `, `3. `,
- *   `- [ ] `, `> `, `|  |  |`), and the cell has other lines above it. The empty item used to be taken away and the caret left on
- *   an empty line (the old "Return on an empty item ends the list"); the bar is where the caret goes now. A cell that is
- *   nothing BUT the empty item (a list just opened from the + menu) is not ended by this: there is no cell left to be under.
+ * - the last line of a TABLE when it is a row with nothing in it yet (`|  |  |`) and the table has other rows above it.
+ *
+ * A LIST OR A QUOTE IS NOT ENDED HERE (Sean, 2026-10-11: "exiting bullet points shouldn't exit the cell though, just add a newline
+ * after it"): Return on a bullet, a numbered item, a to-do or a quote line with nothing in it takes the marker away and leaves the
+ * line, which is then the empty line under the cell (`growth`): the cell grows to it, no bar is up, and the NEXT Return is this
+ * rule's — the bar. (Return on a list item with words adds another item, as it always did.) The markdown side's `carryTheListOn`
+ * and the rendered page's `returnInBlock` do the taking away.
  *
  * A picture or an ink cell has no line to grow: it is drawn and never typed in, so Return with the caret beside it arms the
  * bar on that side — what an arrow does there — instead of starting a cell.
@@ -22,7 +25,6 @@
 
 import { end, range, type Range } from "../text/range"
 import type { LineSource, PositionedBlock } from "../markdown/parser"
-import { listContinuation } from "./editing"
 import { growth } from "./growth"
 import { firstCellFromBy } from "./selection"
 
@@ -37,10 +39,6 @@ export interface ClosingReturn {
 
 /** A table row with nothing in any of its cells: only pipes and white space. */
 const emptyRow = (text: string): boolean => /^\s*\|[\s|]*$/.test(text)
-
-/** A list item or a quote line with nothing after its marker (`- `, `-`, `3. `, `> `, `- [ ] `): the item Return carried on with. */
-const emptyItem = (text: string): boolean =>
-  listContinuation(text) === "" || /^\s*([-+*>]|\d{1,4}[.)])\s*$/.test(text)
 
 /**
  * What Return does with the caret where it is, when it ends the cell: or null, and the ordinary Return answers.
@@ -69,21 +67,12 @@ export function closingReturn(cells: readonly PositionedBlock[], doc: LineSource
     return null
   }
 
-  // The last line of a list, a quote or a table, with nothing in it: the item or the row Return carried the cell on with.
+  // The last line of a table, with nothing in it: the row Return carried the cell on with. (A list's or a quote's empty item is not
+  // ended here: see the top.)
   if (line.number < 2 || end(cell.range) !== line.to || cell.range.location >= line.from) return null
-  let empty = false
-  switch (cell.block.kind) {
-    case "bullets": case "dashes": case "numbered": case "todos": case "quote":
-      empty = emptyItem(line.text)
-      break
-    case "table":
-      // (Never the header or the delimiter row: those have words, or dashes.)
-      empty = emptyRow(line.text) && doc.lineAt(cell.range.location).number + 1 < line.number
-      break
-    default:
-      return null
-  }
-  if (!empty) return null
+  if (cell.block.kind !== "table") return null
+  // (Never the header or the delimiter row: those have words, or dashes.)
+  if (!(emptyRow(line.text) && doc.lineAt(cell.range.location).number + 1 < line.number)) return null
   const above = doc.line(line.number - 1)
   return { index, remove: range(above.to, line.to - above.to), below: true }
 }
