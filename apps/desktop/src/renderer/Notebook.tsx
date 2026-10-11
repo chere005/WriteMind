@@ -314,9 +314,13 @@ export function Notebook({ file, text, version, restore, readOnly, rendered: sho
   ]
 
   return (
-    <div className="editor" ref={host} onMouseDown={() => menu && setMenu(null)} onContextMenu={showContext}>
+    <div className="editor" ref={host} onContextMenu={showContext}>
       {/* Both menus are the page's FloatingMenu: the arrow keys, Escape, a press elsewhere, the window's edge and the
-          keyboard handed back are its own (docs/PLAN-bars-2026-10.md, P6; they were two hand-made boxes with half of that each). */}
+          keyboard handed back are its own (docs/PLAN-bars-2026-10.md, P6; they were two hand-made boxes with half of that each).
+          So this box does NOT put the + menu away on a mouse-down of its own: the menu is inside it, in the React tree, and a
+          press on one of its rows is a mouse-down here first — the menu was gone before the click arrived and no kind was
+          ever made by a real mouse (Sean, 2026-10-10: "clicking on a cell type from the + button should insert the cell and
+          put the input cursor where it belongs"; e2e/suites/cells/16..19 press the row with the mouse, cells/10 only .click()ed it). */}
       {context && (
         <FloatingMenu id="context-menu" x={context.x} y={context.y} items={contextItems(context.hasSelection)}
                       onClose={() => setContext(null)} />

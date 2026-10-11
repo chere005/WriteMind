@@ -227,15 +227,17 @@ press read the same answer).
 
 | Key / click | Does |
 |---|---|
-| a press on the + | puts the bar up where it stands (the bar is the cursor: the caret hides) and opens the kinds beside the marker |
+| a press on the + | puts the bar up where it stands (the bar is the cursor: the caret hides) and opens the kinds beside the marker. With the PEN DOWN on the rendered page the pen's layer owns the pointer (a press draws; no seam hovers), so the bar is walked to with the arrow keys and the + it shows is pressed as usual: the layer hands that press on (`Canvas.tsx` `plusAt`) |
 | the kinds | `renderer/kindMenu.ts`, the one list the Style menu uses, in a `FloatingMenu`: arrow keys move, Enter picks, Escape closes the menu and leaves the bar up (a second Escape puts the bar out), a click away closes it. The keys are shown beside each kind |
-| a pick | runs THE command its key runs, at the bar: the cell is made now, the caret in it where its words go, the keyboard in the notes; one undo step (a Drawing Cell is made by the app, its pen focused; Code writes the language last picked) |
+| a pick (a press of the mouse on its row, or Enter) | runs THE command its key runs, at the bar: the cell is made now, the caret in it where its words go (after a heading's `# `, a list's marker, on the first content line of a fence, in the table's first header cell), the bar gone, the keyboard in the notes, the Style button naming the cell; one undo step, so one Undo takes the cell away and the caret back to the bar (a Drawing Cell is made by the app: its line is at the seam, the bar under it, its pen focused on the rendered page; Code writes the language last picked). The same at the first seam, the middle ones and the tail, on both pages: `e2e/suites/cells/16..19` press every kind with the mouse |
 
 ### Undo steps in cells (docs/PLAN-bars-2026-10.md P7 (a))
 
 A command that makes or restyles a cell (a kind from the + or the Style menu, Ctrl+1 … 9, the list / quote / code buttons) is ONE undo step of its own, however soon the words typed into it follow: CodeMirror joins input typed within half
 a second of a change beside it, so `Ctrl+1` and the title used to undo together. A cell made then tagged (Code in a language) is one
-step. A list opened empty (`- `) takes the first word typed after its marker as the list's (it came out as `\- word`, a text
+step, and a closed one: the word typed in it is the next. At a bar every kind goes through the one funnel (`openArmed`), the
+Runnable code cell included (it had a copy of the funnel's edit without the closing of the step, and without opening a closed
+section under the bar). A list opened empty (`- `) takes the first word typed after its marker as the list's (it came out as `\- word`, a text
 cell's literal, before 2026-10-10). Move Section Up / Down keep the caret on the same words and the selection selected, are one
 undo step each, and swap the sections' words and not their trailing newlines (the last section of a note used to land glued to the
 text above it). The menu's Move Cell Up / Down and Duplicate Cell keep a caret on the same characters of its cell (of the copy, for

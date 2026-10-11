@@ -432,6 +432,16 @@ export function Canvas({
     }
     return null
   }
+  /**
+   * The seam's + under a client point (the editor's `.wm-plus`, drawn while a bar is up), or null. Its target is a little
+   * wider than the 20 px marker, as the seam layer's own is (plusMarker.ts `PLUS_HIT`).
+   */
+  const plusAt = (x: number, y: number): HTMLElement | null => {
+    const plus = scrollerRef.current?.querySelector<HTMLElement>(".wm-plus")
+    if (!plus) return null
+    const r = plus.getBoundingClientRect()
+    return r.width > 0 && x >= r.left - 2 && x <= r.right + 2 && y >= r.top - 2 && y <= r.bottom + 2 ? plus : null
+  }
   /** The surface the pick is on, measured now; null when its cell is off the screen. */
   const pickedSurface = (): Surface | null => {
     const on = latest.current.pick.on
@@ -1151,6 +1161,18 @@ export function Canvas({
           screenY: event.screenY, button: 0, buttons: event.buttons, pressure: event.pressure,
         }))
       }
+      return
+    }
+    // THE SEAM'S + IS NOT THE PAGE EITHER. A bar armed by the keys shows its + while the pen is down and this layer is over
+    // the note, so a press on it drew a dot under a control that looked pressable (found 2026-10-10 with Sean's "clicking
+    // on a cell type from the + button..."). It is handed to the seam layer as the mouse press that layer listens for.
+    const plus = event.button === 0 && (event.buttons & ~1) === 0 ? plusAt(event.clientX, event.clientY) : null
+    if (plus && !(event.target instanceof Node && scrollerRef.current?.contains(event.target))) {
+      event.preventDefault(); event.stopPropagation()
+      plus.dispatchEvent(new MouseEvent("mousedown", {
+        bubbles: true, cancelable: true, composed: true, clientX: event.clientX, clientY: event.clientY,
+        screenX: event.screenX, screenY: event.screenY, button: 0, buttons: 1,
+      }))
       return
     }
     // THE SURFACE (docs\PLAN-docking-ink-cells.md (b)): a live ink cell under the pointer, else the page. The

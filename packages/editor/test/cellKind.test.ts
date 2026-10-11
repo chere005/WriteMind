@@ -1,10 +1,10 @@
 import { EditorSelection, EditorState, type Extension, type TransactionSpec } from "@codemirror/state"
 import { EditorView, type ViewUpdate } from "@codemirror/view"
 import { describe, expect, it } from "vitest"
-import { positioned } from "@writemind/core"
+import { positioned, type CellKind } from "@writemind/core"
 import { cellKindAt, sameCellKind, watchCellKind } from "../src/cellKind"
 import { foldField } from "../src/fold"
-import { notebookField } from "../src/notebook"
+import { itemOpened, itemOpenedField, notebookField } from "../src/notebook"
 import { renderedField } from "../src/rendered"
 import { armSeam, armedField, armedTypeField, setArmedType } from "../src/seams"
 import { holdingField } from "../src/preview/hold"
@@ -15,7 +15,7 @@ import { tableCell } from "../src/keys"
  * cells the editor already holds, and `watchCellKind` tells the page only when it CHANGES. Port-only, no Swift test.
  */
 
-const extensions: Extension = [notebookField, foldField, renderedField, holdingField, armedField, armedTypeField]
+const extensions: Extension = [notebookField, itemOpenedField, foldField, renderedField, holdingField, armedField, armedTypeField]
 const NOTE = [
   "# Title", "", "Some words here", "", "- one", "- two", "", "> quoted", "", "```python", "print(1)", "```", "", "```wl", "x^2", "```",
 ].join("\n")
@@ -40,6 +40,18 @@ function fakeView(doc: string, anchor = 0): EditorView & { focused: number; upda
 function move(view: EditorView, anchor: number, spec: TransactionSpec = {}): void {
   const startState = view.state
   const transaction = startState.update({ selection: EditorSelection.cursor(anchor), ...spec })
+  ;(view as unknown as { state: EditorState }).state = transaction.state
+  const update = {
+    view, startState, state: transaction.state, transactions: [transaction],
+    selectionSet: transaction.selection !== undefined, docChanged: transaction.docChanged,
+  } as unknown as ViewUpdate
+  for (const listener of view.state.facet(EditorView.updateListener)) listener(update)
+}
+
+/** Apply a transaction that moves no caret and changes no word (an effect only) and run the update listeners. */
+function tell(view: EditorView, spec: TransactionSpec): void {
+  const startState = view.state
+  const transaction = startState.update(spec)
   ;(view as unknown as { state: EditorState }).state = transaction.state
   const update = {
     view, startState, state: transaction.state, transactions: [transaction],
@@ -92,6 +104,49 @@ describe("cellKindAt", () => {
       const state = stateAt(NOTE, cell.range.location + Math.min(1, cell.range.length))
       expect(cellKindAt(state)).not.toBeNull()
     }
+  })
+})
+
+describe("a cell a command has just opened EMPTY (the + menu's pick)", () => {
+  // The parser reads a lone marker as a paragraph, so a list the + menu has just opened would be named Text by the Style
+  // button; the command says which line it opened (`itemOpened`) and the button names the list.
+  const items: [string, CellKind][] = [
+    ["- ", { kind: "list", style: "dots" }], ["* ", { kind: "list", style: "dashes" }],
+    ["1. ", { kind: "list", style: "numbered" }], ["- [ ] ", { kind: "list", style: "todo" }],
+  ]
+  for (const [marker, want] of items) {
+    it(`names "${marker}" as ${want.kind === "list" ? want.style : ""} once the command has said it opened it`, () => {
+      const doc = `One\n\n${marker}\n\nTwo`
+      const state = stateAt(doc, 5 + marker.length)
+      expect(cellKindAt(state.update({ effects: itemOpened.of(5) }).state)).toEqual(want)
+    })
+  }
+
+  it("leaves a marker TYPED by hand to the parser (nothing opened it): a lone `- ` is Text", () => {
+    expect(cellKindAt(stateAt("One\n\n- \n\nTwo", 7))).toEqual({ kind: "text" })
+  })
+
+  it("stops naming it when the caret leaves the line or a word is typed (the field lets go)", () => {
+    const opened = stateAt("One\n\n- \n\nTwo", 7).update({ effects: itemOpened.of(5) }).state
+    expect(cellKindAt(opened.update({ selection: EditorSelection.cursor(1) }).state)).toEqual({ kind: "text" })
+    const typed = opened.update({ changes: { from: 7, insert: "a" }, selection: EditorSelection.cursor(8) }).state
+    expect(cellKindAt(typed)).toEqual({ kind: "list", style: "dots" })   // (now a real item: the parser says so)
+  })
+
+  it("names a Markdown cell opened empty: the caret on the empty line under its marker", () => {
+    const doc = "One\n\n<!-- markdown -->\n\n\nTwo"
+    const under = "One\n\n<!-- markdown -->\n".length
+    expect(cellKindAt(stateAt(doc, under))).toEqual({ kind: "markdown" })
+    expect(cellKindAt(stateAt(doc, "One\n\n<!-- markdown -->".length))).toEqual({ kind: "markdown" })
+  })
+
+  it("the watcher hears the item being opened although the transaction that says so moves nothing", () => {
+    const view = fakeView("One\n\n- \n\nTwo", 7)
+    const heard: string[] = []
+    watchCellKind(view, (kind) => heard.push(kind ? (kind.kind === "list" ? `list:${kind.style}` : kind.kind) : "none"))
+    expect(heard).toEqual(["text"])
+    tell(view, { effects: itemOpened.of(5) })
+    expect(heard).toEqual(["text", "list:dots"])
   })
 })
 
