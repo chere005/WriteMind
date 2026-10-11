@@ -130,6 +130,8 @@ export function previewSeams(rows: PreviewRow[], noteLength: number, pageHeight:
     pageTop: 0,
     pageBottom: Math.max(pageHeight, bottom),
     noteLength,
+    // The bars at the two ends keep half a cell spacing from the cell they follow, as the one between two cells does.
+    spacing: PREVIEW_BLOCK_GAP,
     // An empty note has no cell for the bar to sit against; the stack says
     // where the first one would land.
     firstCellTop: PREVIEW_TOP_INSET + PREVIEW_GAP_HEIGHT,

@@ -171,10 +171,18 @@ describe("the seams of the rendered page", () => {
     expect(out.at(-1)!.bottom - out.at(-1)!.top).toBe(PREVIEW_TAIL_HEIGHT)
   })
 
-  it("makes an empty note one seam over the whole page, its bar where the first cell lands", () => {
+  it("makes an empty note one seam over the whole page, its bar half a cell spacing over where the first cell lands", () => {
     expect(previewSeams([], 0, 600)).toEqual([
-      { top: 0, bottom: 600, offset: 0, line: PREVIEW_TOP_INSET + PREVIEW_GAP_HEIGHT / 2 },
+      { top: 0, bottom: 600, offset: 0, line: PREVIEW_TOP_INSET + PREVIEW_GAP_HEIGHT - PREVIEW_BLOCK_GAP / 2 },
     ])
+  })
+
+  it("keeps the bars at the two ends half a cell spacing from the cell they follow, as the one between two cells is", () => {
+    const out = previewSeams(page, 44, 600)
+    const between = out[1]!.line - places().get(0)!.bottom
+    expect(between).toBeCloseTo(PREVIEW_BLOCK_GAP / 2, 3)
+    expect(out[3]!.line - places().get(30)!.bottom).toBeCloseTo(between, 3)
+    expect(places().get(0)!.top - out[0]!.line).toBeCloseTo(between, 3)
   })
 
   it("puts no point inside a cell inside a seam", () => {

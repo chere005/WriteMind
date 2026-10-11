@@ -6,6 +6,7 @@
  */
 
 import { EditorView } from "@codemirror/view"
+import { PREVIEW_TOP_INSET } from "@writemind/core"
 
 /**
  * The page's side margins: where every line's box starts and ends. The selection, the held cells and the hover's
@@ -13,6 +14,13 @@ import { EditorView } from "@codemirror/view"
  */
 export const PAGE_LEFT = 30
 export const PAGE_RIGHT = 34
+/**
+ * The air above the first cell: about one cell spacing (`PREVIEW_TOP_INSET`, the Mac's 22, a whole number because
+ * CodeMirror reads the padding as one — `documentPadding` — and every seam is measured from it). The bar over the first
+ * cell keeps half a spacing from it (`seams`), so it is also about half a spacing from the top of the page, and the +
+ * on it (20 px) is wholly on the page; at the 16 px this was, the + was cut off by the top of the scroller.
+ */
+export const PAGE_TOP = PREVIEW_TOP_INSET
 
 /** The brackets' colour at rest: the Mac's tertiary label colour, which reads in either theme. */
 const BRACKET = "color-mix(in srgb, var(--wm-text) 26%, transparent)"
@@ -31,7 +39,7 @@ export const notebookTheme = EditorView.theme({
     position: "relative",
   },
   ".cm-content": {
-    padding: `16px ${PAGE_RIGHT}px 240px ${PAGE_LEFT}px`,
+    padding: `${PAGE_TOP}px ${PAGE_RIGHT}px 240px ${PAGE_LEFT}px`,
     caretColor: "var(--wm-text)",
   },
   ".cm-line": { padding: "0 2px" },

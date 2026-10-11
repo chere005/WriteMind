@@ -17,7 +17,7 @@ import {
 import { isolateHistory } from "@codemirror/commands"
 import { Decoration, EditorView, ViewPlugin, keymap, type ViewUpdate } from "@codemirror/view"
 import {
-  between, end, firstCellFromBy, GAP_HEIGHT, openCell, seamAt, seams, armIn, type CellBox, type CellKind,
+  between, end, firstCellFromBy, openCell, PREVIEW_BLOCK_GAP, seamAt, seams, armIn, type CellBox, type CellKind,
   type PositionedBlock, type Range, type Seam,
 } from "@writemind/core"
 import { barCaret, sameLineOnScreen, shownBeyond, sideMove, verticalMove, type BarMove } from "./barWalk"
@@ -133,13 +133,20 @@ export function cellBoxes(view: EditorView): CellBox[] {
   })
 }
 
+/**
+ * What a seam is told about the page it is on: the air between two cells (the bars at the two ends of the page keep
+ * half of it from the cell they follow) and where a first cell would land on a note with none.
+ */
+const pageMeasures = (view: EditorView): { spacing: number; firstCellTop: number } =>
+  ({ spacing: PREVIEW_BLOCK_GAP, firstCellTop: view.documentPadding.top })
+
 export function pageSeams(view: EditorView): Seam[] {
   return seams({
     cells: cellBoxes(view),
     pageTop: 0,
     pageBottom: Math.max(view.contentHeight, view.scrollDOM.clientHeight),
     noteLength: view.state.doc.length,
-    firstCellTop: GAP_HEIGHT,
+    ...pageMeasures(view),
   })
 }
 
@@ -171,7 +178,7 @@ export function seamsAround(view: EditorView, index: number): Seam[] {
   const cells = notebook(view.state).cells
   const length = view.state.doc.length
   const pageBottom = Math.max(view.contentHeight, view.scrollDOM.clientHeight)
-  const none = () => seams({ cells: [], pageTop: 0, pageBottom, noteLength: length, firstCellTop: GAP_HEIGHT })
+  const none = () => seams({ cells: [], pageTop: 0, pageBottom, noteLength: length, ...pageMeasures(view) })
   if (cells.length === 0) return none()
   // The centre is a cell on show: this one, or the nearest before it, or the first after.
   let centre = Math.min(Math.max(index, 0), cells.length - 1)
@@ -197,7 +204,7 @@ export function seamsAround(view: EditorView, index: number): Seam[] {
     pageTop: 0,
     pageBottom,
     noteLength: length,
-    firstCellTop: GAP_HEIGHT,
+    ...pageMeasures(view),
   })
   // (The first of `made` is "the page above the first cell" and the last is "the page below the last": true of the
   // window's ends only when the window's ends are the page's.)

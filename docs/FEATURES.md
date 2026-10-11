@@ -103,7 +103,10 @@ is how the code is put together.
   its side; click and a line runs across the page with a `+` at the
   margin. The line is drawn against the cell it follows, however tall
   the space is — clicking a long way under the last cell puts it just
-  below that cell, not where the pointer happened to be. That line is
+  below that cell, not where the pointer happened to be — and at the
+  same distance there as everywhere: half a cell spacing, the distance
+  it keeps from each of two cells it is between (over the first cell
+  too). The cell you type there starts half a spacing below the line. That line is
   the cursor: the caret stops being drawn, no bracket is lit while it is
   up, and the first thing typed becomes a cell of its own there, Return
   opens an empty one, and Escape or a click anywhere else takes the line
@@ -117,8 +120,8 @@ is how the code is put together.
   and pressing the `+` again shows what you picked. The choice belongs
   to that line and goes with it: click the bar somewhere else and you are
   back to plain text, which is what every bar starts out as. On a
-  note with nothing in it yet the line sits where the first cell will
-  land, not against the top of the pane. The seams belong to cursor
+  note with nothing in it yet the line sits half a spacing over where the
+  first cell will land, not against the top of the pane. The seams belong to cursor
   mode: with the pen down the drawing layer has the pane and there
   are no seams at all. The markdown pane and the
   rendered page do exactly the same thing, the way a Mathematica notebook

@@ -386,13 +386,27 @@ CoreMind's `bin/report-status.sh`.
   the bar at its middle sat hundreds of points adrift of the note (Sean,
   2026-09-20: "the bar should go immediately after the last cell, not
   the random spot below it's currently at"). The line is against the
-  cell it follows; the hit area is still the whole seam. On a note with
+  cell it follows; the hit area is still the whole seam. HOW FAR against
+  is HALF A CELL SPACING, the distance a bar between two cells keeps from
+  each of them (Sean, 2026-10-10: "the spacing isn't even when the
+  horizontal cursor is at the bottom.. it should be half a cell spacing
+  away"; it was half of `GAP_HEIGHT`, four points, at both ends, against
+  ten between two cells). The spacing is told to `seams` by the pane
+  (`spacing`: `PREVIEW_BLOCK_GAP`, which the core file cannot know), and
+  it is the right number for a second reason: the cell typed at the bar
+  starts half a spacing on the far side of it, at the top, in the middle
+  and at the tail alike. On a note with
   NO cells there is nothing to sit against, so the pane hands in
   `firstCellTop` — its own inset, which `CellSeams` cannot know and the
   two panes do not agree on (`topInset + gapHeight` on the rendered
-  page, `textContainerOrigin.y` in the source). Without it the bar was
+  page, `textContainerOrigin.y` in the source; `documentPadding.top` in
+  the port). Without it the bar was
   against the very top edge and the first character came out an inset
-  below it.
+  below it. The bar over the first cell is half a spacing from it, so the
+  page's top padding is `PAGE_TOP` (`PREVIEW_TOP_INSET`, 22): at 16 the +
+  on that bar was cut off by the top of the scroller, and it is a WHOLE
+  number because CodeMirror rounds a padding down (`documentPadding`), and
+  21.75 put every seam 0.75 away from its cells.
 - **The + on the bar chooses a KIND, and there is only one block
   builder.** Sean, 2026-09-20: "pressing the + button on that bar should
   bring up the list of style types that the next input will create a cell

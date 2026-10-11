@@ -31,7 +31,8 @@ export interface Seam {
    * Where the bar that IS the cursor is drawn — which is NOT the middle of
    * the seam, because two of the seams on every page are as tall as the
    * empty page round the note. The hit area is the whole seam and the bar is
-   * against the cell it belongs to.
+   * half a cell spacing from the cell it belongs to, the distance it keeps
+   * from either of two cells it is between.
    */
   line: number
 }
@@ -50,18 +51,20 @@ export const seamContains = (seam: Seam, y: number): boolean => y >= seam.top &&
 
 type Edge = "top" | "middle" | "bottom"
 
-function fitted(top: number, bottom: number, offset: number, minimum: number, edge: Edge): Seam {
+function fitted(top: number, bottom: number, offset: number, minimum: number, spacing: number, edge: Edge): Seam {
   // Where the bar goes, before any widening.
   let line: number
   switch (edge) {
-    // Between two cells the bar is EQUALLY spaced between them.
+    // Between two cells the bar is EQUALLY spaced between them: half the air from each.
     case "middle": line = (top + bottom) / 2; break
-    // The two ENDS of the page are not spaces between two cells: they are
-    // the whole of the empty page above the first cell and below the last,
-    // and a bar in the middle of one of those is adrift. Each hugs the
-    // cell it belongs to.
-    case "top": line = bottom - minimum / 2; break
-    case "bottom": line = top + minimum / 2; break
+    // The two ENDS of the page are not spaces between two cells: they are the whole of the empty page above the first
+    // cell and below the last, and a bar in the middle of one of those is adrift. Each keeps the distance from its
+    // cell that a bar between two cells keeps from either of them, HALF A CELL SPACING (Sean, 2026-10-10: "the spacing
+    // isn't even when the horizontal cursor is at the bottom.. it should be half a cell spacing away"), because that
+    // is where the cell typed there starts: half a spacing on the far side of the bar. (Held inside the seam, for one
+    // that is shorter than that.)
+    case "top": line = Math.max(bottom - spacing / 2, top + minimum / 2); break
+    case "bottom": line = Math.min(top + spacing / 2, bottom - minimum / 2); break
   }
   if (bottom - top >= minimum) return { top, bottom, offset, line }
   // Too thin to hit: the seam is widened and the bar goes back to the
@@ -81,18 +84,21 @@ function fitted(top: number, bottom: number, offset: number, minimum: number, ed
  * handed in upside down is turned the right way up, because a seam folded
  * inside out would be a hole in the page.
  *
- * `firstCellTop` is where a cell WOULD land on a page that has none — the
- * pane's own top inset, which this file cannot know.
+ * `spacing` is the air the page leaves between two cells (`PREVIEW_BLOCK_GAP`; this file cannot know it): the bars at
+ * the two ends of the page keep half of it from the cell they follow. `firstCellTop` is where a cell WOULD land on a
+ * page that has none — the pane's own top inset, which this file cannot know either.
  */
 export function seams(options: {
   cells: CellBox[]
   pageTop: number
   pageBottom: number
   noteLength: number
+  spacing: number
   firstCellTop?: number
   minimum?: number
 }): Seam[] {
   const minimum = options.minimum ?? GAP_HEIGHT
+  const spacing = options.spacing
   const boxes = options.cells
     .map((cell) => ({
       top: Math.min(cell.top, cell.bottom),
@@ -108,18 +114,18 @@ export function seams(options: {
   if (boxes.length === 0) {
     // Nothing written yet: the whole page is one seam, and what is typed
     // in it goes at the end of the note.
-    const landing = options.firstCellTop ?? head + minimum
-    return [{ top: head, bottom: foot, offset: options.noteLength, line: Math.max(head, landing - minimum / 2) }]
+    const landing = options.firstCellTop ?? head + spacing
+    return [{ top: head, bottom: foot, offset: options.noteLength, line: Math.max(head, landing - spacing / 2) }]
   }
 
   const out: Seam[] = []
   let reached = head
   for (const box of boxes) {
-    out.push(fitted(reached, Math.max(reached, box.top), box.offset, minimum,
+    out.push(fitted(reached, Math.max(reached, box.top), box.offset, minimum, spacing,
       out.length === 0 ? "top" : "middle"))
     reached = Math.max(reached, box.bottom)
   }
-  out.push(fitted(reached, Math.max(reached, foot), options.noteLength, minimum, "bottom"))
+  out.push(fitted(reached, Math.max(reached, foot), options.noteLength, minimum, spacing, "bottom"))
   return out
 }
 

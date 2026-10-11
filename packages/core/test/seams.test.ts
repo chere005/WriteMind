@@ -13,8 +13,10 @@ describe("the spaces between the cells", () => {
     { top: 80, bottom: 120, offset: 12 },
     { top: 140, bottom: 200, offset: 30 },
   ]
+  /** The air the page leaves between two cells: what `page` leaves (60 to 80, 120 to 140). */
+  const SPACING = 20
   const of = (cells: CellBox[], pageTop = 0, pageBottom = 300, noteLength = 44): Seam[] =>
-    seams({ cells, pageTop, pageBottom, noteLength })
+    seams({ cells, pageTop, pageBottom, noteLength, spacing: SPACING })
 
   it("gives every cell a seam above it and the last one a seam under it", () => {
     expect(of(page)).toHaveLength(4)
@@ -45,9 +47,10 @@ describe("the spaces between the cells", () => {
   })
 
   it("makes an empty note one seam over the whole page", () => {
-    expect(seams({ cells: [], pageTop: 0, pageBottom: 420, noteLength: 0 }))
-      .toEqual([{ top: 0, bottom: 420, offset: 0, line: GAP_HEIGHT / 2 }])
-    expect(seams({ cells: [], pageTop: 0, pageBottom: 420, noteLength: 3 })[0]!.offset).toBe(3)
+    // (With no first cell to land, the bar is half a spacing down: where the middle of the air above one would be.)
+    expect(of([], 0, 420, 0))
+      .toEqual([{ top: 0, bottom: 420, offset: 0, line: SPACING / 2 }])
+    expect(of([], 0, 420, 3)[0]!.offset).toBe(3)
   })
 
   it("answers with the seam a point is inside and no other", () => {
@@ -66,24 +69,54 @@ describe("the spaces between the cells", () => {
     expect(between.line).toBe(64)
   })
 
-  it("draws the bar under the last cell against it, not halfway down the page", () => {
+  it("draws the bar under the last cell half a cell spacing from it, not halfway down the page", () => {
     const tail = of(page).at(-1)!
     expect(tail.top).toBe(200)
     expect(tail.bottom).toBe(300)
-    expect(tail.line).toBe(200 + GAP_HEIGHT / 2)
+    expect(tail.line).toBe(200 + SPACING / 2)
   })
 
-  it("draws the bar above the first cell against it too", () => {
+  it("draws the bar above the first cell half a cell spacing from it too", () => {
     const head = of(page)[0]!
     expect(head.top).toBe(0)
-    expect(head.line).toBe(20 - GAP_HEIGHT / 2)
+    expect(head.line).toBe(20 - SPACING / 2)
   })
 
-  it("puts an empty page's bar where the first cell will land", () => {
-    const empty = seams({ cells: [], pageTop: 0, pageBottom: 420, noteLength: 0, firstCellTop: 30 })
-    expect(empty[0]!.line).toBe(30 - GAP_HEIGHT / 2)
+  // Sean, 2026-10-10: "the spacing isn't even when the horizontal cursor is at the bottom.. it should be half a cell
+  // spacing away". It was four points (half of GAP_HEIGHT) at either end, a bar between two cells being ten away.
+  it("keeps the same distance from the cell it follows at the top, in the middle and at the bottom", () => {
+    const out = of(page)
+    const above = out[1]!.line - page[0]!.bottom
+    expect(above).toBe(SPACING / 2)
+    expect(page[1]!.top - out[1]!.line).toBe(above)
+    expect(out[3]!.line - page[2]!.bottom).toBe(above)
+    expect(page[0]!.top - out[0]!.line).toBe(above)
+  })
+
+  it("keeps the distance whatever the page below the last cell is, and whatever the cell's height", () => {
+    for (const [bottom, foot] of [[200, 300], [200, 2000], [62, 400], [900, 5000]] as const) {
+      const out = of([{ top: 20, bottom: bottom, offset: 0 }], 0, foot)
+      expect(out[1]!.line - bottom).toBe(SPACING / 2)
+    }
+  })
+
+  it("puts an empty page's bar half a spacing over where the first cell will land", () => {
+    const empty = seams({ cells: [], pageTop: 0, pageBottom: 420, noteLength: 0, spacing: SPACING, firstCellTop: 30 })
+    expect(empty[0]!.line).toBe(30 - SPACING / 2)
     expect(empty[0]!.top).toBe(0)
     expect(empty[0]!.bottom).toBe(420)
+  })
+
+  it("keeps the bar inside a seam at the end of the page that is shorter than half a spacing", () => {
+    // 9 points of air under the last cell is a seam (8 is the thinnest), but not half a spacing (10): the bar stays in it.
+    const tail = of([{ top: 20, bottom: 60, offset: 0 }], 0, 69)[1]!
+    expect(tail.bottom - tail.top).toBe(9)
+    expect(tail.line).toBeGreaterThanOrEqual(tail.top)
+    expect(tail.line).toBeLessThanOrEqual(tail.bottom)
+    // And the same over the first cell, which starts 9 points down the page.
+    const head = of([{ top: 9, bottom: 60, offset: 0 }])[0]!
+    expect(head.line).toBeGreaterThanOrEqual(head.top)
+    expect(head.line).toBeLessThanOrEqual(head.bottom)
   })
 
   it("widens a seam too thin to hit about its middle", () => {
@@ -92,7 +125,7 @@ describe("the spaces between the cells", () => {
     expect(middle.line).toBe(61)
     expect(middle.top).toBe(61 - GAP_HEIGHT / 2)
     expect(middle.bottom).toBe(61 + GAP_HEIGHT / 2)
-    const fat = seams({ cells: tight, pageTop: 0, pageBottom: 300, noteLength: 44, minimum: 20 })[1]!
+    const fat = seams({ cells: tight, pageTop: 0, pageBottom: 300, noteLength: 44, spacing: SPACING, minimum: 20 })[1]!
     expect(fat.bottom - fat.top).toBe(20)
     expect(fat.line).toBe(61)
   })
@@ -138,10 +171,10 @@ describe("the spaces between the cells", () => {
     expect(out[1]!.line - out[1]!.top).toBeCloseTo(out[1]!.bottom - out[1]!.line, 3)
   })
 
-  it("still hugs the cell with the bars at the two ends", () => {
+  it("keeps half a spacing from the cell with the bars at the two ends", () => {
     const out = of([{ top: 200, bottom: 240, offset: 0 }], 0, 2000)
-    expect(out[0]!.line).toBe(196)
-    expect(out[1]!.line).toBe(244)
+    expect(out[0]!.line).toBe(190)
+    expect(out[1]!.line).toBe(250)
   })
 
   it("does not fold the seam between two overlapping cells inside out", () => {
@@ -164,7 +197,7 @@ describe("the spaces between the cells", () => {
 /** Transcribed from `PointerSeamTests` — the sticky reading that killed the flicker. */
 describe("which seam the pointer is shown in", () => {
   const page: CellBox[] = [{ top: 20, bottom: 60.4, offset: 0 }, { top: 80, bottom: 120, offset: 12 }]
-  const all = () => seams({ cells: page, pageTop: 0, pageBottom: 300, noteLength: 30 })
+  const all = () => seams({ cells: page, pageTop: 0, pageBottom: 300, noteLength: 30, spacing: 20 })
 
   it("answers with the seam under the pointer when nothing is being shown", () => {
     expect(pointerSeam(70, all(), null)?.offset).toBe(12)
