@@ -362,6 +362,13 @@ function patch(value: Preview, tr: Transaction): Preview {
   }
   if (value.waiting >= 0) markPos(changes ? changes.mapPos(value.waiting, 1) : value.waiting)
   if (waiting >= 0) markPos(waiting)
+  // The line a single newline opened (core growth.ts) is its cell's while the caret is on it and a gap when it is not, which
+  // can change with no cell's state changing (the caret walking between that line and the words of the SAME open cell): both
+  // ends are looked at again.
+  const grownBefore = isArmed(tr.startState) ? null : grownCell(tr.startState)
+  const grownNow = isArmed(state) ? null : grownCell(state)
+  if (grownBefore) markPos(changes ? changes.mapPos(grownBefore.line.location, 1) : grownBefore.line.location)
+  if (grownNow) markPos(grownNow.line.location)
   for (const r of hiddenDifference(value.hidden, hidden, tr)) markSpan(r.location, end(r))
 
   let decorations = changes ? value.decorations.map(changes) : value.decorations

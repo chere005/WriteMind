@@ -4,7 +4,7 @@
 // under it, the Style button names it, and the bar does not read the line as a seam. A BLANK line (two newlines in a row) still
 // separates cells. The single newline is Return on the markdown side and Shift+Return on the rendered page (where Return starts the
 // next block). Real keys and the real mouse, both pages.
-import { ok, test, finish, js, sleep, freshNote, setDoc, doc, sel, key, click, hover, focus, setSel, setRendered, armed, lineBoxes, lineTexts, typeText, shot } from "../../lib/harness.mjs"
+import { ok, test, finish, js, sleep, freshNote, setDoc, doc, sel, key, click, hover, focus, setSel, setRendered, armed, lineBoxes, lineTexts, typeText, shot, menuItem, menuClick } from "../../lib/harness.mjs"
 
 await freshNote()
 const VIEW = `document.querySelector('.cm-content').cmTile.view`
@@ -109,6 +109,40 @@ for (const rendered of [false, true]) {
     await setSel(6); await sleep(300)
     const back = await cellBrackets()
     ok("and back on the line the first cell takes it again", back[0].lit && lines(back[0]) === 2 && !back[1].lit, JSON.stringify(back))
+  })
+
+  // (The rendered page draws a blank line between two cells as a gap. The caret walking between the new line and the words of the
+  // SAME cell leaves that cell open all the while, so nothing else tells the page the line changed hands.)
+  await test(`${side}: the caret walking between the words and the new line: the line is the cell's under it and a gap away from it`, async () => {
+    if (!rendered) return
+    const gaps = async () => JSON.parse(await js(`JSON.stringify([...document.querySelectorAll('.cm-line')].map(l=>[l.classList.contains('wm-gap'),l.textContent]))`))
+    await start("hello\n\nworld", 5)
+    await newline(); await sleep(250)
+    const on = await gaps()
+    ok("on the new line it is the cell's: no gap is drawn there", !!on[1] && on[1][0] === false, JSON.stringify(on))
+    await setSel(2); await sleep(300)
+    const off = await gaps()
+    ok("with the caret in the words (the cell still open) the line is a gap again", !!off[1] && off[1][0] === true, JSON.stringify(off))
+    await setSel(6); await sleep(300)
+    const again = await gaps()
+    ok("and back on the line it is the cell's", !!again[1] && again[1][0] === false, JSON.stringify(again))
+  })
+
+  // (The whole-cell commands of the Format menu act on the cell the caret is in: the new line is that cell's. A bar is the cursor and
+  // no cell has the caret then, and the bar armed by hand under the last cell of a note that ends with its newline stands on that line.)
+  await test(`${side}: Duplicate Cell from the new line copies that cell; at the armed bar under it the menu takes no cell`, async () => {
+    const format = async (label) => { const item = await menuItem("Format", label); await menuClick(item.id); await sleep(350) }
+    await start("hello\n", 6)
+    ok("the caret is on the new line, no bar up", !(await armed()) && (await sel())[0] === 6, JSON.stringify([await armed(), await sel()]))
+    await format(/Duplicate Cell/)
+    ok("Duplicate Cell copies the cell the line belongs to", (await doc()) === "hello\n\nhello\n", JSON.stringify(await doc()))
+    await start("hello\n", 0)
+    await click(300, 400); await sleep(300)
+    ok("a click in the page under the cell arms the bar there", await armed(), JSON.stringify([await armed(), await sel()]))
+    await format(/Delete Cell/)
+    ok("Delete Cell at the bar takes no cell", (await doc()) === "hello\n", JSON.stringify(await doc()))
+    await format(/Duplicate Cell/)
+    ok("nor does Duplicate Cell", (await doc()) === "hello\n", JSON.stringify(await doc()))
   })
 
   await test(`${side}: Merge Cells from the new line joins that cell to the one below it, not the note's last two`, async () => {
