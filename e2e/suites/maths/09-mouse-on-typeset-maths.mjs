@@ -7,7 +7,7 @@
 // Fixed 2026-10-04 (Mathslane-fix1): `pressOnMaths` in packages/editor/src/math.ts. Left button: caret in the source,
 // a drag from there selects from the near EDGE (so a drag across an equation selects it, typeset); Shift extends the
 // selection to the near edge; the right button selects the equation; Ctrl/Cmd is the drawing layer's.
-import { ok, finish, js, sleep, freshNote, setDoc, doc, sel, ranges, setSel, focus, shot, click, rightClick, mouse, hover, drag } from "../../lib/harness.mjs"
+import { ok, finish, js, sleep, freshNote, setDoc, doc, sel, ranges, setSel, focus, shot, click, rightClick, mouse, hover, drag, MOD } from "../../lib/harness.mjs"
 
 const BT = "`", F = BT.repeat(3)
 const text = `Alpha ${BT}wl:x^2${BT} beta gamma delta\n\nDelta ${BT}wl:y^2${BT} epsilon zeta\n\n${F}wl\nSqrt[x]\n${F}\n\nEnd\n`
@@ -115,12 +115,19 @@ ok("(the positions this script expects)", text.slice(eq1.start, eq1.end) === "`w
   await click(900, 700)
 }
 
-// ---- Ctrl (Cmd) is the drawing layer's, on words and on equations alike: the maths does not take the press
+// ---- Ctrl (Cmd) is the drawing layer's, on words and on equations alike: the maths does not take the press. The command
+// key is the machine's own (MOD): on a Mac Ctrl+click is the secondary click, which is the right button's rule above.
 {
   await reset(0)
   const p = await point(".cm-line .wm-math-inline", 0, 0.2)
-  await click(p.x, p.y, { ctrl: true })
-  ok("Ctrl+click on an equation leaves the caret and the equation alone", same(await ranges(), [[0, 0]]) && (await inlineCount()) === 2, JSON.stringify(await ranges()))
+  await js(`window.__down = null; document.addEventListener('mousedown', (e) => { window.__down = e.defaultPrevented }, { once: true })`)
+  await click(p.x, p.y, { modifiers: MOD })
+  const down = await js(`window.__down`)
+  ok("a command-click on an equation is not the maths' press: it is not stopped and the caret does not go into its source",
+    down === false && !(await ranges()).some(([from, to]) => from === eq1.start + 4 && to === eq1.start + 4), JSON.stringify({ down, ranges: await ranges() }))
+  // What the browser itself then does with the press differs by system: on a Windows page a Ctrl+click on a widget leaves the
+  // caret where it was, and a Mac's own click (the platform's, not the app's) puts it at the widget's edge, which shows the source.
+  if (process.platform !== "darwin") ok("Ctrl+click on an equation leaves the caret and the equation alone", same(await ranges(), [[0, 0]]) && (await inlineCount()) === 2, JSON.stringify(await ranges()))
 }
 
 // ---- a drag that starts on an equation selects

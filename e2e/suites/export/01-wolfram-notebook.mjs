@@ -1,6 +1,7 @@
 // File ▸ Export… ▸ Wolfram Notebook (main/wolfram/notebookFile.ts, port-only: docs/PARITY.md), through the real panel
 // (the save pick is named by the harness) and, when this machine has wolframscript, checked by the real engine: the
-// file Gets as a Notebook, each drawing is an Image Output cell with its size right, and nothing evaluated. Pass 2
+// file Gets as a Notebook, each drawing is an Image Output cell with its size right, and nothing evaluated (a SKIP, with
+// the reason, on a machine whose wolframscript is missing or was never activated: `_lib.mjs`). Pass 2
 // chooses, in Language Setup, a program that answers its version and then never answers a run (a shell script, Mac
 // and Linux): the export still writes the file, every drawing is a CLOSED initialization cell, and the notice the
 // dialog would have shown is read back (WRITEMIND_E2E records it instead of showing it). Unit side:
@@ -13,15 +14,15 @@ import { spawnSync } from "node:child_process"
 import {
   ok, skip, finish, js, sleep, freshNote, setDoc, focus, dragPath, line, saved, pickNext, shot, until, menuClick, key, VIEW,
 } from "../../lib/harness.mjs"
+import { wolframEngine } from "./_lib.mjs"
 
 const scratch = fs.mkdtempSync(path.join(os.tmpdir(), "wm-e2e-wolfram-"))
 const WORDS = "# Export\n\nAbove the drawing, with **bold** and `wl:x^2`.\n\n- [ ] a to-do\n\n```wl\ny = 2x\n```\n\n```eval wl\n1 + 1\n```\n\n```out\n2\n```"
 const cellBox = async () => JSON.parse(await js(`(()=>{const e=document.querySelector('.wm-inkcell canvas');if(!e)return 'null';const r=e.getBoundingClientRect();return JSON.stringify({x:r.x,y:r.y,w:r.width,h:r.height})})()`))
-const wolframscript = ["/opt/homebrew/bin/wolframscript", "/usr/local/bin/wolframscript", "/Applications/Wolfram Engine.app/Contents/Resources/Wolfram Player.app/Contents/MacOS/wolframscript",
-  "/Applications/Wolfram.app/Contents/MacOS/wolframscript", "/Applications/Mathematica.app/Contents/MacOS/wolframscript"].find((file) => fs.existsSync(file))
+const engine = wolframEngine()
 
-// ---- a note with words and one drawing cell holding two pen strokes
-const file = await freshNote()
+// ---- a note with words and one drawing cell holding two pen strokes (the drawing layer is the rendered page's)
+const file = await freshNote({ rendered: true })
 await setDoc(WORDS, 0)
 await focus(); await js(`${VIEW}.dispatch({selection:{anchor:30}})`)
 await menuClick("insertInkCell"); await sleep(700)
@@ -63,19 +64,23 @@ else {
 }
 
 // ---- pass 2: the engine this machine finds by itself
-if (!wolframscript) skip("the real engine", "no wolframscript here")
+// The words and the notebook's shape hold with or without an engine (a drawing is then a closed initialization cell);
+// the Image the kernel makes needs one that evaluates.
+{
+  const written = await exportTo("engine.nb")
+  ok("Export… ▸ Wolfram Notebook wrote a .nb", written !== null)
+  ok("it is a notebook file, ASCII", written !== null && written.startsWith("(* Content-type: application/vnd.wolfram.mathematica *)") && !/[^\x00-\x7f]/.test(written))
+  ok("the words are the notebook's own styles", /Cell\["Export", "Title"\]/.test(written ?? "") && /"Item"/.test(written ?? "") && /"Output"/.test(written ?? ""))
+  ok("the maths cell is an Input, written with ==", /Cell\[BoxData\[[\s\S]*?2[\s\S]*?"Input", TaggingRules -> \{"WriteMind" -> "maths"\}\]/.test(written ?? ""))
+}
+if (!engine.script) skip("the file Gets as a Notebook whose drawing is an Image", engine.why)
 else {
-  const engine = await exportTo("engine.nb")
-  ok("Export… ▸ Wolfram Notebook wrote a .nb", engine !== null)
-  ok("it is a notebook file, ASCII", engine !== null && engine.startsWith("(* Content-type: application/vnd.wolfram.mathematica *)") && !/[^\x00-\x7f]/.test(engine))
-  ok("the words are the notebook's own styles", /Cell\["Export", "Title"\]/.test(engine ?? "") && /"Item"/.test(engine ?? "") && /"Output"/.test(engine ?? ""))
-  ok("the maths cell is an Input, written with ==", /Cell\[BoxData\[[\s\S]*?2[\s\S]*?"Input", TaggingRules -> \{"WriteMind" -> "maths"\}\]/.test(engine ?? ""))
-  const run = spawnSync(wolframscript, ["-code", `nb = Get["${path.join(scratch, "engine.nb")}"];
+  const run = spawnSync(engine.script, ["-code", `nb = Get["${path.join(scratch, "engine.nb")}"];
     imgs = Cases[First[nb], c : Cell[_, "Output", ___, TaggingRules -> {"WriteMind" -> "ink"}] :> ToExpression[c[[1, 1]]]];
     Print["images:", Length[imgs], " ", And @@ (ImageQ /@ imgs), " ", ImageDimensions /@ imgs]`], { encoding: "utf8", timeout: 120000 })
   const said = run.stdout.trim()
   ok("the file Gets as a Notebook whose drawing is an Image", /^images:1 True/.test(said), said)
-  await shot("exported")
 }
+await shot("exported")
 fs.rmSync(scratch, { recursive: true, force: true })
 finish()

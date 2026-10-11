@@ -2,7 +2,7 @@
 // A long note must stay responsive: real key events to the next two frames, scrolling frame times, and pen moves
 // on the drawing layer after dozens of strokes. The limits are generous (they catch an order-of-magnitude
 // regression, not a few milliseconds); the measured numbers are printed as notes. (Was perf/bench.mjs.)
-import { ok, finish, js, send, sleep, note, seedNotes, openNote, focus, setPen, canvasBox, key } from "../../lib/harness.mjs"
+import { ok, finish, js, send, sleep, note, seedNotes, openNote, focus, setPen, setRendered, canvasBox, key } from "../../lib/harness.mjs"
 
 const para = (i) => `## Section ${i}\n\nParagraph ${i} with **bold**, *italic*, \`code\` and a [link](other.md). ` + "Words go on and on to make the line wrap onto a second row. ".repeat(3) + `\n\n- item a ${i}\n- item b ${i}\n\n`
 await seedNotes({ "Big.md": "# Big note\n\n" + Array.from({ length: 300 }, (_, i) => para(i)).join("") }, { clean: true })
@@ -32,8 +32,9 @@ const scroll = JSON.parse(await js(`(async()=>{const s=document.querySelector('.
 note(`scroll frame: median ${pct(scroll, 0.5).toFixed(1)} ms, p95 ${pct(scroll, 0.95).toFixed(1)} ms, max ${Math.max(...scroll).toFixed(1)} ms`)
 ok("scrolling a long note keeps frames under 100 ms (median)", pct(scroll, 0.5) < 100, `median ${pct(scroll, 0.5)}`)
 
-// ---- pen ink after many strokes
+// ---- pen ink after many strokes (the drawing layer is the rendered page's)
 await js(`document.querySelector('.cm-scroller').scrollTop = 0`)
+await setRendered(true)
 await setPen(true)
 const cb = await canvasBox()
 const x = cb.x, y = cb.y
