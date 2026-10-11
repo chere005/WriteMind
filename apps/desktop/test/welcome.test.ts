@@ -140,7 +140,7 @@ describe("the quick reference's keys come from the command table", () => {
     expect(text.startsWith("# WriteMind Quick Reference\n")).toBe(true)
     for (const name of [
       "Cells", "Text and markdown cells", "Maths cells", "Tables", "Rendered page", "Toolbar", "Pen", "Tabs", "Search notes", "Sidebar", "Undo",
-      "Drawing", "Runnable cells", "Language Setup", "Video pane", "Pane tabs", "Wacom tablet", "Mathematica", "Wacom pen buttons", "Notes are files", "Updates", "About",
+      "Drawing", "Runnable cells", "Language Setup", "Video pane", "Read words", "Pane tabs", "Wacom tablet", "Mathematica", "Wacom pen buttons", "Notes are files", "Updates", "About",
     ]) {
       expect(WELCOME_FEATURES.some((one) => one.startsWith(`**${name}:**`)), name).toBe(true)
     }
@@ -263,6 +263,11 @@ describe("the feature list is true to the source", () => {
     expect(strip).toContain("onDoubleClick")
     expect(strip).toContain("sheet-close")
     expect(features("Pane tabs")).toContain("double-click renames, × closes")
+    // reading words: the inspector's Aa over a picked picture and the video box's Text (both only where there is a reader)
+    expect(read("apps/desktop/src/renderer/Inspector.tsx")).toContain("Read the words out of this picture")
+    expect(read("apps/desktop/src/renderer/Inspector.tsx")).toContain(">Aa<")
+    expect(read("apps/desktop/src/renderer/CameraPane.tsx")).toContain("takeText()")
+    expect(features("Read words")).toContain("Aa on a picked picture and Text in the video box")
     // search: the command, the sidebar's field, Enter on a result
     expect(COMMANDS.find((one) => one.id === "searchNotes")?.label).toBe("Search Notes…")
     expect(features("Search notes")).toContain(shown("searchNotes", "win32")!)
