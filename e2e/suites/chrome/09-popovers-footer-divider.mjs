@@ -2,7 +2,7 @@
 // elsewhere closes them, the keyboard goes back to the notes; the divider between the notes and the video is a visible
 // 6px column with a grip and the accent while it is dragged; the footer says what the pen is (a live region) and the page
 // carries the same chip with "Esc to stop", and that Esc really stops it; the link picker floats like the find card.
-import { ok, finish, js, sleep, waitFor, freshNote, setDoc, key, click, rightClick, drag, mouse, hover, focus, shot, centerOf, menuClick, showVideoPane, insertText, doc, clickEl, penMenu } from "../../lib/harness.mjs"
+import { ok, finish, js, sleep, waitFor, freshNote, setDoc, key, click, rightClick, drag, mouse, hover, focus, shot, centerOf, menuClick, showVideoPane, insertText, doc, clickEl, penMenu, setRendered } from "../../lib/harness.mjs"
 import { MAC, mod, box, keyboardIn } from "../../lib/overlays.mjs"
 
 // (The scripts of a suite share one app: the pen's width, colour and tool are what 08-toolbar-pen left in the page's storage.)
@@ -44,9 +44,14 @@ ok("a menu keeps the page's keys: Enter with the menu just opened does not paste
 // ---- the footer says what the pen is, and Esc stops it
 const chipText = () => js(`document.querySelector('[data-footer="mode"]')?.textContent ?? ''`)
 const pageChip = () => js(`document.querySelector('[data-page="mode-chip"]')?.textContent ?? ''`)
+// A pen put down on the markdown page switches the page to the rendered one (App.tsx penButton, 2026-10-10; chrome/14), and on the rendered page
+// the editor's own Escape (put the caret away) has the first press. These checks are about the chip and the Escape that stops the pen, so after each
+// pen-down the page is turned back to markdown BY HAND (which nothing fights), and the keyboard goes back to the notes.
+const markdownAgain = async () => { await setRendered(false); await focus(); await sleep(150) }
 ok("with the pen up the footer's chip is empty and the page has none", (await chipText()) === "" && (await pageChip()) === "")
 ok("the footer chip is a live region, present even when empty", await js(`(()=>{const c=document.querySelector('[data-footer="mode"]');return c?.getAttribute('role')==='status'&&c.getAttribute('aria-live')==='polite'})()`))
 await menuClick("togglePen"); await sleep(300)
+await markdownAgain()
 ok("pen down: the footer says 'Pen · 3 px'", (await chipText()) === "Pen · 3 px", await chipText())
 ok("the page's chip says how to stop: 'Pen · 3 px · Esc to stop'", (await pageChip()) === "Pen · 3 px · Esc to stop", await pageChip())
 await shot("pen-chip")
@@ -67,6 +72,7 @@ await key("Escape"); await sleep(300)
 ok("Esc cancels the placement", (await chipText()) === "")
 // a menu's Esc is the menu's, not the pen's
 await menuClick("togglePen"); await sleep(250)
+await markdownAgain()
 await rightClick(lines[0][0] + 100, lines[0][1]); await sleep(300)
 await key("Escape"); await sleep(300)
 ok("while a menu is up its Esc is the menu's: it closes and the pen stays down", (await gone("#context-menu")) && (await chipText()) === "Pen · 3 px", await chipText())
@@ -76,6 +82,7 @@ ok("the next Esc stops the pen", (await chipText()) === "")
 // The chip against the bar's ONE pen button (the toolbar made the button a pen-or-eraser tool: `penSettings.tool`): the chip says what the
 // pane is doing, Pen / Eraser, and nothing once the pane is the notebook's again.
 await clickEl('[data-bar=pen]'); await sleep(300)
+await markdownAgain()
 ok("the pen button down (tool: pen): the chip says Pen · 3 px", (await chipText()) === "Pen · 3 px", await chipText())
 await penMenu(); await clickEl('.float-menu [data-bar=erase]'); await sleep(300)
 ok("Eraser picked from the button's menu: the chip says Eraser", (await chipText()) === "Eraser" && /^Eraser · Esc to stop$/.test(await pageChip()), `${await chipText()} / ${await pageChip()}`)
@@ -90,6 +97,7 @@ ok("the eraser button from rest: Eraser", (await chipText()) === "Eraser", await
 await clickEl('[data-bar=pen]'); await sleep(300)
 ok("and up again: no chip, the pane is the notebook's", (await chipText()) === "" && (await pageChip()) === "", await chipText())
 await penMenu(); await clickEl('.float-menu [data-bar=pen-pen]'); await sleep(300)
+await markdownAgain()
 ok("Pen picked from the menu: the chip says Pen · 3 px and the eraser is let go", (await chipText()) === "Pen · 3 px", await chipText())
 await key("Escape"); await sleep(300)
 ok("Esc puts the pen up and the chip goes", (await chipText()) === "" && !(await js(`document.querySelector('[data-bar=pen]').classList.contains('on')`)), await chipText())
@@ -100,6 +108,7 @@ if (!MAC) {
   await press({ key: "{", code: "Digit7", ctrlKey: true, altKey: true }); await sleep(200)
   ok("Ctrl+Alt+7 that types '{' is typing, not Thinner Line", (await chipText()) === "")
   await press({ key: "1", code: "Digit1", ctrlKey: true, altKey: true }); await sleep(250)
+  await markdownAgain()
   ok("Ctrl+Alt+1 on a layout that types '1' is the pen chord", (await chipText()) === "Pen · 3 px", await chipText())
   await key("Escape"); await sleep(300)
 }

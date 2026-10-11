@@ -142,7 +142,8 @@ Notes, so nobody "fixes" them:
   itself; pressed again with all of it folded, it opens it. Fold / Unfold All keep their chords.
 - **Draw / Stop Drawing (Ctrl+P)** and **Pen ▸ Pen Down (Ctrl+Alt+1)** are the same writer: Ctrl+P is the
   Mac's ⌘P, Ctrl+Alt+1 is the chord the tablet's ExpressKeys type (see below), kept so a set-up tablet keeps
-  working.
+  working. Putting the pen down on the markdown page switches to the rendered page (the ink layer is the
+  rendered page's), whichever way it is put down; putting it up changes nothing.
 - **Save (Ctrl+S)** writes what is pending now — the note and its drawing (the Mac's `flushPendingSave`); the
   note is otherwise saved half a second after the last keystroke. **Save Project** is Ctrl+Shift+S, ⇧⌘S on
   the Mac too since it stopped sharing ⌃⌘S with the sidebar.

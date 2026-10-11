@@ -10,7 +10,7 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } fr
 import { EditorView } from "@codemirror/view"
 import { columnBox, cursorSeam, DRAWING_MIME, findNextMatch, findStep, revealAt, takesPastedPicture, type InkCellPainter } from "@writemind/editor"
 import {
-  anchorOffset, bounds as itemBounds, capturePlacedCentre, columnWidth, decodeDrawing, emptyDrawing, insertBlock, insertionPointBelow,
+  anchorOffset, bounds as itemBounds, capturePlacedCentre, columnWidth, decodeDrawing, emptyDrawing, insertionPointBelow, insertReading,
   languageTitle, listTitle, makeNote, newID, noTransform, parseCameraAspect, parseLink, placedCentre, PRESET_COLOURS, readDrawing,
   reconnect, resolveLinkTarget, shifted, textFingerprint, writeDrawing, inkCellOf, inkFileName, inkIdsIn, visibleItems, withInkCell,
   type CanvasItem, type CodeLanguage, type Drawing, type Evaluator, type ListStyle, type Note, type Placement, type Rect,
@@ -51,6 +51,7 @@ import { migrateCollapsed, sectionsAway } from "./toolGroups"
 import { runEditorCommand } from "./editorCommands"
 import { useChrome } from "./useChrome"
 import { nextPenButton, penSettings, putToolsDown, setEraser, setPenTool, usePenSettings, useSheetTools, type PenPress } from "./penSettings"
+import { needsRenderedPage, putsPenDown, turnsOnPenDraws } from "./pageActs"
 import { usePenOnSheet } from "./tabletFocus"
 import { registerPenHandlers, runPenCommand } from "./penActions"
 import { cycleColour, stepWidth, PEN_WIDTHS } from "./penButtons"
@@ -801,25 +802,38 @@ export function App() {
     if (text !== null && forMs > 0) readNoticeTimer.current = window.setTimeout(() => setReadNotice(null), forMs)
   }, [])
   /**
-   * Words read off something on the page, into the note as a cell of their own just under it: in front of the first line that starts
-   * at or below `bottom` (the thing's bottom edge, in the pane's px), or at the caret when it is not known. The thing stays.
+   * THE PAGE SWITCHES TO THE RENDERED ONE when text is brought in or the pen is put down on the notebook (pageActs.ts; Sean,
+   * 2026-10-10): the same switch the tab row's rendered button and Ctrl+T throw, so the quick reference, the caret and the cell
+   * at the top of the window are kept by the page's own toggle. An act, never a state: it is only asked at the act.
+   */
+  const renderedRef = useRef(rendered)
+  renderedRef.current = rendered
+  const showRenderedPage = useCallback(() => {
+    if (needsRenderedPage(openRef.current !== null, renderedRef.current)) setRendered(true)
+  }, [])
+  /**
+   * Words read off something on the page, into the note as ONE cell of their own just under it (all the lines of the
+   * reading together, `insertReading`): in front of the first line that starts at or below `bottom` (the thing's bottom edge, in
+   * the pane's px), or at the caret when it is not known. The thing stays. The page is the rendered one from here, so the
+   * person sees the words land.
    */
   const putWordsUnder = useCallback((words: string[], bottom: number | null) => {
     const editor = view
     const text = textRef.current
     let at = editor ? editor.state.selection.main.head : text.length
-    if (editor && bottom !== null) {
+    // (`bottom` is a place on the rendered page: with the page turned off since the reading was asked for, the caret it is.)
+    if (editor && bottom !== null && renderedRef.current) {
       const y = bottom - editor.documentPadding.top
       const block = editor.state.doc.length > 0 ? editor.lineBlockAtHeight(Math.max(0, y)) : null
       at = insertionPointBelow(block ? { from: block.from, to: block.to, bottom: block.bottom } : null, y, editor.state.doc.length)
     }
-    const opened = insertBlock(text, at)
-    const written = opened.markdown.slice(0, opened.caret) + words.join("\n")
-      + opened.markdown.slice(opened.caret)
-    change(written)
-    setDocument(written)
-    tellRead(words.length === 1 ? "Read 1 line into the note." : `Read ${words.length} lines into the note.`)
-  }, [change, setDocument, tellRead, view])
+    const put = insertReading(text, at, words)
+    if (!put) { tellRead("No text could be read there."); return }
+    change(put.markdown)
+    setDocument(put.markdown)
+    showRenderedPage()
+    tellRead(put.lines === 1 ? "Read 1 line into the note." : `Read ${put.lines} lines into the note.`)
+  }, [change, setDocument, showRenderedPage, tellRead, view])
 
   const readPicture = useCallback(async (file: string, id: string) => {
     if (reading.current.has(id)) return
@@ -867,18 +881,16 @@ export function App() {
     putWordsUnder(lines, Math.max(...strokes.map((item) => { const frame = itemBounds(item, pane); return frame.y + frame.height })))
   }, [putWordsUnder, tellRead, view])
 
-  /** The words read out of a box on the camera's page, into the note as a cell of their own (no picture to put away). */
+  /** The words read out of a box on the camera's page (or the Wacom sheet), into the note as ONE cell of their own (no picture to put away). */
   const readCameraText = useCallback((words: string[]) => {
-    if (words.length === 0) return
     const editor = view
     const text = textRef.current
-    const at = editor ? editor.state.selection.main.head : text.length
-    const opened = insertBlock(text, at)
-    const written = opened.markdown.slice(0, opened.caret) + words.join("\n")
-      + opened.markdown.slice(opened.caret)
-    change(written)
-    setDocument(written)
-  }, [change, setDocument, view])
+    const put = insertReading(text, editor ? editor.state.selection.main.head : text.length, words)
+    if (!put) return
+    change(put.markdown)
+    setDocument(put.markdown)
+    showRenderedPage()
+  }, [change, setDocument, showRenderedPage, view])
 
   /** Insert ▸ Image: the third way in, landing where the other two do. */
   const choosePicture = useCallback(async () => {
@@ -921,7 +933,9 @@ export function App() {
     if (next.down !== down) { setPlacing(null); putToolsDown(); setMode(next.down ? "pen" : "cursor") }
     setPenTool(next.tool)
     if (next.eraser !== penSettings().eraser) setEraser(next.eraser)
-  }, [])
+    // The pen put down on the notebook draws on the rendered page: the ink layer is not on the markdown (pageActs.ts).
+    if (putsPenDown(press, { tool: now.tool, eraser: now.eraser, down }, next)) showRenderedPage()
+  }, [showRenderedPage])
 
   const newNote = useCallback(async (folder: string) => {
     // No folder of the project is there: say so, and make nothing (not in the app's own notes folder, which the
@@ -1550,6 +1564,12 @@ export function App() {
   // The pen's buttons and ExpressKeys, for what only this component owns: the
   // pen's colour and width and whether the pen is down (penActions.ts).
   const penTools = usePenSettings()
+  // "Pen always draws" turned ON puts the pen down on the page whatever the mode is: the rendered page, which has the ink layer.
+  const penDrawsWas = useRef(penTools.penDraws)
+  useEffect(() => {
+    if (turnsOnPenDraws(penDrawsWas.current, penTools.penDraws)) showRenderedPage()
+    penDrawsWas.current = penTools.penDraws
+  }, [penTools.penDraws, showRenderedPage])
   // The Pen menu's Erase / Select checks: the tools of the surface the pen is on (the sheet has its own, penActions.ts).
   const sheetTools = useSheetTools()
   const toolsHere = usePenOnSheet() ? sheetTools : penTools

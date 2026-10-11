@@ -175,10 +175,19 @@ is how the code is put together.
   under the lowest of them; the strokes stay.
   English and Japanese both, kana and numbers included: a Japanese-first
   reading is tried and kept when it finds any, so an English page keeps the
-  accuracy an English-first reading gives it. What comes back is markdown —
-  a word with a line through it arrives struck out, a word with a ring round
-  it in bold, a drawn arrow as →, and a line of algebra as this app's maths,
-  raised digits and all. The picture itself stays (the words go in just under it);
+  accuracy an English-first reading gives it. **One reading is one cell**: all
+  its lines go in together, line for line, as a text cell as typed — never a
+  cell per line, and an empty line the reader returns never splits it — and
+  the page switches to the rendered one so you see the words land (turning it
+  off by hand afterwards is not fought; the next reading switches it again).
+  What the reader marks comes with the words: a word with a line through it
+  arrives as ~~struck~~, a ringed one as **bold**, a drawn arrow as →, a box
+  at the head of a line as a task, and a line of algebra as this app's maths.
+  In a reading of one line those marks are drawn (struck out, bold, typeset);
+  in a text cell of several lines they are the characters it is written with
+  (Ctrl+Shift+7 makes it a markdown cell, which draws them and runs its lines
+  together), and a reading that is all tasks, or all bullets, is one list.
+  The picture itself stays (the words go in just under it);
   Undo takes the words back out. The video pane reads too: **Text** in the camera's box row, and on the
   Wacom sheet **Bring in ▸ Text** and the box row's **Text** read the handwriting (the boxed part, or
   all of the sheet) as words into the note as a text cell; Bring in ▸ **Sheet as Text** and **Sheet as
@@ -297,10 +306,14 @@ is how the code is put together.
   sheet, Turn left / Turn right, Refresh devices, Video Only. The notes pane
   is put away from the corner of the video. ⌃⌘S, ⌃⌘E, ⌃⌘C.
 - **Two modes over one page, and one button between them.** The drawing
-  layer is there in the markdown and on the rendered page alike — the
-  drawing belongs to the note, not to one way of looking at it — and the
+  belongs to the note, not to one way of looking at it, but its layer is
+  drawn on the rendered page only — and the
   pen button says which mode the pane is in: press it to put the pen down
-  or pick it up. With the pen **up** the notebook has the clicks: the
+  or pick it up. The ink layer is the rendered page's, so **putting the pen
+  down on the markdown page switches to the rendered page** — the button,
+  the menu's Pen, the pen's key, Pen ▸ Pen Down, and Pen always draws turned
+  on; turning the rendered page off by hand afterwards is not fought, and
+  putting the pen up changes nothing. With the pen **up** the notebook has the clicks: the
   words, the bars between the cells and the brackets, and the drawings are
   things you can handle — drag one to move it. A picked one has eight
   resize handles on its outline and a rotate dot above it, and ONE bar over
