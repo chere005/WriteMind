@@ -66,7 +66,9 @@ const row = JSON.parse(await js(`(()=>{const q=(sel)=>{const b=document.querySel
 ok("the inspector over several objects has Group, then order, copy and delete (Sean, 2026-10-10: one bar)", row.group && row.order && row.copy && row.del && row.group.x < row.order.x && row.order.x < row.copy.x && row.copy.x < row.del.x && row.name === "3 objects", JSON.stringify(row))
 ok("the Group button fits around its word (wider than a 22 px circle, the word inside it)", row.group && row.group.w > 30 && row.group.sw <= row.group.cw, JSON.stringify(row.group))
 await shot("group-row")
-await key("g", { ctrl: true }); await sleep(250)
+// Group is the layer's own Control+G on every machine (the Mac's ⌃G; ⌘G is Find Next there), so the chord is sent as
+// written: key() would turn a Windows-style Ctrl+G into ⌘G on a Mac.
+await key("g", { ctrl: true, raw: true }); await sleep(250)
 const groups = (await strokes()).map((x) => x.group ?? null)
 ok("Ctrl+G holds them together (all three share one group id)", groups.length === 3 && groups[0] !== null && groups.every((x) => x === groups[0]), JSON.stringify(groups))
 await key("Backspace"); await sleep(300)

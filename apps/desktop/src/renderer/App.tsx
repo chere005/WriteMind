@@ -12,7 +12,7 @@ import { columnBox, cursorSeam, DRAWING_MIME, findNextMatch, findStep, revealAt,
 import {
   anchorOffset, bounds as itemBounds, capturePlacedCentre, columnWidth, decodeDrawing, emptyDrawing, insertBlock, insertionPointBelow,
   languageTitle, listTitle, makeNote, newID, noTransform, parseCameraAspect, parseLink, placedCentre, PRESET_COLOURS, readDrawing,
-  resolveLinkTarget, shifted, textFingerprint, writeDrawing, inkCellOf, inkFileName, inkIdsIn, visibleItems, withInkCell,
+  reconnect, resolveLinkTarget, shifted, textFingerprint, writeDrawing, inkCellOf, inkFileName, inkIdsIn, visibleItems, withInkCell,
   type CanvasItem, type CodeLanguage, type Drawing, type Evaluator, type ListStyle, type Note, type Placement, type Rect,
 } from "@writemind/core"
 import { Canvas, clipboardDrawing, type CanvasMode } from "./Canvas"
@@ -729,7 +729,11 @@ export function App() {
   /**
    * A capture off the camera, landing where it was on the page — and, when
    * the camera read a flow chart off it, the chart as real nodes and arrows
-   * under it (the canvas routes the arrows when the drawing arrives).
+   * under it, the arrows routed to right angles as they arrive (the Mac's
+   * `NoteStore.flowChart` reconnects right after appending). The drawing layer
+   * routes a drawing it is given too, but it is only there on the rendered page
+   * (2.17.0), and a capture taken on the source view must not land in the file
+   * as straight diagonals that nothing routes until the page is next rendered.
    */
   const addCapture = useCallback(async (capture: Capture) => {
     const picture: CanvasItem[] = []
@@ -767,11 +771,12 @@ export function App() {
     const dx = (centre.x - capture.center.x) * pane.width, dy = (centre.y - capture.center.y) * pane.height
     const carried = (items: CanvasItem[] | undefined): CanvasItem[] =>
       !items || items.length === 0 ? [] : Math.abs(dx) < 0.01 && Math.abs(dy) < 0.01 ? items : shifted(items, dx, dy, pane)
-    editDrawing({
+    const landed: Drawing = {
       items: [...drawingRef.current.items,
         ...picture.map((item) => (item.kind === "image" ? { ...item, image: { ...item.image, center: centre } } : item)),
         ...carried(capture.strokes), ...carried(capture.chart)],
-    })
+    }
+    editDrawing(capture.chart && capture.chart.length > 0 ? reconnect(landed, pane) : landed)
   }, [editDrawing, history, view])
 
   /**

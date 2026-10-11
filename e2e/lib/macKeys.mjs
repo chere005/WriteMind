@@ -5,7 +5,7 @@
  * command, from that same table, and leaves every chord the table does not know alone. A script that means the real
  * Control key (Ctrl+D split cell is the Mac's own ⌃D) is a command whose Mac chord IS Control, so it is unchanged.
  */
-import { COMMANDS } from "../../apps/desktop/src/shared/commands.ts"
+import { COMMANDS, shown } from "../../apps/desktop/src/shared/commands.ts"
 
 const CTRL = 2, SHIFT = 8, ALT = 1, META = 4
 
@@ -48,3 +48,10 @@ export function macChord(k, mods) {
   if ((mods & CTRL) && !(mods & (ALT | META)) && (k === "ArrowLeft" || k === "ArrowRight")) return { k, mods: (mods & ~CTRL) | ALT }
   return { k, mods }
 }
+
+/**
+ * A command's chord as the app SPELLS it on this machine ("Cmd+Alt+2" on a Mac, "Ctrl+Alt+2" elsewhere): the footer's
+ * hints and the menus read the same `shown` of the same table. A script that checks a hint for a key asks for the
+ * spelling here instead of writing the Windows one, which a Mac's footer never says.
+ */
+export const shownKey = (id) => shown(id, process.platform)
