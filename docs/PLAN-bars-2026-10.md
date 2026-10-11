@@ -163,8 +163,8 @@ works), the new-section path, add-row drop.
 (`.bar-row`, dark in both themes as the pane is today; the letterbox stays black). Camera: **turn left, turn
 right** (two buttons, per page, as today), **Zoom** (lit, with its % read out, while a box is set), **Hold**,
 **Straighten**; spacer; **Writing | Image | Raw** as one segmented control ("Page" is renamed **Image** — the same
-word as the box's; the mode the next click does is lifted); **✕**. Below it the strip (Live · device name | Page
-tabs | +). The camera's source is NOT chosen here (the video menu in the tab row and Input Devices do that). Tablet:
+word as the box's; the mode the next click does is lifted); **✕**. The strip (Live · device name | Page
+tabs | +) is the pane's TOP row, level with the notebook's tab row, and this header is the row under it (Sean, 2026-10-10: "the tabs should be on the same row of the app for the notebook and drawing panes"). The camera's source is NOT chosen here (the video menu in the tab row and Input Devices do that). Tablet:
 **Paper** menu, **orientation** menu (the select in today's header becomes an icon menu), **Undo**; spacer;
 **Bring in** (the one primary, filled; its menu Writing / As drawing cell …); **✕**. The sheet is letterboxed in
 what is left under a fixed header (its top never jumps). A sheet bound to a drawing cell is named

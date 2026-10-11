@@ -57,7 +57,7 @@ export const welcomeFeatures = (mac: boolean): string[] => [
   "**Language Setup:** File ▸ Language Setup… shows which program runs each language, tests it, lets you choose another and helps you get a missing one.",
   "**Video pane:** a document camera: turn, zoom, hold and straighten the picture; its box and the Writing, Image and Raw buttons bring a page in as ink or a picture.",
   "**Read words:** Aa on a picked picture and Text in the video box turn the words in a picture into text, with the same reader on every platform.",
-  "**Pane tabs:** the camera's Live tab and a tab for each page you keep with +, or the tablet's sheets: the notebook's own tabs; double-click renames, × closes.",
+  "**Pane tabs:** the camera's Live tab and a tab for each page you keep with +, or the tablet's sheets, on the notebook's row; double-click renames, × closes.",
   "**Wacom tablet:** Input Devices ▸ Tablet makes the video pane sheets (tabs) to write on; Bring in and the box's As drawing cell take them into the note.",
   "**Mathematica:** File ▸ Export… ▸ Wolfram Notebook writes a `.nb`; with a Wolfram Engine, a copied drawing cell pastes into a notebook as a transparent image.",
   "**Wacom pen buttons:**\n" +

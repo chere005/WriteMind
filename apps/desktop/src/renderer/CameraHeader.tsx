@@ -1,6 +1,8 @@
 /**
  * The video pane's header: ONE 36px row, dark in both themes, never wrapping (docs/PLAN-bars-2026-10.md P4; the
- * wireframes docs/ui-2026-10/FinalMain.png and FinalTablet.png).
+ * wireframes docs/ui-2026-10/FinalMain.png and FinalTablet.png). It is the row UNDER the pane's tabs, as the notebook's
+ * toolbar is under its tab row; the tabs are the top row of the window, level with the notebook's (SheetStrip.tsx). With
+ * no source there are no tabs, and the header (the close button alone, `.empty`) is the top row.
  *
  *   CAMERA   turn left · turn right · Zoom · Hold · Straighten  ......  Writing | Image | Raw  ✕
  *   TABLET   Paper · orientation · Undo  ......  Bring in ▾  ✕
@@ -64,7 +66,7 @@ export function CameraHeader(p: CameraProps) {
   const percent = `${p.zoomPercent}%`
   if (p.empty) {
     return (
-      <div className="bar-row camera-bar camera-head" role="toolbar" aria-label="Camera" data-camera-head="camera">
+      <div className="bar-row camera-bar camera-head empty" role="toolbar" aria-label="Camera" data-camera-head="camera">
         {!p.showEditor && (
           <button type="button" className="bar-btn label" data-pane="notes" title="Back to Side by Side: the notes and the video together again"
                   onClick={() => p.onToggleEditor?.()}><span className="bar-label-text">Back to Side by Side</span></button>

@@ -30,6 +30,11 @@ await shot("header-438")
 ok("the camera's source is not chosen in the pane's header (no select, no source menu)", await js(`!document.querySelector('.camera-head select') && ![...document.querySelectorAll('.camera-head button')].some((b) => /camera|device|source/i.test(b.getAttribute('aria-label') ?? '') && b.hasAttribute('aria-haspopup'))`))
 ok("it has turn left / right, Zoom, Hold and Straighten", await js(`['[data-camera-turn=left]', '[data-camera-turn=right]', '[data-camera-zoom=square]', '[data-camera=hold]'].every((s) => !!document.querySelector('.camera-head ' + s)) && [...document.querySelectorAll('.camera-head button')].some((b) => b.title.startsWith('Square the page up'))`))
 ok("the live tab names the camera in use (never a path)", /^Live/.test(await js(`document.querySelector('[data-scan-tab=camera]').textContent`)) && !/[\\/]/.test(await js(`document.querySelector('[data-scan-tab=camera]').textContent`)))
+// Sean, 2026-10-10: "the tabs should be on the same row of the app for the notebook and drawing panes": the pane's tabs are the window's
+// top row, level with the notebook's (same top, same height), and the header is the row under them, level with the notebook's toolbar.
+const tabsRow = await rectOf(".camera .sheet-tabs"), noteRow = await rectOf(".tab-bar"), headRow = await rectOf(".camera-head"), toolRow = await rectOf(".top-bar")
+ok("the camera's tabs are on the same row of the window as the notebook's tabs", Math.abs(tabsRow.y - noteRow.y) < 0.5 && Math.abs(tabsRow.h - noteRow.h) < 0.5, JSON.stringify({ tabsRow, noteRow }))
+ok("...and the camera's header is on the row of the notebook's toolbar, under the tabs", Math.abs(headRow.y - toolRow.y) < 0.5 && headRow.y >= tabsRow.b - 0.5, JSON.stringify({ headRow, toolRow, tabsRow }))
 
 // 2. the footer: one standing line and one fact
 const status = () => js(`JSON.stringify({ line: document.querySelector('.camera [data-camera=status-line]')?.textContent, fact: document.querySelector('.camera [data-camera=status-fact]')?.textContent })`).then(JSON.parse)
@@ -111,6 +116,9 @@ ok("...with a card for the tablet, Refresh devices and Hide this pane", await js
 // for a picture that is not there is noise) and there is no strip with a green "Live" dot for a camera that is not live.
 ok("...and the header is the close button alone: no turn, zoom, Hold, Straighten or takes with no picture", await js(`(() => { const b = [...document.querySelectorAll('.camera-head button')]; return b.length === 1 && b[0].getAttribute('aria-label') === 'Put the camera away' })()`))
 ok("...and no strip of tabs (nothing is live, no page is kept)", await js(`!document.querySelector('.camera .sheet-tabs')`))
+// With no tabs the header is the pane's top row, level with the notebook's tab row (Sean, 2026-10-10: the same row of the window).
+const topHead = await rectOf(".camera-head"), noteTabs = await rectOf(".tab-bar")
+ok("...and the header, alone, is on the same row of the window as the notebook's tabs", Math.abs(topHead.y - noteTabs.y) < 0.5 && Math.abs(topHead.h - noteTabs.h) < 0.5, JSON.stringify({ topHead, noteTabs }))
 await width(280)
 await shot("no-source-280")
 ok("at 280px the cards and links stay inside the pane", await js(`(() => { const p = document.querySelector('.camera').getBoundingClientRect(); return [...document.querySelectorAll('.camera .placeholder button')].every((b) => { const r = b.getBoundingClientRect(); return r.left >= p.left - 0.5 && r.right <= p.right + 0.5 }) })()`))

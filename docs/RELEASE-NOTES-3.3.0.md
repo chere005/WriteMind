@@ -1,6 +1,3 @@
 WriteMind 3.3.0
 
-- **One OCR engine on every platform.** Reading words out of a picture is now done by the same engine on macOS, Windows and Linux: PaddleOCR's PP-OCRv5 models running on onnxruntime-web (WebAssembly), bundled in the app. Apple Vision, Windows' own OCR engine and Tesseract are gone, so a picture reads the same wherever the note is opened, Japanese included, with nothing to install. It adds about 28 MB to the download.
-- Where the reader's files are missing (a development build made offline) there is no reader and no Aa / read / text control is shown; nothing falls back to another engine.
-- The measurements that chose it, against Apple Vision, are in docs/OCR-BUNDLED.md.
-- **The Quick Reference** has a line for reading words (Aa on a picked picture, Text in the video box), held by a test to the buttons it names.
+- **The video pane's tabs are on the notebook's row.** In 3.2.0 they sat in a second row under the pane's tools. Now the camera's Live and Page tabs, or the tablet's sheets, are the pane's top row, level with the tabs over the note across the window, and the pane's tools (turn, zoom, hold, straighten, Writing | Image | Raw, or Paper, orientation, Undo, Bring in) are the row under them, as the notebook's toolbar is under its tabs. The tab in front runs into that row.

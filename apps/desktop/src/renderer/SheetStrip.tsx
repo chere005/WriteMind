@@ -1,7 +1,7 @@
 /**
- * The video pane's tabs: one row between the header and what it shows, the notebook's tab row (TabBar.tsx, tabs.css) in the
- * pane's dark: the same 36px, the same tabs (the one in front is the picture's colour, no underline; the x on it and under
- * the pointer), the same "+" (tablet.css has the rules).
+ * The video pane's tabs: the pane's TOP row, on the same row of the window as the notebook's tab row (TabBar.tsx, tabs.css),
+ * which they are in the pane's dark: the same 36px, the same tabs (the one in front is the header's colour, which it runs on
+ * into, no underline; the x on it and under the pointer), the same "+" (tablet.css has the rules). The header is the row under.
  *
  * TABLET: each tab is a sheet (tabletSheets.ts): its own ink, paper, dashed box and stroke undo. Click opens one,
  * "+" adds "Sheet N", double-click renames (Enter keeps, Esc leaves it), the small x closes one. A sheet with ink
