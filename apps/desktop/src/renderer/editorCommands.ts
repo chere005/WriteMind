@@ -10,7 +10,7 @@
 
 import type { EditorView } from "@codemirror/view"
 import {
-  BOLD, ITALIC, STRIKE, UNDERLINE_CLOSE, UNDERLINE_OPEN, HEADING_LADDER, blockContaining,
+  BOLD, ITALIC, STRIKE, UNDERLINE_CLOSE, UNDERLINE_OPEN, HEADING_LADDER, blockAtCaret,
   deleteCell, duplicateCell, editsOver, expand, fenceOf, moveCell, moveSection,
   splitCell, subsections, subsectionsFolding,
   type CodeLanguage, type Edit, type Heading, type ListStyle, type Range,
@@ -36,7 +36,7 @@ const selection = (view: EditorView): Range => {
 function cellsToAct(view: EditorView): Range[] {
   const held = view.state.selection.ranges.some((r) => !r.empty) ? heldCells(view) : []
   if (held.length > 0) return held
-  const own = blockContaining(view.state.selection.main.head, view.state.doc.toString())
+  const own = blockAtCaret(view.state.selection.main.head, view.state.doc.toString())
   return own ? [own.range] : []
 }
 

@@ -66,6 +66,14 @@ is how the code is put together.
   backspace between the two takes both; and Tab — or Shift-Tab — indents
   by a four-space-wide tab, every line of a selection at once. Colouring
   knows C, C++, Python, TypeScript, Rust, Java, Bash, Zsh and Wolfram.
+- **A single newline grows the cell.** Return at the end of a paragraph
+  (Shift+Return on the rendered page) leaves the cursor on a new line
+  under the words, and that line is the cell's while the cursor is on it:
+  the bracket runs down to it and is lit, the rendered page keeps the cell
+  open rather than drawing it with an empty line under it, the Style
+  button names it, and no insertion bar is up. A blank line — two newlines
+  in a row — still ends the cell, and the one blank line between two cells
+  is still the bar.
 - **Split a cell, merge two.** ⌃D cuts the cell the cursor is in, in two,
   at the cursor; ⌃M joins it to the one below (or, in the last cell, to the
   one above). Both work in the markdown and on the rendered page. A fence

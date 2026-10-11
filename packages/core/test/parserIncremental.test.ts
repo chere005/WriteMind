@@ -143,22 +143,31 @@ describe("sectionsFromCells, the outline from the parsed cells", () => {
 })
 
 import { arm, armIn } from "../src/cells/seams"
+import { growth } from "../src/cells/growth"
 import { armOld } from "./reference/armOld"
 
 describe("armIn, the bar a caret stands in", () => {
   it("answers as the old arm did, for every caret in random notes", () => {
     seed = 53
+    let grew = 0
     for (let i = 0; i < 600; i++) {
       const text = randomDoc(Math.floor(rnd() * 30))
       const blocks = positioned(text)
       const doc = linesOf(text)
       const standing = rnd() < 0.3 ? Math.floor(rnd() * (text.length + 1)) : null
       for (let caret = 0; caret <= text.length; caret++) {
-        const want = armOld({ location: caret, length: 0 }, text, standing)
+        // The one deliberate difference from the frozen answer (2026-10-10, "a single newline should expand the size of
+        // the cell to include the line the input cursor is on", growth.ts): the empty line a newline opened under a
+        // paragraph is that cell's, not a bar — unless a bar already stands exactly there, which stands as it always did.
+        const opened = growth(blocks, doc, { location: caret, length: 0 }) !== null && standing !== caret
+        if (opened) grew++
+        const want = opened ? null : armOld({ location: caret, length: 0 }, text, standing)
         expect(armIn({ location: caret, length: 0 }, doc, () => blocks, standing), `${JSON.stringify(text)} @${caret}`).toBe(want)
         expect(arm({ location: caret, length: 0 }, text, standing)).toBe(want)
       }
     }
+    // (The random notes do reach the rule, or the exception above would be a test that could not fail.)
+    expect(grew).toBeGreaterThan(0)
   })
 })
 

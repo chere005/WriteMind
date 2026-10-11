@@ -12,7 +12,7 @@ import { Annotation, StateEffect, StateField, type ChangeSet, type EditorState, 
 import { EditorView } from "@codemirror/view"
 import { isolateHistory } from "@codemirror/commands"
 import {
-  positioned, positionedUpdate, sectionsFromCells, type Hull, type PositionedBlock, type Range, type Section,
+  growth, positioned, positionedUpdate, sectionsFromCells, type Hull, type PositionedBlock, type Range, type Section,
 } from "@writemind/core"
 
 export interface Notebook {
@@ -82,6 +82,50 @@ export const itemOpenedField = StateField.define<number | null>({
     return head.empty && transaction.state.doc.lineAt(head.head).from === value ? value : null
   },
 })
+
+/**
+ * THE CELL A SINGLE NEWLINE GREW (core `growth`; Sean, 2026-10-10: "a single newline should expand the size of the cell to
+ * include the line the input cursor is on"): the paragraph above the empty line the caret is on, and that line. The cells'
+ * own ranges are the words (the file is read the same way whatever the caret does); this is the one place that says
+ * "while the caret is there the cell is that and one line more", and the brackets, the seams, the rendered page, the
+ * arrows and the Style button all ask it.
+ *
+ * It does not know about the bar: an armed bar is the cursor, and no cell has the caret then. A caller that can be armed
+ * (`armedField` is the seam layer's) asks only when it is not.
+ */
+export interface GrownCell {
+  /** Its place in `notebook(state).cells`. */
+  index: number
+  /** The cell, with its own range (the words). */
+  cell: PositionedBlock
+  /** The line it has taken, without its newline. */
+  line: Range
+}
+
+const grownAt = new WeakMap<EditorState, GrownCell | null>()
+
+export function grownCell(state: EditorState): GrownCell | null {
+  const cached = grownAt.get(state)
+  if (cached !== undefined) return cached
+  const selection = state.selection
+  let found: GrownCell | null = null
+  const cells = state.field(notebookField, false)?.cells
+  if (cells && selection.ranges.length === 1 && selection.main.empty) {
+    const grown = growth(cells, state.doc, { location: selection.main.head, length: 0 })
+    if (grown) found = { index: grown.index, cell: cells[grown.index]!, line: grown.line }
+  }
+  grownAt.set(state, found)
+  return found
+}
+
+/**
+ * Where a cell's LAST LINE is measured: its last character, or — for the cell a single newline grew — the line it has
+ * taken. `grown` is `grownCell(state)`, or null when the caller is armed.
+ */
+export function lastLineAt(cell: Range, grown: GrownCell | null, length: number): number {
+  if (grown && grown.cell.range.location === cell.location && grown.cell.range.length === cell.length) return grown.line.location
+  return Math.min(Math.max(cell.location, cell.location + cell.length - 1), length)
+}
 
 /** The cells' ranges, which is what every selection rule wants. */
 export const cellRanges = (state: EditorState): Range[] =>

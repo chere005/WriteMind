@@ -25,7 +25,7 @@ import { codeTypingKeys } from "./codeTyping"
 import { makesCellAfter } from "./dock"
 import { extraKeys } from "./extras"
 import { setHolding } from "./preview/hold"
-import { applyEdit, notebookField } from "./notebook"
+import { applyEdit, grownCell, notebookField } from "./notebook"
 import { armedField, openArmed, openCellAt, setArmedType } from "./seams"
 import { caretInEmptyCell } from "./textCells"
 import { backspaceMayOutdent } from "./windowed"
@@ -393,9 +393,10 @@ export const cellClipboardHandlers: { copy: ClipboardHandler; cut: ClipboardHand
     const held = heldOnes(view)
     // After the last held cell, or after the cell the caret is in.
     const caret = view.state.selection.main.head
+    // (On the empty line a single newline opened, the cell above, which has taken the line: core growth.ts.)
     const after = held.length > 0
       ? held[held.length - 1]!
-      : cells.find((r) => caret >= r.location && caret <= r.location + r.length)
+      : cells.find((r) => caret >= r.location && caret <= r.location + r.length) ?? grownCell(view.state)?.cell.range
     event.preventDefault()
     if (!after) {
       // Nothing to go after: an empty note takes the cells as they are.

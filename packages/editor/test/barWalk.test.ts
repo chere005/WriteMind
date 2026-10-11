@@ -197,7 +197,9 @@ describe("cells of empty lines", () => {
     const blank = notebook(state).cells.find((c) => c.block.kind === "blank")!
     expect(blank).toBeDefined()
     const toBlank = down(state)
-    expect(toBlank).toEqual({ kind: "arm", offset: blank.range.location, caret: 2 })
+    // (The caret waits AT the cell's first line: the line right under P is P's while the caret is on it — a single newline
+    // grows the cell, core growth.ts — so it can no longer read as the bar. It waited on that line before 2026-10-10.)
+    expect(toBlank).toEqual({ kind: "arm", offset: blank.range.location, caret: blank.range.location })
     expect(down(make(doc, 2), blank.range.location)).toMatchObject({ kind: "caret", at: blank.range.location })
     expect(down(make(doc, q - 1), q)).toMatchObject({ kind: "caret", at: q })
   })

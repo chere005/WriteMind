@@ -30,7 +30,7 @@ import {
   anchor as liveAnchor, between, cellAt, cellDepth, cellsOf, covers, end, firstCellFromBy, holdsSortedBy, sameRange,
   toggling, type PositionedBlock, type Range, type Section,
 } from "@writemind/core"
-import { notebook, selectedRanges } from "./notebook"
+import { grownCell, notebook, selectedRanges, type GrownCell } from "./notebook"
 import { foldField, insideHidden, toggleFold } from "./fold"
 import { moveHeldCells } from "./keys"
 import { armedField } from "./seams"
@@ -127,18 +127,24 @@ function brackets(view: EditorView): Bracket[] {
   // The cell the caret is in — at the very end of its words too, which is
   // where a caret sits after typing (the Mac's `block(containing:)`). Found by search: the cells are in order.
   let caretCell: Range | null = null
-  // (Not while a bar is the cursor: the caret is parked against the cell below a bar between two cells that touch,
-  // and that cell is not the one being typed in — the bar lights nothing.)
+  // The cell a single newline has grown (core growth.ts): the caret is on the empty line under its words, and the cell is
+  // lit and drawn down to that line. Not while a bar is the cursor, for the same reason as below.
+  let grown: GrownCell | null = null
+  // (Not while a bar is the cursor: the caret is parked against the cell below a bar between two cells that touch, and that
+  // cell is not the one being typed in — the bar lights nothing.)
   if (caret.empty && (view.state.field(armedField, false) ?? null) === null) {
     const last = firstCellFromBy(cells, caret.from + 1, cellRange) - 1
     const r = last >= 0 ? cells[last]!.range : null
     if (r && r.length > 0 && caret.from <= r.location + r.length) caretCell = r
+    grown = grownCell(view.state)
+    if (grown && caretCell === null) caretCell = grown.cell.range
   }
   const anySelection = selection.some((r) => r.length > 0)
 
-  const box = (r: Range): { top: number; bottom: number } | null => {
+  /** `through`: the line a single newline opened, which the bracket runs down to (its start); else the range's last line. */
+  const box = (r: Range, through: number | null = null): { top: number; bottom: number } | null => {
     const from = Math.min(r.location, doc.length)
-    const to = Math.min(Math.max(r.location, r.location + r.length - 1), doc.length)
+    const to = through ?? Math.min(Math.max(r.location, r.location + r.length - 1), doc.length)
     const pad = view.documentPadding.top
     const first = view.lineBlockAt(from)
     const last = view.lineBlockAt(to)
@@ -162,7 +168,10 @@ function brackets(view: EditorView): Bracket[] {
     if (stop < viewFrom || stop <= section.range.location) continue
     const r: Range = { location: section.range.location, length: stop - section.range.location }
     if (insideHidden(view.state, r)) continue
-    const where = box(r)
+    // (A section that ends on the cell a single newline grew ends on that line too: its bracket is outside the cell's.)
+    const takesLine = grown !== null && end(grown.cell.range) === section.contentEnd
+      && grown.line.location >= section.range.location && grown.line.location <= end(section.range)
+    const where = box(r, takesLine ? grown!.line.location : null)
     if (!where) continue
     const held = holdsSortedBy(r, cells, selection, cellRange)
     out.push({ key: `s:${section.key}`, depth: section.depth, ...where, selected: held, held, foldable: true,
@@ -175,7 +184,7 @@ function brackets(view: EditorView): Bracket[] {
     const cell = cells[i]!
     if (cell.range.location > viewTo) break
     if (!reaches(cell.range) || insideHidden(view.state, cell.range)) continue
-    const where = box(cell.range)
+    const where = box(cell.range, grown !== null && i === grown.index ? grown.line.location : null)
     if (!where) continue
     const held = holdsSortedBy(cell.range, cells, selection, cellRange)
     const lit = held || (!anySelection && caretCell !== null && sameRange(caretCell, cell.range))

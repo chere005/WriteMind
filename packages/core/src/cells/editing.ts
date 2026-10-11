@@ -12,9 +12,10 @@ import {
   clamped, edit, end, lineRange, range, rangeOfWord, replacing, substring,
   type Edit, type Range,
 } from "../text/range"
-import { positioned, todoItem, type PositionedBlock } from "../markdown/parser"
+import { linesOf, positioned, todoItem, type PositionedBlock } from "../markdown/parser"
 import { lineRangeCovering } from "../markdown/formatting"
 import { cellWordsStart, escapePlain } from "../markdown/plainText"
+import { growth } from "./growth"
 import { sectionContaining, sections } from "./outline"
 import { isMarkdownCell, isTextCell, keepingHalves, markerLength } from "./textCells"
 
@@ -121,6 +122,18 @@ export function blockContaining(character: number, text: string): PositionedBloc
   return ending.length ? ending[ending.length - 1]! : null
 }
 
+/**
+ * `blockContaining` for a CARET: the cell it is in, and — on the empty line a single newline opened under a paragraph —
+ * that paragraph, which has taken the line (`growth.ts`). Its range is the cell's own, the words, for a command to cut.
+ */
+export function blockAtCaret(caret: number, text: string): PositionedBlock | null {
+  const cell = blockContaining(caret, text)
+  if (cell) return cell
+  const cells = positioned(text)
+  const grown = growth(cells, linesOf(text), range(Math.min(Math.max(caret, 0), text.length), 0))
+  return grown ? cells[grown.index]! : null
+}
+
 /** A space, a tab, and the newline at a line boundary: what a break absorbs. */
 const isBlankChar = (character: string | undefined): boolean =>
   character === " " || character === "\t" || character === "\n"
@@ -182,7 +195,9 @@ export function mergeCells(text: string, selection: Range): Edit | null {
   if (cells.length === 0) return null
   let index = cells.findIndex((cell) =>
     (caret >= cell.range.location && caret < end(cell.range)) || caret === cell.range.location)
-  if (index < 0) index = cells.length - 1
+  // (On the empty line a single newline opened the caret is in the cell above it, which has taken the line: not in none,
+  // which would be the note's last two.)
+  if (index < 0) index = growth(cells, linesOf(text), range(caret, 0))?.index ?? cells.length - 1
   const pair = index + 1 < cells.length ? [index, index + 1] : [index - 1, index]
   const [firstIndex, secondIndex] = pair as [number, number]
   if (firstIndex < 0 || secondIndex >= cells.length) return null
@@ -218,7 +233,7 @@ export function expand(selection: Range, text: string): Range | null {
     && word.length > selection.length) {
     return word
   }
-  const cell = blockContaining(caret, text)?.range
+  const cell = blockAtCaret(caret, text)?.range
   if (cell && cell.length > selection.length
     && !(cell.location === selection.location && cell.length === selection.length)) {
     return cell
