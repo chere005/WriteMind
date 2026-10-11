@@ -263,14 +263,17 @@ describe("the feature list is true to the source", () => {
     expect(strip).toContain("onDoubleClick")
     expect(strip).toContain("sheet-close")
     expect(features("Pane tabs")).toContain("double-click renames, × closes")
-    // reading words: the inspector's Aa over a picked picture and the video box's Text (both only where there is a reader)
-    expect(read("apps/desktop/src/renderer/Inspector.tsx")).toContain("Read the words out of this picture")
-    expect(read("apps/desktop/src/renderer/Inspector.tsx")).toContain(">Aa<")
+    // reading words: the inspector's Read button (a scan-text icon, not the letters Aa) over a picked picture and over picked pen strokes, the
+    // video box's Text, and the Wacom sheet's Bring in ▸ As Text and box row Text (all only where there is a reader)
+    const inspector = read("apps/desktop/src/renderer/Inspector.tsx")
+    expect(inspector).toContain("Read the words out of this picture")
+    expect(inspector).toContain("Read the handwriting as words")
+    expect(inspector).toContain('"readtext"')
+    expect(read("apps/desktop/src/renderer/inspectorRules.ts")).toContain('only.kind === "stroke" && context.readsInk')
     expect(read("apps/desktop/src/renderer/CameraPane.tsx")).toContain("takeText()")
-    // ... and the Wacom sheet's: Bring in ▸ As Text (a choice beside Writing, which is still the graphics) and the box row's Text
     expect(read("apps/desktop/src/renderer/BringInMenu.tsx")).toContain('{ value: "text", label: "As Text" }')
     expect(read("apps/desktop/src/renderer/BoxActions.tsx")).toContain('data-box-action="text"')
-    expect(features("Read words")).toContain("Aa on a picked picture, Text in the video box, and As Text in the Wacom sheet's Bring in menu")
+    expect(features("Read words")).toContain("Read on a picked picture or picked pen handwriting, Text in the video box, and As Text on the Wacom sheet")
     // search: the command, the sidebar's field, Enter on a result
     expect(COMMANDS.find((one) => one.id === "searchNotes")?.label).toBe("Search Notes…")
     expect(features("Search notes")).toContain(shown("searchNotes", "win32")!)

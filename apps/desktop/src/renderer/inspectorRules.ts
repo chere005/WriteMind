@@ -117,8 +117,10 @@ export function inspectorName(items: CanvasItem[]): string {
 export interface PlanContext {
   /** The pick can go into the note (the page's, and the editor can take it): the dock control. */
   docks: boolean
-  /** The platform can read words out of a picture (capabilities): a picture's Aa. */
+  /** The platform can read words out of a picture (capabilities): a picture's Read button. */
   reads: boolean
+  /** ... and out of pen handwriting on the page: the Read button on picked strokes. */
+  readsInk?: boolean
   /** What `toggle` says Group would do for the pick. */
   grouping: "group" | "ungroup" | "nothing"
   /** A crop or a label is being edited: the destructive control stays out of the way. */
@@ -145,6 +147,8 @@ export function inspectorPlan(items: CanvasItem[], context: PlanContext): Inspec
   const tail: Control[] = context.editing ? ["duplicate"] : ["duplicate", "delete"]
   if (items.length > 1) {
     const groups: Control[][] = []
+    // Picked handwriting (strokes and nothing else) can be read as words: Read comes first.
+    if (context.readsInk && items.every((item) => item.kind === "stroke")) groups.push(["read"])
     if (context.grouping !== "nothing") groups.push(["group"])
     groups.push(["order"], tail)
     return { name, groups }
@@ -157,6 +161,7 @@ export function inspectorPlan(items: CanvasItem[], context: PlanContext): Inspec
   const words: Control[] = []
   if (only.kind === "shape") words.push("label")
   if (only.kind === "image") { words.push("crop"); if (context.reads) words.push("read") }
+  if (only.kind === "stroke" && context.readsInk) words.push("read")
   const groups: Control[][] = []
   if (look.length > 0) groups.push(look)
   if (only.kind === "connector") groups.push(["heads"])

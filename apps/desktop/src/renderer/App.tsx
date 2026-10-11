@@ -32,6 +32,7 @@ import { reloadFromDisk } from "./diskReload"
 import { forgetAll, historyOf, keepOnly as keepHistory, renameNote } from "./noteHistory"
 import type { UndoOutcome } from "../shared/undo"
 import { readPictureResult } from "./ocrClient"
+import { readInkLines } from "./inkReading"
 import { CameraPane, type Capture } from "./CameraPane"
 import { PaneDivider } from "./PaneDivider"
 import { TabBar } from "./TabBar"
@@ -793,6 +794,27 @@ export function App() {
     setReadNotice(text)
     if (text !== null && forMs > 0) readNoticeTimer.current = window.setTimeout(() => setReadNotice(null), forMs)
   }, [])
+  /**
+   * Words read off something on the page, into the note as a cell of their own just under it: in front of the first line that starts
+   * at or below `bottom` (the thing's bottom edge, in the pane's px), or at the caret when it is not known. The thing stays.
+   */
+  const putWordsUnder = useCallback((words: string[], bottom: number | null) => {
+    const editor = view
+    const text = textRef.current
+    let at = editor ? editor.state.selection.main.head : text.length
+    if (editor && bottom !== null) {
+      const y = bottom - editor.documentPadding.top
+      const block = editor.state.doc.length > 0 ? editor.lineBlockAtHeight(Math.max(0, y)) : null
+      at = insertionPointBelow(block ? { from: block.from, to: block.to, bottom: block.bottom } : null, y, editor.state.doc.length)
+    }
+    const opened = insertBlock(text, at)
+    const written = opened.markdown.slice(0, opened.caret) + words.join("\n")
+      + opened.markdown.slice(opened.caret)
+    change(written)
+    setDocument(written)
+    tellRead(words.length === 1 ? "Read 1 line into the note." : `Read ${words.length} lines into the note.`)
+  }, [change, setDocument, tellRead, view])
+
   const readPicture = useCallback(async (file: string, id: string) => {
     if (reading.current.has(id)) return
     // The result belongs to the note the picture is in: the reader takes a moment (the first read after launch
@@ -811,25 +833,33 @@ export function App() {
       tellRead(result.failed ? "The picture reader did not answer - try again." : "No text could be read in that picture.")
       return
     }
-    const editor = view
-    const text = textRef.current
     // Directly under the picture's bottom edge: in front of the first line that starts at or below it.
     const picture = drawingRef.current.items.find((item) => item.kind === "image" && item.image.id === id)
-    let at = editor ? editor.state.selection.main.head : text.length
-    if (editor && picture) {
-      const pane = currentPane(editor, lastPane)
-      const bottom = itemBounds(picture, pane)
-      const y = bottom.y + bottom.height - editor.documentPadding.top
-      const block = editor.state.doc.length > 0 ? editor.lineBlockAtHeight(Math.max(0, y)) : null
-      at = insertionPointBelow(block ? { from: block.from, to: block.to, bottom: block.bottom } : null, y, editor.state.doc.length)
-    }
-    const opened = insertBlock(text, at)
-    const written = opened.markdown.slice(0, opened.caret) + words.join("\n")
-      + opened.markdown.slice(opened.caret)
-    change(written)
-    setDocument(written)
-    tellRead(words.length === 1 ? "Read 1 line into the note." : `Read ${words.length} lines into the note.`)
-  }, [change, setDocument, tellRead, view])
+    const bottom = picture ? itemBounds(picture, currentPane(view, lastPane)) : null
+    putWordsUnder(words, bottom ? bottom.y + bottom.height : null)
+  }, [putWordsUnder, tellRead, view])
+
+  /**
+   * THE PEN'S OWN HANDWRITING, READ (Sean, 2026-10-10: "no ocr for the pen on top of rendered notepage"): the strokes picked on the
+   * drawing layer, as words, typed into the note just under the lowest of them. The strokes stay, as a read picture does.
+   */
+  const readInk = useCallback(async (items: CanvasItem[]) => {
+    const strokes = items.filter((item) => item.kind === "stroke")
+    if (strokes.length === 0) return
+    const key = `ink:${strokes.map((item) => (item.kind === "stroke" ? item.stroke.id : "")).join(",")}`
+    if (reading.current.has(key)) return
+    const note = openRef.current
+    const job = new AbortController()
+    reading.current.set(key, job)
+    tellRead("Reading...", 0)
+    const pane = currentPane(view, lastPane)
+    let lines: string[] | null
+    try { lines = await readInkLines(strokes, pane, job.signal) } finally { reading.current.delete(key) }
+    if (job.signal.aborted || openRef.current !== note) { tellRead(null); return }
+    if (lines === null) { tellRead("The reader did not answer - try again."); return }
+    if (lines.length === 0) { tellRead("No text could be read in that handwriting."); return }
+    putWordsUnder(lines, Math.max(...strokes.map((item) => { const frame = itemBounds(item, pane); return frame.y + frame.height })))
+  }, [putWordsUnder, tellRead, view])
 
   /** The words read out of a box on the camera's page, into the note as a cell of their own (no picture to put away). */
   const readCameraText = useCallback((words: string[]) => {
@@ -1676,6 +1706,7 @@ export function App() {
   const readOn = platform?.handwritingOCR === true
   const onReadPicture = useCallback((file: string, id: string) => { void readPicture(file, id) },
     [readPicture])
+  const onReadInk = useCallback((items: CanvasItem[]) => { void readInk(items) }, [readInk])
   const title = current ? current.split(/[\\/]/).pop() ?? "" : ""
 
   // WHAT THE PEN IS DOING, in words (modeChip.ts): the footer's chip and the page's. It reads the pen state the toolbar owns
@@ -1780,6 +1811,7 @@ export function App() {
                                    placing={placing} onPlaced={placed}
                                    scroller={view ? view.scrollDOM : null}
                                    onReadPicture={readOn ? onReadPicture : undefined}
+                                   onReadInk={readOn ? onReadInk : undefined}
                                    dock={dockHost} />}
               {/* Find and the link picker FLOAT over the page (docs/PLAN-bars-2026-10.md, P6): the note's top edge never moves. */}
               <div className="float-cards">

@@ -12,6 +12,8 @@ import type { CSSProperties } from "react"
 
 const PATHS = {
   edit: "<path d=\"M7.5 2.75H3.75a1.5 1.5 0 0 0-1.5 1.5v8a1.5 1.5 0 0 0 1.5 1.5h8a1.5 1.5 0 0 0 1.5-1.5V8.5\"/><path d=\"m6.75 9.25.5-2.25 5.25-5.25 1.75 1.75L9 8.75z\"/>",
+  // Read words (text recognition): the scan corners round three lines of text. Not "Aa": that is Font and Colour, and Label.
+  readtext: "<path d=\"M2.25 5.25v-1.5a1.5 1.5 0 0 1 1.5-1.5h1.5\"/><path d=\"M10.75 2.25h1.5a1.5 1.5 0 0 1 1.5 1.5v1.5\"/><path d=\"M13.75 10.75v1.5a1.5 1.5 0 0 1-1.5 1.5h-1.5\"/><path d=\"M5.25 13.75h-1.5a1.5 1.5 0 0 1-1.5-1.5v-1.5\"/><path d=\"M5 6.25h6M5 8.25h6M5 10.25h3.5\"/>",
   secup: "<path d=\"M3 2.75h10\"/><path d=\"M8 13.5V5.75\"/><path d=\"m4.75 9 3.25-3.25L11.25 9\"/>",
   secdown: "<path d=\"M3 13.25h10\"/><path d=\"M8 2.5v7.75\"/><path d=\"m4.75 7 3.25 3.25L11.25 7\"/>",
   sidebar: "<rect x=\"1.75\" y=\"3\" width=\"12.5\" height=\"10\" rx=\"1.5\"/><path d=\"M6 3v10\"/>",

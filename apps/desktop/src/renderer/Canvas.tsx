@@ -78,6 +78,8 @@ interface Props {
    * what the other one cannot do.
    */
   onReadPicture?(file: string, id: string): void
+  /** Read the picked pen handwriting as words (the inspector's Read button over strokes): only where there is a reader. */
+  onReadInk?(items: CanvasItem[]): void
   /** The note this layer is the drawing of: a picture made here (a crop) is an entry of THIS note, not of whichever is in front. */
   note?: string | null
   /** The app's undo for the drawing: shared, so a paste or a capture can be taken back too. */
@@ -293,7 +295,7 @@ let typingInCell: string | null = null
 
 export function Canvas({
   drawing, onChange, mode, colorHex, penWidth, placing, onPlaced, scroller, onSelectionChanged,
-  onReadPicture, history, dock, note,
+  onReadPicture, onReadInk, history, dock, note,
 }: Props) {
   const host = useRef<HTMLDivElement | null>(null)
   const canvas = useRef<HTMLCanvasElement | null>(null)
@@ -2118,7 +2120,7 @@ export function Canvas({
     }
   }
   const plan = inspectorPlan(pickedItems, {
-    docks, reads: onReadPicture !== undefined && onPage, grouping, editing: crop !== null || labelling !== null, compact: compactOn,
+    docks, reads: onReadPicture !== undefined && onPage, readsInk: onReadInk !== undefined && onPage, grouping, editing: crop !== null || labelling !== null, compact: compactOn,
   })
   /** Where the bar stands: over the object, under it when there is no room above, kept on the pane (inspectorRules.ts). */
   const barSpot = (() => {
@@ -2162,8 +2164,9 @@ export function Canvas({
                  if (only?.kind === "image") setCrop({ id: only.image.id, rect: { x: 0, y: 0, width: 1, height: 1 } })
                }}
                onRead={() => {
-                 const only = pickedItems[0]
+                 const only = pickedItems.length === 1 ? pickedItems[0] : null
                  if (only?.kind === "image") onReadPicture?.(only.image.file, only.image.id)
+                 else if (pickedItems.length > 0 && pickedItems.every((item) => item.kind === "stroke")) onReadInk?.(pickedItems)
                }}
                onDockPress={(event) => {
                  event.preventDefault(); event.stopPropagation()

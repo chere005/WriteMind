@@ -1,5 +1,5 @@
 /**
- * THE INSPECTOR over a picked object (Sean's wireframe, 2026-10-10): its name, colour, width, fill, words (Aa), order,
+ * THE INSPECTOR over a picked object (Sean's wireframe, 2026-10-10): its name, colour, width, fill, words (label, Read), order,
  * dock, copy and delete in ONE bar, in place of the six glyph discs and the old style bar. What it holds and where it
  * stands are `inspectorRules.ts`; this draws it and says what is wanted changed. It knows nothing of the drawing: the canvas
  * does the editing (and the undo).
@@ -140,7 +140,9 @@ export function Inspector(props: Props) {
         return button("label", null, only?.kind === "shape" && only.shape.kind === "text" ? "Edit the words" : "Label", <span className="wm-insp-aa">Aa</span>,
           { onClick: props.onLabel })
       case "read":
-        return button("read", null, "Read the words out of this picture", <span className="wm-insp-aa">Aa</span>, { onClick: props.onRead })
+        return button("read", "readtext", items.every((item) => item.kind === "stroke")
+          ? "Read the handwriting as words: they are typed into the note just under it" : "Read the words out of this picture", null,
+          { onClick: props.onRead })
       case "crop":
         return button("crop", "crop", "Crop this picture", null, { onClick: props.onCrop })
       case "order":

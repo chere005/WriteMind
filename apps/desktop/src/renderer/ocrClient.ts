@@ -5,7 +5,7 @@
  * reading together) is cut up so the page can paint between the pieces.
  *
  * THREE CALLERS, ONE ENGINE (and the main process reads a picture only once):
- *   - the Aa handle on a picture: `readPictureLines` - the markdown, with the
+ *   - the Read button on a picture (and on picked pen strokes, inkReading.ts): `readPictureLines` - the markdown, with the
  *     Mac's struck / ringed / arrow / checkbox / maths rules;
  *   - the flow-chart reader: `wordsForChart` - the words of a capture, boxed,
  *     so a node arrives labelled;

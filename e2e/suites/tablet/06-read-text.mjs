@@ -1,10 +1,9 @@
 // The tablet sheet's TEXT (Sean, 2026-10-10: "i don't see the OCR, it should work on wacom as well" and "bring in writing should
 // still be the graphics, text should be a new choice"): the writing on the sheet READ as words by the app's one reader, as a choice of
-// its own beside Writing (strokes) and As Drawing Cell. Block letters are written with the synthetic pen; the reader reads them.
-import fs from "node:fs"
-import path from "node:path"
-import { fileURLToPath } from "node:url"
+// its own beside Writing (strokes) and As Drawing Cell. A person's handwriting (e2e/lib/handwriting.mjs) is laid on the sheet as pen strokes;
+// the reader reads it.
 import { js, ok, finish, sleep, freshNote, saved, doc, setDoc, noGrab, pickTablet, tabletBox, penStroke, seg, pe, pickFromMenu, waitFor, shot } from "../../lib/harness.mjs"
+import { RED, traceHandwriting } from "../../lib/handwriting.mjs"
 
 await noGrab()
 const file = await freshNote({ video: true, rendered: false })
@@ -17,49 +16,17 @@ const X = t.x, Y = t.y
 // REAL HANDWRITING: the red felt-tip lines of the OCR fixture ("The quick brown fox / jumps over the lazy dog. / 0123456789",
 // apps/desktop/test/fixtures/ocr-handwriting.png), thinned to one-pixel lines and traced into pen strokes, then laid on the sheet as
 // the pen would have written them (a stick-letter drawing is not what the reader is for: it finds nothing in one).
-const png = fs.readFileSync(path.join(path.dirname(fileURLToPath(import.meta.url)), "../../../apps/desktop/test/fixtures/ocr-handwriting.png")).toString("base64")
-const made = await js(`(async (b64) => {
-  const img = new Image(); img.src = 'data:image/png;base64,' + b64; await img.decode()
-  const W = img.naturalWidth, Y0 = 350, Y1 = 570, H = Y1 - Y0
-  const c = document.createElement('canvas'); c.width = W; c.height = img.naturalHeight; const cx = c.getContext('2d'); cx.drawImage(img, 0, 0)
-  const px = cx.getImageData(0, Y0, W, H).data
-  const g = new Uint8Array(W * H)
-  for (let i = 0; i < W * H; i++) { const r = px[4 * i], gr = px[4 * i + 1], b = px[4 * i + 2]; g[i] = r > 170 && gr < 120 && b < 140 ? 1 : 0 }
-  const at = (x, y) => (x < 0 || y < 0 || x >= W || y >= H ? 0 : g[y * W + x])
-  for (let changed = true; changed;) {
-    changed = false
-    for (let pass = 0; pass < 2; pass++) {
-      const del = []
-      for (let y = 1; y < H - 1; y++) for (let x = 1; x < W - 1; x++) {
-        if (!g[y * W + x]) continue
-        const p2 = at(x, y - 1), p3 = at(x + 1, y - 1), p4 = at(x + 1, y), p5 = at(x + 1, y + 1), p6 = at(x, y + 1), p7 = at(x - 1, y + 1), p8 = at(x - 1, y), p9 = at(x - 1, y - 1)
-        const n = p2 + p3 + p4 + p5 + p6 + p7 + p8 + p9
-        if (n < 2 || n > 6) continue
-        const q = [p2, p3, p4, p5, p6, p7, p8, p9, p2]; let a = 0
-        for (let k = 0; k < 8; k++) if (q[k] === 0 && q[k + 1] === 1) a++
-        if (a !== 1) continue
-        if (pass === 0 ? (p2 * p4 * p6 !== 0 || p4 * p6 * p8 !== 0) : (p2 * p4 * p8 !== 0 || p2 * p6 * p8 !== 0)) continue
-        del.push(y * W + x)
-      }
-      for (const i of del) { g[i] = 0; changed = true }
-    }
-  }
-  const D = [[1, 0], [0, 1], [-1, 0], [0, -1], [1, 1], [-1, 1], [-1, -1], [1, -1]]
-  const seen = new Uint8Array(W * H), chains = []
-  const nb = (x, y) => D.map(([dx, dy]) => [x + dx, y + dy]).filter(([a, b]) => at(a, b) && !seen[b * W + a])
-  const ends = []; for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) if (at(x, y) && D.filter(([dx, dy]) => at(x + dx, y + dy)).length === 1) ends.push([x, y])
-  const walk = (sx, sy) => { const chain = [[sx, sy]]; seen[sy * W + sx] = 1; let [x, y] = [sx, sy]
-    for (;;) { const next = nb(x, y); if (!next.length) break; [x, y] = next[0]; seen[y * W + x] = 1; chain.push([x, y]) } return chain }
-  for (const [x, y] of ends) if (!seen[y * W + x]) chains.push(walk(x, y))
-  for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) if (at(x, y) && !seen[y * W + x]) chains.push(walk(x, y))
+const chains = await traceHandwriting(js)
+const made = await js(`((chains) => {
   const k = 1.2, ox = 60, oy = 40
-  const strokes = chains.filter((ch) => ch.length >= 6).map((ch) => {
-    const pts = ch.filter((_, i) => i % 3 === 0 || i === ch.length - 1)
-    return { colorHex: '#2D7DD2', width: 6, points: pts.map(([x, y]) => ({ x: (ox + x * k) / 1000, y: (oy + y * k) / (1000 / window.__wmSheet.aspect) })), pressures: pts.map((_, i) => 0.4 + 0.3 * (i / pts.length)) }
-  })
+  const strokes = chains.map((ch) => ({
+    colorHex: '#2D7DD2', width: 6,
+    points: ch.map(([x, y]) => ({ x: (ox + x * k) / 1000, y: (oy + (y - ${RED.top}) * k) / (1000 / window.__wmSheet.aspect) })),
+    pressures: ch.map((_, i) => 0.4 + 0.3 * (i / ch.length)),
+  }))
   window.__wmSheet.replace(strokes)
   return strokes.length
-})(${JSON.stringify(png)})`)
+})(${JSON.stringify(chains)})`)
 console.log("handwriting strokes laid on the sheet:", made)
 ok("the handwriting is on the sheet as pen strokes", made > 20, String(made))
 await sleep(300)

@@ -75,7 +75,7 @@ export type SheetTake =
  * found: the box is a fraction of the sheet, the sheet stands for a page of
  * the learned shape, and the capture is placed where it was on it. WRITING
  * brings the strokes themselves (pressure and all); PAGE brings the sheet as a
- * picture, which the "Aa" reader can read words out of. Either way the
+ * picture, which the Read button can read words out of. Either way the
  * flow-chart reader looks at a black-on-white raster of the same ink.
  *
  * `box` is the dashed box in FRACTIONS of the sheet (or null for all of it),

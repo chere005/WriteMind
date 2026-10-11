@@ -131,7 +131,16 @@ describe("which controls a pick has", () => {
     expect(inspectorName([stroke])).toBe("Stroke")
   })
 
-  it("a picture: crop and Aa (read it) where the platform can read, order, dock, copy, delete; no colour", () => {
+  it("picked pen handwriting can be read as words (Read) where the platform can read: one stroke, or many strokes and nothing else", () => {
+    const hand = { readsInk: true }
+    expect(flat([stroke], hand)).toEqual(["colour", "width", "read", "order", "dock", "duplicate", "delete"])
+    expect(flat([stroke, stroke], hand)).toEqual(["read", "group", "order", "duplicate", "delete"])
+    // no reader, or ink mixed with anything else: no Read
+    expect(flat([stroke, stroke], { readsInk: false })).toEqual(["group", "order", "duplicate", "delete"])
+    expect(flat([stroke, shape("rectangle")], hand)).toEqual(["group", "order", "duplicate", "delete"])
+  })
+
+  it("a picture: crop and Read (the words in it) where the platform can read, order, dock, copy, delete; no colour", () => {
     expect(flat([picture])).toEqual(["crop", "read", "order", "dock", "duplicate", "delete"])
     expect(flat([picture], { reads: false })).toEqual(["crop", "order", "dock", "duplicate", "delete"])
     expect(inspectorName([picture])).toBe("Picture")

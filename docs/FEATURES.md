@@ -168,8 +168,11 @@ is how the code is put together.
   writing inside it, or the picture — squared up and placed where it was on
   the page.
 - **The words in a picture, into the note.** Select a picture — a pasted
-  screenshot, a captured page, a chunk of writing — and the read button under
-  it recognises the text and puts it into the note just below the picture.
+  screenshot, a captured page, a chunk of writing — and the **Read** button
+  (a scan-text icon) in its bar recognises the text and puts it into the note
+  just below the picture. The pen's own handwriting on the page reads the same
+  way: pick the strokes (a marquee) and Read types the words into the note just
+  under the lowest of them; the strokes stay.
   English and Japanese both, kana and numbers included: a Japanese-first
   reading is tried and kept when it finds any, so an English page keeps the
   accuracy an English-first reading gives it. What comes back is markdown —
@@ -299,7 +302,7 @@ is how the code is put together.
   things you can handle — drag one to move it. A picked one has eight
   resize handles on its outline and a rotate dot above it, and ONE bar over
   it (below it when there is no room above) with its name, colour, width,
-  fill, Aa, order, dock, copy and delete; a small one has a single pill with
+  fill, label, order, dock, copy and delete; a small one has a single pill with
   turn and resize under it. A corner scales it about the opposite corner, an
   edge of a node or a text box stretches that one way, and Delete acts on a
   click, never on a press you let go of elsewhere. With the pen **down** it draws, and
