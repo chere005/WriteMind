@@ -282,7 +282,7 @@ export function armIn(caret: Range, doc: LineSource, cells: () => readonly Posit
   // And only the first and last blank line of a run separate two cells (`structuralLines`).
   if (isBlankLine(doc, here.number - 1) && isBlankLine(doc, here.number + 1)) return null
   const blocks = cells()
-  // And the empty line a single newline opened under a paragraph is that cell's (growth.ts), not the bar.
+  // And the empty line a single newline opened under a cell is that cell's (growth.ts), not the bar.
   if (growth(blocks, doc, caret) !== null) return null
   // And a blank line INSIDE a cell is not a space between two: a fenced
   // block is the one cell that can hold an empty line of its own.

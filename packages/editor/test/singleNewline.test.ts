@@ -76,8 +76,11 @@ describe("the readers that ask for the cell the caret is in", () => {
     expect(cellKindAt(make("hello\n", 6))).toEqual({ kind: "text" })
     const marked = "<!-- markdown -->\nsome **words**\n"
     expect(cellKindAt(make(marked, marked.length))).toEqual({ kind: "markdown" })
-    // (Under a heading the line is nobody's.)
-    expect(cellKindAt(make("# Title\n", 8))).toBeNull()
+    // CHANGED 2026-10-11 (Sean: "a single newline grows all those contents"): under a heading the line used to be nobody's
+    // (the button had nothing to name); it is the heading's now, as it is every kind's but a picture's.
+    expect(cellKindAt(make("# Title\n", 8))).toEqual({ kind: "heading", level: 1 })
+    expect(cellKindAt(make("- one\n", 6))).toEqual({ kind: "list", style: "dots" })
+    expect(cellKindAt(make("```\nx\n```\n", 10))).toEqual({ kind: "code" })
   })
 })
 

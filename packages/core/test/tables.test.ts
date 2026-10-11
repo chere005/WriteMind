@@ -258,12 +258,13 @@ describe("Return in a table", () => {
     expect(after.split("\n")).toEqual(["| Key | Does |", "|---|---|", "|  |  |", "| Ctrl+B | bold |"])
   })
 
-  it("on an empty last row, ends the table: the row goes and the caret lands after a blank line", () => {
+  // CHANGED 2026-10-11 (Sean: "the second newline should make the cursor horizontal with the +, not start the next cell"):
+  // an empty last row used to end the table with the row gone and the caret on an empty line below it. That Return is
+  // the closing rule's now (cells/newline.ts: the row goes and the bar under the table is the cursor), asked ahead of this
+  // one, so a row has nothing to say about it.
+  it("on an empty last row is not a row's business: the closing rule ends the table (newline.ts)", () => {
     const withEmpty = source + "\n|  |  |"
-    const step = tableReturn(withEmpty, withEmpty.length - 3)!
-    const after = withEmpty.slice(0, step.change!.from) + step.change!.insert + withEmpty.slice(step.change!.to)
-    expect(after).toBe(source + "\n\n")
-    expect(step.anchor).toBe(after.length)
+    expect(tableReturn(withEmpty, withEmpty.length - 3)).toBeNull()
   })
 
   it("leaves Return at the very start of the header alone (room above the table)", () => {

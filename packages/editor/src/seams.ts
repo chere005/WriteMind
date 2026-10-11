@@ -15,14 +15,14 @@ import {
   EditorSelection, Prec, StateEffect, StateField, type EditorState, type Extension, type Transaction,
 } from "@codemirror/state"
 import { isolateHistory } from "@codemirror/commands"
-import { Decoration, EditorView, ViewPlugin, keymap, type ViewUpdate } from "@codemirror/view"
+import { Decoration, EditorView, ViewPlugin, keymap, type Command, type ViewUpdate } from "@codemirror/view"
 import {
-  between, end, firstCellFromBy, openCell, PREVIEW_BLOCK_GAP, seamAt, seams, armIn, type CellBox, type CellKind,
+  between, closingReturn, end, firstCellFromBy, openCell, PREVIEW_BLOCK_GAP, seamAt, seams, armIn, type CellBox, type CellKind,
   type PositionedBlock, type Range, type Seam,
 } from "@writemind/core"
-import { barCaret, sameLineOnScreen, shownBeyond, sideMove, verticalMove, type BarMove } from "./barWalk"
+import { barCaret, sameLineOnScreen, seamBeneath, shownBeyond, sideMove, verticalMove, type BarMove } from "./barWalk"
 import { insideHidden, revealAt } from "./fold"
-import { setHolding } from "./preview/hold"
+import { holdingField, setHolding } from "./preview/hold"
 import { cellWritten, grownCell, itemOpened, lastLineAt, notebook, type GrownCell } from "./notebook"
 import { gapAt } from "./apart"
 import { renderedField } from "./rendered"
@@ -676,6 +676,26 @@ const typingAtTheBar = EditorView.inputHandler.of((view, _from, _to, text) => {
 })
 
 /**
+ * A BAR WITH NOWHERE FOR THE BROWSER'S CARET: the bar under the last cell of a note that does not end with a newline, when that
+ * cell is DRAWN (the rendered page's blocks, a typeset maths cell), has no line after it to hold the caret — the page's content
+ * is a block widget and nothing else, and the browser keeps no selection in it. A key typed then reaches nobody: no input event
+ * is made, the input handler above is never asked, and the bar stays up unanswered (found 2026-10-11: type a word on the
+ * rendered page of a new note, Return, Return, and the next character went nowhere; an arrow's bar did the same). So the key is
+ * heard here instead, where it is still a key: it opens the cell with its character in it, as typing at the bar does anywhere.
+ */
+const typingWithNowhereToType = EditorView.domEventHandlers({
+  keydown(event, view) {
+    if (event.ctrlKey || event.metaKey || event.altKey || event.isComposing) return false
+    if ([...event.key].length !== 1) return false
+    if ((view.state.field(armedField, false) ?? null) === null) return false
+    const selection = (view.root as Document).getSelection?.()
+    if (selection && selection.rangeCount > 0 && selection.anchorNode && view.contentDOM.contains(selection.anchorNode)) return false
+    event.preventDefault()
+    return openArmed(view, event.key)
+  },
+})
+
+/**
  * Return opens an empty cell at the bar, and Escape puts the bar out with
  * the note untouched. Every other key just goes about its business — the
  * caret leaving the blank line is what takes the bar back.
@@ -694,6 +714,57 @@ const barKeys = keymap.of([
     },
   },
 ])
+
+// MARK: - The second Return arms the bar (core newline.ts has the rule)
+
+/**
+ * RETURN ON THE LINE A NEWLINE GREW (Sean, 2026-10-11: "the second newline should make the cursor horizontal with the +, not
+ * start the next cell"): the first Return at the end of a cell leaves the caret on a new line that is the cell's (core
+ * growth.ts; on the rendered page too), and this one ends the cell. The grown line goes with its newline — the document keeps
+ * exactly the blank line that separates the cell from what follows, none at the end of the note — and the bar under the cell
+ * is the cursor, the caret waiting where an arrow would have left it (`barCaret`). Typing opens the next cell there; the +
+ * says its kind. The line goes in ONE change that is an undo step of its own (the arming after it is a selection, which the
+ * history does not keep), so one Undo gives the grown line back with the caret on it and the next takes the newline before it
+ * away. Beside a picture or an ink cell, which has no line to grow, the bar goes on that side.
+ *
+ * It declines wherever Return is somebody else's: a selection, several carets, cells held, a bar already up (that Return
+ * opens an empty cell, `barKeys`), a note that cannot be written to.
+ */
+export const returnClosesTheCell: Command = (view) => {
+  const state = view.state
+  const main = state.selection.main
+  if (state.readOnly || state.selection.ranges.length !== 1 || !main.empty) return false
+  if ((state.field(armedField, false) ?? null) !== null || state.field(holdingField, false)) return false
+  const closed = closingReturn(notebook(state).cells, state.doc, { location: main.head, length: 0 })
+  if (!closed) return false
+  // The column the caret is at rides with the bar, as an arrow's does: Up from here goes back to the end of the cell, and Down into
+  // the cell below at that column (measured now, where the cell's end is: the line that goes is under it).
+  const cellEnd = end(notebook(state).cells[closed.index]!.range)
+  const goal = closed.below ? view.moveVertically?.(EditorSelection.cursor(cellEnd), true).goalColumn : undefined
+  if (closed.remove) {
+    // The line goes: the one change, its own undo step. Not typing: CodeMirror joins typing that comes within half a second of the
+    // edit beside it, and the Return before this one (the newline it takes back) would have been undone with it.
+    view.dispatch({
+      changes: { from: closed.remove.location, to: end(closed.remove) },
+      selection: EditorSelection.cursor(closed.remove.location),
+      userEvent: "input.newline",
+      annotations: isolateHistory.of("full"),
+    })
+  }
+  // The bar, asked of the note as it is now (the cells before the line are where they were): under the cell, or above it.
+  const after = notebook(view.state).cells[closed.index]
+  if (!after) return true
+  const offset = closed.below ? seamBeneath(view.state, closed.index) : after.range.location
+  const caret = barCaret(view.state, offset)
+  view.dispatch({
+    selection: EditorSelection.create([EditorSelection.cursor(caret, 0, undefined, goal)]),
+    // The bar is drawn just past the caret's line (under the last cell, it is the page's last few pixels): room for it. Escape gives
+    // the caret back at the end of the cell, as it does after an arrow.
+    effects: [armSeam.of(offset), setBarFrom.of(closed.below ? end(after.range) : null), EditorView.scrollIntoView(caret, { yMargin: 24 })],
+    userEvent: "select",
+  })
+  return true
+}
 
 // MARK: - The arrows on the markdown side (barWalk.ts has the rules)
 
@@ -834,12 +905,15 @@ export const seamExtensions = (onPlusPressed: (view: EditorView, seam: Seam) => 
   // hand-set class and put the caret back on screen beside the bar.
   EditorView.editorAttributes.compute([armedField], (state) =>
     (state.field(armedField, false) ?? null) !== null ? { class: "wm-armed" } : ({} as Record<string, string>)),
+  // Ahead of the table's Return and the rendered page's, which are at the highest precedence too (and come after these).
+  Prec.highest(keymap.of([{ key: "Enter", run: returnClosesTheCell }])),
   Prec.high(barKeys),
   Prec.high(arrowKeys),
   Prec.high(pasteAtTheBar),
   hideCaret,
   pointerCursors,
   seamLayer(onPlusPressed),
+  typingWithNowhereToType,
   // A bar that is the cursor LIGHTS NOTHING: the cell the caret is parked
   // against must not be drawn as the cell being typed in.
   EditorView.decorations.compute([armedField, "selection", "doc"], (state) => {

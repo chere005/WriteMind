@@ -123,8 +123,8 @@ export function blockContaining(character: number, text: string): PositionedBloc
 }
 
 /**
- * `blockContaining` for a CARET: the cell it is in, and — on the empty line a single newline opened under a paragraph —
- * that paragraph, which has taken the line (`growth.ts`). Its range is the cell's own, the words, for a command to cut.
+ * `blockContaining` for a CARET: the cell it is in, and — on the empty line a single newline opened under a cell —
+ * that cell, which has taken the line (`growth.ts`). Its range is the cell's own, the words, for a command to cut.
  */
 export function blockAtCaret(caret: number, text: string): PositionedBlock | null {
   const cell = blockContaining(caret, text)

@@ -424,12 +424,16 @@ export function cellStatesSparse<T>(cells: readonly T[], of: (cell: T) => Range,
 
 /**
  * Return in an open block. Null means "an ordinary newline will do" — a code
- * cell, a line that is not a list item, or a caret in no block at all.
+ * cell, a line that is not a list item, the END of a paragraph, a heading or a
+ * rule (the cell grows to the new line and the next Return ends it with the bar,
+ * growth.ts and newline.ts), or a caret in no block at all.
  *
- * A list, a to-do list or a quote carries on (and an empty item ends it, the
- * rest of the note after the caret becoming the next block); anywhere else
- * Return starts the next block — what is behind the caret stays, what is in
- * front of it becomes the next block. Only the block's own range is rewritten.
+ * A list, a to-do list or a quote carries on (and an empty item in the middle
+ * of one ends it, the rest of the note after the caret becoming the next block;
+ * the empty LAST item is `closingReturn`'s: the bar goes under the list);
+ * anywhere else Return starts the next block — what is behind the caret stays,
+ * what is in front of it becomes the next block. Only the block's own range is
+ * rewritten.
  */
 export function returnInBlock(markdown: string, selection: Range): Edit | null {
   const caret = Math.min(Math.max(selection.location, 0), markdown.length)
@@ -479,6 +483,13 @@ export function returnInBlock(markdown: string, selection: Range): Edit | null {
   const text = substring(markdown, at)
   const from = Math.max(selection.location, at.location) - at.location
   const to = Math.min(end(selection), end(at)) - at.location
+  // AT THE END OF A PARAGRAPH, HEADING OR RULE Return is the single newline the markdown side writes (Sean, 2026-10-11:
+  // "the rendered page's Return is the same single newline"): the caret lands on a new line that is the cell's
+  // (growth.ts), and the next Return ends the cell with the bar (newline.ts) — it no longer starts an empty block. Null:
+  // an ordinary newline will do. (Not a marker line's start, which pushes the cell down, and not a selection.)
+  const marked = cell.block.kind === "paragraph" ? cell.block.head ?? 0 : 0
+  if ((cell.block.kind === "paragraph" || cell.block.kind === "heading" || cell.block.kind === "rule")
+    && selection.length === 0 && from > marked && text.slice(from).trim().length === 0) return null
   let head = text.slice(0, from)
   // The spaces a break absorbs: the new block does not begin with an indent.
   let tail = text.slice(to).replace(/^[ \t]+/, "")

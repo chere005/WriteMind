@@ -176,7 +176,7 @@ const isArmed = (state: EditorState): boolean => (state.field(armedField, false)
 function openCells(state: EditorState, cells: readonly PositionedBlock[]): Map<number, CellState> {
   if (state.field(awayField, false)) return new Map()
   const holding = state.field(holdingField, false) ?? false
-  // The caret on the empty line a single newline opened is in the paragraph above, which has taken the line (core
+  // The caret on the empty line a single newline opened is in the cell above, which has taken the line (core
   // growth.ts): that cell stays open, the caret at its end, instead of being drawn with a ghost line under it.
   const grown = isArmed(state) ? null : grownCell(state)
   const selection = grown ? [{ location: end(grown.cell.range), length: 0 }] : selectionOf(state)

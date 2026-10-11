@@ -65,13 +65,35 @@ describe("a single newline grows the cell the caret is under", () => {
     expect(grownBy("hello\n|", (caret) => range(caret, 0))).not.toBeNull()
   })
 
-  it("is only for a paragraph: a heading, a list, a quote, code and a picture stay as they are", () => {
-    for (const marked of ["# Title\n|", "- a\n|", "1. a\n|", "> q\n|", "```\nx\n```\n|", "![](a.png)\n|"]) {
-      expect(grownBy(marked), JSON.stringify(marked)).toBeNull()
+  // CHANGED 2026-10-11 (Sean: "a single newline grows all those contents"): it was a paragraph's alone, and a heading, a list,
+  // a quote, a fenced block and a table kept the line out of the cell. Every kind that is typed in takes it now; only a
+  // picture or an ink cell, which is drawn and never typed in, does not.
+  it("is every kind's: a heading, a rule, a list, a quote, a fenced block, a table", () => {
+    const rows = [
+      ["# Title\n|", 0], ["---\n|", 0], ["- a\n|", 0], ["* a\n|", 0], ["1. a\n|", 0], ["- [ ] a\n|", 0], ["> q\n|", 0],
+      ["```\nx\n```\n|", 0], ["```wl\nx^2\n```\n|", 0], ["```eval python\n1\n```\n|", 0], ["a\n\n# Title\n|\n\nb", 1],
+    ] as const
+    for (const [marked, index] of rows) {
+      const { text, caret } = note(marked)
+      expect(grownBy(marked), JSON.stringify(marked)).toEqual({ index, line: range(caret, 0) })
+      expect(text.length).toBeGreaterThan(0)
     }
     // (A table's own pipes are the caret's mark in the notes above, so this one says where it is.)
     const table = "| a | b |\n|---|---|\n"
-    expect(growth(positioned(table), linesOf(table), range(table.length, 0))).toBeNull()
+    expect(growth(positioned(table), linesOf(table), range(table.length, 0))).toEqual({ index: 0, line: range(table.length, 0) })
+  })
+
+  it("is not a picture's or an ink cell's, nor the line under a fence that is not closed", () => {
+    for (const marked of ["![](a.png)\n|", "![ink](snapshots/ink-1f6f4f0e-0000-4000-8000-000000000000.svg)\n|", "```\nx\n|"]) {
+      expect(grownBy(marked), JSON.stringify(marked)).toBeNull()
+    }
+  })
+
+  it("is the same lone-blank-line rule for every kind: between two cells it is the bar's", () => {
+    for (const marked of ["# Title\n|\nbody", "- a\n|\nbody", "> q\n|\nbody", "```\nx\n```\n|\nbody"]) {
+      expect(grownBy(marked), JSON.stringify(marked)).toBeNull()
+    }
+    expect(grownBy("# Title\n|\n\nbody")).toEqual({ index: 0, line: range(8, 0) })
   })
 
   it("is nothing in a note with no cells", () => {

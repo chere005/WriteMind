@@ -133,7 +133,10 @@ for (const rendered of [false, true]) {
     ok("Tab from the last cell of a row goes to the next row's first cell", JSON.stringify(await around(4)).includes("|"), JSON.stringify(await around(4)))
     const before = await doc()
     await key("Enter"); await sleep(250)
-    ok("Enter adds a row under the caret's row, the caret in it", (await doc()).split("\n").length > before.split("\n").length, JSON.stringify(await doc()))
+    // (The caret is on the table's empty last row here. CHANGED 2026-10-11, Sean: "the second newline should make the cursor
+    // horizontal with the +, not start the next cell": Enter there takes the row away and the bar under the table is the cursor; it
+    // used to leave a blank line and the caret on a new line below. Enter in a row with words adds a row: cells/15-tables.)
+    ok("Enter on the empty last row ends the table: the row goes, the bar is under it", before.includes("|  |  |") && !(await doc()).includes("|  |  |") && (await armed()), JSON.stringify([await doc(), await armed()]))
     await undo()
     ok("and ONE Ctrl+Z takes that row back", (await doc()) === before, JSON.stringify(await doc()))
   })

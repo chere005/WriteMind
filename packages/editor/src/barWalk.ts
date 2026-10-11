@@ -70,7 +70,7 @@ export function lastBlock(state: EditorState, edge: number, up: boolean): boolea
 
 /**
  * The cell on show the caret at `head` is in (its last line's end counts), with its index; null on a line between. On the
- * empty line a single newline opened (core growth.ts) it is the paragraph above, which has taken that line: its range
+ * empty line a single newline opened (core growth.ts) it is the cell above, which has taken that line: its range
  * runs down to it, so the caret IS on the cell's last line, and Down there arms the bar under the cell.
  */
 export function cellAtCaret(state: EditorState, head: number): { cell: PositionedBlock; index: number } | null {

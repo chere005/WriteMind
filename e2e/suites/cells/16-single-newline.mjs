@@ -1,9 +1,11 @@
 // A SINGLE NEWLINE GROWS THE CELL (Sean, 2026-10-10: "a single newline should expand the size of the cell to include the line the
 // input cursor is on"; core growth.ts). Return at the end of a paragraph leaves the caret on a new, empty line straight under the
 // words. That line is the cell's: its bracket runs down to it and is lit, the rendered page keeps the cell open with no ghost line
-// under it, the Style button names it, and the bar does not read the line as a seam. A BLANK line (two newlines in a row) still
-// separates cells. The single newline is Return on the markdown side and Shift+Return on the rendered page (where Return starts the
-// next block). Real keys and the real mouse, both pages.
+// under it, the Style button names it, and the bar does not read the line as a seam. A BLANK line (two newlines in a row, Shift+Return
+// twice) still separates cells. CHANGED 2026-10-11 (Sean: "the rendered page's Return is the same single newline"): the single newline
+// is Return on BOTH pages (the rendered page's Return used to start the next block; Shift+Return was its single newline and still is
+// one), and every kind of cell grows, not a paragraph's alone (cells/20 and 21 press it for every kind). Real keys and the real mouse,
+// both pages.
 import { ok, test, finish, js, sleep, freshNote, setDoc, doc, sel, key, click, hover, focus, setSel, setRendered, armed, lineBoxes, lineTexts, typeText, shot, menuItem, menuClick } from "../../lib/harness.mjs"
 
 await freshNote()
@@ -20,8 +22,8 @@ const lines = (b) => Math.round(b.h / LINE)
 for (const rendered of [false, true]) {
   const side = rendered ? "rendered page" : "markdown side"
   await setRendered(rendered)
-  // One newline: Return on the markdown side, Shift+Return on the rendered page (its Return starts the next block).
-  const newline = () => key("Enter", rendered ? { shift: true } : {})
+  // One newline: Return, on both pages.
+  const newline = () => key("Enter")
 
   await test(`${side}: one newline at the end of the only cell: the cell, its bracket and its light take the line the caret is on`, async () => {
     await start("hello", 5)
@@ -77,13 +79,26 @@ for (const rendered of [false, true]) {
     ok("and the cell is one line again", home.length === 2 && home[0].lit && lines(home[0]) === 1, JSON.stringify(home))
   })
 
-  await test(`${side}: a blank line still separates: the second newline makes the next cell and the first goes back to its words`, async () => {
+  // CHANGED 2026-10-11 (Sean: "the second newline should make the cursor horizontal with the +, not start the next cell"): the second
+  // Return used to leave a blank line and the caret on the line after it (the next cell, empty); it is the bar now (cells/20, 21 press
+  // it for every kind). A blank line is still two newlines in a row: Shift+Return twice.
+  await test(`${side}: a blank line still separates: two single newlines make one, and what is typed after it is a cell of its own`, async () => {
     await start("hello", 5)
     await newline(); await sleep(200)
-    await key("Enter"); await sleep(300)
-    ok("two newlines in a row: a blank line between hello and the caret", (await doc()) === "hello\n\n" && (await sel())[0] === 7, JSON.stringify([await doc(), await sel()]))
+    await key("Enter", { shift: true }); await sleep(300)
+    ok("two newlines in a row: a blank line between hello and the caret", (await doc()) === "hello\n\n" && (await sel())[0] === 7 && !(await armed()), JSON.stringify([await doc(), await sel(), await armed()]))
     const apart = await cellBrackets()
     ok("hello is one line again, not lit: the caret is not in it", apart.length === 1 && lines(apart[0]) === 1 && !apart[0].lit, JSON.stringify(apart))
+    await typeText("x"); await sleep(250)
+    const two = await cellBrackets()
+    ok("what is typed is a cell of its own, lit", (await doc()) === "hello\n\nx" && two.length === 2 && !two[0].lit && two[1].lit, JSON.stringify([await doc(), two]))
+  })
+
+  await test(`${side}: the second Return arms the bar; what is typed there is a cell of its own, lit`, async () => {
+    await start("hello", 5)
+    await newline(); await sleep(200)
+    await newline(); await sleep(300)
+    ok("the grown line is gone, the bar is up", (await doc()) === "hello" && (await armed()), JSON.stringify([await doc(), await armed()]))
     await typeText("x"); await sleep(250)
     const two = await cellBrackets()
     ok("what is typed is a cell of its own, lit", (await doc()) === "hello\n\nx" && two.length === 2 && !two[0].lit && two[1].lit, JSON.stringify([await doc(), two]))
@@ -177,11 +192,15 @@ for (const rendered of [false, true]) {
     ok("the Style button says Markdown", (await label()) === "Markdown", String(await label()))
   })
 
-  await test(`${side}: a heading, a list, a quote and code are not grown: the line under them is not theirs`, async () => {
+  // CHANGED 2026-10-11 (Sean: "a single newline grows all those contents"): the line under a heading, a list, a quote and a fence was
+  // nobody's (unlit, the Style button had nothing to name); it is the cell's now, like a paragraph's.
+  await test(`${side}: a heading, a list, a quote and code are grown too: the empty line under them is theirs`, async () => {
     for (const [text, name] of [["# Title", "heading"], ["- item", "list"], ["> quote", "quote"], ["```\ncode\n```", "code"]]) {
+      await start(text, text.length)
+      const before = await cellBrackets()
       await start(text + "\n", text.length + 1)
       const b = await cellBrackets()
-      ok(`under a ${name} the caret is in no cell: it takes the line for nothing and lights nothing`, b.length === 1 && !b[0].lit, JSON.stringify([text, b]))
+      ok(`under a ${name} the caret is in the cell: it takes the line and is lit, taller`, b.length === 1 && b[0].lit && b[0].h > before[0].h + 8, JSON.stringify([text, before, b]))
     }
   })
 

@@ -331,7 +331,7 @@ const vertical = (down: boolean): Command => (view) => {
   const runs = touchingRuns(cells, (i) => staysClosed(all[i]!.block) || standsAlone(all[i]!.block))
   const found = all.findIndex((cell) => cell.range.length > 0 && main.head >= cell.range.location
     && main.head <= end(cell.range))
-  // On the empty line a single newline opened (core growth.ts) the caret is in the paragraph above, and ON ITS LAST LINE:
+  // On the empty line a single newline opened (core growth.ts) the caret is in the cell above, and ON ITS LAST LINE:
   // Down there arms the bar under the cell, as it does from the end of any cell.
   const grown = found < 0 ? grownCell(state) : null
   const index = grown ? grown.index : found

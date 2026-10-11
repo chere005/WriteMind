@@ -41,7 +41,7 @@ import {
   INLINE_MATH_CSS, firstCellFromBy, inlineSpans, isMathFence, isTextCell, mathExpressionInCode, mathmlFor, mathsCellSource,
   positioned, type InlineSpan, type MathDisplay, type MathNode, type PositionedBlock,
 } from "@writemind/core"
-import { notebook, notebookField } from "./notebook"
+import { grownCell, notebook, notebookField } from "./notebook"
 import { armedField } from "./seams"
 
 export const MATHML_NS = "http://www.w3.org/1998/Math/MathML"
@@ -483,11 +483,16 @@ function candidatesOf(state: EditorState): TypesetBlock[] {
 }
 
 /**
- * The blocks to draw as maths now: those that parse, that the caret is not in, and that hide nothing.
+ * The blocks to draw as maths now: those that parse, that the caret is not in, and that hide nothing. A maths cell a single
+ * newline has grown (core growth.ts: the caret is on the empty line under its closing fence) is one the caret is in: it stays
+ * source, as a paragraph stays open on the rendered page.
  * (A function of the state alone, so it is tested without a view.)
  */
 export function typesetBlocks(state: EditorState): TypesetBlock[] {
-  return candidatesOf(state).filter((block) => !showsSource(state, block.from, block.to))
+  const grown = (state.field(armedField, false) ?? null) === null ? grownCell(state) : null
+  const range = grown?.cell.range
+  return candidatesOf(state).filter((block) => !showsSource(state, block.from, block.to)
+    && !(range && range.location === block.from && range.location + range.length === block.to))
 }
 
 function blockDecorations(blocks: TypesetBlock[]): DecorationSet {

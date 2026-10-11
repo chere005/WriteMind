@@ -1,9 +1,9 @@
 // (g) A table cell edits correctly (docs/PLAN-bars-2026-10.md P7; packages/editor/src/tables.ts, core markdown/table.ts — the one
 // table engine): Tab goes cell to cell (the delimiter row stepped over, the words of the cell selected so typing replaces them),
 // past the last cell it adds a row, Shift+Tab goes back, Enter adds a row under the caret's row (an empty last row ends the
-// table), the file is exactly what was typed, and every one of them is one undo step. The Insert ▸ Table button (P1) writes a
+// table, with the bar under it: CHANGED 2026-10-11, cells/20 and 21), the file is exactly what was typed, and every one of them is one undo step. The Insert ▸ Table button (P1) writes a
 // two-column table with the caret in its first header cell: that shape is the document here. Markdown side and rendered page.
-import { ok, test, finish, js, sleep, freshNote, setDoc, doc, sel, selText, key, click, focus, setSel, setRendered, typeText, shot } from "../../lib/harness.mjs"
+import { ok, test, finish, js, sleep, freshNote, setDoc, doc, sel, selText, key, click, focus, setSel, setRendered, typeText, shot, armed } from "../../lib/harness.mjs"
 
 await freshNote()
 const T = "intro\n\n| Name | Value |\n|---|---|\n| one | 1 |\n| two | 2 |\n\noutro"
@@ -60,13 +60,16 @@ for (const rendered of [false, true]) {
     await setSel(T.indexOf("Value") + 1); await key("Enter"); await sleep(150)
     ok("in the header: the new row is under the delimiter row", (await doc()) === T.replace("|---|---|\n", "|---|---|\n|  |  |\n"), JSON.stringify(await doc()))
     await key("z", { ctrl: true }); await sleep(200)
-    // an empty last row: Enter ends the table
+    // an empty last row: Enter ends the table. CHANGED 2026-10-11 (Sean: "the second newline should make the cursor horizontal with the
+    // +, not start the next cell"): the row goes and the bar under the table is the cursor; it used to leave a blank line and the caret
+    // on a new line below it.
     const E = "intro\n\n| A | B |\n|---|---|\n| 1 | 2 |\n|  |  |"
     await setDoc(E, 0); await focus(); await sleep(250)
-    await setSel(E.length - 2); await key("Enter"); await sleep(200)
+    await setSel(E.length - 2); await key("Enter"); await sleep(300)
     const d = await doc()
-    ok("Enter on an empty last row: the row goes and the table ends, a blank line below", d === "intro\n\n| A | B |\n|---|---|\n| 1 | 2 |\n\n" || d.startsWith("intro\n\n| A | B |\n|---|---|\n| 1 | 2 |\n"), JSON.stringify(d))
-    ok("the caret is below the table", (await sel())[0] >= "intro\n\n| A | B |\n|---|---|\n| 1 | 2 |".length, JSON.stringify(await sel()))
+    ok("Enter on an empty last row: the row goes and the table ends, the bar under it", d === "intro\n\n| A | B |\n|---|---|\n| 1 | 2 |" && (await armed()), JSON.stringify([d, await armed()]))
+    await typeText("x"); await sleep(250)
+    ok("a character typed there is the next cell, after a blank line", (await doc()) === "intro\n\n| A | B |\n|---|---|\n| 1 | 2 |\n\nx", JSON.stringify(await doc()))
   })
 
   await test(`${side}: the table the Insert button writes (empty cells, three rows) edits the same way`, async () => {

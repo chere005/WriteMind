@@ -142,6 +142,13 @@ export function numberedItem(line: string): string | null {
   return rest.slice(2)
 }
 
+/** `3.` or `3)` and nothing after it (the line has been trimmed): a numbered item that has no words yet. */
+function bareNumber(line: string): boolean {
+  let digits = 0
+  while (digits < line.length && line.charCodeAt(digits) >= 48 && line.charCodeAt(digits) <= 57) digits++
+  return digits >= 1 && digits <= 4 && digits === line.length - 1 && (line[digits] === "." || line[digits] === ")")
+}
+
 export function blocks(markdown: string): Block[] {
   return positioned(markdown).map((p) => p.block)
 }
@@ -413,6 +420,14 @@ class Machine {
       this.todos.push(todo)
       this.lineStart += size; return
     }
+    // A marker with nothing after it, straight under an open list of its own kind, is that list's next item and still
+    // empty: what Return in a list writes (`- `, `2. `) before a word is typed after it. It used to read as a paragraph of
+    // one marker touching the list, so the cell the caret was in was not the list's; a single newline grows the list
+    // like it grows a paragraph (cells/growth.ts), and the new item is part of it. (To-do items and quote lines have
+    // always been read this way: `- [ ]` is an empty task, `>` an empty quote line.)
+    if (this.bullets.length && (line === "-" || line === "+")) { this.bullets.push(""); this.lineStart += size; return }
+    if (this.dashes.length && line === "*") { this.dashes.push(""); this.lineStart += size; return }
+    if (this.numbered.length && bareNumber(line)) { this.numbered.push(""); this.lineStart += size; return }
     const bullet = bulletItem(line)
     if (bullet !== null) {
       if (this.paragraph.length || this.todos.length || this.dashes.length || this.numbered.length || this.quote.length) this.flush(previousEnd)

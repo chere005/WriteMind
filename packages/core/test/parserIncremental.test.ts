@@ -21,6 +21,8 @@ const LINES = [
   "# Heading", "## Sub heading", "####### seven", "#hashtag", "- bullet", "- [ ] todo", "- [x] done", "* star item", "+ plus item",
   "1. one", "2) two", "> quote", ">", "---", "***", "___", "- - -", "```", "```ts", "  ```", "``` ", "let a = 1", "`inline` code", "- []x",
   "text with trailing  ", "\t- tabbed",
+  // A marker with nothing after it: the next item of the open list of its kind (2026-10-11), a paragraph of its own anywhere else.
+  "-", "+", "*", "3.", "4)", "- ", "2. ", "  -",
 ]
 const randomDoc = (lines: number): string => Array.from({ length: lines }, () => pick(LINES)).join("\n") + (rnd() < 0.3 ? "\n" : "")
 const FRAGMENTS = ["\n", "\n\n", "\n\n\n", "x", "# ", "- ", "```", "\n```\n", "> ", "---", " ", "a b c", "\n# H\n", "- [ ] ", "1. ", "```ts\n", "\n\n\n\n"]

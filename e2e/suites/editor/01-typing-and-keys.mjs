@@ -9,13 +9,16 @@ const eq = async (name, want) => { const d = await doc(); ok(name, d === want, `
 // written with backslashes; a title is made with Ctrl-1, a list carries on from one that is there
 await setDoc(""); await focus()
 await typeKeys("# My Title\n\nHello world. This is body.\n\n- one\ntwo\n\n")
-await eq("typed markup stays literal in a text cell", "\\# My Title\n\nHello world. This is body.\n\n\\- one\ntwo\n\n")
+// (CHANGED 2026-10-11, Sean: "the second newline should make the cursor horizontal with the +, not start the next cell": the last two
+// Returns grow the cell and end it with the bar, which takes the grown line away; they used to leave a blank line and an empty cell.)
+await eq("typed markup stays literal in a text cell", "\\# My Title\n\nHello world. This is body.\n\n\\- one\ntwo")
 await shot("typed")
 
 // ---- lists carry on, an empty item ends the list (the empty item Return leaves is the list's, not a text cell's)
 await setDoc("- one"); await setSel(5); await focus()
 await typeKeys("\ntwo\nthree\n\n")
-await eq("a bullet list carries on and an empty item ends it", "- one\n- two\n- three\n")
+// (CHANGED 2026-10-11: the empty item ends the list with the bar under it; it used to leave the caret on an empty line.)
+await eq("a bullet list carries on and an empty item ends it", "- one\n- two\n- three")
 await setDoc("1. a"); await setSel(4); await focus()
 await typeKeys("\nb\nc\n")
 await eq("a numbered list counts on", "1. a\n2. b\n3. c\n4. ")

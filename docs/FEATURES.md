@@ -66,14 +66,24 @@ is how the code is put together.
   backspace between the two takes both; and Tab — or Shift-Tab — indents
   by a four-space-wide tab, every line of a selection at once. Colouring
   knows C, C++, Python, TypeScript, Rust, Java, Bash, Zsh and Wolfram.
-- **A single newline grows the cell.** Return at the end of a paragraph
-  (Shift+Return on the rendered page) leaves the cursor on a new line
-  under the words, and that line is the cell's while the cursor is on it:
-  the bracket runs down to it and is lit, the rendered page keeps the cell
-  open rather than drawing it with an empty line under it, the Style
-  button names it, and no insertion bar is up. A blank line — two newlines
-  in a row — still ends the cell, and the one blank line between two cells
-  is still the bar.
+- **A single newline grows the cell, and the second one is the bar.**
+  Return at the end of any cell — a paragraph, a heading, a list item, a
+  quote line, a table row, a code block's closing fence, a maths cell —
+  leaves the cursor on a new line that is the cell's while the cursor is on
+  it: the bracket runs down to it and is lit, the rendered page keeps the
+  cell open rather than drawing it with an empty line under it, the Style
+  button names it, and no insertion bar is up. (A list's, a quote's and a
+  table's new line is its next item, line or row, carried on as it always
+  was.) Return again, on that line, ends the cell: the new line goes, the
+  note keeps exactly the blank line that separates the cell from what
+  follows, and the horizontal cursor with the + under the cell is where you
+  are — type and the next cell opens there, the + chooses its kind. It never
+  starts the next cell by itself. Return does the same on the rendered page
+  and on the markdown side (Shift+Return is still a plain single newline,
+  twice for a blank line), and one Undo gives the new line back, another
+  takes the newline back. A heading is one line, so a character typed on the
+  line under it is the next cell (touching it, as ever). Return in the
+  middle of a block on the rendered page still splits it in two.
 - **Split a cell, merge two.** ⌃D cuts the cell the cursor is in, in two,
   at the cursor; ⌃M joins it to the one below (or, in the last cell, to the
   one above). Both work in the markdown and on the rendered page. A fence
@@ -223,7 +233,8 @@ is how the code is put together.
   regularity of its dots, which are painted out in the paper's own colour
   before anything is read — so a row of dots never arrives as "・・・".
 - **Lists that carry on.** Return at the end of a bullet or a numbered
-  item starts the next one; Return on an empty item ends the list. The
+  item starts the next one (the list's own cell grows to take it); Return
+  on that empty item ends the list: the item goes and the bar is under it. The
   list button's menu picks dots, dashes, numbers or to-dos — `- `, `* `,
   `1. ` and `- [ ] ` on disk, a round bullet, a dash and a number on the page.
 - **Code blocks, in five languages.** The `</>` button (⌘8) fences the

@@ -85,8 +85,9 @@ export const itemOpenedField = StateField.define<number | null>({
 
 /**
  * THE CELL A SINGLE NEWLINE GREW (core `growth`; Sean, 2026-10-10: "a single newline should expand the size of the cell to
- * include the line the input cursor is on"): the paragraph above the empty line the caret is on, and that line. The cells'
- * own ranges are the words (the file is read the same way whatever the caret does); this is the one place that says
+ * include the line the input cursor is on"; 2026-10-11: "a single newline grows all those contents"): the cell above the empty
+ * line the caret is on (any kind but a picture), and that line. The cells' own ranges are the words (the file is read the same
+ * way whatever the caret does); this is the one place that says
  * "while the caret is there the cell is that and one line more", and the brackets, the seams, the rendered page, the
  * arrows and the Style button all ask it.
  *

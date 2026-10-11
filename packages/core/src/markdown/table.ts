@@ -264,9 +264,10 @@ export function tableTab(source: string, from: number, to: number, back: boolean
 
 /**
  * Return in a table, with the caret at `caret`: a new empty row under the caret's row (under the delimiter row when
- * the caret is in the header) and the caret in its first cell. On an empty LAST row it ends the table instead, as an
- * empty item ends a list: the row goes and the caret lands below the table after a blank line. Null at the very start
- * of the header (Return there makes room above the table, as it does before any cell).
+ * the caret is in the header) and the caret in its first cell. Null at the very start of the header (Return there makes
+ * room above the table, as it does before any cell) and on an empty LAST row: that row is the line the last Return grew
+ * the table by, and the next Return ends the table with the bar under it, as it ends a list or a quote (cells/newline.ts,
+ * which the editor asks first). It used to take the row away and leave the caret on an empty line below the table.
  */
 export function tableReturn(source: string, caret: number): TableStep | null {
   const lines = tableLines(source)
@@ -275,10 +276,7 @@ export function tableReturn(source: string, caret: number): TableStep | null {
   if (row === 0 && caret <= lines[0]!.start + (lines[0]!.text.length - lines[0]!.text.trimStart().length)) return null
   const line = lines[row]!
   const last = row === lines.length - 1
-  if (row >= 2 && last && line.spans.every((span) => line.text.slice(span.from, span.to).trim() === "")) {
-    const from = line.start - 1
-    return { change: { from, to: source.length, insert: "\n\n" }, anchor: from + 2, head: from + 2 }
-  }
+  if (row >= 2 && last && line.spans.every((span) => line.text.slice(span.from, span.to).trim() === "")) return null
   const after = row === 0 ? lines[1]! : line
   const at = after.start + after.text.length
   const insert = "\n" + emptyRow(lines[0]!.spans.length)

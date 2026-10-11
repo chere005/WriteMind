@@ -263,6 +263,11 @@ export function positioned(markdown: string): PositionedBlock[] {
       todos.push(todo)
       lineStart += rawLine.length + 1; continue
     }
+    // (The one rule the frozen parser has been given since, 2026-10-11, like `paragraphsAsOld` for text cells: a marker with
+    // nothing after it, straight under an open list of its own kind, is that list's next item and still empty.)
+    if (bullets.length && (line === "-" || line === "+")) { bullets.push(""); lineStart += rawLine.length + 1; continue }
+    if (dashes.length && line === "*") { dashes.push(""); lineStart += rawLine.length + 1; continue }
+    if (numbered.length && /^\d{1,4}[.)]$/.test(line)) { numbered.push(""); lineStart += rawLine.length + 1; continue }
     const bullet = bulletItem(line)
     if (bullet !== null) {
       if (paragraph.length || todos.length || dashes.length || numbered.length || quote.length) flush(previousEnd)

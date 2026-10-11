@@ -46,7 +46,7 @@ export function cellKindAt(state: EditorState): CellKind | null {
   // The last cell that starts at or before the caret; the caret is in it when it has not gone past its end.
   const index = firstCellFromBy(cells, head + 1, (cell) => cell.range) - 1
   const cell = index >= 0 ? cells[index]! : null
-  // (On the empty line a single newline opened the caret is in the paragraph above, which has taken the line: core growth.ts.)
+  // (On the empty line a single newline opened the caret is in the cell above, which has taken the line: core growth.ts.)
   if (!cell || (head > end(cell.range) && grownCell(state)?.cell !== cell)) return null
   return kindOfBlock(cell.block)
 }

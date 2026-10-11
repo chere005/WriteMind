@@ -11,6 +11,7 @@ import { insertBlock, removeBlock, splitBlock, listContinuation } from "../src/c
 import { deleteCell, editsOver, movingCells } from "../src/cells/commands"
 import { replacing, range, substring, type Edit } from "../src/text/range"
 import { minimalChange } from "../src/text/diff"
+import { MARKDOWN_MARKER } from "../src/markdown/plainText"
 
 /** The edits applied to a note, back to front as `editsOver` returns them. */
 const applying = (edits: Edit[], text: string): string =>
@@ -469,13 +470,19 @@ describe("Return in an open block", () => {
     expect(edit!.range).toEqual(range(5, 11))
   })
 
-  it("leaves an empty block after a block's last word", () => {
-    const note = "# Title\n\nBody"
-    const edit = returnInBlock(note, range(7, 0))
-    expect(type(note, edit)).toBe("# Title\n\n\n\nBody")
-    expect(edit!.selection.location).toBe(9)
-    // That empty block is a cell of its own, which the caret is in.
-    expect(kinds(type(note, edit))).toEqual(["heading", "blank(1)", "p:Body"])
+  // CHANGED 2026-10-11 (Sean: "the rendered page's Return is the same single newline.. the second newline should make the
+  // cursor horizontal with the +, not start the next cell"). It used to leave an empty block after a block's last word
+  // (`# Title\n\n\n\nBody`, the caret in a blank cell of its own); at the end of a paragraph, heading or rule Return is
+  // now the ordinary newline, the cell grows to the line (growth.ts) and the next Return arms the bar (newline.ts).
+  it("is the ordinary newline at a block's last word: the cell grows, no empty block is started", () => {
+    expect(returnInBlock("# Title\n\nBody", range(7, 0))).toBeNull()
+    expect(returnInBlock("Hello", range(5, 0))).toBeNull()
+    expect(returnInBlock("Hello  ", range(5, 0))).toBeNull()
+    expect(returnInBlock("Top\n\n---\n\nBody", range(8, 0))).toBeNull()
+    expect(returnInBlock(`${MARKDOWN_MARKER}\nwords`, range(MARKDOWN_MARKER.length + 6, 0))).toBeNull()
+    // (Not with a selection, and not before the words: those still start the next block.)
+    expect(returnInBlock("Hello", range(3, 2))).not.toBeNull()
+    expect(returnInBlock("Hello", range(0, 0))).not.toBeNull()
   })
 
   it("splits a heading and keeps the tail a paragraph", () => {
@@ -632,11 +639,14 @@ describe("a whole-note rewrite as one change", () => {
 })
 
 describe("cells that touch are one thing to type in", () => {
-  // A list carried on by Return: the new "- " is a paragraph of one dash to the parser.
-  const note = "Top\n\n- one\n- two\n- \n\nBottom"
+  // CHANGED 2026-10-11: a list carried on by Return used to put a paragraph of one dash next to the list (`- `, trimmed,
+  // is not a bullet to the parser), and this was the example of two cells that touch. The new `- ` is the list's own next
+  // item now (a single newline grows the LIST, growth.ts: one cell, one bracket), so the pair is a list with a quote
+  // under it — touching cells all the same.
+  const note = "Top\n\n- one\n- two\n> said\n\nBottom"
   const cells = positioned(note).map((block) => block.range)
 
-  it("reads the list and its new empty item as touching", () => {
+  it("reads the list and the quote under it as touching", () => {
     expect(cells).toHaveLength(4)
     expect(touchingRuns(cells).map((run) => [run.first, run.last])).toEqual([[0, 0], [1, 2], [1, 2], [3, 3]])
   })
@@ -644,6 +654,20 @@ describe("cells that touch are one thing to type in", () => {
   it("opens both when the caret is in either", () => {
     expect(cellStates(cells, [range(19, 0)], false, false)).toEqual(["closed", "open", "open", "closed"])
     expect(cellStates(cells, [range(7, 0)], false, false)).toEqual(["closed", "open", "open", "closed"])
+  })
+
+  it("a list carried on by Return is ONE cell, the new empty item in it", () => {
+    for (const [carried, kind] of [["- one\n- ", "bullets"], ["- one\n-", "bullets"], ["* one\n* ", "dashes"], ["+ one\n+ ", "bullets"],
+      ["1. one\n2. ", "numbered"], ["1) one\n2)", "numbered"]] as const) {
+      const found = positioned(`Top\n\n${carried}\n\nBottom`)
+      expect(found.map((one) => one.block.kind), JSON.stringify(carried)).toEqual(["paragraph", kind, "paragraph"])
+      expect(found[1]!.range).toEqual(range(5, carried.length))
+    }
+    // (A marker under a paragraph, a list of another kind or on its own is still just words.)
+    expect(positioned("words\n-").map((one) => one.block.kind)).toEqual(["paragraph"])
+    expect(positioned("* one\n-").map((one) => one.block.kind)).toEqual(["dashes", "paragraph"])
+    expect(positioned("- one\n\n-").map((one) => one.block.kind)).toEqual(["bullets", "paragraph"])
+    expect(positioned("-").map((one) => one.block.kind)).toEqual(["paragraph"])
   })
 
   it("does not join cells with a blank line between them", () => {
