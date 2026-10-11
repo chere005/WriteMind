@@ -25,13 +25,13 @@ import { isolateHistory } from "@codemirror/commands"
 import {
   caretUnder, DEFAULT_EVALUATOR, end, EVALUATORS, evaluatorBadge, evaluatorFrom, evaluatorIcon, evaluatorTitle, fenced, fenceLanguage,
   firstCellFromBy, groupsOf, isAnswerCell, isEvaluation, isOut, landingFor, landingOf, makeEvaluation, markLanguage, markTitle,
-  missingToolRefusal, openCell, outAfter, pairNumber, refusalMessage, resolveEvaluator, setEnvironment, substring, writeAnswer,
+  missingToolRefusal, outAfter, pairNumber, refusalMessage, resolveEvaluator, setEnvironment, substring, writeAnswer,
   type EvalGroup, type Evaluator, type MarkRole, type PositionedBlock, type RunOutcome, type RunRequest,
   type ToolReport,
 } from "@writemind/core"
 import { notebook, notebookField } from "../notebook"
 import { PAGE_LEFT, PAGE_RIGHT } from "../theme"
-import { armedField, armSeam } from "../seams"
+import { armedField, armSeam, openArmed, setArmedType } from "../seams"
 import { insideHidden } from "../fold"
 
 /** What the app gives the notebook: the runner (in the shell), and the remembered environment. */
@@ -160,23 +160,6 @@ export const runCell: Command = (view) => {
   return plugin ? runCellAt(view, plugin) : false
 }
 
-/** Apply a whole-document rewrite as the one change it really is (the seams' own `rewrite`, for Ctrl+Shift+8 at a bar). */
-function rewrite(view: EditorView, markdown: string, caret: number): void {
-  const old = view.state.doc.toString()
-  let from = 0
-  const most = Math.min(old.length, markdown.length)
-  while (from < most && old.charCodeAt(from) === markdown.charCodeAt(from)) from++
-  let tail = 0
-  while (tail < most - from && old.charCodeAt(old.length - 1 - tail) === markdown.charCodeAt(markdown.length - 1 - tail)) tail++
-  view.dispatch({
-    changes: { from, to: old.length - tail, insert: markdown.slice(from, markdown.length - tail) },
-    selection: { anchor: caret },
-    effects: armSeam.of(null),
-    scrollIntoView: true,
-    userEvent: "input",
-  })
-}
-
 /**
  * Ctrl+Shift+8 — AN EVALUATION CELL HERE, of whichever environment was picked last (Wolfram until one has been).
  * AT A BAR THE CELL IS MADE THERE, caret inside it (29149b9: the caret at a bar is parked against the cell BELOW
@@ -187,10 +170,13 @@ export const evaluationCell: Command = (view) => {
   const state = view.state
   const evaluator = state.facet(evalHost)?.evaluator() ?? DEFAULT_EVALUATOR
   const text = state.doc.toString()
-  const armed = state.field(armedField, false) ?? null
-  if (armed !== null) {
-    const opened = openCell({ kind: "evaluation", evaluator }, text, armed, "")
-    rewrite(view, opened.markdown, opened.caret)
+  if ((state.field(armedField, false) ?? null) !== null) {
+    // The one funnel every kind of cell at a bar goes through (seams.ts `openArmed`: nameKind's, the + menu's): its own undo
+    // step, so a word typed a moment later is the next one and not part of the cell; and a bar under a closed section opens it.
+    // (This was a copy of the funnel's `rewrite` that had neither: found 2026-10-10 with the + menu's Runnable code, where
+    // one Undo took the cell AND the first word typed into it.)
+    view.dispatch({ effects: setArmedType.of({ kind: "evaluation", evaluator }) })
+    openArmed(view, "")
     view.focus()
     return true
   }

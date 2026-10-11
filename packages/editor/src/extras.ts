@@ -5,6 +5,7 @@
  */
 
 import { EditorSelection, type Extension } from "@codemirror/state"
+import { isolateHistory } from "@codemirror/commands"
 import { EditorView, keymap, type Command } from "@codemirror/view"
 import {
   allOccurrences, applySpan, codeBlock, justTypedTrigger, selectNextOccurrence, substring, viaMarkdownCells, wordRange,
@@ -100,16 +101,26 @@ export const tagFence = (language: string): Command => (view) => {
   }
   // At a bar (either page) the block is made there, now (Mac 0fdd031); with nothing selected in a cell of words it is
   // made after that cell (`makesCellAfter`); and then it is tagged like any block the caret is in.
+  let made = false
   if ((view.state.field(armedField, false) ?? null) !== null) {
     view.dispatch({ effects: setArmedType.of({ kind: "code" }) })
     // (Not apart: the language is written into the fence in the next breath, and the two are ONE undo step.)
     openArmed(view, "", true, false)
-  } else if (!inCode()) makesCellAfter({ kind: "code" }, () => false, false)(view)
+    made = true
+  } else if (!inCode()) {
+    makesCellAfter({ kind: "code" }, () => false, false)(view)
+    made = true
+  }
   const cell = inCode()
   if (cell) {
     const line = view.state.doc.lineAt(cell.range.location)
     const indent = /^\s*/.exec(line.text)![0]
-    view.dispatch({ changes: { from: line.from, to: line.to, insert: `${indent}\`\`\`${language}` } })
+    view.dispatch({
+      changes: { from: line.from, to: line.to, insert: `${indent}\`\`\`${language}` },
+      // The cell made and its language are one step, and that step is CLOSED: the first word typed in the new cell, however soon,
+      // is the next one (CodeMirror joins input within half a second of a change beside it, and one Undo took the word too).
+      ...(made ? { annotations: isolateHistory.of("after") } : {}),
+    })
     view.focus()
     return true
   }

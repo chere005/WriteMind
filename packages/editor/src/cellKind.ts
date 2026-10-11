@@ -16,9 +16,24 @@
 
 import { StateEffect, type EditorState } from "@codemirror/state"
 import { EditorView } from "@codemirror/view"
-import { firstCellFromBy, end, kindOfBlock, sameKind, type CellKind } from "@writemind/core"
-import { notebookField } from "./notebook"
+import { firstCellFromBy, end, kindOfBlock, listMatches, LIST_STYLES, sameKind, type CellKind } from "@writemind/core"
+import { itemOpenedField, notebookField } from "./notebook"
 import { armedField, armedTypeField } from "./seams"
+import { caretInEmptyCell } from "./textCells"
+
+/**
+ * The cell a command has just OPENED EMPTY and the caret is in, which the parser cannot name yet (the + menu's Dots, Dashes
+ * and Numbered write their marker and nothing else, which reads as a paragraph; a Markdown cell is its marker line over an
+ * empty one): the kind the command made, so the Style button says what the cell is the moment it exists and not "Text".
+ */
+function openedKind(state: EditorState, head: number): CellKind | null {
+  if (caretInEmptyCell(state) !== null) return { kind: "markdown" }
+  const line = state.doc.lineAt(head)
+  if (state.field(itemOpenedField, false) !== line.from) return null
+  const rest = line.text.trimStart()
+  const style = LIST_STYLES.find((one) => listMatches(one, rest))
+  return style ? { kind: "list", style } : null
+}
 
 /** The kind of the cell the caret is in (the head of the main selection), the armed bar's kind at a bar, or null where no cell is. */
 export function cellKindAt(state: EditorState): CellKind | null {
@@ -26,6 +41,8 @@ export function cellKindAt(state: EditorState): CellKind | null {
   const cells = state.field(notebookField, false)?.cells
   if (!cells || cells.length === 0) return null
   const head = state.selection.main.head
+  const opened = openedKind(state, head)
+  if (opened) return opened
   // The last cell that starts at or before the caret; the caret is in it when it has not gone past its end.
   const index = firstCellFromBy(cells, head + 1, (cell) => cell.range) - 1
   const cell = index >= 0 ? cells[index]! : null
@@ -45,7 +62,9 @@ const changes = EditorView.updateListener.of((update) => {
   const set = watching.get(update.view)
   if (!set || set.size === 0) return
   if (!update.selectionSet && !update.docChanged && update.startState.field(armedField, false) === update.state.field(armedField, false)
-    && update.startState.field(armedTypeField, false) === update.state.field(armedTypeField, false)) return
+    && update.startState.field(armedTypeField, false) === update.state.field(armedTypeField, false)
+    // (An item the app opened is told in a transaction of its own, right after the cell is written.)
+    && update.startState.field(itemOpenedField, false) === update.state.field(itemOpenedField, false)) return
   const before = cellKindAt(update.startState)
   const after = cellKindAt(update.state)
   if (sameCellKind(before, after)) return

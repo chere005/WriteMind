@@ -101,9 +101,11 @@ is how the code is put together.
   opens an empty one, and Escape or a click anywhere else takes the line
   back without leaving an empty cell behind. Press the `+` at the end of
   the line and it drops the kinds of cell down — Body Text, the heading
-  ladder from Title to Subsubsection, the three lists, Quote, Code Block
-  — and the next thing typed makes a cell of the kind you picked, with
-  its marker already written and the caret after it. The Format menu is
+  ladder from Title to Subsubsection, the lists, Quote, Markdown, Code,
+  Runnable code, Maths, Drawing — and picking one makes that cell there at
+  once, empty, with its marker already written and the caret inside it
+  where the words go (the bar is gone: the caret is the cursor now), one
+  Undo takes it away. The Format menu is
   the same list by keyboard: ⌘1 or Quote or a list style at a line picks
   the kind that line will make, rather than restyling the cell beside it,
   and pressing the `+` again shows what you picked. The choice belongs
@@ -112,7 +114,8 @@ is how the code is put together.
   note with nothing in it yet the line sits where the first cell will
   land, not against the top of the pane. The seams belong to cursor
   mode: with the pen down the drawing layer has the pane and there
-  are no seams at all. The markdown pane and the
+  are no seams to hover or click (a bar walked to with the arrow keys
+  still shows its `+`, and the `+` still works). The markdown pane and the
   rendered page do exactly the same thing, the way a Mathematica notebook
   does on both.
 - **The arrow keys walk cell, line, cell.** The line is not only what a
