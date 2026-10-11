@@ -1,8 +1,30 @@
 import { describe, expect, it } from "vitest"
 import {
-  DEFAULT_VIDEO_SHARE, fractionFor, NOTES_MIN, readFraction, VIDEO_MIN, videoWidth,
+  DEFAULT_VIDEO_SHARE, fractionFor, isMaximised, maxVideoWidth, NOTES_MIN, readFraction, VIDEO_MIN, videoWidth,
 } from "../src/shared/layout"
 import { parseSaved, placeWindow } from "../src/main/windowState"
+
+describe("double-clicking the divider gives the video its full size (and back)", () => {
+  it("the widest the video goes is everything the notes' minimum leaves", () => {
+    expect(maxVideoWidth(1030)).toBe(1030 - NOTES_MIN)
+    expect(maxVideoWidth(2310)).toBe(2310 - NOTES_MIN)
+    // a window too narrow for both minimums: the video gives way as it always did
+    expect(maxVideoWidth(600)).toBe(videoWidth(600, 1))
+  })
+
+  it("knows when the video is already as wide as it goes, whatever fraction says so", () => {
+    expect(isMaximised(1030, null)).toBe(false)
+    expect(isMaximised(1030, 0.5)).toBe(false)
+    expect(isMaximised(1030, fractionFor(1030, maxVideoWidth(1030)))).toBe(true)
+    expect(isMaximised(1030, 0.94)).toBe(true) // asks for more than there is: clamped to the widest
+    expect(isMaximised(0, 0.5)).toBe(false)
+  })
+
+  it("the full-size fraction is one a launch remembers (a stored fraction must be sensible)", () => {
+    expect(readFraction(fractionFor(1030, maxVideoWidth(1030)))).not.toBeNull()
+    expect(readFraction(fractionFor(2310, maxVideoWidth(2310)))).not.toBeNull()
+  })
+})
 
 describe("the divider between the notes and the video (ContentView's HSplitView)", () => {
   it("shares what is left 720 : 420 until the divider is dragged", () => {

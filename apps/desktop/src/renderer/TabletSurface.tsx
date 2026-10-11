@@ -507,6 +507,7 @@ export const TabletSurface = forwardRef<SurfaceHandle, Props>(function TabletSur
                     }}
                     bring={() => leaveFor(buttons.bring)}
                     cell={() => leaveFor(buttons.cell)}
+                    picture={() => leaveFor(buttons.picture)}
                     // Nothing leaves the sheet: the copy is on the clipboard, not in the note.
                     copy={() => buttons.copy()} />
       )}

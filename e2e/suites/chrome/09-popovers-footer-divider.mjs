@@ -135,6 +135,17 @@ await mouse("mouseReleased", x - 120, y); await sleep(200)
 const cam1 = (await box(".camera")).w
 ok("dragging it left widens the video by what it moved (within a pixel or two)", Math.abs(cam1 - cam0 - 120) <= 3, `${cam0} -> ${cam1}`)
 ok("the mouse never gave it the keyboard", (await keyboardIn()) === "editor", await keyboardIn())
-await js(`document.querySelector('.pane-divider').dispatchEvent(new MouseEvent('dblclick',{bubbles:true}))`); await sleep(200)
-ok("a double click puts it back", Math.abs((await box(".camera")).w - cam0) <= 3)
+// Sean, 2026-10-10: "double clicking the resizing window between the notebook and video pane should make the video/wacom maximum full size".
+const dbl = async () => { await js(`document.querySelector('.pane-divider').dispatchEvent(new MouseEvent('dblclick',{bubbles:true}))`); await sleep(250) }
+const room = await js(`(() => { const app = document.querySelector('.app'); const side = app.querySelector('.sidebar'); return app.clientWidth - (side ? side.getBoundingClientRect().width : 0) })()`)
+await dbl()
+const full = (await box(".camera")).w
+ok("a double click gives the video its FULL size: everything the notes' 460px minimum leaves", Math.abs(full - (room - 460)) <= 3, `${full} of ${room}`)
+await shot("divider-full")
+await dbl()
+ok("a second double click puts the divider back where it was", Math.abs((await box(".camera")).w - cam1) <= 3, `${(await box(".camera")).w} vs ${cam1}`)
+// Home (the keyboard's way back) is the default share, and the divider after a full-size double click forgets nothing it should not.
+await dbl()
+await js(`document.querySelector('.pane-divider').dispatchEvent(new KeyboardEvent('keydown', { key: 'Home', bubbles: true }))`); await sleep(250)
+ok("Home puts it to the default share", Math.abs((await box(".camera")).w - cam0) <= 3, `${(await box(".camera")).w} vs ${cam0}`)
 finish()

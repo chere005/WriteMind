@@ -370,12 +370,13 @@ source under the menu; Ctrl/Cmd-click is the drawing layer's, as on words.
 - **The sheet's header** (one 36px row, 2026-10-10): **Paper** (kind, spacing, colour; the menu stays up while you try them),
   **Tablet orientation** (an icon menu, the current one ticked), **Undo** (the sheet's last stroke; its corner menu has **Clear the
   Sheet**) ... **Bring in** (the one filled button: it brings the writing in the way it was last asked to; its menu is **Writing**
-  (the strokes, the graphics, as always) / **As Drawing Cell** / **As Text** (the writing READ as words by the app's one reader and
-  added to the note as a text cell at the caret; only where there is a reader) / **Sheet as Picture**: a pick brings it in at once,
-  and Writing / As Drawing Cell / As Text become what the button does next, remembered) and ✕. A menu on a header button opens from its corner triangle, a right-click, a half-second hold or Down.
-- **The box's row** (under the dashed box; the pen's tap clicks it): **Bring in writing** | **As drawing cell** | **Text** | **Copy** |
-  **Erase** (the primary first, Erase last and red; the short labels Writing / Cell when the row is wider than the sheet; Text reads
-  the boxed writing as words into the note and is there only with a reader). Copy puts the boxed
+  (the strokes, the graphics, as always) / **Drawing Cell** / **Text** (the writing READ as words by the app's one reader and
+  added to the note as a text cell at the caret; only where there is a reader), all three of the box, or of the whole sheet when
+  there is no box; then, always the WHOLE sheet whatever the box says, **Sheet as Picture** and **Sheet as Text**: a pick brings it
+  in at once, and Writing / Drawing Cell / Text become what the button does next, remembered) and ✕. A menu on a header button opens from its corner triangle, a right-click, a half-second hold or Down.
+- **The box's row** (under the dashed box; the pen's tap clicks it): **Bring in writing** | **Drawing cell** | **Text** | **Picture** |
+  **Copy** | **Erase** (the primary first, Erase last and red; the short labels Writing / Cell when the row is wider than the sheet; Text reads
+  the boxed writing as words into the note and is there only with a reader; Picture brings the boxed part in as an image, paper and all). Copy puts the boxed
   writing on the system clipboard as a drawing cell and leaves the note alone: Ctrl+V in a note lands it as a new drawing cell at the
   caret (or the armed bar), in Mathematica it pastes as the image, in every other app as an SVG file.
 - **Erase Tool / Select Tool** by the pen (a double tap set to "Erase tool
@@ -500,7 +501,8 @@ A press on the words lets go of the pick, which gives the keys back.
 | Where | Key | Does |
 |---|---|---|
 | Divider between the notes and the video (when it has the keyboard: Tab to it) | Left / Right | the video 24 px wider / narrower |
-| same | Home, or double-click | back to the Mac default share (720 : 420) |
+| same | double-click | the video (the camera or the Wacom sheet) at its FULL size: everything the notes' 460px minimum leaves; double-click again and the divider goes back where it was |
+| same | Home | back to the Mac default share (720 : 420) |
 | A sidebar or tab menu, the video button's menu, the open-notes list, the Folder menu | Up / Down, Enter, Escape, Right / Left | move, choose, close, open / close a submenu; the caret returns to the notes |
 | The font-and-colour popover, the Pen menu, the video pane's header menus (Paper, orientation, Undo, Bring in, Zoom, Straighten), the maths palette | Escape, or a click anywhere else | close (one popover hook, `usePopover`: capture phase, the window blurring or resizing closes too, kept inside the window, the keyboard returns to the notes) |
 | A menu (`FloatingMenu`: the notes' right-click menu, the + between cells, the bars' menus) | nothing is chosen when it opens; Down / Up move onto a row (the first press: the first / the last), Home / End, Enter | Enter on no row does nothing |

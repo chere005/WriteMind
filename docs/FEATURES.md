@@ -180,9 +180,10 @@ is how the code is put together.
   it in bold, a drawn arrow as →, and a line of algebra as this app's maths,
   raised digits and all. The picture itself stays (the words go in just under it);
   Undo takes the words back out. The video pane reads too: **Text** in the camera's box row, and on the
-  Wacom sheet **Bring in ▸ As Text** and the box row's **Text** read the handwriting (the boxed part, or
-  all of the sheet) as words into the note as a text cell. **Writing** on the sheet is still the graphics:
-  the strokes themselves.
+  Wacom sheet **Bring in ▸ Text** and the box row's **Text** read the handwriting (the boxed part, or
+  all of the sheet) as words into the note as a text cell; Bring in ▸ **Sheet as Text** and **Sheet as
+  Picture** always take the whole sheet, and the box row's **Picture** takes the boxed part as an image.
+  **Writing** on the sheet is still the graphics: the strokes themselves.
 - **A flow chart sketched on paper comes in as a flow chart.** Reading a
   picture that holds one brings the boxes in as nodes — rectangles, rounded
   rectangles, ovals, diamonds, triangles and parallelograms — with the
@@ -284,7 +285,9 @@ is how the code is put together.
   starts on **Cancel**, and Enter answers only the button that has the
   keyboard. The key list is searchable ("Search keys…") and draws its keys as
   caps in Apple's order on a Mac. The divider between the notes and the video
-  is a visible 6px column with a grip, and takes the accent while you drag it.
+  is a visible 6px column with a grip, and takes the accent while you drag it;
+  double-click it and the video (the camera or the Wacom sheet) takes its full
+  size, the notes keeping their minimum, and double-click again puts it back.
 - **It opens side by side.** Every launch shows the notes and the video
   together, whatever was put away last time.
 - **Collapse what you're not using.** The notes list, the rendered page and

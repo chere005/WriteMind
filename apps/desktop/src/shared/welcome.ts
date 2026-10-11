@@ -56,9 +56,9 @@ export const welcomeFeatures = (mac: boolean): string[] => [
   `**Runnable cells:** Python, Wolfram, C, C++ and Rust, each with its icon and In[n] / Out[n]; ${chordText("Shift-Enter", mac)} runs one.`,
   "**Language Setup:** File ▸ Language Setup… shows which program runs each language, tests it, lets you choose another and helps you get a missing one.",
   "**Video pane:** a document camera: turn, zoom, hold and straighten the picture; its box and the Writing, Image and Raw buttons bring a page in as ink or a picture.",
-  "**Read words:** Read on a picked picture or picked pen handwriting, Text in the video box, and As Text on the Wacom sheet turn writing into words.",
+  "**Read words:** Read on a picked picture or picked pen handwriting, Text in the video box, and Text or Sheet as Text on the Wacom sheet turn writing into words.",
   "**Pane tabs:** the camera's Live tab and a tab for each page you keep with +, or the tablet's sheets, on the notebook's row; double-click renames, × closes.",
-  "**Wacom tablet:** Input Devices ▸ Tablet makes the video pane sheets (tabs) to write on; Bring in and the box's As drawing cell take them into the note.",
+  "**Wacom tablet:** Input Devices ▸ Tablet makes the video pane sheets (tabs) to write on; Bring in and the box's Drawing cell, Text and Picture take them into the note.",
   "**Mathematica:** File ▸ Export… ▸ Wolfram Notebook writes a `.nb`; with a Wolfram Engine, a copied drawing cell pastes into a notebook as a transparent image.",
   "**Wacom pen buttons:**\n" +
     "  - First button (Middle Click): hold to erase strokes, double-tap to undo.\n" +

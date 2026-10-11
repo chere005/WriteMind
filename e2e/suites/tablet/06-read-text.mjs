@@ -1,6 +1,6 @@
 // The tablet sheet's TEXT (Sean, 2026-10-10: "i don't see the OCR, it should work on wacom as well" and "bring in writing should
 // still be the graphics, text should be a new choice"): the writing on the sheet READ as words by the app's one reader, as a choice of
-// its own beside Writing (strokes) and As Drawing Cell. A person's handwriting (e2e/lib/handwriting.mjs) is laid on the sheet as pen strokes;
+// its own beside Writing (strokes) and Drawing Cell. A person's handwriting (e2e/lib/handwriting.mjs) is laid on the sheet as pen strokes;
 // the reader reads it.
 import { js, ok, finish, sleep, freshNote, saved, doc, setDoc, noGrab, pickTablet, tabletBox, penStroke, seg, pe, pickFromMenu, waitFor, shot } from "../../lib/harness.mjs"
 import { RED, traceHandwriting } from "../../lib/handwriting.mjs"
@@ -32,11 +32,11 @@ ok("the handwriting is on the sheet as pen strokes", made > 20, String(made))
 await sleep(300)
 await shot("written")
 
-// Bring in ▸ As Text: a menu item beside Writing and As Drawing Cell, only because this machine has a reader.
+// Bring in ▸ Text: a menu item beside Writing and Drawing Cell, only because this machine has a reader.
 const before = (await saved(file)).items.length
 await js(`(() => { const b = document.querySelector('.camera-head [data-capture=ink]'); const r = b.getBoundingClientRect(); b.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true, clientX: r.x + 4, clientY: r.y + 4 })); return true })()`)
 await waitFor(`!!document.querySelector('.float-menu [data-bar=bring-text]')`)
-ok("the Bring in menu has three choices, in order: Writing, As Drawing Cell, As Text", await js(`[...document.querySelectorAll('.float-menu [data-bar^=bring-]')].map(b => b.dataset.bar).slice(0, 3).join() === 'bring-writing,bring-cell,bring-text'`))
+ok("the Bring in menu has three choices, in order: Writing, Drawing Cell, Text", await js(`[...document.querySelectorAll('.float-menu [data-bar^=bring-]')].map(b => b.dataset.bar).slice(0, 3).join() === 'bring-writing,bring-cell,bring-text'`))
 await js(`document.querySelector('.float-menu [data-bar=bring-text]').click()`)
 // What the pane says while it reads and after (a toast goes by itself).
 const said = new Set()
@@ -59,7 +59,7 @@ ok("the pane says what came in (a toast: Text added to the note, with the line c
 await shot("read")
 
 // The default is what the main button does next: Bring in now reads again; Writing is one pick away and is still strokes.
-ok("the main button now says it reads (As Text is the default)", await js(`/Read the writing as words/.test(document.querySelector('.camera-head [data-capture=ink]').title)`))
+ok("the main button now says it reads (Text is the default)", await js(`/Read the writing as words/.test(document.querySelector('.camera-head [data-capture=ink]').title)`))
 await pickFromMenu(".camera-head [data-capture=ink]", "bring-writing")
 const d = await saved(file, (x) => x.items.some((i) => i.kind === "stroke"))
 ok("Bring in ▸ Writing is still the graphics: strokes on the note's page, no words added by it", d.items.filter((i) => i.kind === "stroke").length >= made - 5, JSON.stringify(d.items.map((i) => i.kind)))
@@ -70,7 +70,7 @@ const M = { type: "mouse", pressure: 0 }
 await pe("pointerdown", X + 10, Y + 14, M); await pe("pointermove", X + t.w / 2, Y + 0.12 * t.h, M); await pe("pointermove", X + t.w - 10, Y + 0.19 * t.h, M); await pe("pointerup", X + t.w - 10, Y + 0.19 * t.h, { ...M, buttons: 0 })
 await waitFor(`!!document.querySelector('[data-tablet=box-actions]')`)
 console.log("box row:", await js(`document.querySelector('[data-tablet=box-actions]').innerText.replace(/\\s+/g, ' | ')`))
-ok("the box's row has a Text button (with Bring in writing, As drawing cell, Copy, Erase)", await js(`['ink','cell','text','copy','erase'].every(a => !!document.querySelector('[data-box-action=' + a + ']'))`))
+ok("the box's row has a Text button (with Bring in writing, Drawing cell, Picture, Copy, Erase)", await js(`['ink','cell','text','picture','copy','erase'].every(a => !!document.querySelector('[data-box-action=' + a + ']'))`))
 await shot("box-row")
 await setDoc("", 0)
 await js(`document.querySelector('[data-box-action=text]').click()`)

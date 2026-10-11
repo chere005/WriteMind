@@ -698,15 +698,16 @@ export function CameraPane({
 
   /**
    * Take what is on the tablet's sheet (tabletCapture.ts): WRITING brings
-   * the strokes themselves, PAGE the sheet as a picture.
+   * the strokes themselves, PAGE the sheet as a picture. The BOX's part, or all of the sheet when there is no box; `whole` is the
+   * header's "Sheet as Picture": the whole sheet whatever the box says (the box's own row has Picture for the part).
    */
-  const takeTablet = useCallback(async (mode: "ink" | "page") => {
+  const takeTablet = useCallback(async (mode: "ink" | "page", whole = false) => {
     const startedIn = noteRef.current
     const takenFrom = sheets.current
     // The sheet keeps the writing, so the next Ctrl+Z is the note's (taking the capture back), not a stroke's.
     surface.current?.leave()
     const out = await takeFromSheet(mode, {
-      box: sheetBox, shown: surface.current?.size() ?? { width: 0, height: 0 }, pane,
+      box: whole ? null : sheetBox, shown: surface.current?.size() ?? { width: 0, height: 0 }, pane,
       penColour, penWidth, paper: currentPaper(),
     })
     if ("trouble" in out) { setTrouble(out.trouble); return }
@@ -737,11 +738,12 @@ export function CameraPane({
     edited((was) => was + 1)
   }, [sheetBox])
   /**
-   * TEXT (a choice of its own beside Writing and As Drawing Cell: Writing is still the graphics): the boxed writing, or the whole
+   * TEXT (a choice of its own beside Writing and Drawing Cell: Writing is still the graphics): the boxed writing, or the whole
    * sheet, READ as words by the app's one reader and added to the note as a text cell at the caret (App.tsx `readCameraText`,
-   * the camera's Text lands the same way). The sheet keeps the writing; the box goes, as after any bring-in.
+   * the camera's Text lands the same way). The sheet keeps the writing; the box goes, as after any bring-in. `whole` is the
+   * header's "Sheet as Text": all of the sheet whatever the box says.
    */
-  const takeTabletText = useCallback(async () => {
+  const takeTabletText = useCallback(async (whole = false) => {
     if (busy || !onReadText) return
     const startedIn = noteRef.current
     const takenFrom = sheets.current
@@ -749,7 +751,7 @@ export function CameraPane({
     setBusy(true)
     setRead(busyToast("Reading"))
     try {
-      const out = await readSheetText({ box: sheetBox, shown: surface.current?.size() ?? { width: 0, height: 0 } })
+      const out = await readSheetText({ box: whole ? null : sheetBox, shown: surface.current?.size() ?? { width: 0, height: 0 } })
       if ("trouble" in out) { setTrouble(out.trouble); setRead(null); return }
       if (noteRef.current !== startedIn) { setTrouble(SWITCHED); setRead(null); return }
       setTrouble(null)
@@ -990,7 +992,8 @@ export function CameraPane({
                         to={bringToNow} onBringTo={(next) => { setBringTo(next); rememberBringTo(next) }}
                         bringTitle={bringTitle} bringOff={bringOff} reader={textReader} textOff={textOff}
                         onBring={(to) => { if (to === "cell") { surface.current?.leave(); void boxToCell() } else if (to === "text") void takeTabletText(); else void takeTablet("ink") }}
-                        onBringPage={() => { void takeTablet("page") }}
+                        onBringPage={() => { void takeTablet("page", true) }}
+                        onBringSheetText={() => { void takeTabletText(true) }}
                         onHide={onHide} showEditor={showEditor} onToggleEditor={onToggleEditor} />
         )
         : (
@@ -1016,6 +1019,7 @@ export function CameraPane({
                          buttons={{
                            erase: eraseBox,
                            bring: () => takeTablet("ink"),
+                           picture: () => takeTablet("page"),
                            cell: boxToCell,
                            copy: boxToClipboard,
                            // As the header's Bring in: off on a drawing cell's own tab; and with no note to bring into.

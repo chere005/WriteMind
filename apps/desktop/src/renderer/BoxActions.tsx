@@ -5,8 +5,10 @@
  * and red:
  *
  *   Bring in writing   what the header's Bring in ▸ Writing does with this box (floating ink in the note)
- *   As drawing cell    the boxed writing as a NEW drawing cell at the armed bar, else after the caret's cell
+ *   Drawing cell       the boxed writing as a NEW drawing cell at the armed bar, else after the caret's cell
  *   Text               the boxed writing READ as words, a text cell at the caret (only with a reader; Bring in writing is still the graphics)
+ *   Picture            the boxed part of the sheet as an image, paper and all (Sean, 2026-10-10: "add bring in as picture to
+ *                      selections, not just page")
  *   Copy               the same cell on the SYSTEM CLIPBOARD, the note untouched (Sean, 2026-10-06): a drawing cell in
  *                      WriteMind's own paste and in Mathematica, an SVG file in every other app (no note needed)
  *   Erase              the writing inside the box rubbed off the sheet (one Undo on the sheet; the box stays)
@@ -32,6 +34,8 @@ export interface BoxButtons {
   erase(): void | Promise<void>
   bring(): void | Promise<void>
   cell(): void | Promise<void>
+  /** The boxed part as a picture. */
+  picture(): void | Promise<void>
   copy(): void | Promise<void>
   /** Why the two Bring in buttons are off (a sheet bound to a drawing cell, no note open), or null when they are on. */
   bringOff: string | null
@@ -48,7 +52,7 @@ interface Props extends BoxButtons {
   sheet: { x: number; y: number; width: number; height: number }
 }
 
-export function BoxActions({ box, sheet, erase, bring, cell, copy, bringOff, text, textOff = null }: Props) {
+export function BoxActions({ box, sheet, erase, bring, cell, picture, copy, bringOff, text, textOff = null }: Props) {
   const row = useRef<HTMLDivElement | null>(null)
   const [size, setSize] = useState<Size | null>(null)
   const [pending, setPending] = useState(false)
@@ -135,12 +139,15 @@ export function BoxActions({ box, sheet, erase, bring, cell, copy, bringOff, tex
               onClick={run(bring)}>{compact ? "Writing" : "Bring in writing"}</button>
       <button type="button" data-box-action="cell" disabled={off || pending}
               title={bringOff ?? "Bring the writing inside the box into the note as a new drawing cell: at the bar if one is up, else after the caret's cell (one Undo in the note takes it out)"}
-              onClick={run(cell)}>{compact ? "Cell" : "As drawing cell"}</button>
+              onClick={run(cell)}>{compact ? "Cell" : "Drawing cell"}</button>
       {text && (
         <button type="button" data-box-action="text" disabled={textOff !== null || pending}
                 title={textOff ?? "Read the writing inside the box as words and add them to the note as text. The sheet keeps it. (Bring in writing is still the graphics.)"}
                 onClick={run(text)}>Text</button>
       )}
+      <button type="button" data-box-action="picture" disabled={off || pending}
+              title={bringOff ?? "Bring the boxed part of the sheet into the note as a picture, paper and all. The sheet keeps it."}
+              onClick={run(picture)}>Picture</button>
       <span className="sep" aria-hidden />
       <button type="button" data-box-action="copy" disabled={pending}
               title="Copy the writing inside the box as a drawing cell: paste it into a note (a new drawing cell at the caret), into Mathematica (the image), or into any other app (an SVG file). The note is not touched."

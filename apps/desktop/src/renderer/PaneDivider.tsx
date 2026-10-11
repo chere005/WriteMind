@@ -6,13 +6,14 @@
  *
  * The position is kept as a FRACTION of what the two panes share, so a resize
  * or a change of display scale keeps the proportion, and it is remembered
- * between launches. Double-click puts it back to the Mac's 720 : 420; the
- * arrow keys move it when it has the keyboard. The mouse never gives it the
+ * between launches. Double-click gives the video its FULL size (the notes keep their minimum; Sean, 2026-10-10: "double clicking the
+ * resizing window between the notebook and video pane should make the video/wacom maximum full size"); double-click again puts the
+ * divider back where it was (Home puts it to the Mac's 720 : 420); the arrow keys move it when it has the keyboard. The mouse never gives it the
  * keyboard: a drag leaves the caret where it was.
  */
 
 import { useCallback, useEffect, useRef, useState } from "react"
-import { fractionFor, readFraction, videoWidth } from "../shared/layout"
+import { fractionFor, isMaximised, maxVideoWidth, readFraction, videoWidth } from "../shared/layout"
 
 const KEY = "writemind.videoFraction"
 
@@ -34,6 +35,8 @@ interface Props {
 export function PaneDivider({ sidebar }: Props) {
   const self = useRef<HTMLDivElement>(null)
   const fraction = useRef<number | null>(load())
+  /** Where the divider was before a double-click made the video as wide as it goes (null is the default share). */
+  const before = useRef<{ fraction: number | null } | null>(null)
   const [dragging, setDragging] = useState(false)
 
   const app = (): HTMLElement | null => self.current?.closest<HTMLElement>(".app") ?? null
@@ -72,6 +75,21 @@ export function PaneDivider({ sidebar }: Props) {
     apply()
   }
 
+  /** Double-click: the video at its full size, or back to where it was when it already is. */
+  const toggleFull = () => {
+    const room = available()
+    if (room <= 0) return
+    if (isMaximised(room, fraction.current)) {
+      fraction.current = before.current ? before.current.fraction : null
+      before.current = null
+    } else {
+      before.current = { fraction: fraction.current }
+      fraction.current = fractionFor(room, maxVideoWidth(room))
+    }
+    store(fraction.current)
+    apply()
+  }
+
   const nudge = (delta: number) => {
     const room = available()
     if (room <= 0) return
@@ -85,7 +103,7 @@ export function PaneDivider({ sidebar }: Props) {
     <div ref={self} className={`pane-divider${dragging ? " dragging" : ""}`}
          role="separator" aria-orientation="vertical" aria-label="Resize the notes and the video"
          tabIndex={0}
-         title="Drag to resize — double-click to reset"
+         title="Drag to resize — double-click: the video at full size (again: back)"
          onPointerDown={(event) => {
            if (event.button !== 0) return
            // The mouse must not take the keyboard from the notes.
@@ -101,11 +119,11 @@ export function PaneDivider({ sidebar }: Props) {
            store(fraction.current)
          }}
          onPointerCancel={() => { setDragging(false); store(fraction.current) }}
-         onDoubleClick={() => { fraction.current = null; store(null); apply() }}
+         onDoubleClick={toggleFull}
          onKeyDown={(event) => {
            if (event.key === "ArrowLeft") { event.preventDefault(); nudge(24) }
            else if (event.key === "ArrowRight") { event.preventDefault(); nudge(-24) }
-           else if (event.key === "Home") { event.preventDefault(); fraction.current = null; store(null); apply() }
+           else if (event.key === "Home") { event.preventDefault(); fraction.current = null; before.current = null; store(null); apply() }
          }} />
   )
 }

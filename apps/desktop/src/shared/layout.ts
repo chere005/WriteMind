@@ -53,3 +53,14 @@ export function readFraction(raw: unknown): number | null {
   const value = typeof raw === "number" ? raw : typeof raw === "string" ? Number(raw) : NaN
   return Number.isFinite(value) && value > 0.05 && value < 0.95 ? value : null
 }
+
+/** The widest the video can be: the notes keep their minimum and the video takes everything else. */
+export const maxVideoWidth = (available: number): number => videoWidth(available, 1)
+
+/**
+ * Whether the video is as wide as it can be at this fraction (a pixel of rounding is allowed). Double-clicking the divider toggles
+ * it (Sean, 2026-10-10: "double clicking the resizing window between the notebook and video pane should make the video/wacom
+ * maximum full size"): at its widest a second double-click puts the divider back where it was.
+ */
+export const isMaximised = (available: number, fraction: number | null): boolean =>
+  available > 0 && videoWidth(available, fraction) >= maxVideoWidth(available) - 1

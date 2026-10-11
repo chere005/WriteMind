@@ -172,13 +172,13 @@ const docText = () => js(`document.querySelector('.cm-content').cmTile.view.stat
 const cellsIn = async () => ((await docText()).match(/!\[ink\]/g) ?? []).length
 const cellsBefore = await cellsIn()
 await js(`document.querySelector('.camera-bar [data-capture=ink]').dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true })); true`); await sleep(200)
-// (As Text, 2026-10-10: a choice of its own beside Writing, which is still the graphics; only where the app has a reader.)
-ok("Bring in's menu offers Writing, As Drawing Cell, As Text and Sheet as Picture",
-  await js(`[...document.querySelectorAll('.float-menu [data-bar^=bring-] .float-label')].map(b => b.textContent).join('|')`) === "Writing|As Drawing Cell|As Text|Sheet as Picture")
+// (Text, 2026-10-10: a choice of its own beside Writing, which is still the graphics; only where the app has a reader; and "drop the word As".)
+ok("Bring in's menu offers Writing, Drawing Cell, Text, Sheet as Picture and Sheet as Text",
+  await js(`[...document.querySelectorAll('.float-menu [data-bar^=bring-] .float-label')].map(b => b.textContent).join('|')`) === "Writing|Drawing Cell|Text|Sheet as Picture|Sheet as Text")
 ok("...with the current default ticked (Writing)", await js(`document.querySelector('.float-menu [data-bar=bring-writing]').getAttribute('aria-checked')`) === "true")
 await js(`document.querySelector('.float-menu [data-bar=bring-cell]').click(); true`); await sleep(900)
 ok("...the choice is remembered", await js(`localStorage.getItem('writemind.bringInTo')`) === '"cell"')
-ok("As Drawing Cell brings the writing in at once: a new drawing cell in the note", (await cellsIn()) === cellsBefore + 1, JSON.stringify(await docText()))
+ok("Drawing Cell brings the writing in at once: a new drawing cell in the note", (await cellsIn()) === cellsBefore + 1, JSON.stringify(await docText()))
 const kept = (await sheetStrokes()).length
 await js(`document.querySelector('.camera-bar [data-capture=ink]').click(); true`); await sleep(900)
 ok("...and the button now does that: another drawing cell", (await cellsIn()) === cellsBefore + 2, JSON.stringify(await docText()))
