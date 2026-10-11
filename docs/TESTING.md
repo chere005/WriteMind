@@ -160,6 +160,18 @@ git-ignored). With `WM_PORT` alone the notes folder is read from the app and scr
 * **A script that presses a command key must press the machine's own**: the app's key table is `CmdOrCtrl`, so on a Mac
   `key("f", { ctrl: true })` is a key that does nothing. `e2e/lib/overlays.mjs` has `mod` (Cmd on a Mac, Ctrl elsewhere) and
   `replaceChord`; the older scripts that type Ctrl fail on a Mac today, before any change.
+* **A key that IS the Control key on a Mac, and a key the footer SPELLS.** `key("g", { ctrl: true })` is turned into ⌘G on a Mac
+  (`macKeys.mjs`: Ctrl+G is an editing chord there), which is Find Next, not the drawing layer's Group, which is a real ⌃G
+  on both machines: send it as written with `{ ctrl: true, raw: true }` (`raw` changes nothing on Windows). And a hint that
+  names a key (the sheet's "Erase Tool, Cmd+Alt+2…") spells it for the machine: check it against `shownKey("penErase")`
+  (the app's own table, `shown(id, process.platform)`), never a literal "Ctrl+Alt+2".
+* **A press on the empty page under the note puts the BAR up there** (the tail seam), and it stays up while the caret sits on
+  its offset (`setDoc("hello", 5)` keeps it). Backspace, Delete and Escape at a bar take the bar back and write nothing, so a
+  script about what the NOTE's Backspace does moves the caret off the bar first (`setSel(0)`) and may assert `!(await armed())`.
+* **A page that has no drawing layer routes nothing.** The layer (`Canvas`) is only there on the rendered page, so a script
+  that reads connectors off the file after a capture on the source view sees what the app wrote on arrival
+  (`addCapture` routes a chart's arrows itself); a script that moves a node and expects the arrows to follow needs
+  `freshNote({ rendered: true })`.
 * **The window is set to 1440x900** (offscreen) when the harness loads, so layout and coordinates are the same every
   run. Do not hard-code points that depend on the viewport; derive them from `rectOf` / `brackets()` / `lineBoxes()`.
   A click at the far right of a line lands on the cell brackets, not the text.

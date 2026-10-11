@@ -22,9 +22,9 @@ import { fileURLToPath } from "node:url"
 import { connectCdp, sleep, until } from "./cdp.mjs"
 import { restartInstance, stopInstance } from "./instance.mjs"
 import { readWm, writeWm } from "./wm.mjs"
-import { macChord } from "./macKeys.mjs"
+import { macChord, shownKey } from "./macKeys.mjs"
 
-export { sleep, until }
+export { sleep, until, shownKey }
 
 const here = path.dirname(fileURLToPath(import.meta.url))
 const repo = path.resolve(here, "..", "..")

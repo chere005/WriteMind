@@ -4,7 +4,7 @@
 // and a cancelled label does not swallow the next one. Unit side: apps/desktop/test/layerKeys.test.ts.
 import {
   js, ok, finish, sleep, drag, click, dblclick, key, typeText, freshNote, saved, canvasBox, arm, CTRL, MOD, SHIFT,
-  doc, setDoc, sel, setSel, focus, handles, shot, waitFor, press, line, send,
+  doc, setDoc, sel, setSel, focus, handles, shot, waitFor, press, line, send, armed,
 } from "../../lib/harness.mjs"
 
 const file = await freshNote({ rendered: true })
@@ -66,7 +66,12 @@ await key("Backspace")
 ok("...so Backspace removes the shape and only the shape", (await shapes()).length === 0 && (await doc()) === "hello", JSON.stringify(await doc()))
 
 // A key repeat of a Backspace the layer took is the layer's too (a held key must not start eating the note).
+// (The press on the empty page above put the BAR up under the note, and a caret AT its offset keeps it up: setDoc("hello", 5)
+// would leave it. Backspace at a bar takes the bar back and writes nothing (preview/keys.ts leaveBar), so the fresh press
+// below could not be the note's. A caret moved off the bar's offset puts the bar away, as a press on the words does.)
+await setSel(0)
 await setDoc("hello", 5); await focus()
+ok("no bar is up under the note, so a fresh Backspace is the note's", !(await armed()))
 await place()
 {
   // One physical press, held: the key goes down, repeats while it is held, and comes up once.
