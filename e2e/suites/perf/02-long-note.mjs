@@ -10,7 +10,7 @@
 import fs from "node:fs"
 import path from "node:path"
 import {
-  ok, finish, js, send, sleep, until, note, seedNotes, notesDir, closeAllTabs, VIEW, shot,
+  ok, finish, js, send, sleep, until, note, seedNotes, notesDir, closeAllTabs, setRendered, VIEW, shot,
 } from "../../lib/harness.mjs"
 
 /** The note: 30 parts of 9 sections (every third a level deeper), each with a paragraph and the furniture of a real note. */
@@ -64,6 +64,8 @@ async function open() {
   await closeAllTabs()
   await js(`[...document.querySelectorAll('.note-row')].find(r=>r.dataset.path===${JSON.stringify(file)})?.click()`)
   await until(() => js(`(()=>{const c=document.querySelector('.cm-content');return !!c && c.cmTile.view.state.doc.length===${BIG.length}})()`), 15000, 50)
+  // The ink layer is the rendered page's (2.17.0), so the page that is measured is the rendered one.
+  await setRendered(true)
   await sleep(1500)
 }
 await js(`window.wm.writeDrawing(${JSON.stringify(file)}, '{"items":[]}')`)
@@ -110,7 +112,7 @@ const onPage = JSON.parse(await js(`(()=>{const c=document.querySelector('.wm-in
 ok("after scrolling, the ink is under its strokes' own points", onPage.length >= 2 && onPage.filter((a) => a > 0).length === onPage.length, JSON.stringify(onPage))
 await shot("ink-scrolled")
 
-// ---- typing in the middle of the note (500 strokes on the layer)
+// ---- typing in the middle of the note (500 strokes on the layer, which is the rendered page's)
 const caretAt = async (pos) => {
   await js(`(()=>{const v=${VIEW};v.dispatch({selection:{anchor:${pos}},effects:v.constructor.scrollIntoView(${pos},{y:'center'})});v.focus()})()`)
   await sleep(400)
@@ -137,7 +139,10 @@ for (let i = 0; i < 40; i++) typing.push(await press("a", "KeyA", 65, "a"))
 note(`typing key -> 2 frames: median ${pct(typing, 0.5).toFixed(1)} ms, p95 ${pct(typing, 0.95).toFixed(1)} ms (two frames are 33 ms)`)
 ok("typing in the long note answers within 60 ms (median)", pct(typing, 0.5) < 60, `median ${pct(typing, 0.5).toFixed(1)}`)
 
-// ---- Enter and Backspace at a section boundary (the caret at the start of a heading)
+// ---- Enter and Backspace at a section boundary (the caret at the start of a heading). That caret is the source editor's:
+// the rendered page keeps it after the heading's hidden `### `, so there an Enter splits the heading's words off into a
+// cell of their own and a Backspace joins the cells, which is another rule (cells/ checks it), not a section boundary.
+await setRendered(false)
 const enter = [], back = []
 const length = await js(`${VIEW}.state.doc.length`)
 for (let i = 0; i < 8; i++) {

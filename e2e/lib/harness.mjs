@@ -375,8 +375,17 @@ export const noteRows = () => js(`[...document.querySelectorAll('.note-row')].ma
 // The bar's ONE pen button (Sean, 2026-10-10): lit while the pen is down (or, when the button is the eraser, while it erases).
 const penButton = `document.querySelector('[data-bar=pen]')`
 export const penIsDown = () => js(`(()=>{const b=${penButton};return !!b&&b.classList.contains('on')})()`)
-/** Put the pen down (true: it draws) or up (false: the cursor/mouse). */
+/**
+ * Put the pen down (true: it draws) or up (false: the cursor/mouse). The bar's one button is the pen OR the eraser and
+ * remembers which (a script that chose the eraser leaves it so, and a click on that button turns the eraser on, which
+ * is not the pen): so the pen is asked for through the menu's Pen row when the button is the eraser.
+ */
 export async function setPen(want) {
+  if (want && (await eraserState()).tool === "eraser") {
+    await penMenu(); await js(`document.querySelector('.float-menu [data-bar=pen-pen]').click()`)
+    await sleep(250)
+    return
+  }
   if ((await penIsDown()) === want) return
   await js(`${penButton}?.click()`)
   await sleep(250)
@@ -420,7 +429,9 @@ export async function freshNote({ video = false, rendered = false } = {}) {
   const name = file.split(/[\\/]/).pop().replace(/\.wm$/, "")
   await js(`(() => { const r=[...document.querySelectorAll('.note-row')]; const m=r.find(x=>x.dataset.path===${JSON.stringify(file)})||r.find(x=>x.textContent.includes(${JSON.stringify(name)}))||r[0]; m.click() })()`)
   if (rendered) { await waitFor(`!!document.querySelector('.cm-editor')`); await setRendered(true) }
-  await waitFor(`!!document.querySelector('.wm-canvas')`)
+  // The ink layer is the rendered page's, so it is waited for there; the source page is ready with its editor (waiting eight
+  // seconds for a layer that is not on that page cost every script that makes a note and stays on the source page).
+  await waitFor(`(()=>{const e=document.querySelector('.cm-editor');return !!e && (!e.classList.contains('wm-rendered') || !!document.querySelector('.wm-canvas'))})()`)
   await setPen(false)
   await sleep(500)
   return file

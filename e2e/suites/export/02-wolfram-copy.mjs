@@ -11,11 +11,11 @@ import { spawnSync } from "node:child_process"
 import {
   ok, note, skip, finish, js, send, sleep, freshNote, setDoc, focus, key, dragPath, line, saved, until, doc, click, brackets, menuClick, META, VIEW,
 } from "../../lib/harness.mjs"
+import { wolframEngine } from "./_lib.mjs"
 
 if (process.platform !== "darwin") { skip("copy for Mathematica", "the front end's clipboard type is known on a Mac only"); finish(); process.exit(0) }
 const OMEG = `electron application/osclipboard;format="dyn.ah62d4rv4gk8y8xnfk6"`
-const wolframscript = ["/opt/homebrew/bin/wolframscript", "/usr/local/bin/wolframscript", "/Applications/Wolfram Engine.app/Contents/Resources/Wolfram Player.app/Contents/MacOS/wolframscript",
-  "/Applications/Wolfram.app/Contents/MacOS/wolframscript", "/Applications/Mathematica.app/Contents/MacOS/wolframscript"].find((file) => fs.existsSync(file))
+const engine = wolframEngine()
 const cellBox = async () => JSON.parse(await js(`(()=>{const e=document.querySelector('.wm-inkcell canvas');if(!e)return 'null';const r=e.getBoundingClientRect();return JSON.stringify({x:r.x,y:r.y,w:r.width,h:r.height})})()`))
 /** The platform's own Copy / Paste, as the key delivers it (Chromium takes `commands` for the editing action). */
 const system = async (command, k) => {
@@ -27,7 +27,7 @@ const clip = async () => JSON.parse(await js(`window.wm.e2eClipboard("read").the
 
 await js(`window.wm.e2eClipboard("save")`)
 try {
-  const file = await freshNote()
+  const file = await freshNote({ rendered: true })   // (the drawing layer is the rendered page's)
   await setDoc("# Copy\n\nA drawing cell below.", 0)
   await focus(); await js(`${VIEW}.dispatch({selection:{anchor:20}})`)
   await menuClick("insertInkCell"); await sleep(700)
@@ -47,8 +47,11 @@ try {
   const first = await clip()
   ok("the page's own copy is on the clipboard still (WriteMind's cells, and words)", Object.keys(first).some((t) => /chromium|web custom/i.test(t)) && typeof first["text/plain"] === "string", Object.keys(first).join(", "))
   ok("the front end's own type is there at once, holding the cell that makes the drawing", /Cell\[BoxData\["\(\* WriteMind: a drawing/.test(first[OMEG] ?? ""), String(first[OMEG]).slice(0, 80))
-  if (!wolframscript) skip("the image itself", "no wolframscript here")
-  else {
+  // The image itself, and what is made of it, needs an engine that evaluates (wolframEngine: one that was never activated
+  // starts and then answers nothing, so the copy keeps its first write, the open Input cell).
+  if (!engine.script) {
+    for (const name of ["when the engine answers, the same type holds the image itself", "a PNG for other apps went beside it", "it parses back to a Cell holding an Image"]) skip(name, engine.why)
+  } else {
     const answered = await until(async () => /GraphicsBox/.test((await clip())[OMEG] ?? ""), 60000, 500)
     ok("when the engine answers, the same type holds the image itself", answered)
     const second = await clip()
@@ -57,10 +60,12 @@ try {
     const text = second[OMEG] ?? ""
     const out = path.join(os.tmpdir(), `wm-e2e-copy-${process.pid}.txt`)
     fs.writeFileSync(out, text)
-    const run = spawnSync(wolframscript, ["-code", `c = ToExpression[ReadString["${out}"]]; i = ToExpression[c[[1, 1]]]; Print[Head[c], " ", ImageQ[i], " ", ImageDimensions[i]]`], { encoding: "utf8", timeout: 120000 })
+    const run = spawnSync(engine.script, ["-code", `c = ToExpression[ReadString["${out}"]]; i = ToExpression[c[[1, 1]]]; Print[Head[c], " ", ImageQ[i], " ", ImageDimensions[i]]`], { encoding: "utf8", timeout: 120000 })
     fs.rmSync(out, { force: true })
     ok("it parses back to a Cell holding an Image", /^Cell True \{\d+, \d+\}/.test(run.stdout.trim()), run.stdout.trim())
-    // A paste back into WriteMind is the cells and only the cells.
+  }
+  // A paste back into WriteMind is the cells and only the cells (with the engine's image on the clipboard or without it).
+  {
     const floatingBefore = (await saved(file, () => true)).items.filter((i) => i.kind !== "cell").length
     const last = (await brackets()).at(-1)
     await click(last.right, last.y); await sleep(150)

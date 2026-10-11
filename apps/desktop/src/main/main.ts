@@ -331,8 +331,10 @@ async function createWindow(): Promise<void> {
     ...(placed.x !== undefined && placed.y !== undefined ? { x: placed.x, y: placed.y } : {}),
     // WRITEMIND_OFFSCREEN: test instances open far outside the visible
     // desktop and never take focus, so a run of end-to-end scripts does not
-    // flash over whatever the person is doing.
-    ...(process.env.WRITEMIND_OFFSCREEN ? { x: -32000, y: -32000, focusable: true } : {}),
+    // flash over whatever the person is doing. (AppKit pulls every window back
+    // onto a display unless it may be larger than the screen, so on a Mac the
+    // far corner only holds with that flag.)
+    ...(process.env.WRITEMIND_OFFSCREEN ? { x: -32000, y: -32000, focusable: true, enableLargerThanScreen: true } : {}),
     minWidth: MIN_WINDOW.width,
     minHeight: MIN_WINDOW.height,
     // Sean never asked for a full-screen mode and does not want one: no chord,

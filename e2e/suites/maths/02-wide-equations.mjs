@@ -4,7 +4,7 @@
 // pane's width and a BLOCK equation scrolls in a box of its own. An INLINE equation is a run of text (Mathslane-fix2:
 // it used to be an inline-block that got a scroll box when it did not fit), so it simply wraps with the words round it.
 // Fixed 2026-10-03 (Mathslane-fix1 / fix2): `.cm-content { min-width: 0 }` (packages/editor/src/math.ts).
-import { ok, finish, js, sleep, until, freshNote, setDoc, focus, shot, setWindowSize, click, VIEW } from "../../lib/harness.mjs"
+import { ok, skip, finish, js, sleep, until, freshNote, setDoc, focus, shot, setWindowSize, click, VIEW } from "../../lib/harness.mjs"
 
 const BT = "`", FENCE = BT.repeat(3)
 const terms = (n) => Array.from({ length: n }, (_, i) => `a${i}*x^${i}`).join(" + ")
@@ -28,8 +28,13 @@ const doc = [
   "end",
 ].join("\n")
 
-// The browser reports a rectangle per span of an inline equation: group them into the lines they are on.
-const LINES = `(e) => { const rs = [...e.getClientRects()].filter((r) => r.width > 0).sort((a, b) => (a.top + a.bottom) - (b.top + b.bottom)); const out = []
+// The browser reports a rectangle per span of an inline equation: group them into the lines they are on. The rectangles are
+// those of its WORDS (a run of characters that are not white space): the space a line breaks at hangs past the line's edge
+// (the equation's spans are pre-wrap), a width the eye never sees, and a span's own rectangle would count it as a piece.
+const LINES = `(e) => { const rs = []; const walk = document.createTreeWalker(e, NodeFilter.SHOW_TEXT)
+  for (let n = walk.nextNode(); n; n = walk.nextNode()) for (const m of n.nodeValue.matchAll(/\\S+/g)) {
+    const r = document.createRange(); r.setStart(n, m.index); r.setEnd(n, m.index + m[0].length); rs.push(...[...r.getClientRects()].filter((q) => q.width > 0)) }
+  rs.sort((a, b) => (a.top + a.bottom) - (b.top + b.bottom)); const out = []
   for (const r of rs) { const mid = (r.top + r.bottom) / 2; const last = out[out.length - 1]
     if (last && mid - last.mid < 9) { last.left = Math.min(last.left, r.left); last.right = Math.max(last.right, r.right) }
     else out.push({ mid, left: r.left, right: r.right }) }
@@ -102,9 +107,14 @@ const barOf = (selector) => js(`(() => { const e = document.querySelector(${JSON
   return { x: Math.round(r.left + r.width / 2), y: Math.round(r.bottom - 3), top: Math.round(r.top + 10), client: e.clientHeight, height: Math.round(r.height) } })()`)
 const head = () => js(`${VIEW}.state.selection.main.head`)
 const bar = await barOf(".wm-math-block")
-await click(bar.x, bar.y)
-await sleep(300)
-ok("a press on the block's scrollbar leaves it typeset, the caret where it was", (await js(`!!document.querySelector('.wm-math-block')`)) && (await head()) === doc.length, JSON.stringify({ bar, head: await head() }))
+// (A bar to press needs room of its own: a classic scroll bar, as Windows draws. The overlay bars of a Mac take none, and
+// the instance hides them besides, so there the bottom of the box is the equation and a press on it rightly opens it.)
+if (bar.client >= bar.height - 4) skip("a press on the block's scrollbar leaves it typeset, the caret where it was", `this instance draws no scroll bar on the block (client height ${bar.client} of ${bar.height})`)
+else {
+  await click(bar.x, bar.y)
+  await sleep(300)
+  ok("a press on the block's scrollbar leaves it typeset, the caret where it was", (await js(`!!document.querySelector('.wm-math-block')`)) && (await head()) === doc.length, JSON.stringify({ bar, head: await head() }))
+}
 await js(`document.querySelector('.wm-math-block').scrollLeft = 0`)
 const body = await barOf(".wm-math-block")
 await click(body.x, body.top)
