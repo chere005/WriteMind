@@ -19,13 +19,19 @@
  * the picture, its box, corners, shape and reading, kept across restarts). "+" takes the camera's current picture (the
  * held one when Hold image is on) into a new page and opens it; a click opens a tab, double-click renames; the x closes a
  * page, and always asks first ("Close?", then a second click) because the picture goes with it.
+ *
+ * THE TABS CAN BE REARRANGED (Sean, 2026-10-10: "add rearranging tabs"), as the notebook's can (TabBar.tsx): press a tab and drag it
+ * sideways (tabDrag.ts), and the order is kept, with the sheets in userData/sheets.json and the pages in scans.json. The Live camera
+ * tab is not in the list that moves: it stays first and cannot be dragged. Which tab is open does not change, and nothing in a sheet
+ * or a page does: it is the arrangement of the pane.
  */
 
 import { useEffect, useLayoutEffect, useRef, useState } from "react"
 import { Icon } from "./icons"
 import { useCellSheet } from "./cellSheets"
-import { closeScan, openScan, renameScan, useScans } from "./scanTabs"
-import { addSheet, closeSheet, renameSheet, selectSheet, sheetHasInk, sheetPending, useSheetTabs } from "./tabletSheets"
+import { closeScan, moveScan, openScan, renameScan, useScans } from "./scanTabs"
+import { beginTabDrag } from "./tabDrag"
+import { addSheet, closeSheet, moveSheetTo, renameSheet, selectSheet, sheetHasInk, sheetPending, useSheetTabs } from "./tabletSheets"
 import "./tablet.css"
 
 const stop = (event: React.SyntheticEvent) => event.stopPropagation()
@@ -85,6 +91,15 @@ function CameraTabs({ scan }: { scan?: ScanStrip }) {
     closeScan(id)
   }
   const off = scan?.addOff ?? "There is no camera picture to keep"
+  /** A press on a kept page's tab: a click as ever, or a drag among the kept pages (the Live tab is not one of them). */
+  const press = (event: React.PointerEvent, id: string) => {
+    const strip = row.current, bar = strip?.parentElement
+    if (!strip || !bar || editing !== null) return
+    beginTabDrag(event, {
+      strip, row: bar, selector: "[data-scan-id]", from: kept.pages.findIndex((page) => page.id === id),
+      onDrop: (_from, to) => { moveScan(id, to) },
+    })
+  }
   return (
     <div className="sheet-tabs" data-sheets="camera" onPointerDown={stop} onPointerUp={stop}>
       <div className="sheet-scroll" ref={row} role="tablist" aria-label="Pages"
@@ -100,7 +115,8 @@ function CameraTabs({ scan }: { scan?: ScanStrip }) {
           return (
             <div key={page.id} role="tab" aria-selected={on} data-scan-tab={page.id} data-scan-id={page.id}
                  className={`sheet-tab scan${on ? " on" : ""}${asking ? " asking" : ""}`}
-                 title={`${page.name}: a page kept from the camera (double-click to rename)`}
+                 title={`${page.name}: a page kept from the camera (double-click to rename, drag to move)`}
+                 onPointerDown={(event) => press(event, page.id)}
                  onClick={() => openScan(page.id)} onDoubleClick={() => setEditing(page.id)}>
               {editing === page.id
                 ? <NameField name={page.name} label="Page name" onDone={(name) => { setEditing(null); if (name !== null) renameScan(page.id, name) }} />
@@ -130,6 +146,15 @@ function TabletTabs() {
   const [editing, setEditing] = useState<string | null>(null)
   const [armed, setArmed] = useArmed("data-sheet-close")
   const only = tabs.tabs.length <= 1
+  /** A press on a sheet's tab: a click as ever, or a drag among the sheets. */
+  const press = (event: React.PointerEvent, id: string) => {
+    const strip = row.current, bar = strip?.parentElement
+    if (!strip || !bar || editing !== null) return
+    beginTabDrag(event, {
+      strip, row: bar, selector: ".sheet-tab", from: tabs.tabs.findIndex((tab) => tab.id === id),
+      onDrop: (_from, to) => { moveSheetTo(id, to) },
+    })
+  }
 
   useKeepInView(row, `[data-sheet-id="${tabs.current}"]`, [tabs.current, tabs.tabs.length])
 
@@ -156,7 +181,8 @@ function TabletTabs() {
           <div key={tab.id} role="tab" aria-selected={on} data-sheet-id={tab.id} data-inked={tab.inked ? "1" : "0"}
                data-bound={bound ? "1" : undefined}
                className={`sheet-tab${on ? " on" : ""}${asking ? " asking" : ""}${bound ? " bound" : ""}`}
-               title={bound ? `${tab.name}: writes into a drawing cell of ${where} (double-click to rename)` : `${tab.name} (double-click to rename)`}
+               title={bound ? `${tab.name}: writes into a drawing cell of ${where} (double-click to rename, drag to move)` : `${tab.name} (double-click to rename, drag to move)`}
+               onPointerDown={(event) => press(event, tab.id)}
                onClick={() => selectSheet(tab.id)}
                onDoubleClick={() => setEditing(tab.id)}>
             {editing === tab.id

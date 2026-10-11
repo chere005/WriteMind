@@ -36,6 +36,7 @@ import { readInkLines } from "./inkReading"
 import { CameraPane, type Capture } from "./CameraPane"
 import { PaneDivider } from "./PaneDivider"
 import { TabBar } from "./TabBar"
+import { canStep, moveKeyed, stepKeyed } from "./tabOrder"
 import { Notebook, type ViewState } from "./Notebook"
 import { LinkBanner, type LinkRequest } from "./LinkBanner"
 import { FindBar, type FindRequest } from "./FindBar"
@@ -1325,6 +1326,21 @@ export function App() {
     if (current !== path) void openNote(keep)
   }, [current, open, openNote])
 
+  /**
+   * REARRANGING THE TABS (a drag on a tab, Move Tab Left / Right, Ctrl+Shift+PageUp / PageDown): `open` is the row's order and
+   * the session keeps it, so the order survives a restart. It is the arrangement of the window and not an edit — no undo step,
+   * no write to a note — and the note in front is named by its path, so it stays in front wherever it ends up.
+   */
+  const [moved, setMoved] = useState<{ path: string; n: number } | null>(null)
+  const moveTab = useCallback((path: string, to: number) => {
+    setOpen((was) => moveKeyed(was, (note) => note.path, path, to))
+    setMoved((was) => ({ path, n: (was?.n ?? 0) + 1 }))
+  }, [])
+  const stepTab = useCallback((path: string, by: -1 | 1) => {
+    setOpen((was) => stepKeyed(was, (note) => note.path, path, by))
+    setMoved((was) => ({ path, n: (was?.n ?? 0) + 1 }))
+  }, [])
+
   // MARK: - Edit mode in the sidebar
 
   /** Letting go of a note that is about to be trashed: what is in hand must not be written back after it. */
@@ -1502,6 +1518,8 @@ export function App() {
 
   const kind = platform?.platform ?? (navigator.userAgent.includes("Mac") ? "darwin" : "win32")
   const hasNote = current !== null
+  /** Where the tab in front stands in the row (-1 with none). */
+  const frontTab = open.findIndex((note) => note.path === current)
   /** Either pane can be put away, never both (`AppState` keeps at least one up). */
   const toggleCameraPane = () => {
     if (showCamera && !showEditor) setShowEditor(true)
@@ -1575,6 +1593,8 @@ export function App() {
     switch (id) {
       case "newNote": void newNote(targetFolder()); return
       case "closeTab": if (current) void close(current); return
+      // The tab in front goes one place over (Window ▸ Move Tab Left / Right); at the end of the row, nothing.
+      case "moveTabLeft": case "moveTabRight": if (current) stepTab(current, id === "moveTabLeft" ? -1 : 1); return
       case "openFolder": void window.wm.revealNotes(); return
       // Ctrl+S: what is pending (the note and its drawing) is written now (the Mac's flushPendingSave).
       case "save": if (current) void flushNow(false); return
@@ -1680,6 +1700,8 @@ export function App() {
       markers,
       canUndoDrawing: history.canUndo,
       canRedoDrawing: history.canRedo,
+      canMoveTabLeft: canStep(open.length, frontTab, -1),
+      canMoveTabRight: canStep(open.length, frontTab, 1),
       undoLabel: undoLabels.undo,
       redoLabel: undoLabels.redo,
       listStyle: listTitle(listStyle),
@@ -1770,6 +1792,7 @@ export function App() {
                 onRefreshCameras={() => run("cameraRefresh")}
                 notesPane={showEditor} onToggleNotesPane={toggleEditorPane}
                 onSelect={(note) => { void openNote(note) }} onClose={close} onCloseOthers={closeOthers}
+                onMoveTab={moveTab} onStepTab={stepTab} moved={moved}
                 onNew={() => { void newNote(targetFolder()) }} onReveal={(path) => { void window.wm.reveal(path) }}
                 onRename={renameNoteTo} onDuplicate={(note) => { void duplicate(note) }}
                 onMove={(note, folder) => { void placeNote(note.path, folder, null) }}

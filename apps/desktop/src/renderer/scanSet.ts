@@ -17,6 +17,7 @@ import type { Rect, Size } from "@writemind/core"
 import { displayedFrame, zoomedRect } from "@writemind/core"
 import type { Rotation } from "./cameraSettings"
 import { cleanName, MAX_NAME } from "./sheetSet"
+import { moveKeyed } from "./tabOrder"
 
 /** A page's picture is a whole camera frame; a runaway "+" fills the disk. */
 export const MAX_PAGES = 40
@@ -88,6 +89,15 @@ export function renamePage(set: ScanSet, id: string, name: unknown): ScanSet {
   const page = set.pages.find((one) => one.id === id)
   if (!clean || !page || page.name === clean) return set
   return updatePage(set, id, { name: clean })
+}
+
+/**
+ * The page goes to place `to` among the KEPT pages (clamped), by a drag on its tab (tabOrder.ts). The live camera tab is not in
+ * the list, so it stays first however the pages move, and which tab is open does not change. The same set when nothing moves.
+ */
+export function movePage(set: ScanSet, id: string, to: number): ScanSet {
+  const pages = moveKeyed(set.pages, (page) => page.id, id, to)
+  return pages === set.pages ? set : { ...set, pages }
 }
 
 /** A page opened, or null for the camera. An id that is not there changes nothing. */

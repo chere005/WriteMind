@@ -16,6 +16,7 @@
  */
 
 import type { Point } from "@writemind/core"
+import { moveKeyed } from "./tabOrder"
 import type { InkStroke } from "./tabletPage"
 import { parsePaper, type Paper } from "./tabletPaper"
 
@@ -72,6 +73,15 @@ export function renameSheet(set: SheetSet, id: string, name: unknown): SheetSet 
 
 export function selectSheet(set: SheetSet, id: string): SheetSet {
   return set.current === id || !has(set, id) ? set : { ...set, current: id }
+}
+
+/**
+ * The sheet goes to place `to` of the row (clamped), by a drag on its tab (tabOrder.ts). Which sheet is open does not change:
+ * it is named by its id, so the open tab keeps its place in front whatever moves round it. The same set when nothing moves.
+ */
+export function moveSheet(set: SheetSet, id: string, to: number): SheetSet {
+  const tabs = moveKeyed(set.tabs, (tab) => tab.id, id, to)
+  return tabs === set.tabs ? set : { ...set, tabs }
 }
 
 /** The next (+1) or previous (-1) sheet, round the end. */

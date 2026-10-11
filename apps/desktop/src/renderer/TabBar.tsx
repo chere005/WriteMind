@@ -15,6 +15,12 @@
  * notes' list, with their count — is the way back to a tab that has been scrolled off the end. There are no ‹ ›
  * arrows: the list is how you reach a tab you cannot see (Sean, 2026-10-10: the bars audit).
  *
+ * THE TABS CAN BE REARRANGED (Sean, 2026-10-10: "add rearranging tabs"): press a tab and drag it sideways (tabDrag.ts: the
+ * others step aside, a row that scrolls scrolls under a drag held at its end, Escape or letting go outside the row puts it
+ * back), or Move Tab Left / Right in its right-click menu and Window menu (Ctrl+Shift+PageUp / PageDown, the tab in front).
+ * The order is `open`'s, which the session keeps, so it survives a restart and the open-notes list shows it. It is the
+ * arrangement of the window and not an edit: no undo step, nothing written to a note, and the tab in front stays in front.
+ *
  * A tab's right-click menu is the sidebar row's: Rename…, Duplicate, Move to ▸ and Move to Trash… call the same
  * handlers the sidebar's rows do (App.tsx), through the same dialogs' wording (notePrompts.ts).
  *
@@ -30,6 +36,7 @@ import { MenuButton } from "./MenuButton"
 import { renamePrompt, trashPrompt } from "./notePrompts"
 import { Prompt, type PromptSpec } from "./Prompt"
 import { trashWord } from "./SidebarProject"
+import { beginTabDrag } from "./tabDrag"
 import { barTip, openCount, openListMenu, tabMenu, walkTo, wheelSteps } from "./tabMenus"
 import { videoMenu } from "./videoMenu"
 import { shown } from "../shared/commands"
@@ -61,6 +68,12 @@ interface Props {
   onSelect(note: Note): void
   onClose(path: string): void
   onCloseOthers(path: string): void
+  /** A tab dragged to place `to` of the row, from 0. */
+  onMoveTab(path: string, to: number): void
+  /** Move Tab Left (-1) / Right (+1) on one tab. */
+  onStepTab(path: string, by: -1 | 1): void
+  /** The tab that was just moved (a new object each time): brought into view if the row has it off its end. */
+  moved: { path: string; n: number } | null
   onNew(): void
   onReveal(path: string): void
   /** Rename… (a string back says why it did not work), Duplicate, Move to, and the Trash: the sidebar's own handlers. */
@@ -76,6 +89,7 @@ export function TabBar(props: Props) {
     onSelect, onClose, onCloseOthers, onNew,
   } = props
   const strip = useRef<HTMLDivElement>(null)
+  const bar = useRef<HTMLDivElement>(null)
   const [menu, setMenu] = useState<{ x: number; y: number; items: MenuItem[] } | null>(null)
   const [prompt, setPrompt] = useState<PromptSpec | null>(null)
   const wheel = useRef(0)
@@ -93,6 +107,23 @@ export function TabBar(props: Props) {
     return () => watch.disconnect()
   }, [current, open.length])
 
+  // A tab that was moved (by the menu or the keys; a drop lands in view already) is in view, however far the row has been walked.
+  useEffect(() => {
+    if (!props.moved) return
+    const tabs = [...(strip.current?.querySelectorAll<HTMLElement>(".tab") ?? [])]
+    tabs.find((tab) => tab.dataset.path === props.moved!.path)?.scrollIntoView({ block: "nearest", inline: "nearest" })
+  }, [props.moved])
+
+  /** A press on a tab: a click as ever, or (moved a few pixels) a drag that rearranges the row. */
+  const press = (event: React.PointerEvent, path: string) => {
+    const row = bar.current, element = strip.current
+    if (!row || !element) return
+    beginTabDrag(event, {
+      strip: element, row, selector: ".tab", from: open.findIndex((note) => note.path === path),
+      onDrop: (_from, to) => props.onMoveTab(path, to),
+    })
+  }
+
   /** A wheel over the strip walks along it. A mouse only sends vertical deltas, and a row of tabs is the one place that has to mean sideways. */
   const walk = useCallback((event: React.WheelEvent) => {
     const element = strip.current
@@ -107,8 +138,8 @@ export function TabBar(props: Props) {
   }, [])
 
   const tabsMenu = (note: Note) => tabMenu(note, {
-    platform, openCount: open.length, root,
-    close: onClose, closeOthers: onCloseOthers, reveal: props.onReveal,
+    platform, openCount: open.length, position: open.findIndex((one) => one.path === note.path), root,
+    close: onClose, closeOthers: onCloseOthers, step: (one, by) => props.onStepTab(one.path, by), reveal: props.onReveal,
     rename: (one) => setPrompt(renamePrompt(one, (name) => props.onRename(one, name))),
     duplicate: props.onDuplicate,
     moveTo: props.onMove,
@@ -117,7 +148,7 @@ export function TabBar(props: Props) {
 
   const key = (id: string) => shown(id, platform)
   return (
-    <div className={`tab-bar bar-row${sidebar ? "" : " under-lights"}`} data-bar="tabs">
+    <div className={`tab-bar bar-row${sidebar ? "" : " under-lights"}`} data-bar="tabs" ref={bar}>
       <button type="button" className={`bar-btn${sidebar ? " tint" : ""}`} data-bar="sidebar" aria-pressed={sidebar}
               aria-label={sidebar ? "Hide Notes Sidebar" : "Show Notes Sidebar"}
               title={barTip(sidebar ? "Hide Notes Sidebar" : "Show Notes Sidebar", key("toggleSidebar"),
@@ -145,7 +176,8 @@ export function TabBar(props: Props) {
         {open.map((note) => (
           <button key={note.path} type="button"
                   className={`tab${note.path === current ? " open" : ""}`}
-                  title={note.path}
+                  title={note.path} data-path={note.path}
+                  onPointerDown={(event) => press(event, note.path)}
                   onClick={() => onSelect(note)}
                   onAuxClick={(event) => { if (event.button === 1) { event.preventDefault(); onClose(note.path) } }}
                   onMouseDown={(event) => { if (event.button === 1) event.preventDefault() }}

@@ -62,6 +62,7 @@ describe("the quick reference's keys come from the command table", () => {
     expect(both("Search notes")).toEqual(["Ctrl+Shift+F", "⇧⌘F"])
     expect(both("Undo / Redo")).toEqual(["Ctrl+Z / Ctrl+Y", "⌘Z / ⇧⌘Z"])
     expect(both("Find / Replace")).toEqual(["Ctrl+F / Ctrl+H", "⌘F / ⌥⌘F"])
+    expect(both("Move tab left / right")).toEqual(["Ctrl+Shift+PageUp / PageDown", "⌃⇧PageUp / PageDown"])
     expect(both("Show / hide video")).toEqual(["Ctrl+Shift+Y", "⌘Y"])
     expect(both("Pen down / up")).toEqual(["Ctrl+P", "⌘P"])
     expect(both("1 Title")).toEqual(["Ctrl+1", "⌘1"])
@@ -139,7 +140,7 @@ describe("the quick reference's keys come from the command table", () => {
     const text = welcomeNote(process.platform)
     expect(text.startsWith("# WriteMind Quick Reference\n")).toBe(true)
     for (const name of [
-      "Cells", "Text and markdown cells", "Maths cells", "Tables", "Rendered page", "Toolbar", "Pen", "Tabs", "Search notes", "Sidebar", "Undo",
+      "Cells", "Text and markdown cells", "Maths cells", "Tables", "Rendered page", "Toolbar", "Pen", "Tabs", "Move tabs", "Search notes", "Sidebar", "Undo",
       "Drawing", "Runnable cells", "Language Setup", "Video pane", "Read words", "Pane tabs", "Wacom tablet", "Mathematica", "Wacom pen buttons", "Notes are files", "Updates", "About",
     ]) {
       expect(WELCOME_FEATURES.some((one) => one.startsWith(`**${name}:**`)), name).toBe(true)
@@ -257,6 +258,19 @@ describe("the feature list is true to the source", () => {
     const tabMenus = read("apps/desktop/src/renderer/tabMenus.ts")
     for (const label of ["Rename…", "Duplicate", "Move to"]) expect(tabMenus, label).toContain(`label: "${label}"`)
     expect(features("Tabs")).toContain("Rename…, Duplicate and Move to")
+    // rearranging them (Sean, 2026-10-10: "add rearranging tabs"): a drag on the notebook's tab and on both of the pane's rows, and the two
+    // commands (the keys the line names), in the Window menu and in the tab's right-click menu
+    expect(tabs).toContain("beginTabDrag")
+    expect(strip.match(/beginTabDrag\(/g)?.length, "the camera's pages and the tablet's sheets drag").toBe(2)
+    for (const label of ["Move Tab Left", "Move Tab Right"]) {
+      expect(tabMenus, label).toContain(`label: "${label}"`)
+      expect(menu, label).toContain(`"${label}"`)
+    }
+    for (const id of ["moveTabLeft", "moveTabRight"]) {
+      expect(menu, id).toContain(`item("${id}"`)
+      expect(features("Move tabs"), id).toContain(shown(id, "win32")!)
+    }
+    expect(features("Move tabs")).toContain("drag a tab along the row, in the notebook or the video pane")
     // the pane's tabs are the notebook's: the strip carries the Live tab, the kept pages' tabs and the sheets', and renames and closes them
     expect(strip).toContain("data-scan-tab")
     expect(strip).toContain("data-sheet-id")

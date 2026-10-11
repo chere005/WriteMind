@@ -30,7 +30,7 @@ import { CellPage } from "./cellPage"
 import { rememberPlain, type FollowSheets } from "./sheetFollow"
 import { currentTurns, subscribeOrientation, tabletAspect } from "./orientation"
 import {
-  addSheet as addTo, boundSheetName, closeSheet as closeIn, firstSet, MAX_SHEETS, parseSheets, renameSheet as renameIn,
+  addSheet as addTo, boundSheetName, closeSheet as closeIn, firstSet, MAX_SHEETS, moveSheet as moveIn, parseSheets, renameSheet as renameIn,
   sameCell, selectSheet as selectIn, serialiseSheets, stepSheet as stepIn, type CellRef, type SheetSet, type StoredSheets,
 } from "./sheetSet"
 import { screenAspect, TabletPage, type InkStroke } from "./tabletPage"
@@ -240,6 +240,8 @@ export function renameBoundNotes(from: string, to: string): void {
 export const sheetsChanged = (): void => save()
 
 export const renameSheet = (id: string, name: string): boolean => apply(renameIn(set, id, name))
+/** A tab dragged to place `to` of the row (SheetStrip.tsx). The arrangement of the window: the open sheet stays open, nothing in a sheet changes. */
+export const moveSheetTo = (id: string, to: number): boolean => apply(moveIn(set, id, to))
 /** Open a sheet as it is (the follow rules' own moves, and a bound sheet opened from its cell). */
 export const showSheet = (id: string): boolean => apply(selectIn(set, id))
 
@@ -340,7 +342,7 @@ if (typeof window !== "undefined") {
     const w = window as unknown as Record<string, unknown>
     Object.defineProperty(w, "__wmSheet", { configurable: true, get: currentSheet })
     w.__wmSheets = {
-      view: sheetTabs, add: addSheet, close: closeSheet, rename: renameSheet, select: selectSheet, step: stepSheet,
+      view: sheetTabs, add: addSheet, close: closeSheet, rename: renameSheet, select: selectSheet, step: stepSheet, move: moveSheetTo,
       show: showSheet, plain: () => lastPlain,
       loaded: () => loaded, flush: writeNow,
       bound: () => boundPages().map((page) => ({ sheet: page.sheet, ...page.ref, pending: page.pending, frame: page.frame })),

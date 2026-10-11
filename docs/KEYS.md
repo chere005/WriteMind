@@ -25,7 +25,7 @@ press would run twice. Each command names its owner instead:
 |---|---|---|
 | `editor` | CodeMirror's keymap (`packages/editor/src/keys.ts`, `extras.ts`). The page stands down because the key arrives `defaultPrevented`. | the Format menu, Select Next / All Occurrences, Code Block |
 | `history` | `useUndo` (the words, the drawing and the FILE operations share one Undo: `docs/PLAN-undo.md`) | Undo, Redo |
-| `page` | `useChrome` in the page | File, View, Insert, Pen, Undo/Redo Drawing, Expand Selection, Find, Input Devices, Help |
+| `page` | `useChrome` in the page | File, View, Insert, Pen, Undo/Redo Drawing, Expand Selection, Find, Input Devices, Window, Help |
 | `main` | `useChrome`, which hands it to the main process (dialogs, the project file) | Project menu |
 
 A **menu click** sends `menu:command` to the page (or runs in the main process
@@ -122,6 +122,8 @@ Mac app's own chord; "—" is a port-only key.
 | Pen | Next Sheet | Ctrl+Alt+PageDown | — |
 | Pen | Previous Sheet | Ctrl+Alt+PageUp | — |
 | Input Devices | Refresh Device List | Ctrl+Alt+R | ⌥⌘R |
+| Window | Move Tab Left | Ctrl+Shift+PageUp | — |
+| Window | Move Tab Right | Ctrl+Shift+PageDown | — |
 | Help | Keyboard Shortcuts | F1 | — |
 
 Notes, so nobody "fixes" them:
@@ -163,6 +165,11 @@ Notes, so nobody "fixes" them:
   table must be changed to match).
 - **Ctrl+Alt+Arrows** are the screen-rotation hot keys of some Intel graphics drivers; where those are on, fold
   from the menu.
+- **Move Tab Left / Right (Ctrl+Shift+PageUp / PageDown, Window menu)** move the notebook's TAB IN FRONT one place over, and do
+  nothing at the end of the row (the menu items are greyed there). They are the keyboard's way to what a drag on a tab does
+  (Sean, 2026-10-10: "add rearranging tabs"); the tab's right-click menu has the same two for the tab clicked. The chord is
+  a literal Ctrl on a Mac too (a browser's own move-tab chord). Moving a tab is the arrangement of the window, not an edit:
+  no undo step, nothing written to a note, and the order is kept in the session.
 - **Markdown Markers** (View menu, no key) and **Markdown Preview** (Ctrl+T) are two independent switches, as on
   the Mac (`showMarkers` and `mode`): the markers are about the markdown side (hidden, the `**`, the `#`, a link's
   URL are put away on every line but the caret's and the file is untouched; the choice is remembered); the

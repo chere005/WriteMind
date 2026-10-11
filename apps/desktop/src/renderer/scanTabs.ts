@@ -11,7 +11,7 @@
  */
 
 import { useSyncExternalStore } from "react"
-import { addPage, closePage, emptySet, MAX_PAGES, parseScans, renamePage, selectPage, serialiseScans, updatePage, type ScanPage, type ScanSet } from "./scanSet"
+import { addPage, closePage, emptySet, MAX_PAGES, movePage, parseScans, renamePage, selectPage, serialiseScans, updatePage, type ScanPage, type ScanSet } from "./scanSet"
 
 let seq = 0
 const newId = (): string => `p${Date.now().toString(36)}${(++seq).toString(36)}`
@@ -60,6 +60,8 @@ export function closeScan(id: string): boolean {
 }
 
 export const renameScan = (id: string, name: string): boolean => apply(renamePage(set, id, name))
+/** A kept page dragged to place `to` among the kept pages (SheetStrip.tsx); the Camera tab stays first and which tab is open does not change. */
+export const moveScan = (id: string, to: number): boolean => apply(movePage(set, id, to))
 /** Open a page, or the camera (null). */
 export const openScan = (id: string | null): boolean => apply(selectPage(set, id))
 /** What was done to a page since (its box, corners, turn, shape, reading): kept with it. */
@@ -115,7 +117,7 @@ if (typeof window !== "undefined") {
   // End-to-end scripts (WRITEMIND_E2E, whose preload adds `e2eWindow`) read the list and drive the tabs.
   if ((window as unknown as { wm?: { e2eWindow?: unknown } }).wm?.e2eWindow) {
     ;(window as unknown as Record<string, unknown>).__wmScans = {
-      set: () => set, open: openScan, close: closeScan, rename: renameScan, loaded: () => loaded, flush: writeNow,
+      set: () => set, open: openScan, close: closeScan, rename: renameScan, move: moveScan, loaded: () => loaded, flush: writeNow,
       bytes: pageBytes,
     }
   }
