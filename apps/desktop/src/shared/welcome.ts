@@ -41,15 +41,22 @@ export const WELCOME_INTRO =
  * items and buttons are named as the menu bar and the panes name them.
  */
 export const welcomeFeatures = (mac: boolean): string[] => [
-  "**Cells:** headings, text, markdown, lists, quotes, code, runnable code, maths, tables and drawings; the + on the bar between two cells adds one.",
+  "**Cells:** headings, text, markdown, lists, quotes, code, runnable code, maths, tables and drawings; the Style menu and the + between two cells make one.",
   `**Text and markdown cells:** ${key("heading:0", mac)} makes a text cell, shown exactly as typed; ${key("markdownCell", mac)} a markdown cell, read as markdown.`,
   `**Maths cells:** ${key("mathsCell", mac)} makes one, or turns a cell's words into one; Wolfram Language, typeset when the caret leaves. ${key("insertMath", mac)} opens the palette.`,
   "**Tables:** a pipe table (`| a | b |`) is one cell, a real table on the rendered page; Tab and Return move along it.",
   `**Rendered page:** ${key("toggleMode", mac)} shows the note as a finished page you can still type in.`,
-  `**Drawing:** ink, shapes, arrows, text boxes and pictures float over the note; Dock in a picked one's bar makes it a cell. ${key("insertInkCell", mac)} makes a drawing cell.`,
+  "**Toolbar:** Style, B I U S, font and colour, List, Quote, Code; then Text box, Picture, Table, Maths, Shapes and Move section up / down; ⋯ holds what does not fit.",
+  `**Pen:** one button puts it down or up (${key("togglePen", mac)}); its menu picks Pen or Eraser, a colour and a width, and Pen always draws on a tablet.`,
+  "**Tabs:** the row over the note has the sidebar, rendered page and video buttons, then your open notes; right-click a tab for Rename…, Duplicate and Move to.",
+  `**Search notes:** ${key("searchNotes", mac)} searches every note of the project by title and words; Enter opens the match with Find on it.`,
+  "**Sidebar:** a search field, + for a new note or section and the pencil for Edit; every row has a ⋯ menu, and a note dropped on a New note row moves there.",
+  `**Undo:** ${key("undo", mac)} takes back your typing or one of the last three file steps (new, duplicate, rename, move, trash, Clean Up); Edit ▸ Undo names it.`,
+  `**Drawing:** ink, shapes, arrows, text boxes and pictures float over the note; a picked one has handles and Dock into the note. ${key("insertInkCell", mac)} makes a drawing cell.`,
   `**Runnable cells:** Python, Wolfram, C, C++ and Rust, each with its icon and In[n] / Out[n]; ${chordText("Shift-Enter", mac)} runs one.`,
   "**Language Setup:** File ▸ Language Setup… shows which program runs each language, tests it, lets you choose another and helps you get a missing one.",
-  "**Video pane:** a document camera: its box and the Writing, Image and Raw buttons bring a page in as ink or a picture; + keeps each scanned page as a tab.",
+  "**Video pane:** a document camera: turn, zoom, hold and straighten the picture; its box and the Writing, Image and Raw buttons bring a page in as ink or a picture.",
+  "**Pane tabs:** the camera's Live tab and a tab for each page you keep with +, or the tablet's sheets: the notebook's own tabs; double-click renames, × closes.",
   "**Wacom tablet:** Input Devices ▸ Tablet makes the video pane sheets (tabs) to write on; Bring in and the box's As drawing cell take them into the note.",
   "**Mathematica:** File ▸ Export… ▸ Wolfram Notebook writes a `.nb`; with a Wolfram Engine, a copied drawing cell pastes into a notebook as a transparent image.",
   "**Wacom pen buttons:**\n" +
@@ -101,6 +108,7 @@ export const WELCOME_GROUPS: WelcomeGroup[] = [
       { what: "New note", ids: ["newNote"] },
       { what: "Save", ids: ["save"] },
       { what: "Close tab", ids: ["closeTab"] },
+      { what: "Search notes", ids: ["searchNotes"] },
       { what: "Export", ids: ["export"] },
       { what: "Undo / Redo", ids: ["undo", "redo"] },
       { what: "Find / Replace", ids: ["find", "findReplace"] },

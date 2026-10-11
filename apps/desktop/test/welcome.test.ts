@@ -59,6 +59,7 @@ describe("the quick reference's keys come from the command table", () => {
   it("reads as Sean's approved note does, on both platforms", () => {
     const both = (what: string) => [welcomeKeys(row(what), false), welcomeKeys(row(what), true)]
     expect(both("New note")).toEqual(["Ctrl+N", "⌘N"])
+    expect(both("Search notes")).toEqual(["Ctrl+Shift+F", "⇧⌘F"])
     expect(both("Undo / Redo")).toEqual(["Ctrl+Z / Ctrl+Y", "⌘Z / ⇧⌘Z"])
     expect(both("Find / Replace")).toEqual(["Ctrl+F / Ctrl+H", "⌘F / ⌥⌘F"])
     expect(both("Show / hide video")).toEqual(["Ctrl+Shift+Y", "⌘Y"])
@@ -138,8 +139,8 @@ describe("the quick reference's keys come from the command table", () => {
     const text = welcomeNote(process.platform)
     expect(text.startsWith("# WriteMind Quick Reference\n")).toBe(true)
     for (const name of [
-      "Cells", "Text and markdown cells", "Maths cells", "Tables", "Rendered page", "Drawing", "Runnable cells", "Language Setup", "Video pane",
-      "Wacom tablet", "Mathematica", "Wacom pen buttons", "Notes are files", "Updates", "About",
+      "Cells", "Text and markdown cells", "Maths cells", "Tables", "Rendered page", "Toolbar", "Pen", "Tabs", "Search notes", "Sidebar", "Undo",
+      "Drawing", "Runnable cells", "Language Setup", "Video pane", "Pane tabs", "Wacom tablet", "Mathematica", "Wacom pen buttons", "Notes are files", "Updates", "About",
     ]) {
       expect(WELCOME_FEATURES.some((one) => one.startsWith(`**${name}:**`)), name).toBe(true)
     }
@@ -235,7 +236,49 @@ describe("the feature list is true to the source", () => {
     expect(features("Wacom tablet")).toContain("As drawing cell")
     // the dock control (2026-10-10: the ⤵ disc became the Dock button of the inspector over a picked object)
     expect(read("apps/desktop/src/renderer/Inspector.tsx")).toContain("Dock into the note")
-    expect(features("Drawing")).toContain("Dock in a picked one")
+    expect(features("Drawing")).toContain("Dock into the note")
+  })
+
+  // 2026-10-10 (the new bars, docs/PLAN-bars-2026-10.md): the lines for the toolbar, the pen, the tabs, search, the sidebar and
+  // undo are held to the components that draw them.
+  it("the toolbar, the pen, the tabs, search, the sidebar and undo are what the panes have", () => {
+    const bar = read("apps/desktop/src/renderer/TopBar.tsx")
+    for (const label of ["Text box", "Picture…", "Table", "Maths", "Shapes", "Move section up", "Move section down", "Pen always draws (tablet)", "Eraser", "Customize toolbar…"]) {
+      expect(bar, `the toolbar: ${label}`).toContain(`label: "${label}"`)
+    }
+    for (const word of ["Font and Colour", "Strikethrough", "Italic", "Underline", "Bold"]) expect(bar, word).toContain(word)
+    expect(features("Toolbar")).toContain("Text box, Picture, Table, Maths, Shapes and Move section up / down")
+    expect(features("Pen")).toContain("Pen or Eraser, a colour and a width, and Pen always draws")
+    // The pen button is `togglePen` (Draw), the key the table's "Pen down / up" row shows.
+    expect(features("Pen")).toContain(shown("togglePen", "win32")!)
+    // the tab row: the three buttons, then the open notes; the tab's right-click menu
+    const tabs = read("apps/desktop/src/renderer/TabBar.tsx")
+    for (const bar of ["sidebar", "markdown", "video"]) expect(tabs, bar).toMatch(new RegExp(`[dD]ata-?[bB]ar="${bar}"`))
+    const tabMenus = read("apps/desktop/src/renderer/tabMenus.ts")
+    for (const label of ["Rename…", "Duplicate", "Move to"]) expect(tabMenus, label).toContain(`label: "${label}"`)
+    expect(features("Tabs")).toContain("Rename…, Duplicate and Move to")
+    // the pane's tabs are the notebook's: the strip carries the Live tab, the kept pages' tabs and the sheets', and renames and closes them
+    expect(strip).toContain("data-scan-tab")
+    expect(strip).toContain("data-sheet-id")
+    expect(strip).toContain("onDoubleClick")
+    expect(strip).toContain("sheet-close")
+    expect(features("Pane tabs")).toContain("double-click renames, × closes")
+    // search: the command, the sidebar's field, Enter on a result
+    expect(COMMANDS.find((one) => one.id === "searchNotes")?.label).toBe("Search Notes…")
+    expect(features("Search notes")).toContain(shown("searchNotes", "win32")!)
+    const sidebar = read("apps/desktop/src/renderer/Sidebar.tsx")
+    expect(sidebar).toContain('placeholder="Search notes"')
+    expect(sidebar).toContain('event.key === "Enter"')
+    // the sidebar's bar: + (New Note, New Section), the pencil (Edit Notes), a ⋯ on every row, a drop on New note
+    expect(sidebar).toContain('label: "New Note"')
+    expect(sidebar).toContain('label: "New Section"')
+    expect(sidebar).toContain('"Edit Notes"')
+    expect(sidebar).toContain('aria-label="More"')
+    expect(sidebar).toContain("data-add={path}")
+    // undo names its step in the Edit menu, and reaches the last three file operations
+    expect(menu).toContain('historyItem("undo", "Undo", state.undoLabel)')
+    expect(read("docs/PLAN-undo.md")).toMatch(/three/i)
+    expect(features("Undo")).toContain("last three file steps")
   })
 
   it("the notes are what the format says: .wm holding note.mdwm; a project a small JSON file", () => {
