@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest"
 import {
   attachableAt, connectorPaths, copiedItems, cornerRadius, dashPattern, FLOW_MENU_KINDS,
   headLength, headTriangle, hitTest, intersects, isClosed, isNode, MARK_KINDS, MARK_MENU_KINDS,
-  nudged, outline, polylines, reordered, restyled, roundedRectanglePoints, segmentIntersection,
+  nudged, outline, polylines, refiled, reordered, restyled, roundedRectanglePoints, segmentIntersection,
   shortened, strokeCurve, unitPolylines, withTransform,
   type CanvasItem, type Drawing, type Point, type Rect, type ShapeKind, type Size,
 } from "../src/index"
@@ -242,6 +242,26 @@ describe("editing what is picked", () => {
     expect((restyled(filled, new Set(["r"]), { fillHex: null }).items[1] as any).shape.fillHex).toBeNull()
     expect(restyled(drawing, new Set(["r"]), { fillHex: null })).toBe(drawing)
     expect(restyled(drawing, new Set(), { colorHex: "#fff" })).toBe(drawing)
+  })
+
+  it("points the picked pictures at other files, and nothing else (an ink graphic's colour is its file)", () => {
+    const twoPictures: Drawing = { items: [...drawing.items, { kind: "image", image: { ...(drawing.items[3] as any).image, id: "j", file: "b.svg" } }] }
+    const next = refiled(twoPictures, new Set(["s", "i", "j"]), new Map([["a.png", "new.png"], ["b.svg", "b2.svg"]]))
+    const [s, r, c, i, j] = next.items as [any, any, any, any, any]
+    expect(i.image.file).toBe("new.png")
+    expect(j.image.file).toBe("b2.svg")
+    // the rest of the picture is as it was, and nothing that is not a picture is touched
+    expect({ ...i.image, file: "a.png" }).toEqual((twoPictures.items[3] as any).image)
+    expect([s, r, c]).toEqual([twoPictures.items[0], twoPictures.items[1], twoPictures.items[2]])
+    expect(s).toBe(twoPictures.items[0])
+    // only the picked: j is not picked, so it keeps its file
+    expect((refiled(twoPictures, new Set(["i"]), new Map([["a.png", "x.png"], ["b.svg", "y.svg"]])).items[4] as any).image.file).toBe("b.svg")
+    // a picture whose file is not the one the new file was made from (changed meanwhile) is left alone
+    expect(refiled(twoPictures, new Set(["i"]), new Map([["other.png", "x.png"]]))).toBe(twoPictures)
+    // nothing to change, the same drawing
+    expect(refiled(twoPictures, new Set(["i"]), new Map())).toBe(twoPictures)
+    expect(refiled(twoPictures, new Set(["i"]), new Map([["a.png", "a.png"]]))).toBe(twoPictures)
+    expect(refiled(twoPictures, new Set(), new Map([["a.png", "x.png"]]))).toBe(twoPictures)
   })
 
   it("sets an arrow's heads and line", () => {

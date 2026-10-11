@@ -303,10 +303,18 @@ is how the code is put together.
   resize handles on its outline and a rotate dot above it, and ONE bar over
   it (below it when there is no room above) with its name, colour, width,
   fill, label, order, dock, copy and delete; a small one has a single pill with
-  turn and resize under it. A corner scales it about the opposite corner, an
-  edge of a node or a text box stretches that one way, and Delete acts on a
-  click, never on a press you let go of elsewhere. With the pen **down** it draws, and
-  the pointer is a pencil over that pane and nowhere else. In either mode,
+  turn and resize under it. Pick several and the bar has a colour (and a line
+  width) for the lot when every one of them takes it — the strokes a Wacom
+  sheet brings in, nodes, arrows — set in one Undo; its dot shows the colour
+  they share and a grey half-and-half when they differ. A **Writing** capture
+  from the camera is a picture of traced ink, and it has the same colour
+  button: the colour you pick is written into a new copy of the graphic (the
+  old one stays for Undo), and a mixed pick of such graphics and strokes is
+  recoloured together. A photo, a PNG or any other SVG has no colour, and a
+  photo in a pick takes the colour away from the lot. A corner scales it
+  about the opposite corner, an edge of a node or a text box stretches that
+  one way, and Delete acts on a click, never on a press you let go of
+  elsewhere. With the pen **down** it draws, and the pointer is a pencil over that pane and nowhere else. In either mode,
   hold **⌘ and drag** to pull a rectangle over the page: it takes
   everything it *touches*, whole or not. The mode is remembered between
   launches and the footer names it whenever the pen, the Eraser, the Select

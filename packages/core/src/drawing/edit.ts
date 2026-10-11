@@ -92,6 +92,24 @@ export function restyled(drawing: Drawing, ids: Set<string>, patch: StylePatch):
   return changed ? { items } : drawing
 }
 
+/**
+ * The pictures among the picked pointed at other files (`files`: old name to new). An ink graphic's colour is in its
+ * file, so recolouring one is saving a new file and pointing the picture at it; this is the second half, and the
+ * picture is otherwise as it was. A picture whose file is not in `files` is left alone (it was changed meanwhile),
+ * and the same drawing comes back when nothing is.
+ */
+export function refiled(drawing: Drawing, ids: Set<string>, files: ReadonlyMap<string, string>): Drawing {
+  let changed = false
+  const items = drawing.items.map((item): CanvasItem => {
+    if (item.kind !== "image" || !ids.has(item.image.id)) return item
+    const file = files.get(item.image.file)
+    if (file === undefined || file === item.image.file) return item
+    changed = true
+    return { kind: "image", image: { ...item.image, file } }
+  })
+  return changed ? { items } : drawing
+}
+
 /** Moved by view points (the arrow keys): the transform is in fractions of the pane. */
 export function nudged(drawing: Drawing, ids: Set<string>, dx: number, dy: number, size: Size): Drawing {
   if (size.width <= 0 || size.height <= 0 || (dx === 0 && dy === 0)) return drawing

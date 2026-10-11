@@ -121,6 +121,11 @@ export interface PlanContext {
   reads: boolean
   /** ... and out of pen handwriting on the page: the Read button on picked strokes. */
   readsInk?: boolean
+  /**
+   * The picture files (media names) known to be INK GRAPHICS, a capture's traced outline with one fill (core
+   * `inkGraphicFill`): a picture of those has a colour, any other picture has none. Absent: none is known.
+   */
+  inks?: ReadonlySet<string>
   /** What `toggle` says Group would do for the pick. */
   grouping: "group" | "ungroup" | "nothing"
   /** A crop or a label is being edited: the destructive control stays out of the way. */
@@ -129,24 +134,34 @@ export interface PlanContext {
   compact: boolean
 }
 
-const hasColour = (item: CanvasItem): boolean => item.kind !== "image" && item.kind !== "cell"
-const hasWidth = (item: CanvasItem): boolean =>
+const NO_INKS: ReadonlySet<string> = new Set()
+/** Whether the item takes a colour: a stroke, a node, a mark, a text box, an arrow, and a picture that is an ink graphic. */
+export const hasColour = (item: CanvasItem, inks: ReadonlySet<string> = NO_INKS): boolean =>
+  item.kind === "image" ? inks.has(item.image.file) : item.kind !== "cell"
+export const hasWidth = (item: CanvasItem): boolean =>
   item.kind === "stroke" || item.kind === "connector" || (item.kind === "shape" && item.shape.kind !== "text")
 const hasFill = (item: CanvasItem): boolean => item.kind === "shape" && (isNode(item.shape.kind) || item.shape.kind === "text")
 
 /**
  * The controls a pick has. One object: its name, then colour / width / fill where they mean something, its words (Aa:
  * a node's or a text box's label, or reading a picture), the heads of an arrow, the order, the dock, a copy and the
- * delete. Several: Group or Ungroup, the order, a copy, the delete. The compact bar (an arrow just drawn) is the heads
- * row only. The delete is left out while a crop or a label is being edited.
+ * delete. Several: colour (and width) when EVERY one of them takes it, Read for handwriting alone, Group or Ungroup,
+ * the order, a copy, the delete. The compact bar (an arrow just drawn) is the heads row only. The delete is left out
+ * while a crop or a label is being edited.
  */
 export function inspectorPlan(items: CanvasItem[], context: PlanContext): InspectorPlan {
   const name = inspectorName(items)
   if (items.length === 0) return { name, groups: [] }
   if (context.compact && items.length === 1 && items[0]!.kind === "connector") return { name, groups: [["heads"]] }
   const tail: Control[] = context.editing ? ["duplicate"] : ["duplicate", "delete"]
+  const inks = context.inks ?? NO_INKS
   if (items.length > 1) {
     const groups: Control[][] = []
+    // Colour and width for the lot, where every one of them has it (a picture that is not an ink graphic has neither).
+    const both: Control[] = []
+    if (items.every((item) => hasColour(item, inks))) both.push("colour")
+    if (items.every(hasWidth)) both.push("width")
+    if (both.length > 0) groups.push(both)
     // Picked handwriting (strokes and nothing else) can be read as words: Read comes first.
     if (context.readsInk && items.every((item) => item.kind === "stroke")) groups.push(["read"])
     if (context.grouping !== "nothing") groups.push(["group"])
@@ -155,7 +170,7 @@ export function inspectorPlan(items: CanvasItem[], context: PlanContext): Inspec
   }
   const only = items[0]!
   const look: Control[] = []
-  if (hasColour(only)) look.push("colour")
+  if (hasColour(only, inks)) look.push("colour")
   if (hasWidth(only)) look.push("width")
   if (hasFill(only)) look.push("fill")
   const words: Control[] = []
@@ -170,6 +185,57 @@ export function inspectorPlan(items: CanvasItem[], context: PlanContext): Inspec
   if (context.docks) place.push("dock")
   groups.push(place, tail)
   return { name, groups }
+}
+
+// MARK: - What the dots and numbers say
+
+/** What a pick's items have in common: the one `value` when they all share it, else `mixed` (and no value). */
+export interface Shared<T> { value: T | null; mixed: boolean }
+
+/** `#RRGGBB`, `#rrggbb` and `#rgb` are one colour: the form two colours are compared in. */
+export const canonicalHex = (hex: string): string => {
+  const lower = hex.trim().toLowerCase()
+  const short = /^#([0-9a-f])([0-9a-f])([0-9a-f])$/.exec(lower)
+  return short ? `#${short[1]}${short[1]}${short[2]}${short[2]}${short[3]}${short[3]}` : lower
+}
+
+/**
+ * The colour a pick shows in the bar's dot: the colour all of it shares, or `mixed` when it differs, or neither when
+ * there is none to show. `inkFill` is what a picture's file is filled with (an ink graphic), else null.
+ */
+export function sharedColour(items: CanvasItem[], inkFill: (file: string) => string | null | undefined = () => null): Shared<string> {
+  const colours: string[] = []
+  for (const item of items) {
+    const one = ((): string | null | undefined => {
+      switch (item.kind) {
+        case "stroke": return item.stroke.colorHex
+        case "shape": return item.shape.colorHex
+        case "connector": return item.connector.colorHex
+        case "image": return inkFill(item.image.file)
+        case "cell": return null
+      }
+    })()
+    if (one) colours.push(one)
+  }
+  if (colours.length === 0) return { value: null, mixed: false }
+  const first = colours[0]!
+  return colours.every((one) => canonicalHex(one) === canonicalHex(first)) ? { value: first, mixed: false } : { value: null, mixed: true }
+}
+
+/** The line width a pick shows: the one they all share (to a tenth, as the bar says it), or `mixed`. */
+export function sharedWidth(items: CanvasItem[]): Shared<number> {
+  const widths: number[] = []
+  for (const item of items) {
+    switch (item.kind) {
+      case "stroke": widths.push(item.stroke.width); break
+      case "shape": if (hasWidth(item)) widths.push(item.shape.lineWidth); break
+      case "connector": widths.push(item.connector.lineWidth); break
+      case "image": case "cell": break
+    }
+  }
+  if (widths.length === 0) return { value: null, mixed: false }
+  const first = widths[0]!
+  return widths.every((one) => Math.round(one * 10) === Math.round(first * 10)) ? { value: first, mixed: false } : { value: null, mixed: true }
 }
 
 /** Whether the pick gets the eight handles and the rotate handle: not a pick of arrows alone (they have their ends). */

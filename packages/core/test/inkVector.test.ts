@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import { inkOutlines, inkPathData, inkSvg, inkVector, type Point } from "../src/index"
+import { inkGraphicFill, inkOutlines, inkPathData, inkSvg, inkVector, recolouredInkSvg, type Point } from "../src/index"
 
 /**
  * Transcribed from `WriteMindTests/InkVectorTests.swift`. The Mac writes a PDF
@@ -109,5 +109,81 @@ describe("tracing the writing into outlines", () => {
     expect(inkSvg([], { width: 10, height: 10 }, "#000000")).toBeNull()
     expect(inkSvg([[{ x: 0, y: 0 }, { x: 4, y: 0 }, { x: 4, y: 4 }]], { width: 10, height: 10 }, "red"))
       .toContain('fill="#000000"')   // an unreadable colour is not written into the file
+  })
+})
+
+/**
+ * PORT-ONLY (Sean, 2026-10-10: "add a color picker for imported stroke graphics objects"): a capture's traced graphic can
+ * be recoloured, and nothing else can. The file `inkSvg` writes is the only shape that counts as one.
+ */
+describe("recolouring a traced graphic", () => {
+  const loops: Point[][] = [[{ x: 3, y: 4 }, { x: 8, y: 4 }, { x: 8, y: 7 }, { x: 3, y: 7 }]]
+  const traced = inkSvg(loops, { width: 12, height: 12 }, "#2D7DD2")!
+
+  it("reads the fill of what inkSvg wrote, and writes it back in another colour, changing nothing else", () => {
+    expect(inkGraphicFill(traced)).toBe("#2D7DD2")
+    const red = recolouredInkSvg(traced, "#F2542D")!
+    expect(red).toBe(traced.replace("#2D7DD2", "#F2542D"))
+    expect(inkGraphicFill(red)).toBe("#F2542D")
+    // The outline, the evenodd rule and the size are as they were; the colour is the only difference.
+    expect(red).toContain('fill-rule="evenodd"')
+    expect(red).toContain('d="M3 4L8 4L8 7L3 7Z"')
+    expect(red).toContain('viewBox="0 0 12 12"')
+    expect(recolouredInkSvg(red, "#2D7DD2")).toBe(traced)
+  })
+
+  it("takes the fill and no other attribute: fill-rule is not a fill", () => {
+    const svg = '<svg xmlns="http://www.w3.org/2000/svg" width="4" height="4" viewBox="0 0 4 4"><path fill-rule="evenodd" fill="#112233" d="M0 0L4 0L4 4Z"/></svg>'
+    expect(recolouredInkSvg(svg, "#ffffff")).toBe(svg.replace("#112233", "#ffffff"))
+  })
+
+  it("reads another writer's spelling of the same graphic (single quotes, an end tag, a prolog, whitespace)", () => {
+    const svg = `<?xml version="1.0"?>\n<svg xmlns='http://www.w3.org/2000/svg' width='4' height='4'>\n  <path fill='#aabbcc' fill-rule='evenodd' d='M0 0L4 0L4 4Z'></path>\n</svg>\n`
+    expect(inkGraphicFill(svg)).toBe("#aabbcc")
+    // (the fill is written in the file's own way, double-quoted; everything else is as it was)
+    expect(recolouredInkSvg(svg, "#000000")).toBe(svg.replace("fill='#aabbcc'", 'fill="#000000"'))
+  })
+
+  it("a graphic that has other fills in it is not one: a second path, a rect, a group, a style, a gradient", () => {
+    const head = '<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 10 10">'
+    const path = '<path fill="#000000" fill-rule="evenodd" d="M0 0L4 0L4 4Z"/>'
+    const others = [
+      `${head}${path}<path fill="#ff0000" d="M5 5L9 5L9 9Z"/></svg>`,
+      `${head}<rect width="10" height="10" fill="#ffffff"/>${path}</svg>`,
+      `${head}<g fill="#00ff00">${path}</g></svg>`,
+      `${head}<style>path{fill:red}</style>${path}</svg>`,
+      `${head}<defs><linearGradient id="g"/></defs><path fill="url(#g)" d="M0 0L4 0L4 4Z"/></svg>`,
+      `${head}<path fill="#000000" stroke="#ff0000" d="M0 0L4 0L4 4Z"/></svg>`,
+      `${head}<path fill="#000000" style="fill:#ff0000" d="M0 0L4 0L4 4Z"/></svg>`,
+      `${head}<path fill="#000000" opacity="0.5" d="M0 0L4 0L4 4Z"/></svg>`,
+      `${head}<path fill="red" d="M0 0L4 0L4 4Z"/></svg>`,
+      `${head}<path fill="#000" d="M0 0L4 0L4 4Z"/></svg>`,
+      `${head}<path d="M0 0L4 0L4 4Z"/></svg>`,
+      `${head}<path fill="#000000"/></svg>`,
+      `${head}<path fill="#000000" fill="#ffffff" d="M0 0L4 0L4 4Z"/></svg>`,
+      `<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" fill="#ffffff"><path fill="#000000" d="M0 0L4 0L4 4Z"/></svg>`,
+    ]
+    for (const svg of others) {
+      expect(inkGraphicFill(svg), svg).toBeNull()
+      expect(recolouredInkSvg(svg, "#123456"), svg).toBeNull()
+    }
+  })
+
+  it("something that is not an SVG of paths is not one: a photo's bytes, a PNG, a script, empty, a half file", () => {
+    const head = '<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10">'
+    for (const text of ["", "\u0089PNG\r\n\u001a\n", "\u00ff\u00d8\u00ff\u00e0 JFIF", "not svg at all", `${head}<script>alert(1)</script></svg>`,
+      traced.slice(0, traced.length - 8), `${traced}<!-- more -->`, `<html>${traced}</html>`,
+      `${head}<path fill="#000000" d="M0 0 alert(1)"/></svg>`]) {
+      expect(inkGraphicFill(text), text).toBeNull()
+      expect(recolouredInkSvg(text, "#123456"), text).toBeNull()
+    }
+  })
+
+  it("a colour that is not #rrggbb is refused, and never written into the file", () => {
+    for (const bad of ["", "red", "#12", "#1234", "#12345", "#1234567", "123456", "#gggggg", "rgb(1,2,3)", 'url(#x)', '#000000" onload="x', "#000000 "]) {
+      expect(recolouredInkSvg(traced, bad), bad).toBeNull()
+    }
+    expect(recolouredInkSvg(traced, "#abcdef")).toContain('fill="#abcdef"')
+    expect(recolouredInkSvg(traced, "#ABCDEF")).toContain('fill="#ABCDEF"')
   })
 })
