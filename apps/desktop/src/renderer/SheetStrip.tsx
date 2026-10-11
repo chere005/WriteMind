@@ -1,5 +1,7 @@
 /**
- * The video pane's tabs: one slim row between the header and what it shows.
+ * The video pane's tabs: one row between the header and what it shows, the notebook's tab row (TabBar.tsx, tabs.css) in the
+ * pane's dark: the same 36px, the same tabs (the one in front is the picture's colour, no underline; the x on it and under
+ * the pointer), the same "+" (tablet.css has the rules).
  *
  * TABLET: each tab is a sheet (tabletSheets.ts): its own ink, paper, dashed box and stroke undo. Click opens one,
  * "+" adds "Sheet N", double-click renames (Enter keeps, Esc leaves it), the small x closes one. A sheet with ink
@@ -113,9 +115,9 @@ function CameraTabs({ scan }: { scan?: ScanStrip }) {
         })}
       </div>
       {/* Outside the scrolling part: "+" is always there. */}
-      <button className="sheet-add" data-sheet-add data-scan-add disabled={!scan || scan.addOff !== null} aria-label="Keep this picture as a page"
+      <button className="bar-btn sheet-add" data-sheet-add data-scan-add disabled={!scan || scan.addOff !== null} aria-label="Keep this picture as a page"
               title={scan && scan.addOff === null ? "Keep what the camera shows (the held picture, with Hold image) as a page of its own" : off}
-              onClick={() => scan?.onAdd()}><Icon name="plus" size={14} /></button>
+              onClick={() => scan?.onAdd()}><Icon name="plus" /></button>
     </div>
   )
 }
@@ -172,8 +174,8 @@ function TabletTabs() {
       })}
       </div>
       {/* Outside the scrolling part: "+" is always there. */}
-      <button className="sheet-add" data-sheet-add disabled={!tabs.canAdd} aria-label="New sheet"
-              title="New sheet" onClick={() => { addSheet() }}><Icon name="plus" size={14} /></button>
+      <button className="bar-btn sheet-add" data-sheet-add disabled={!tabs.canAdd} aria-label="New sheet"
+              title="New sheet" onClick={() => { addSheet() }}><Icon name="plus" /></button>
     </div>
   )
 }

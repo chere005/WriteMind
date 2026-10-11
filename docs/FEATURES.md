@@ -366,7 +366,10 @@ is how the code is put together.
   into the toolbar under it; its × shows on it and on whichever tab the
   pointer is over. Right-click a tab for Close, Close Other Tabs, Rename…,
   Duplicate, Move to ▸, Reveal and Move to Trash… (the sidebar row's own
-  actions).
+  actions). The video pane's tabs — the camera's Live tab and a tab for each
+  page you keep, or the tablet's sheets — are this same row in the pane's
+  dark: 36px, the tab in front the colour of the picture under it with no
+  underline, a × on it and on the tab the pointer is over, and the same +.
 
 ## Wolfram notebooks (port-only)
 
