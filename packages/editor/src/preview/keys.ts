@@ -24,7 +24,7 @@ import { firstCellReaching } from "../seams"
 import { cellBeside, lastBlock } from "../barWalk"
 import { openBlock, press } from "./field"
 import { holdingField } from "./hold"
-import { notebook } from "../notebook"
+import { grownCell, notebook } from "../notebook"
 import { renderedField } from "../rendered"
 import { armedField, armSeam } from "../seams"
 import { holdPictureCell } from "../pictureCells"
@@ -329,8 +329,12 @@ const vertical = (down: boolean): Command => (view) => {
   const all = notebook(state).cells
   const cells = all.map((cell) => cell.range)
   const runs = touchingRuns(cells, (i) => staysClosed(all[i]!.block) || standsAlone(all[i]!.block))
-  const index = all.findIndex((cell) => cell.range.length > 0 && main.head >= cell.range.location
+  const found = all.findIndex((cell) => cell.range.length > 0 && main.head >= cell.range.location
     && main.head <= end(cell.range))
+  // On the empty line a single newline opened (core growth.ts) the caret is in the paragraph above, and ON ITS LAST LINE:
+  // Down there arms the bar under the cell, as it does from the end of any cell.
+  const grown = found < 0 ? grownCell(state) : null
+  const index = grown ? grown.index : found
   // Beside a picture or ink cell (the caret before or after it): the bar on the side the arrow points to.
   if (index >= 0 && staysClosed(all[index]!.block)) return armBeside(view, all[index]!, down)
   let target: number | null = null
@@ -346,7 +350,7 @@ const vertical = (down: boolean): Command => (view) => {
   if (index >= 0) {
     const run = fence ? { first: index, last: index } : runs[index]!
     const first = cells[run.first]!.location
-    const last = end(cells[run.last]!)
+    const last = grown && run.last === index ? end(grown.line) : end(cells[run.last]!)
     // Still inside the block: the editor's own arrows.
     if (!sameScreenLine(view, main.head, edge ?? (down ? last : first), down ? -1 : 1)) return ownStep(view, down)
     // Off the edge onto a cell this one touches but stands apart from (apart.ts): the bar between them, armed by hand

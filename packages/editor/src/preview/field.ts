@@ -29,7 +29,7 @@ import {
 import { awayField } from "./away"
 import { armedField } from "../seams"
 import { foldField, insideHidden } from "../fold"
-import { hullOf, notebook } from "../notebook"
+import { grownCell, hullOf, notebook } from "../notebook"
 import { renderedField } from "../rendered"
 import { followLink } from "./follow"
 import { holdingField } from "./hold"
@@ -176,9 +176,13 @@ const isArmed = (state: EditorState): boolean => (state.field(armedField, false)
 function openCells(state: EditorState, cells: readonly PositionedBlock[]): Map<number, CellState> {
   if (state.field(awayField, false)) return new Map()
   const holding = state.field(holdingField, false) ?? false
+  // The caret on the empty line a single newline opened is in the paragraph above, which has taken the line (core
+  // growth.ts): that cell stays open, the caret at its end, instead of being drawn with a ghost line under it.
+  const grown = isArmed(state) ? null : grownCell(state)
+  const selection = grown ? [{ location: end(grown.cell.range), length: 0 }] : selectionOf(state)
   // A picture or ink cell never opens and never joins a run (core `staysClosed`): it is drawn by `pictureCells`. A
   // fence, a table or a heading opens on its own: it never joins a run of cells it touches (core `standsAlone`).
-  return cellStatesSparse(cells, (cell) => cell.range, selectionOf(state), holding, isArmed(state),
+  return cellStatesSparse(cells, (cell) => cell.range, selection, holding, isArmed(state),
     (cell) => staysClosed(cell.block), (cell) => standsAlone(cell.block))
 }
 
@@ -189,6 +193,8 @@ function waitingAt(state: EditorState, cells: readonly PositionedBlock[]): numbe
   const at = state.selection.main.head
   const row = state.doc.lineAt(at)
   if (row.length !== 0 || isStructuralLine(state.doc, row.number)) return -1
+  // (The line a single newline opened is its cell's, which is open: nothing is waiting to be written, core growth.ts.)
+  if (grownCell(state)) return -1
   // In a cell with words in it? Cells are in order and do not touch but by a newline: the last that starts at or
   // before the caret (or one before it, if that one is empty) is the only one that can hold it.
   for (let i = firstCellFromBy(cells, at + 1, (cell) => cell.range) - 1, tried = 0; i >= 0 && tried < 3; i--, tried++) {
@@ -205,6 +211,7 @@ function entriesIn(state: EditorState, cells: readonly PositionedBlock[], states
   const doc = state.doc
   const widgets: CMRange<Decoration>[] = []
   const lines: CMRange<Decoration>[] = []
+  const grown = isArmed(state) ? null : grownCell(state)
   for (let index = a; index <= b; index++) {
     const cell = cells[index]!
     const open = states.get(index) === "open"
@@ -252,6 +259,8 @@ function entriesIn(state: EditorState, cells: readonly PositionedBlock[], states
   if (waiting >= from && waiting <= to && waiting >= 0) lines.push(placeholder.range(waiting))
 
   for (const start of structuralLineStarts(doc, from, to)) {
+    // The line a single newline opened is the cell's, not a gap between two (core growth.ts).
+    if (grown && start === grown.line.location) continue
     // A blank line inside a cell (a fence can hold one) is part of that cell: the cell that starts last before the
     // line is the only one that can hold it (cells are in order and do not overlap).
     const at = firstCellFromBy(cells, start, (cell) => cell.range) - 1
@@ -353,6 +362,13 @@ function patch(value: Preview, tr: Transaction): Preview {
   }
   if (value.waiting >= 0) markPos(changes ? changes.mapPos(value.waiting, 1) : value.waiting)
   if (waiting >= 0) markPos(waiting)
+  // The line a single newline opened (core growth.ts) is its cell's while the caret is on it and a gap when it is not, which
+  // can change with no cell's state changing (the caret walking between that line and the words of the SAME open cell): both
+  // ends are looked at again.
+  const grownBefore = isArmed(tr.startState) ? null : grownCell(tr.startState)
+  const grownNow = isArmed(state) ? null : grownCell(state)
+  if (grownBefore) markPos(changes ? changes.mapPos(grownBefore.line.location, 1) : grownBefore.line.location)
+  if (grownNow) markPos(grownNow.line.location)
   for (const r of hiddenDifference(value.hidden, hidden, tr)) markSpan(r.location, end(r))
 
   let decorations = changes ? value.decorations.map(changes) : value.decorations

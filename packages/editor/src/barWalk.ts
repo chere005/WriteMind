@@ -21,7 +21,7 @@
 import { armIn, cellWordsStart, end, firstCellFromBy, staysClosed, type PositionedBlock, type Range } from "@writemind/core"
 import type { EditorState } from "@codemirror/state"
 import { hiddenNow, insideHidden } from "./fold"
-import { notebook } from "./notebook"
+import { grownCell, notebook } from "./notebook"
 
 /** The next cell (`dir` 1) or the one before (`dir` -1) that is on show, or -1 / `cells.length` past the ends. */
 export function shownBeyond(state: EditorState, cells: readonly PositionedBlock[], from: number, dir: 1 | -1): number {
@@ -68,13 +68,22 @@ export function lastBlock(state: EditorState, edge: number, up: boolean): boolea
   return cellBeside(state, edge, up, false) === null
 }
 
-/** The cell on show the caret at `head` is in (its last line's end counts), with its index; null on a line between. */
+/**
+ * The cell on show the caret at `head` is in (its last line's end counts), with its index; null on a line between. On the
+ * empty line a single newline opened (core growth.ts) it is the paragraph above, which has taken that line: its range
+ * runs down to it, so the caret IS on the cell's last line, and Down there arms the bar under the cell.
+ */
 export function cellAtCaret(state: EditorState, head: number): { cell: PositionedBlock; index: number } | null {
   const cells = notebook(state).cells
   const index = firstCellFromBy(cells, head + 1, (c) => c.range) - 1
   if (index < 0) return null
   const cell = cells[index]!
-  if (head > end(cell.range) || insideHidden(state, cell.range)) return null
+  if (head > end(cell.range)) {
+    const grown = grownCell(state)
+    if (!grown || grown.index !== index || head < grown.line.location || head > end(grown.line) || insideHidden(state, cell.range)) return null
+    return { cell: { block: cell.block, range: { location: cell.range.location, length: end(grown.line) - cell.range.location } }, index }
+  }
+  if (insideHidden(state, cell.range)) return null
   return { cell, index }
 }
 

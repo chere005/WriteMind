@@ -10,13 +10,13 @@
 
 import type { EditorView } from "@codemirror/view"
 import {
-  BOLD, ITALIC, STRIKE, UNDERLINE_CLOSE, UNDERLINE_OPEN, HEADING_LADDER, blockContaining,
+  BOLD, ITALIC, STRIKE, UNDERLINE_CLOSE, UNDERLINE_OPEN, HEADING_LADDER, blockAtCaret, blockContaining,
   deleteCell, duplicateCell, editsOver, expand, fenceOf, moveCell, moveSection,
   splitCell, subsections, subsectionsFolding,
   type CodeLanguage, type Edit, type Heading, type ListStyle, type Range,
 } from "@writemind/core"
 import {
-  applyEdit, evaluationCell, fence, mathsCell, tableCell, foldAll, foldedKeys, heading, heldCells, indentLines, list, markdownCell, mergeTheCell, outdentLines, quote,
+  applyEdit, armedField, evaluationCell, fence, mathsCell, tableCell, foldAll, foldedKeys, heading, heldCells, indentLines, list, markdownCell, mergeTheCell, outdentLines, quote,
   sectionAtCaret, selectAllOccurrences, selectNext, tagFence, toggleFold, unfoldAll, wrap,
 } from "@writemind/editor"
 import { EditorSelection } from "@codemirror/state"
@@ -36,7 +36,10 @@ const selection = (view: EditorView): Range => {
 function cellsToAct(view: EditorView): Range[] {
   const held = view.state.selection.ranges.some((r) => !r.empty) ? heldCells(view) : []
   if (held.length > 0) return held
-  const own = blockContaining(view.state.selection.main.head, view.state.doc.toString())
+  // (Not at an armed bar: the bar is the cursor and no cell has the caret. The empty line a single newline opened is a cell's
+  // only while the caret is on it, and a bar armed by hand at the end of a note that ends with its newline stands on that line.)
+  const atBar = (view.state.field(armedField, false) ?? null) !== null
+  const own = (atBar ? blockContaining : blockAtCaret)(view.state.selection.main.head, view.state.doc.toString())
   return own ? [own.range] : []
 }
 

@@ -144,6 +144,24 @@ describe("the rendered page, patched", () => {
     expect(steps).toBeGreaterThan(900)
   })
 
+  // The line a single newline opened (core growth.ts) is its cell's while the caret is on it and a gap when it is not: the
+  // caret walking between that line and the words of the SAME cell changes no cell's state, and the page must still follow.
+  it("is the page built from nothing as the caret walks on and off the line a single newline opened", () => {
+    for (const doc of ["hello\n\n\nworld", "hello\n\n\n\nworld", "# T\n\nhello\n\n\n# U\n\nmore", "a\n\nb\n\n\nc\n\n\nd"]) {
+      const lines = doc.split("\n")
+      const heads = lines.map((_l, i) => lines.slice(0, i).join("\n").length + (i > 0 ? 1 : 0))
+      for (const from of heads) {
+        for (const to of heads) {
+          let state = EditorState.create({ doc, extensions })
+          state = state.update({ effects: setRendered.of(true), selection: { anchor: from } }).state
+          agree(state, `${JSON.stringify(doc)} built at ${from}`)
+          state = state.update({ selection: { anchor: to } }).state
+          agree(state, `${JSON.stringify(doc)} from ${from} to ${to}`)
+        }
+      }
+    }
+  })
+
   it("survives the rendered switch being turned off and on mid-chain, and an empty note", () => {
     seed = 29
     let state = EditorState.create({ doc: "", extensions })

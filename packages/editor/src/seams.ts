@@ -12,7 +12,7 @@
  */
 
 import {
-  EditorSelection, Prec, StateEffect, StateField, type Extension, type Transaction,
+  EditorSelection, Prec, StateEffect, StateField, type EditorState, type Extension, type Transaction,
 } from "@codemirror/state"
 import { isolateHistory } from "@codemirror/commands"
 import { Decoration, EditorView, ViewPlugin, keymap, type ViewUpdate } from "@codemirror/view"
@@ -23,7 +23,7 @@ import {
 import { barCaret, sameLineOnScreen, shownBeyond, sideMove, verticalMove, type BarMove } from "./barWalk"
 import { insideHidden, revealAt } from "./fold"
 import { setHolding } from "./preview/hold"
-import { cellWritten, itemOpened, notebook } from "./notebook"
+import { cellWritten, grownCell, itemOpened, lastLineAt, notebook, type GrownCell } from "./notebook"
 import { gapAt } from "./apart"
 import { renderedField } from "./rendered"
 import { PLUS_HIT, onPlusMarker, plusMarker } from "./plusMarker"
@@ -110,13 +110,21 @@ export const barFromField = StateField.define<number | null>({
 /** How far (px) a press in a seam must travel before it picks cells (the Mac's CellInsertions.dragThreshold, in points). */
 const SEAM_DRAG = 10
 
+/**
+ * The cell a single newline grew (core growth.ts), for the geometry: it runs down to the line it has taken, so the seam
+ * under it starts below that line and a click on the line is a click in the cell. Not while a bar is the cursor.
+ */
+const grownForSeams = (state: EditorState): GrownCell | null =>
+  (state.field(armedField, false) ?? null) === null ? grownCell(state) : null
+
 /** The boxes the seams are built from, measured off the laid-out lines. */
 export function cellBoxes(view: EditorView): CellBox[] {
   const cells = notebook(view.state).cells.filter((cell) => !insideHidden(view.state, cell.range))
   const length = view.state.doc.length
+  const grown = grownForSeams(view.state)
   return cells.map((cell) => {
     const from = Math.min(cell.range.location, length)
-    const to = Math.min(Math.max(cell.range.location, cell.range.location + cell.range.length - 1), length)
+    const to = lastLineAt(cell.range, grown, length)
     const pad = view.documentPadding.top
     // (Below the gap over a cell that stands apart from one it touches: that gap is the seam between them, apart.ts.)
     const top = view.lineBlockAt(from).top + pad + gapAt(view.state, cell.range.location)
@@ -144,10 +152,10 @@ export function pageSeams(view: EditorView): Seam[] {
 
 // (`shownBeyond`, the next cell on show past a closed section, is the arrows' too: barWalk.ts.)
 
-const boxOf = (view: EditorView, cell: PositionedBlock): CellBox => {
+const boxOf = (view: EditorView, cell: PositionedBlock, grown: GrownCell | null): CellBox => {
   const length = view.state.doc.length
   const from = Math.min(cell.range.location, length)
-  const to = Math.min(Math.max(cell.range.location, cell.range.location + cell.range.length - 1), length)
+  const to = lastLineAt(cell.range, grown, length)
   const pad = view.documentPadding.top
   return {
     top: view.lineBlockAt(from).top + pad + gapAt(view.state, cell.range.location),
@@ -183,8 +191,9 @@ export function seamsAround(view: EditorView, index: number): Seam[] {
   }
   const startsPage = shownBeyond(view.state, cells, low, -1) < 0
   const endsPage = shownBeyond(view.state, cells, high, 1) >= cells.length
+  const grown = grownForSeams(view.state)
   const made = seams({
-    cells: window.map((i) => boxOf(view, cells[i]!)),
+    cells: window.map((i) => boxOf(view, cells[i]!, grown)),
     pageTop: 0,
     pageBottom,
     noteLength: length,
@@ -235,12 +244,13 @@ export function firstCellReaching(view: EditorView, y: number): number | null {
   const cells = notebook(view.state).cells
   const length = view.state.doc.length
   const pad = view.documentPadding.top
+  const grown = grownForSeams(view.state)
   let low = 0
   let high = cells.length
   while (low < high) {
     const middle = (low + high) >> 1
     const cell = cells[middle]!
-    const to = Math.min(Math.max(cell.range.location, cell.range.location + cell.range.length - 1), length)
+    const to = lastLineAt(cell.range, grown, length)
     if (view.lineBlockAt(to).bottom + pad >= y) high = middle
     else low = middle + 1
   }
