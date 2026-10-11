@@ -303,8 +303,8 @@ is how the code is put together.
   sheet, Turn left / Turn right, Refresh devices, Video Only. The notes pane
   is put away from the corner of the video. ⌃⌘S, ⌃⌘E, ⌃⌘C.
 - **Two modes over one page, and one button between them.** The drawing
-  layer is there in the markdown and on the rendered page alike — the
-  drawing belongs to the note, not to one way of looking at it — and the
+  belongs to the note, not to one way of looking at it, but its layer is
+  drawn on the rendered page only — and the
   pen button says which mode the pane is in: press it to put the pen down
   or pick it up. The ink layer is the rendered page's, so **putting the pen
   down on the markdown page switches to the rendered page** — the button,
