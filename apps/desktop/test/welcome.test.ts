@@ -230,6 +230,9 @@ describe("the feature list is true to the source", () => {
     // (the segmented control's labels are data in CameraHeader.tsx, 2026-10-10: "Page" is renamed Image)
     for (const label of ["label: \"Writing\"", "label: \"Image\"", "label: \"Raw\""]) expect(camera, label).toContain(label)
     expect(features("Video pane")).toContain("Writing, Image and Raw")
+    // the divider's double-click: the video at full size (PaneDivider.tsx), and the colour of several picked strokes or an ink graphic
+    expect(features("Video pane")).toContain("Double-click the divider for full size")
+    expect(read("apps/desktop/src/renderer/PaneDivider.tsx")).toContain("onDoubleClick={toggleFull}")
     expect(strip).toContain("data-scan-add")
     // the tablet box's row
     expect(box).toContain("Drawing cell")
@@ -239,6 +242,8 @@ describe("the feature list is true to the source", () => {
     // the dock control (2026-10-10: the ⤵ disc became the Dock button of the inspector over a picked object)
     expect(read("apps/desktop/src/renderer/Inspector.tsx")).toContain("Dock into the note")
     expect(features("Drawing")).toContain("Dock into the note")
+    expect(features("Drawing")).toContain("pick some for handles, colour")
+    expect(read("apps/desktop/src/renderer/inspectorRules.ts")).toContain("sharedColour")
   })
 
   // 2026-10-10 (the new bars, docs/PLAN-bars-2026-10.md): the lines for the toolbar, the pen, the tabs, search, the sidebar and
