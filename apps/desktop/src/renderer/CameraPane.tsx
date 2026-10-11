@@ -67,7 +67,7 @@ import { ocrAvailable, readCanvasLines, wordsForChart } from "./ocrClient"
 import { CAMERA_OFF, shown as shownKey, TABLET_SOURCE } from "../shared/commands"
 import { usePenSettings, useSheetTools } from "./penSettings"
 import { TabletSurface, type SurfaceHandle } from "./TabletSurface"
-import { eraseFromSheet, takeFromSheet, type Capture } from "./tabletCapture"
+import { eraseFromSheet, readSheetText, takeFromSheet, type Capture } from "./tabletCapture"
 import { currentSheet, stepSheet, useSheetTabs } from "./tabletSheets"
 import { SheetStrip } from "./SheetStrip"
 import { boxOnPane, MAX_PAGES, readKey } from "./scanSet"
@@ -736,6 +736,34 @@ export function CameraPane({
     surface.current?.repaint()
     edited((was) => was + 1)
   }, [sheetBox])
+  /**
+   * TEXT (a choice of its own beside Writing and As Drawing Cell: Writing is still the graphics): the boxed writing, or the whole
+   * sheet, READ as words by the app's one reader and added to the note as a text cell at the caret (App.tsx `readCameraText`,
+   * the camera's Text lands the same way). The sheet keeps the writing; the box goes, as after any bring-in.
+   */
+  const takeTabletText = useCallback(async () => {
+    if (busy || !onReadText) return
+    const startedIn = noteRef.current
+    const takenFrom = sheets.current
+    surface.current?.leave()
+    setBusy(true)
+    setRead(busyToast("Reading"))
+    try {
+      const out = await readSheetText({ box: sheetBox, shown: surface.current?.size() ?? { width: 0, height: 0 } })
+      if ("trouble" in out) { setTrouble(out.trouble); setRead(null); return }
+      if (noteRef.current !== startedIn) { setTrouble(SWITCHED); setRead(null); return }
+      setTrouble(null)
+      setRead(capturedToast("text", noteNameRef.current, [out.lines.length === 1 ? "1 line" : `${out.lines.length} lines`]))
+      boxOn(takenFrom, null)
+      edited((was) => was + 1)
+      onReadText(out.lines)
+    } catch (error) {
+      console.warn("WriteMind: reading the sheet failed:", error)
+      setTrouble("That could not be read - try again."); setRead(null)
+    } finally {
+      setBusy(false)
+    }
+  }, [busy, onReadText, sheetBox, sheets.current, boxOn])
   const boxToCell = useCallback(async () => {
     const takenFrom = sheets.current
     const out = await takeFromSheet("cell", {
@@ -908,8 +936,15 @@ export function CameraPane({
     : "Hold image: keep this picture still - the box, Straighten and every capture use it"
   const bringOff = binding.bound ? "This sheet is a drawing cell of the note already"
     : note === null ? "Open a note to bring the writing into" : null
-  const bringTitle = bringTo === "cell"
+  /** As Text needs a reader on this machine and a note to read into; a sheet that is a drawing cell can still be read. */
+  const textReader = reader && !!onReadText
+  const textOff = note === null ? "Open a note to read the writing into" : null
+  /** What the button does now: As Text only while there is a reader (a remembered choice of it with none is Writing). */
+  const bringToNow: BringTo = bringTo === "text" && !textReader ? "writing" : bringTo
+  const bringTitle = bringToNow === "cell"
     ? "Bring the writing in as a new drawing cell at the input cursor: the boxed part, or the whole sheet. The sheet keeps it. Its menu says how."
+    : bringToNow === "text"
+    ? "Read the writing as words and add them to the note as text: the boxed part, or the whole sheet. The sheet keeps it. Its menu says how."
     : "Bring the writing in as strokes on the note's page: the boxed part, or the whole sheet. The sheet keeps it. Its menu says how."
   const canUndoSheet = binding.bound && !binding.away ? true : sheet.canUndo
   const undoTitle = binding.bound && binding.away
@@ -952,9 +987,9 @@ export function CameraPane({
                         onUndo={() => { if (binding.bound && !binding.away) stepNote("undo"); else surface.current?.undo() }}
                         canClear={sheet.strokes.length > 0}
                         onClear={() => { surface.current?.clear(); setSheetBox(null) }}
-                        to={bringTo} onBringTo={(next) => { setBringTo(next); rememberBringTo(next) }}
-                        bringTitle={bringTitle} bringOff={bringOff}
-                        onBring={(to) => { if (to === "cell") { surface.current?.leave(); void boxToCell() } else void takeTablet("ink") }}
+                        to={bringToNow} onBringTo={(next) => { setBringTo(next); rememberBringTo(next) }}
+                        bringTitle={bringTitle} bringOff={bringOff} reader={textReader} textOff={textOff}
+                        onBring={(to) => { if (to === "cell") { surface.current?.leave(); void boxToCell() } else if (to === "text") void takeTabletText(); else void takeTablet("ink") }}
                         onBringPage={() => { void takeTablet("page") }}
                         onHide={onHide} showEditor={showEditor} onToggleEditor={onToggleEditor} />
         )
@@ -985,6 +1020,7 @@ export function CameraPane({
                            copy: boxToClipboard,
                            // As the header's Bring in: off on a drawing cell's own tab; and with no note to bring into.
                            bringOff,
+                           ...(textReader ? { text: takeTabletText, textOff } : {}),
                          }} />
         )
         : (

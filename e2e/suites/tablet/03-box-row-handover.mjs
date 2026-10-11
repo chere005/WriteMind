@@ -172,8 +172,9 @@ const docText = () => js(`document.querySelector('.cm-content').cmTile.view.stat
 const cellsIn = async () => ((await docText()).match(/!\[ink\]/g) ?? []).length
 const cellsBefore = await cellsIn()
 await js(`document.querySelector('.camera-bar [data-capture=ink]').dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true })); true`); await sleep(200)
-ok("Bring in's menu offers Writing, As Drawing Cell and Sheet as Picture",
-  await js(`[...document.querySelectorAll('.float-menu [data-bar^=bring-] .float-label')].map(b => b.textContent).join('|')`) === "Writing|As Drawing Cell|Sheet as Picture")
+// (As Text, 2026-10-10: a choice of its own beside Writing, which is still the graphics; only where the app has a reader.)
+ok("Bring in's menu offers Writing, As Drawing Cell, As Text and Sheet as Picture",
+  await js(`[...document.querySelectorAll('.float-menu [data-bar^=bring-] .float-label')].map(b => b.textContent).join('|')`) === "Writing|As Drawing Cell|As Text|Sheet as Picture")
 ok("...with the current default ticked (Writing)", await js(`document.querySelector('.float-menu [data-bar=bring-writing]').getAttribute('aria-checked')`) === "true")
 await js(`document.querySelector('.float-menu [data-bar=bring-cell]').click(); true`); await sleep(900)
 ok("...the choice is remembered", await js(`localStorage.getItem('writemind.bringInTo')`) === '"cell"')

@@ -132,6 +132,9 @@ interface TabletProps {
   bringOff: string | null
   onBring(to: BringTo): void
   onBringPage(): void
+  /** The machine has a reader: Bring in ▸ As Text is offered (and why it is off, or null). */
+  reader: boolean
+  textOff: string | null
   onHide(): void
   showEditor: boolean
   onToggleEditor?(): void
@@ -154,7 +157,7 @@ export function TabletHeader(p: TabletProps) {
                 onClick={() => p.onToggleEditor?.()}><span className="bar-label-text">Back to Side by Side</span></button>
       )}
       <span className="grow" />
-      <BringInMenu to={p.to} onChange={p.onBringTo} title={p.bringTitle} off={p.bringOff} onBring={p.onBring} onPage={p.onBringPage} />
+      <BringInMenu to={p.to} onChange={p.onBringTo} title={p.bringTitle} off={p.bringOff} onBring={p.onBring} onPage={p.onBringPage} reader={p.reader} textOff={p.textOff} />
       <button type="button" className="bar-btn" aria-label="Put the sheet away" title="Put the sheet away" onClick={p.onHide}><Icon name="close" /></button>
     </div>
   )

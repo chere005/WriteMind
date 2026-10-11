@@ -10,8 +10,8 @@ import {
   placement, resolveShape, shapeSize, type CanvasItem, type Rect, type Size,
 } from "@writemind/core"
 import { eraseRegion, landedFrame } from "./boxRow"
-import { bandUnder, chartSummary, sheetChartLabelled } from "./capturePipeline"
-import { wordsForChart } from "./ocrClient"
+import { bandUnder, chartSummary, renderSheet, sheetChartLabelled } from "./capturePipeline"
+import { readCanvasLines, wordsForChart } from "./ocrClient"
 import {
   inkExtent, landStrokes, paintStrokes, regionOfSheetBox, SHEET_REF, splitByRegion, type InkStroke,
 } from "./tabletPage"
@@ -165,6 +165,40 @@ export async function takeFromSheet(mode: "ink" | "page" | "cell", options: {
       ...(chart.length > 0 ? { chart } : {}),
     },
   }
+}
+
+/**
+ * READ THE WRITING AS WORDS (Sean, 2026-10-10: "i don't see the OCR, it should work on wacom as well"): the boxed part of the
+ * sheet, or all of it, as black ink on white paper (the same raster the flow-chart reader is given, with a blank margin round
+ * it because the reader drops ink on the very edge), read by the one reader the app has, and the lines it found. The sheet is
+ * not touched. A trouble says why there is nothing to read, in words; an empty reading is a trouble of its own.
+ */
+export async function readSheetText(options: { box: Rect | null; shown: Size }): Promise<{ trouble: string } | { lines: string[] }> {
+  const { box, shown } = options
+  const sheet = currentSheet()
+  if (shown.width <= 0 || shown.height <= 0) return { trouble: "no sheet to read" }
+  if (sheet.strokes.length === 0) return { trouble: "nothing written yet" }
+  const region = regionOfSheetBox(box, shown)
+  if (!region) return { trouble: "that box is not on the sheet" }
+  const parts = splitByRegion(sheet.strokes, region)
+  if (parts.inside.length === 0) return { trouble: "nothing written in that box" }
+  const units = sheetUnits(sheet.aspect)
+  const portrait = units.height >= units.width
+  const measured = Math.max(units.width, units.height) / Math.max(1, Math.min(units.width, units.height))
+  const page = resolveShape(measured, learned.shape)
+  learned.shape = page.ratio
+  const pageSize = shapeSize(page, portrait)
+  const onPage: Rect = {
+    x: region.x * pageSize.width, y: region.y * pageSize.height,
+    width: region.width * pageSize.width, height: region.height * pageSize.height,
+  }
+  const scale = pageSize.width / units.width
+  const margin = Math.round(Math.min(onPage.width, onPage.height) * 0.04) + 8
+  const canvas = renderSheet(parts.inside, pageSize, onPage, scale, "#000", margin)
+  const lines = await readCanvasLines(canvas)
+  if (lines === null) return { trouble: "That could not be read - try again." }
+  if (lines.length === 0) return { trouble: "No text could be read in that writing." }
+  return { lines }
 }
 
 /**

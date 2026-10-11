@@ -62,8 +62,11 @@ export const rememberShape = (ratio: number): void => write("notebookPageShape",
  * down arrow that chooses To writing or To docked cell"): floating strokes on the note's page, or a new drawing cell
  * docked at the input cursor. Remembered; anything unreadable is the writing.
  */
-export type BringTo = "writing" | "cell"
-export const rememberedBringTo = (): BringTo => (read<unknown>("bringInTo", "writing") === "cell" ? "cell" : "writing")
+export type BringTo = "writing" | "cell" | "text"
+export const rememberedBringTo = (): BringTo => {
+  const kept = read<unknown>("bringInTo", "writing")
+  return kept === "cell" || kept === "text" ? kept : "writing"
+}
 export const rememberBringTo = (to: BringTo): void => write("bringInTo", to)
 
 /**

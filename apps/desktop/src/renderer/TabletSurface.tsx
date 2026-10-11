@@ -499,6 +499,7 @@ export const TabletSurface = forwardRef<SurfaceHandle, Props>(function TabletSur
       {box && buttons && !boxing && fit.width > 0 && (
         // Beside the sheet's element, not in it: a click here is the button's, never a box gesture (BoxActions.tsx).
         <BoxActions box={box} sheet={fit} bringOff={buttons.bringOff}
+                    text={buttons.text ? () => leaveFor(buttons.text!) : undefined} textOff={buttons.textOff}
                     erase={async () => {
                       await buttons.erase()
                       // Ctrl+Z next takes the erase back: the sheet has the keys again.

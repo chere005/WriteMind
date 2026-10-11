@@ -62,7 +62,7 @@ try {
   await boxOver({ x: 0.42, y: 0.15 }, { x: 0.8, y: 0.45 })
   ok("the box and its row are up", !!(await rect(".camera .tablet .box")) && !!(await rect("[data-tablet=box-actions]")))
   const labels = JSON.parse(await js(`JSON.stringify([...document.querySelectorAll('[data-tablet=box-actions] button')].map(b => [b.dataset.boxAction, b.textContent, b.disabled]))`))
-  ok("the row has Copy after the two Bring ins, and Erase (which destroys) last", JSON.stringify(labels.map((l) => l[0])) === JSON.stringify(["ink", "cell", "copy", "erase"]) && labels[2][1] === "Copy", JSON.stringify(labels))
+  ok("the row has Copy after the Bring ins (writing, drawing cell, text), and Erase (which destroys) last", JSON.stringify(labels.map((l) => l[0])) === JSON.stringify(["ink", "cell", "text", "copy", "erase"]) && labels[3][1] === "Copy", JSON.stringify(labels))
   const row = await rect("[data-tablet=box-actions]")
   ok("the row (four buttons) stays on the sheet", row.x >= t.x - 1 && row.x + row.w <= t.x + t.w + 1, JSON.stringify({ row, t }))
 

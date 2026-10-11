@@ -370,10 +370,12 @@ source under the menu; Ctrl/Cmd-click is the drawing layer's, as on words.
 - **The sheet's header** (one 36px row, 2026-10-10): **Paper** (kind, spacing, colour; the menu stays up while you try them),
   **Tablet orientation** (an icon menu, the current one ticked), **Undo** (the sheet's last stroke; its corner menu has **Clear the
   Sheet**) ... **Bring in** (the one filled button: it brings the writing in the way it was last asked to; its menu is **Writing**
-  / **As Drawing Cell** / **Sheet as Picture**: a pick brings it in at once, and Writing / As Drawing Cell become what the button
-  does next, remembered) and ✕. A menu on a header button opens from its corner triangle, a right-click, a half-second hold or Down.
-- **The box's row** (under the dashed box; the pen's tap clicks it): **Bring in writing** | **As drawing cell** | **Copy** | **Erase**
-  (the primary first, Erase last and red; the short labels Writing / Cell when the row is wider than the sheet). Copy puts the boxed
+  (the strokes, the graphics, as always) / **As Drawing Cell** / **As Text** (the writing READ as words by the app's one reader and
+  added to the note as a text cell at the caret; only where there is a reader) / **Sheet as Picture**: a pick brings it in at once,
+  and Writing / As Drawing Cell / As Text become what the button does next, remembered) and ✕. A menu on a header button opens from its corner triangle, a right-click, a half-second hold or Down.
+- **The box's row** (under the dashed box; the pen's tap clicks it): **Bring in writing** | **As drawing cell** | **Text** | **Copy** |
+  **Erase** (the primary first, Erase last and red; the short labels Writing / Cell when the row is wider than the sheet; Text reads
+  the boxed writing as words into the note and is there only with a reader). Copy puts the boxed
   writing on the system clipboard as a drawing cell and leaves the note alone: Ctrl+V in a note lands it as a new drawing cell at the
   caret (or the armed bar), in Mathematica it pastes as the image, in every other app as an SVG file.
 - **Erase Tool / Select Tool** by the pen (a double tap set to "Erase tool

@@ -176,7 +176,10 @@ is how the code is put together.
   a word with a line through it arrives struck out, a word with a ring round
   it in bold, a drawn arrow as →, and a line of algebra as this app's maths,
   raised digits and all. The picture itself stays (the words go in just under it);
-  Undo takes the words back out.
+  Undo takes the words back out. The video pane reads too: **Text** in the camera's box row, and on the
+  Wacom sheet **Bring in ▸ As Text** and the box row's **Text** read the handwriting (the boxed part, or
+  all of the sheet) as words into the note as a text cell. **Writing** on the sheet is still the graphics:
+  the strokes themselves.
 - **A flow chart sketched on paper comes in as a flow chart.** Reading a
   picture that holds one brings the boxes in as nodes — rectangles, rounded
   rectangles, ovals, diamonds, triangles and parallelograms — with the
