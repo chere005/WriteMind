@@ -162,3 +162,72 @@ export function inkVector(mask: Uint8Array, maskWidth: number, maskHeight: numbe
   colour: string): string | null {
   return inkSvg(inkOutlines(mask, maskWidth, maskHeight, box), { width: box.width, height: box.height }, colour)
 }
+
+// MARK: - Recolouring a traced graphic
+//
+// PORT-ONLY (Sean, 2026-10-10: "add a color picker for imported stroke graphics objects"). A capture lands on the page
+// as a picture whose file is the SVG `inkSvg` writes, filled with the pen's colour of that moment. Its colour is one
+// attribute, so it can be changed after the fact — but ONLY for a file that is exactly that shape. A photo is not
+// an ink graphic and neither is somebody else's SVG (a logo, a chart): their fills are not "the colour of the
+// writing", and rewriting them would be rewriting a picture the person put there.
+
+/** One `name="value"` of a start tag, with where it sits in the tag's text (its leading space included). */
+interface Attribute { name: string; value: string; start: number; end: number }
+
+const ATTRIBUTE = /\s*([A-Za-z_:][-\w:.]*)\s*=\s*(?:"([^"]*)"|'([^']*)')/y
+
+/** The attributes of a start tag's text, or null when anything in it is not a plain `name="value"` pair. */
+function attributesOf(source: string): Attribute[] | null {
+  const found: Attribute[] = []
+  let at = 0
+  for (;;) {
+    ATTRIBUTE.lastIndex = at
+    const match = ATTRIBUTE.exec(source)
+    if (!match) break
+    found.push({ name: match[1]!, value: match[2] ?? match[3] ?? "", start: match.index, end: ATTRIBUTE.lastIndex })
+    at = ATTRIBUTE.lastIndex
+  }
+  return source.slice(at).trim() === "" ? found : null
+}
+
+/** The one shape: `<svg ...><path .../></svg>`, nothing else in it (no group, no style, no second path). */
+const INK_GRAPHIC = /^(\s*(?:<\?xml[^>]*\?>\s*)?<svg\b)([^>]*)(>\s*<path\b)([^>]*?)(\s*\/>\s*<\/svg>\s*|\s*>\s*<\/path>\s*<\/svg>\s*)$/
+
+const SVG_ATTRIBUTES = new Set(["xmlns", "width", "height", "viewBox", "version"])
+const PATH_ATTRIBUTES = new Set(["fill", "fill-rule", "d"])
+const PATH_DATA = /^[MmLlHhVvCcSsQqTtAaZz0-9eE\s,.+-]+$/
+const HEX6 = /^#[0-9a-fA-F]{6}$/
+
+/** The traced graphic's parts: where its fill sits in the file, and what the fill is; null for any other file. */
+function inkParts(svg: string): { fill: string; before: string; after: string } | null {
+  const match = INK_GRAPHIC.exec(svg)
+  if (!match) return null
+  const root = attributesOf(match[2]!)
+  const path = attributesOf(match[4]!)
+  if (!root || !path) return null
+  if (root.some((one) => !SVG_ATTRIBUTES.has(one.name))) return null
+  if (path.some((one) => !PATH_ATTRIBUTES.has(one.name)) || new Set(path.map((one) => one.name)).size !== path.length) return null
+  const fill = path.find((one) => one.name === "fill")
+  const d = path.find((one) => one.name === "d")
+  const rule = path.find((one) => one.name === "fill-rule")
+  if (!fill || !HEX6.test(fill.value) || !d || !PATH_DATA.test(d.value) || d.value.trim() === "") return null
+  if (rule && rule.value !== "evenodd" && rule.value !== "nonzero") return null
+  const tag = match[1]!.length + match[2]!.length + match[3]!.length
+  return { fill: fill.value, before: svg.slice(0, tag + fill.start), after: svg.slice(tag + fill.end) }
+}
+
+/** The colour (`#rrggbb`) a traced graphic is filled with; null when the file is not one (a photo, a logo, a chart). */
+export function inkGraphicFill(svg: string): string | null {
+  return inkParts(svg)?.fill ?? null
+}
+
+/**
+ * The traced graphic in another colour: the file with its fill changed and every other attribute and byte as it was. Null when
+ * the file is not a traced graphic (see above) or the colour is not `#rrggbb`: a colour that cannot be written is
+ * not written in its place.
+ */
+export function recolouredInkSvg(svg: string, colour: string): string | null {
+  if (!HEX6.test(colour)) return null
+  const parts = inkParts(svg)
+  return parts ? `${parts.before} fill="${colour}"${parts.after}` : null
+}

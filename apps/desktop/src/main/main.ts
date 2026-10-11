@@ -20,7 +20,7 @@ import { fileURLToPath, pathToFileURL } from "node:url"
 import { capabilitiesFor, mediaFiles } from "@writemind/core"
 import {
   adoptNoteFile, existing, findMedia, peekNoteFile, isProjectFolder, mediaPath, noteInfo,
-  projectTree, readDrawing, readNote, saveInkSnapshot, saveMedia,
+  projectTree, readDrawing, readMediaText, readNote, saveInkSnapshot, saveMedia,
   fileChanged, forgetTrust, setExcluded, setProjectFolders, setWatched, sweepMediaCache, wroteRecently, writeDrawing, writeNote,
 } from "./notes"
 import { UndoJournal } from "./undoJournal"
@@ -638,6 +638,8 @@ app.whenReady().then(async () => {
   ipcMain.handle("notes:reveal", () => shell.openPath(project.folders[0] ?? notesRoot()))
   ipcMain.handle("media:save", (_event, bytes: Uint8Array, extension: string, note?: string | null) =>
     saveMedia(notesRoot(), bytes, extension, note ?? null))
+  // A picture's words, when it is an SVG: the page asks it of a picked picture, to see whether it is a capture's traced writing.
+  ipcMain.handle("media:text", (_event, file: string, note?: string | null) => readMediaText(notesRoot(), file, note ?? null))
   // An ink cell's snapshot, `ink-<id>.svg` beside the note's other media (docs\PLAN-docking-ink-cells.md (f)).
   ipcMain.handle("media:inkSnapshot", (_event, note: string, id: string, svg: string, onlyIfMissing?: boolean) =>
     saveInkSnapshot(notesRoot(), note, id, svg, onlyIfMissing === true))

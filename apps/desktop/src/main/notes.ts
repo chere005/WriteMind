@@ -22,7 +22,7 @@ import { createHash } from "node:crypto"
 import os from "node:os"
 import path from "node:path"
 import {
-  appending, arrange, emptyOrder, forget, isInside, isWmName, makeNote, ORDER_FILE, orderKey, placing, sessionFileName, setOrder,
+  appending, arrange, emptyOrder, forget, isInside, isWmName, makeNote, ORDER_FILE, orderKey, placing, sessionFileName, setOrder, textOf,
   type Note, type NoteOrder,
 } from "@writemind/core"
 import { codeOf, limiter, partialOf, within, writeFileAtomic } from "./atomic"
@@ -436,6 +436,21 @@ Promise<{ file: string }> {
   const target = note ?? frontNote()
   if (!target) throw new Error("No note is open to put the picture in")
   return writeMedia(target, bytes, extension)
+}
+
+/** The most of an SVG picture the page is given to look at: a page of traced writing is some hundreds of kilobytes. */
+export const MAX_SVG_TEXT = 24 * 1024 * 1024
+
+/**
+ * The words of a note's SVG picture (`note`, else the one in front), for the page to tell a capture's traced writing from
+ * any other SVG (core `inkGraphicFill`): the page cannot fetch its own `wm://` pictures as text. Null for a picture that
+ * is not an SVG, is not there, or is too big to be a traced outline.
+ */
+export function readMediaText(_root: string, file: string, note?: string | null): string | null {
+  const name = path.basename(file)
+  if (!/\.svg$/i.test(name)) return null
+  const bytes = mediaBytes(name, note)
+  return bytes && bytes.length <= MAX_SVG_TEXT ? textOf(bytes) : null
 }
 
 /**

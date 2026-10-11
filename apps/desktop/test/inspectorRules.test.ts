@@ -7,7 +7,8 @@
 import { describe, expect, it } from "vitest"
 import { noTransform, type CanvasItem, type Rect, type ShapeKind } from "@writemind/core"
 import {
-  BAR_GAP, BAR_MARGIN, estimatedWidth, inspectorName, inspectorPlan, inspectorSpot, pointBox, sideAwayFrom, wantsRing,
+  BAR_GAP, BAR_MARGIN, canonicalHex, estimatedWidth, hasColour, inspectorName, inspectorPlan, inspectorSpot, pointBox, sharedColour, sharedWidth,
+  sideAwayFrom, wantsRing,
   type PlanContext,
 } from "../src/renderer/inspectorRules"
 
@@ -106,6 +107,13 @@ describe("where the bar stands", () => {
 
 const stroke: CanvasItem = { kind: "stroke", stroke: { id: "s", colorHex: "#000", width: 3, points: [{ x: 0.1, y: 0.1 }, { x: 0.2, y: 0.2 }], transform: noTransform(), group: null } }
 const picture: CanvasItem = { kind: "image", image: { id: "p", file: "a.png", center: { x: 0.5, y: 0.5 }, width: 0.3, aspect: 0.75, transform: noTransform(), hidden: false, group: null } }
+/** A capture's traced graphic: a picture whose file the page has found to be an ink graphic (`inks` in the context). */
+const inkPicture = (file = "ink.svg", id = "ink"): CanvasItem => ({
+  kind: "image", image: { id, file, center: { x: 0.5, y: 0.5 }, width: 0.3, aspect: 0.75, transform: noTransform(), hidden: false, group: null },
+})
+const strokeOf = (id: string, colorHex: string, width = 3): CanvasItem => ({
+  kind: "stroke", stroke: { id, colorHex, width, points: [{ x: 0.1, y: 0.1 }, { x: 0.2, y: 0.2 }], transform: noTransform(), group: null },
+})
 const shape = (kind: ShapeKind): CanvasItem => ({
   kind: "shape", shape: { id: `sh-${kind}`, kind, center: { x: 0.5, y: 0.5 }, width: 0.2, aspect: 0.5, colorHex: "#000", lineWidth: 2, fillHex: null, label: "", transform: noTransform(), group: null },
 })
@@ -134,10 +142,10 @@ describe("which controls a pick has", () => {
   it("picked pen handwriting can be read as words (Read) where the platform can read: one stroke, or many strokes and nothing else", () => {
     const hand = { readsInk: true }
     expect(flat([stroke], hand)).toEqual(["colour", "width", "read", "order", "dock", "duplicate", "delete"])
-    expect(flat([stroke, stroke], hand)).toEqual(["read", "group", "order", "duplicate", "delete"])
+    expect(flat([stroke, stroke], hand)).toEqual(["colour", "width", "read", "group", "order", "duplicate", "delete"])
     // no reader, or ink mixed with anything else: no Read
-    expect(flat([stroke, stroke], { readsInk: false })).toEqual(["group", "order", "duplicate", "delete"])
-    expect(flat([stroke, shape("rectangle")], hand)).toEqual(["group", "order", "duplicate", "delete"])
+    expect(flat([stroke, stroke], { readsInk: false })).toEqual(["colour", "width", "group", "order", "duplicate", "delete"])
+    expect(flat([stroke, shape("rectangle")], hand)).toEqual(["colour", "width", "group", "order", "duplicate", "delete"])
   })
 
   it("a picture: crop and Read (the words in it) where the platform can read, order, dock, copy, delete; no colour", () => {
@@ -164,11 +172,56 @@ describe("which controls a pick has", () => {
     expect(flat([shape("rectangle")], { compact: true })).toContain("colour")
   })
 
-  it("several objects: Group or Ungroup, order, copy, delete; named by count", () => {
+  it("several objects: Group or Ungroup, order, copy, delete; named by count; a photo among them takes no colour from the lot", () => {
     const plan = inspectorPlan([stroke, shape("rectangle"), picture], context)
     expect(plan.name).toBe("3 objects")
     expect(plan.groups).toEqual([["group"], ["order"], ["duplicate", "delete"]])
     expect(flat([stroke, picture], { grouping: "nothing" })).toEqual(["order", "duplicate", "delete"])
+  })
+
+  it("several objects that ALL take a colour have it: the lot of strokes a Wacom sheet brings in, nodes, arrows", () => {
+    const plan = inspectorPlan([stroke, stroke, stroke], context)
+    expect(plan.name).toBe("3 objects")
+    expect(plan.groups).toEqual([["colour", "width"], ["group"], ["order"], ["duplicate", "delete"]])
+    expect(flat([shape("rectangle"), shape("oval")])).toEqual(["colour", "width", "group", "order", "duplicate", "delete"])
+    expect(flat([arrow(), arrow({ startHead: "arrow" })], { grouping: "nothing" })).toEqual(["colour", "width", "order", "duplicate", "delete"])
+    expect(flat([stroke, shape("rectangle"), arrow()])).toEqual(["colour", "width", "group", "order", "duplicate", "delete"])
+  })
+
+  it("...and width only where every one of them has a width (a text box has none: its width is its card's)", () => {
+    expect(flat([stroke, shape("text")])).toEqual(["colour", "group", "order", "duplicate", "delete"])
+    expect(flat([shape("text"), shape("text")])).toEqual(["colour", "group", "order", "duplicate", "delete"])
+  })
+
+  it("a pick with something in it that takes no colour (a photo) has no colour, whatever else is in it", () => {
+    expect(flat([stroke, stroke, picture])).toEqual(["group", "order", "duplicate", "delete"])
+    expect(flat([picture, picture])).toEqual(["group", "order", "duplicate", "delete"])
+    // even when an ink graphic is among them: the photo is the one that cannot be recoloured
+    expect(flat([inkPicture(), picture], { inks: new Set(["ink.svg"]) })).not.toContain("colour")
+  })
+
+  it("a picture that is an INK GRAPHIC (a camera capture's traced writing) has a colour; a photo, a PNG, an unread SVG has none", () => {
+    const inks = new Set(["ink.svg"])
+    expect(flat([inkPicture()], { inks })).toEqual(["colour", "crop", "read", "order", "dock", "duplicate", "delete"])
+    expect(inspectorPlan([inkPicture()], { ...context, inks }).groups[0]).toEqual(["colour"])
+    expect(inspectorName([inkPicture()])).toBe("Picture")
+    // not a graphic the page has found to be one: the bar is the picture's as it was
+    expect(flat([inkPicture()])).toEqual(["crop", "read", "order", "dock", "duplicate", "delete"])
+    expect(flat([inkPicture()], { inks: new Set(["other.svg"]) })).not.toContain("colour")
+    expect(flat([picture], { inks })).not.toContain("colour")
+    // an ink graphic has a colour and no line width: there is no pen in it
+    expect(flat([inkPicture()], { inks })).not.toContain("width")
+    expect(hasColour(inkPicture(), inks)).toBe(true)
+    expect(hasColour(inkPicture())).toBe(false)
+  })
+
+  it("ink graphics alone, or among strokes, are recoloured together; width is offered only when every one has it", () => {
+    const inks = new Set(["ink.svg", "ink2.svg"])
+    expect(flat([inkPicture(), inkPicture("ink2.svg", "i2")], { inks })).toEqual(["colour", "group", "order", "duplicate", "delete"])
+    expect(flat([inkPicture(), stroke], { inks })).toEqual(["colour", "group", "order", "duplicate", "delete"])
+    expect(flat([inkPicture(), stroke, shape("rectangle"), arrow()], { inks })).toEqual(["colour", "group", "order", "duplicate", "delete"])
+    // no Read over a mix: it is for handwriting alone
+    expect(flat([inkPicture(), stroke], { inks, readsInk: true })).not.toContain("read")
   })
 
   it("the delete is out of the way while a crop or a label is being edited", () => {
@@ -191,6 +244,41 @@ describe("which controls a pick has", () => {
     expect(wantsRing([arrow(), arrow()])).toBe(false)
     expect(wantsRing([arrow(), shape("rectangle")])).toBe(true)
     expect(wantsRing([stroke])).toBe(true)
+  })
+
+  it("what the dot shows: the colour all of the pick share, or mixed when they do not", () => {
+    const plain = (items: CanvasItem[]) => sharedColour(items)
+    expect(plain([strokeOf("a", "#F2542D")])).toEqual({ value: "#F2542D", mixed: false })
+    expect(plain([strokeOf("a", "#F2542D"), strokeOf("b", "#F2542D"), strokeOf("c", "#f2542d")])).toEqual({ value: "#F2542D", mixed: false })
+    expect(plain([strokeOf("a", "#F2542D"), strokeOf("b", "#2D7DD2")])).toEqual({ value: null, mixed: true })
+    // a node, a mark and an arrow count like a stroke
+    expect(plain([shape("rectangle"), arrow(), strokeOf("a", "#000")])).toEqual({ value: "#000", mixed: false })
+    expect(plain([shape("rectangle"), strokeOf("a", "#2D7DD2")])).toEqual({ value: null, mixed: true })
+    // #fff and #ffffff are one colour
+    expect(plain([strokeOf("a", "#fff"), strokeOf("b", "#FFFFFF")]).mixed).toBe(false)
+    expect(plain([picture])).toEqual({ value: null, mixed: false })
+    expect(plain([])).toEqual({ value: null, mixed: false })
+  })
+
+  it("...an ink graphic shows the fill it has, among strokes or alone", () => {
+    const fills: Record<string, string> = { "ink.svg": "#2D7DD2" }
+    const fill = (file: string) => fills[file] ?? null
+    expect(sharedColour([inkPicture()], fill)).toEqual({ value: "#2D7DD2", mixed: false })
+    expect(sharedColour([inkPicture(), strokeOf("a", "#2d7dd2")], fill).mixed).toBe(false)
+    expect(sharedColour([inkPicture(), strokeOf("a", "#F2542D")], fill)).toEqual({ value: null, mixed: true })
+  })
+
+  it("what the width says: the one they share (to a tenth), or mixed", () => {
+    expect(sharedWidth([strokeOf("a", "#000", 3), strokeOf("b", "#000", 3.04)])).toEqual({ value: 3, mixed: false })
+    expect(sharedWidth([strokeOf("a", "#000", 3), strokeOf("b", "#000", 5)])).toEqual({ value: null, mixed: true })
+    expect(sharedWidth([shape("rectangle"), arrow()]).mixed).toBe(false)
+    expect(sharedWidth([picture])).toEqual({ value: null, mixed: false })
+  })
+
+  it("two spellings of a colour are one", () => {
+    expect(canonicalHex("#FFF")).toBe("#ffffff")
+    expect(canonicalHex("#F2542D")).toBe("#f2542d")
+    expect(canonicalHex(" #abc ")).toBe("#aabbcc")
   })
 
   it("a first-paint width that grows with what the bar holds", () => {

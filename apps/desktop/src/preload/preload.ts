@@ -94,6 +94,8 @@ const api = {
   /** The picture goes in the project folder of `note` (else of the note in front). */
   saveMedia: (bytes: Uint8Array, extension: string, note?: string | null) =>
     ipcRenderer.invoke("media:save", bytes, extension, note ?? null),
+  /** The words of an SVG picture of `note` (else the one in front); null when it is not an SVG, is not there, or is too big. */
+  readMediaText: (file: string, note?: string | null): Promise<string | null> => ipcRenderer.invoke("media:text", file, note ?? null),
   /** An ink cell's snapshot `ink-<id>.svg`, in the media folder of `note`'s project folder (written over in place). */
   writeInkSnapshot: (note: string, id: string, svg: string, onlyIfMissing?: boolean) =>
     ipcRenderer.invoke("media:inkSnapshot", note, id, svg, onlyIfMissing === true),

@@ -19,7 +19,7 @@ import { createPortal } from "react-dom"
 import {
   applyMatrix, matrixOf, angleAbout, attachableAt, baseBounds, baseCenter, basePoints, bounds, boundsOf, connectorPaths,
   copiedItems, cornerRadius, cropRect, cropped, dashPattern, distance, emptyDrawing, hitTest, idsTouching,
-  isClosed, isNode, isRouted, nudged, pressureScale, placedCenter, reconnect, reordered, restyled,
+  isClosed, isNode, isRouted, nudged, pressureScale, placedCenter, reconnect, refiled, reordered, restyled,
   segmentMidpoints, shifted, strokeCurve, TEXT_BOX, textBoxAspect, textBoxHeight, readableInk,
   indexAt, isHidden, itemId, itemTransform, newID, noTransform, placedItem, polylines, rectFrom,
   removing, route, stillPicked, strokesSwept, toggle, toggled, transformed, whole, withTransform,
@@ -32,6 +32,7 @@ import { inkCellPlaces, pictureCellLine, repaintInkCells, type DropTarget } from
 import type { DrawingHistory } from "./drawingHistory"
 import { dockedAsCell, dockInto, undockLine, type DockDeps, type Words } from "./dock"
 import { returnFocusSoon } from "./focusReturn"
+import { inkGraphics } from "./inkGraphics"
 import { Inspector } from "./Inspector"
 import { Icon } from "./icons"
 import {
@@ -244,6 +245,27 @@ function picture(file: string, onLoad: () => void): HTMLImageElement | null {
   pictures.set(file, image)
   return null
 }
+
+/**
+ * A picture that is loaded by the time this resolves (at most a moment's wait: a picture that will not load is the
+ * painter's to report, and the edit that was waiting for it goes ahead). A new file is shown with no blank frame
+ * between it and the one it replaces when the edit that points at it waits for this.
+ */
+function pictureReady(file: string): Promise<void> {
+  return new Promise((resolve) => {
+    const guard = setTimeout(resolve, 1500)
+    const done = () => { clearTimeout(guard); resolve() }
+    if (picture(file, done)) return done()
+    // (Asked for already and still arriving: the painter's own load handler is on it, ours is one more.)
+    const image = pictures.get(file)
+    if (!image || image.complete) return done()
+    image.addEventListener("load", done, { once: true })
+    image.addEventListener("error", done, { once: true })
+  })
+}
+
+/** An ink graphic's recolour waits this long for the next one (a colour dragged is many asks): the file is saved once the colour settles. */
+const INK_SETTLE = 160
 
 // MARK: - Copying objects between notes
 //
@@ -897,10 +919,57 @@ export function Canvas({
   const pickedRef = useRef(pickedSurface)
   pickedRef.current = pickedSurface
 
+  const noteRef = useRef(note)
+  noteRef.current = note
+  /** The recolours of ink graphics under way, by pick: the newest ask of a pick is the only one of it that lands. */
+  const recolouring = useRef(new Map<string, number>())
+
+  /**
+   * A style change on what is picked, in ONE undo step. An INK GRAPHIC (a camera capture's traced writing) has its
+   * colour in its FILE, so a new colour for one is a new file: the traced outline with its fill changed, saved as a
+   * picture of the note, and the picture pointed at it. That takes a moment and the stroke part waits for it, so a pick
+   * of strokes and graphics changes together or not at all; a pick with no graphic in it is changed at once.
+   */
   const applyStyle = useCallback((patch: StylePatch) => {
     const s = pickedRef.current()
-    if (s) burst(restyled(latest.current.pickLayer, latest.current.selection, patch), s)
+    if (!s) return
+    const { pickLayer: layer, selection: ids } = latest.current
+    const colour = patch.colorHex
+    const graphics = colour === undefined ? [] : layer.items.flatMap((item) =>
+      item.kind === "image" && ids.has(itemId(item)) && inkGraphics.fill(item.image.file) != null ? [item.image.file] : [])
+    if (colour === undefined || graphics.length === 0) { burst(restyled(layer, ids, patch), s); return }
+    const key = `${s.cell ?? ""}:${[...ids].sort().join(",")}`
+    const turn = (recolouring.current.get(key) ?? 0) + 1
+    recolouring.current.set(key, turn)
+    const stale = () => recolouring.current.get(key) !== turn
+    void (async () => {
+      await new Promise((resolve) => setTimeout(resolve, INK_SETTLE))
+      const made = new Map<string, string>()
+      for (const file of new Set(graphics)) {
+        if (stale()) return
+        const next = await inkGraphics.recolour(file, colour, noteRef.current ?? null)
+        if (next !== null) { made.set(file, next); await pictureReady(next) }
+      }
+      if (stale()) return
+      recolouring.current.delete(key)
+      const held = layerIn(latest.current.drawing, s.cell)
+      const now = pickedRef.current()
+      if (held) burst(refiled(restyled(held, ids, patch), ids, made), now && now.cell === s.cell ? now : s)
+    })()
   }, [burst])
+
+  // What a picked picture is, for the bar: an ink graphic has a colour, a photo has none. Asked of the file once, the
+  // answer kept by its name (inkGraphics.ts); the bar draws again when it arrives.
+  const [, setGraphicsKnown] = useState(0)
+  const pickedFiles = pickLayer.items.flatMap((item) => (item.kind === "image" && selection.has(itemId(item)) ? [item.image.file] : [])).join("\n")
+  useEffect(() => {
+    let alive = true
+    for (const file of pickedFiles === "" ? [] : pickedFiles.split("\n")) {
+      if (inkGraphics.fill(file) !== undefined) continue
+      void inkGraphics.read(file, noteRef.current ?? null).then(() => { if (alive) setGraphicsKnown((n) => n + 1) })
+    }
+    return () => { alive = false }
+  }, [pickedFiles])
 
   const orderSelection = useCallback((how: Order) => {
     const s = pickedRef.current()
@@ -2119,8 +2188,9 @@ export function Canvas({
       setSelection(whole(latest.current.selection, next), s.cell)
     }
   }
+  const inks = new Set(pickedItems.flatMap((item) => (item.kind === "image" && inkGraphics.fill(item.image.file) != null ? [item.image.file] : [])))
   const plan = inspectorPlan(pickedItems, {
-    docks, reads: onReadPicture !== undefined && onPage, readsInk: onReadInk !== undefined && onPage, grouping, editing: crop !== null || labelling !== null, compact: compactOn,
+    docks, reads: onReadPicture !== undefined && onPage, readsInk: onReadInk !== undefined && onPage, inks, grouping, editing: crop !== null || labelling !== null, compact: compactOn,
   })
   /** Where the bar stands: over the object, under it when there is no room above, kept on the pane (inspectorRules.ts). */
   const barSpot = (() => {
@@ -2150,7 +2220,7 @@ export function Canvas({
     })
   })()
   const inspector = barSpot && !gesture && chromeIds.size > 0 && !faint ? (
-    <Inspector plan={plan} items={pickedItems} left={barSpot.left} top={barSpot.top}
+    <Inspector plan={plan} items={pickedItems} inkFill={(file) => inkGraphics.fill(file)} left={barSpot.left} top={barSpot.top}
                pop={pop} onPop={setPop} grouping={grouping}
                onPatch={applyStyle} onOrder={orderSelection} onDuplicate={duplicate} onDelete={deletePicked} onGroup={groupPicked}
                onLabel={() => {

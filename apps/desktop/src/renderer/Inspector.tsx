@@ -22,11 +22,13 @@ import {
   type CanvasItem, type ConnectorHead, type ConnectorLine, type Order, type Size, type StylePatch,
 } from "@writemind/core"
 import { Icon, type IconName } from "./icons"
-import type { Control, InspectorPlan } from "./inspectorRules"
+import { sharedColour, sharedWidth, type Control, type InspectorPlan } from "./inspectorRules"
 
 interface Props {
   plan: InspectorPlan
   items: CanvasItem[]
+  /** What a picture is filled with when it is an ink graphic (a capture's traced writing), else null: its colour is that. */
+  inkFill(file: string): string | null | undefined
   left: number
   top: number
   /** Which popover is open (its control), if any. */
@@ -47,24 +49,6 @@ interface Props {
   onMeasure(size: Size): void
 }
 
-const colourOf = (item: CanvasItem): string | null => {
-  switch (item.kind) {
-    case "stroke": return item.stroke.colorHex
-    case "shape": return item.shape.colorHex
-    case "connector": return item.connector.colorHex
-    case "image": case "cell": return null
-  }
-}
-
-const lineWidthOf = (item: CanvasItem): number | null => {
-  switch (item.kind) {
-    case "stroke": return item.stroke.width
-    case "shape": return item.shape.lineWidth
-    case "connector": return item.connector.lineWidth
-    case "image": case "cell": return null
-  }
-}
-
 /** Some browsers only take six-digit colours in a colour input. */
 const sixDigits = (hex: string | null | undefined, fallback: string): string =>
   hex && /^#[0-9a-fA-F]{6}$/.test(hex) ? hex : fallback
@@ -82,8 +66,9 @@ export function Inspector(props: Props) {
   const { plan, items, left, top, pop, onPop, grouping, onPatch, onOrder } = props
   const bar = useRef<HTMLDivElement>(null)
   const only = items.length === 1 ? items[0]! : null
-  const colour = only ? colourOf(only) : null
-  const width = only ? lineWidthOf(only) : null
+  // (One object's own, or what the whole pick shares; when it differs the dot and the number say "mixed", and nothing is lit.)
+  const { value: colour, mixed: colourMixed } = sharedColour(items, props.inkFill)
+  const { value: width, mixed: widthMixed } = sharedWidth(items)
   const fill = only?.kind === "shape" ? only.shape.fillHex : null
   const connector = only?.kind === "connector" ? only.connector : null
   /** An arrow just drawn: the heads row alone, with no name over it. */
@@ -126,11 +111,13 @@ export function Inspector(props: Props) {
   const render = (control: Control): ReactNode => {
     switch (control) {
       case "colour":
-        return button("colour", null, "Colour", <span className="wm-insp-dot" style={{ background: colour ?? "transparent" }} />,
+        return button("colour", null, colourMixed ? "Colour (these differ)" : "Colour",
+          <span className="wm-insp-dot" data-mixed={colourMixed ? "1" : undefined}
+                style={colourMixed ? undefined : { background: colour ?? "transparent" }} />,
           { onClick: toggle("colour") })
       case "width":
-        return button("width", null, "Line width", (
-          <><span className="wm-insp-value" data-style="width">{Math.round((width ?? 0) * 10) / 10}</span><Icon name="chev" size={10} className="chev" /></>
+        return button("width", null, widthMixed ? "Line width (these differ)" : "Line width", (
+          <><span className="wm-insp-value" data-style="width" data-mixed={widthMixed ? "1" : undefined}>{widthMixed ? "–" : Math.round((width ?? 0) * 10) / 10}</span><Icon name="chev" size={10} className="chev" /></>
         ), { onClick: toggle("width") })
       case "fill":
         return button("fill", null, "Fill", (
@@ -203,8 +190,8 @@ export function Inspector(props: Props) {
           {pop === "width" && (
             <div className="wm-insp-widths" role="menu">
               {WIDTH_LADDER.map((rung) => (
-                <button type="button" key={rung} role="menuitemradio" aria-checked={nearestWidth(width ?? 0) === rung}
-                        className={nearestWidth(width ?? 0) === rung ? "on" : ""} data-width={rung}
+                <button type="button" key={rung} role="menuitemradio" aria-checked={width !== null && nearestWidth(width) === rung}
+                        className={width !== null && nearestWidth(width) === rung ? "on" : ""} data-width={rung}
                         onClick={() => { onPatch({ lineWidth: rung }); onPop(null) }}>
                   <span className="wm-insp-rung" style={{ height: Math.max(1, rung) }} />
                   <span className="wm-insp-rungn">{rung}</span>

@@ -60,6 +60,8 @@ declare global {
       writeDrawing(note: string, json: string): Promise<void>
       revealNotes(): Promise<string>
       saveMedia(bytes: Uint8Array, extension: string, note?: string | null): Promise<{ file: string }>
+      /** The words of an SVG picture of `note` (else the one in front); null when it is not an SVG, is not there, or is too big. */
+      readMediaText(file: string, note?: string | null): Promise<string | null>
       /** An ink cell's snapshot `ink-<id>.svg` (docs\PLAN-docking-ink-cells.md (f)); `onlyIfMissing` keeps one that is there. */
       writeInkSnapshot(note: string, id: string, svg: string, onlyIfMissing?: boolean): Promise<{ file: string }>
       choosePicture(): Promise<{ bytes: Uint8Array; extension: string } | null>
