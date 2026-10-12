@@ -28,6 +28,7 @@ import type { Block } from "../markdown/parser"
 import type { InkCell } from "../drawing/model"
 import { inkCellSvg } from "./inkSnapshot"
 import { codeTokens, type CodeTokenKind } from "../markdown/code"
+import { emptyLinesRead } from "../markdown/emptyLine"
 import { colouring } from "../eval/evaluator"
 import { INLINE_MATH_CSS, isMathFence } from "../math/typesetter"
 import { escapeHtml, inlineHtml, mathHtml, PAPER_HEX } from "./inline"
@@ -127,7 +128,9 @@ const row = (mark: string, content: string, markStyle = ""): string =>
  * cells; without it a picture cell is its placeholder line.
  */
 export function blockHtml(block: Block, paper: string = PAPER_HEX, media?: BlockMedia): string {
-  const inline = (text: string) => inlineHtml(text, paper)
+  // (An item's line breaks are kept — `.text` is pre-wrap — and an empty line it keeps, `<br>`, is printed empty: Sean,
+  // 2026-10-11, "ctrl + enter adds a newline without leaving the current cell..".)
+  const inline = (text: string) => inlineHtml(emptyLinesRead(text), paper)
   switch (block.kind) {
     case "heading": {
       const size = headingSize(block.level)

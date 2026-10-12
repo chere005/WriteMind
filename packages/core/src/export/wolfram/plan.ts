@@ -23,6 +23,7 @@ import { isOut } from "../../eval/output"
 import { inkCellId, mediaFiles } from "../../markdown/images"
 import { positioned, type Block } from "../../markdown/parser"
 import { inlineSegments } from "../../markdown/sourceStyle"
+import { emptyLinesRead, isEmptyLine } from "../../markdown/emptyLine"
 import { isMathFence } from "../../math/typesetter"
 import { spanDeclarations } from "../inline"
 import { kernelSpelling, mathsCellSource } from "./maths"
@@ -121,6 +122,10 @@ const svgShown = (svg: string): number => {
 }
 
 /** A list item's depth from its source indentation (a tab is four columns): 0, 1 or 2. */
+/** A list's lines that start its items (an item's next lines left out), in order. */
+const itemLines = (source: string): string[] =>
+  source.split("\n").filter((line, index) => index === 0 || !(/^[ \t]/.test(line) && !/^[ \t]*(?:[-*+]|\d{1,4}[.)])(?:[ \t]|$)/.test(line)) && !isEmptyLine(line))
+
 export function listDepth(line: string): number {
   let width = 0
   for (const character of line) {
@@ -212,7 +217,8 @@ class Planner {
 
   /** A run list as a cell's content: one plain string, or `TextData[{…}]`. */
   content(text: string, wrap?: (run: Pieces) => Pieces, lead: string[] = []): Pieces {
-    const { runs, styled, plain } = this.runs(text)
+    // (An empty line a cell keeps, `<br>`, is an empty line of the words: markdown/emptyLine.ts.)
+    const { runs, styled, plain } = this.runs(emptyLinesRead(text))
     if (!styled && !wrap && lead.length === 0) return [wlString(plain)]
     const all: Pieces[] = [...lead.map((one) => [one]), ...(wrap ? runs.map(wrap) : runs)]
     return ["TextData[{", ...all.flatMap((run, index) => (index === 0 ? run : [", ", ...run])), "}]"]
@@ -258,7 +264,9 @@ class Planner {
         this.add(["Cell[", ...this.content(block.text), `, "Text"]`])
         return
       case "bullets": case "dashes": case "numbered": {
-        const lines = source.split("\n")
+        // (One line per item: an item's next lines, indented under its words or kept empty, are the item's — Sean,
+        // 2026-10-11, "ctrl + enter adds a newline without leaving the current cell..".)
+        const lines = itemLines(source)
         const numbered = block.kind === "numbered"
         block.items.forEach((item, index) => {
           const style = itemStyle(listDepth(lines[index] ?? ""), numbered)
@@ -272,7 +280,7 @@ class Planner {
         return
       }
       case "todos": {
-        const lines = source.split("\n")
+        const lines = itemLines(source)
         block.items.forEach((item, index) => {
           const style = itemStyle(listDepth(lines[index] ?? ""), false)
           const content = item.done

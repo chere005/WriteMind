@@ -14,7 +14,7 @@ import {
 } from "../text/range"
 import { linesOf, positioned, todoItem, type PositionedBlock } from "../markdown/parser"
 import { lineRangeCovering } from "../markdown/formatting"
-import { cellWordsStart, escapePlain } from "../markdown/plainText"
+import { cellWordsStart, escapePlainKeeping } from "../markdown/plainText"
 import { growth } from "./growth"
 import { sectionContaining, sections } from "./outline"
 import { isMarkdownCell, isTextCell, keepingHalves, markerLength } from "./textCells"
@@ -212,7 +212,8 @@ export function mergeCells(text: string, selection: Range): Edit | null {
   const words = Math.min(second.range.location + head, text.length)
   if (isTextCell(first.block) && isMarkdownCell(second.block)) {
     const stop = Math.max(end(second.range), words)
-    const literal = escapePlain(text.slice(words, Math.max(words, end(second.range))))
+    // (An empty line the markdown cell keeps, `<br>`, is one in the text cell too: escapePlainKeeping.)
+    const literal = escapePlainKeeping(text.slice(words, Math.max(words, end(second.range))))
     return edit(range(seam, stop - seam), "\n" + literal, range(seam + 1, 0))
   }
   return edit(range(seam, Math.max(0, words - seam)), "\n", range(seam + 1, 0))

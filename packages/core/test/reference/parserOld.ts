@@ -13,6 +13,7 @@
  */
 
 import { range, type Range } from "../../src/text/range"
+import { isEmptyLine, joinedLines } from "../../src/markdown/emptyLine"
 
 export type { Range }
 
@@ -150,7 +151,8 @@ export function positioned(markdown: string): PositionedBlock[] {
     if (todos.length) { emit({ kind: "todos", items: todos }); todos = [] }
     if (dashes.length) { emit({ kind: "dashes", items: dashes }); dashes = [] }
     if (numbered.length) { emit({ kind: "numbered", items: numbered }); numbered = [] }
-    if (quote.length) { emit({ kind: "quote", text: quote.join(" ") }); quote = [] }
+    // (2026-10-11: a quote's empty line is an empty line of its words.)
+    if (quote.length) { emit({ kind: "quote", text: joinedLines(quote) }); quote = [] }
     blockEnd = kept
   }
 
@@ -287,6 +289,16 @@ export function positioned(markdown: string): PositionedBlock[] {
       if (paragraph.length || bullets.length || todos.length || dashes.length || quote.length) flush(previousEnd)
       openIfNeeded()
       numbered.push(number)
+      lineStart += rawLine.length + 1; continue
+    }
+    // (And the rules given it since 2026-10-11 for Ctrl+Enter, Sean: "ctrl + enter adds a newline without leaving the current
+    // cell..": an indented line under an open list, or the empty line a cell keeps (`<br>`), is the last item's next line.)
+    if ((bullets.length || todos.length || dashes.length || numbered.length) && (/^[ \t]/.test(rawLine) || isEmptyLine(line))) {
+      const words = isEmptyLine(line) ? "" : line
+      if (bullets.length) bullets[bullets.length - 1] += "\n" + words
+      else if (dashes.length) dashes[dashes.length - 1] += "\n" + words
+      else if (numbered.length) numbered[numbered.length - 1] += "\n" + words
+      else todos[todos.length - 1] = { text: todos[todos.length - 1]!.text + "\n" + words, done: todos[todos.length - 1]!.done }
       lineStart += rawLine.length + 1; continue
     }
     if (bullets.length || todos.length || dashes.length || numbered.length || quote.length) flush(previousEnd)

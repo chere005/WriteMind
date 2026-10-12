@@ -16,6 +16,7 @@ import { range, type Range } from "../text/range"
 import { inkCellId, mediaFile, pictureLine } from "./images"
 import { delimiterAligns, hasPipe, headerCells, tableOf, type TableAlign } from "./table"
 import { isMarkdownMarker, looksMarkdown, plainLine } from "./plainText"
+import { isEmptyLine, joinedLines } from "./emptyLine"
 
 export type { Range }
 
@@ -232,7 +233,8 @@ class Machine {
       const words = marked ? this.paragraph.slice(1) : this.paragraph
       if (marked || looksMarkdown(this.paraRaw)) {
         const head = Math.min(this.paraHead, this.blockEnd - this.blockStart + 1)
-        this.emit(marked ? { kind: "paragraph", text: words.join(" "), markdown: true, head } : { kind: "paragraph", text: words.join(" "), markdown: true })
+        // (An empty line the cell keeps, `<br>`, is an empty line of its words: emptyLine.ts.)
+        this.emit(marked ? { kind: "paragraph", text: joinedLines(words), markdown: true, head } : { kind: "paragraph", text: joinedLines(words), markdown: true })
       } else {
         this.emit({ kind: "paragraph", text: this.paraRaw.map(plainLine).join("\n") })
       }
@@ -244,7 +246,8 @@ class Machine {
     if (this.todos.length) { this.emit({ kind: "todos", items: this.todos }); this.todos = [] }
     if (this.dashes.length) { this.emit({ kind: "dashes", items: this.dashes }); this.dashes = [] }
     if (this.numbered.length) { this.emit({ kind: "numbered", items: this.numbered }); this.numbered = [] }
-    if (this.quote.length) { this.emit({ kind: "quote", text: this.quote.join(" ") }); this.quote = [] }
+    // (A quote's empty line is an empty line of its words, as Ctrl+Enter makes one: emptyLine.ts `joinedLines`.)
+    if (this.quote.length) { this.emit({ kind: "quote", text: joinedLines(this.quote) }); this.quote = [] }
     if (this.table !== null) {
       const parts = tableOf(this.table)
       if (parts) this.emit({ kind: "table", header: parts.header, align: parts.align, rows: parts.rows })
@@ -449,6 +452,15 @@ class Machine {
       this.numbered.push(number)
       this.lineStart += size; return
     }
+    // A LINE OF THE ITEM ABOVE (Sean, 2026-10-11: "ctrl + enter adds a newline without leaving the current cell.."): under an
+    // open list, an indented line that opens nothing of its own — or the empty line a cell keeps (`<br>`, emptyLine.ts) — is
+    // the last item's next line (CommonMark's continuation line), and the list goes on. Ctrl+Enter in an item writes one
+    // (cells/lineInCell.ts). It used to end the list, the line a paragraph touching it.
+    if ((this.bullets.length || this.todos.length || this.dashes.length || this.numbered.length)
+      && (rawLine.startsWith(" ") || rawLine.startsWith("\t") || isEmptyLine(line))) {
+      this.carryItemOn(isEmptyLine(line) ? "" : line)
+      this.lineStart += size; return
+    }
     if (this.bullets.length || this.todos.length || this.dashes.length || this.numbered.length || this.quote.length) this.flush(previousEnd)
     this.openIfNeeded()
     this.paraPrevEnd = previousEnd
@@ -461,6 +473,18 @@ class Machine {
     this.paragraph.push(this.paragraph.length === (this.paraMarked ? 1 : 0) ? leadingSpaces(rawLine) + line : line)
     this.paraRaw.push(rawLine.endsWith("\r") ? rawLine.slice(0, -1) : rawLine)
     this.lineStart += size
+  }
+
+  /** A line carried onto the open list's last item: its words on a line of their own (`""`: an empty line it keeps). */
+  private carryItemOn(words: string): void {
+    const add = (list: string[]) => { list[list.length - 1] += "\n" + words }
+    if (this.bullets.length) add(this.bullets)
+    else if (this.dashes.length) add(this.dashes)
+    else if (this.numbered.length) add(this.numbered)
+    else if (this.todos.length) {
+      const last = this.todos[this.todos.length - 1]!
+      this.todos[this.todos.length - 1] = { text: last.text + "\n" + words, done: last.done }
+    }
   }
 
   /** The end of the text: an unclosed fence still renders as code, the open block is closed, a trailing blank run is counted. */

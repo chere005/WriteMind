@@ -7,6 +7,7 @@
  */
 
 import { isMarkdownMarker, plainLine, unescapeLine } from "../markdown/plainText"
+import { isEmptyLine } from "../markdown/emptyLine"
 import { positioned } from "../markdown/parser"
 
 export interface Note {
@@ -70,8 +71,9 @@ export function makeNote(path: string, modified: number, contents: string): Note
 
   for (let index = 0; index < lines.length; index++) {
     const line = lines[index]!.trim()
-    // A markdown cell's marker is not words (docs/PLAN-text-cells.md); a text cell's escapes are not drawn.
-    if (line.length === 0 || isMarkdownMarker(line)) continue
+    // A markdown cell's marker is not words (docs/PLAN-text-cells.md); a text cell's escapes are not drawn; an empty line a
+    // cell keeps (`<br>`, markdown/emptyLine.ts) is an empty line.
+    if (line.length === 0 || isMarkdownMarker(line) || isEmptyLine(line)) continue
     if (title === null && line.startsWith("#")) {
       title = line.replace(/^#+/, "").trim()
       continue

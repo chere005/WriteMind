@@ -115,6 +115,10 @@ export const COMMANDS: CommandDef[] = [
   c("indent", "Increase Indentation", "editor", "CmdOrCtrl+]"),
   c("splitCell", "Split Cell", "editor", "Ctrl+D"),
   c("mergeCells", "Merge Cells", "editor", "Ctrl+M"),
+  // Ctrl+Enter (⌘↩ on a Mac, where the real ⌃↩ is heard too), the newline that never leaves the cell (Sean, 2026-10-11: "ctrl
+  // + enter adds a newline without leaving the current cell.."): packages/editor/src/emptyLines.ts. Shown, never registered,
+  // so the maths palette's own Ctrl+Enter is still the palette's.
+  c("newlineInCell", "New Line in Cell", "editor", "CmdOrCtrl+Enter"),
   c("duplicateCell", "Duplicate Cell", "editor", "Ctrl+Shift+D"),
   // The Mac's ⌘9: an evaluation cell (main/eval runs it; Shift+Enter in the cell, which is NOT a menu key — an
   // accelerator would take Shift+Enter from every field in the app). Ctrl+Shift+8 here, beside Ctrl+8 Code Block

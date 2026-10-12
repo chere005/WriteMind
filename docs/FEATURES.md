@@ -84,6 +84,28 @@ is how the code is put together.
   takes the newline back. A heading is one line, so a character typed on the
   line under it is the next cell (touching it, as ever). Return in the
   middle of a block on the rendered page still splits it in two.
+- **Ctrl+Enter is the newline that never leaves the cell** (Sean,
+  2026-10-11: "ctrl + enter adds a newline without leaving the current
+  cell.."; ⌘↩ on a Mac, where the real ⌃↩ works too; Format ▸ New Line in
+  Cell). Wherever the cursor is in a cell it breaks the line there and the
+  cursor stays in the same cell, on the new line: it never puts up the bar,
+  never starts a new list item, never takes a marker off, never makes a
+  second cell — press it again and again and the cell keeps growing, EMPTY
+  lines too, which Return, Return would have ended the cell with. In a list
+  the new line is the same item's next line, under its words; in a quote,
+  the quote's; in a code, maths or runnable-code block a plain newline in
+  the code (on a fence line, the first or last line of the code); a heading,
+  a rule and a table are one line each, and there it does nothing. An empty
+  line inside a cell is written `<br>` in the file (alone on its line; a
+  list item's indented under its words), never shown on either page: the
+  line is drawn empty, the cursor steps over it, typing on it makes it a
+  line of words and Backspace takes it away like an empty line. It is the
+  cell's for real — its bracket, the seams, the rendered page, a save and
+  reload, moving or copying the cell, the PDF and the Wolfram notebook (an
+  empty line there) — and another markdown reader takes it as the line
+  break it is. One Undo takes one Ctrl+Enter back. (Another reader's
+  indented line straight under a list item is that item's next line too,
+  as in CommonMark; it used to be a cell of its own.)
 - **Split a cell, merge two.** ⌃D cuts the cell the cursor is in, in two,
   at the cursor; ⌃M joins it to the one below (or, in the last cell, to the
   one above). Both work in the markdown and on the rendered page. A fence

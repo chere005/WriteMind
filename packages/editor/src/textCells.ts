@@ -24,12 +24,13 @@ import {
 import { redoDepth } from "@codemirror/commands"
 import { Decoration, EditorView, ViewPlugin, keymap, type Command, type DecorationSet, type ViewUpdate } from "@codemirror/view"
 import {
-  MARKDOWN_MARKER, end, escapeLineMapped, escapeOffsets, firstCellFromBy, hiddenInText, isMarkdownMarker, isTextCell,
-  positioned, type PositionedBlock,
+  MARKDOWN_MARKER, emptyLineSpan, end, escapeLineMapped, escapeOffsets, firstCellFromBy, hiddenInText, isMarkdownMarker,
+  isTextCell, positioned, type PositionedBlock,
 } from "@writemind/core"
 import { cellWritten, itemOpenedField, notebook } from "./notebook"
 import { armSeam, armedField } from "./seams"
 import { heldCells } from "./brackets"
+import { emptyLines } from "./emptyLines"
 
 // MARK: - The marker, hidden
 
@@ -229,6 +230,10 @@ function literalTyping(tr: Transaction): Transaction | TransactionSpec | readonl
   for (const n of [...touched].sort((a, b) => a - b)) {
     const line = doc.line(n)
     if (line.length === 0 || isMarkdownMarker(line.text)) continue
+    // An empty line the cell keeps, which the edit left as it was (Return at its end): it is nothing typed (emptyLines.ts).
+    // A `<br>` typed is written escaped as any tag is.
+    const kept = emptyLineSpan(line.text)
+    if (kept && !inserted.some(([from, to]) => from < line.from + kept[1] && to > line.from + kept[0])) continue
     if (!textAt(back.mapPos(line.from, 1))) continue
     let visible = ""
     // Where each visible character is in the note now.
@@ -560,4 +565,7 @@ export const textCells: Extension = [
     copy: (event, view) => copyPlain(event, view, false),
     cut: (event, view) => copyPlain(event, view, true),
   }),
+  // Ctrl+Enter and the empty line a cell keeps (Sean, 2026-10-11: "ctrl + enter adds a newline without leaving the current
+  // cell.."): AFTER the typing rule above, whose filter then sees a `<br>` typed on already gone.
+  emptyLines,
 ]

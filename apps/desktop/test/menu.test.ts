@@ -212,16 +212,18 @@ describe("the application menu is the Mac's", () => {
       "Bold", "Italic", "Underline", "Strikethrough", "-",
       "Dots List", "Quote", "-",
       "Decrease Indentation", "Increase Indentation", "-",
-      "Split Cell", "Merge Cells", "-",
+      // New Line in Cell (Ctrl+Enter) beside them (Sean, 2026-10-11: "ctrl + enter adds a newline without leaving the current cell..").
+      "Split Cell", "Merge Cells", "New Line in Cell", "-",
       "Duplicate Cell", "-", "Evaluation Cell", "Delete Cell", "Move Cell Up", "Move Cell Down", "-",
       "Move Section Up", "Move Section Down",
     ])
     expect(labels(sub(menu({ listStyle: "To-do" }), "Format"))).toContain("To-do List")
+    expect(sub(menu(), "Format").find((one) => one.label === "New Line in Cell")!.accelerator).toBe("CmdOrCtrl+Enter")
   })
 
   it("the cell commands wait for a note, like the Mac's .disabled(store.selectedNote == nil)", () => {
     const format = sub(menu(), "Format")
-    for (const label of ["Split Cell", "Merge Cells", "Duplicate Cell", "Delete Cell", "Move Cell Up", "Move Cell Down"]) {
+    for (const label of ["Split Cell", "Merge Cells", "New Line in Cell", "Duplicate Cell", "Delete Cell", "Move Cell Up", "Move Cell Down"]) {
       expect(format.find((one) => one.label === label)!.enabled).toBe(false)
     }
     const withNote = sub(menu({ hasNote: true }), "Format")

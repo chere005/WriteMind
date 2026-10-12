@@ -43,6 +43,8 @@ export const WELCOME_INTRO =
 export const welcomeFeatures = (mac: boolean): string[] => [
   "**Cells:** headings, text, markdown, lists, quotes, code, runnable code, maths, tables and drawings; the Style menu and the + between two cells make one.",
   `**Text and markdown cells:** ${key("heading:0", mac)} makes a text cell, shown exactly as typed; ${key("markdownCell", mac)} a markdown cell, read as markdown.`,
+  // Sean, 2026-10-11: "ctrl + enter adds a newline without leaving the current cell.." (packages/editor/src/emptyLines.ts).
+  `**New line in a cell:** ${key("newlineInCell", mac)} adds a line, empty or not, and stays in the cell (in a list, the same item); Return twice ends the cell.`,
   `**Maths cells:** ${key("mathsCell", mac)} makes one, or turns a cell's words into one; Wolfram Language, typeset when the caret leaves. ${key("insertMath", mac)} opens the palette.`,
   "**Tables:** a pipe table (`| a | b |`) is one cell, a real table on the rendered page; Tab and Return move along it.",
   `**Rendered page:** ${key("toggleMode", mac)} shows the note as a finished page you can still type in.`,
@@ -134,6 +136,8 @@ export const WELCOME_GROUPS: WelcomeGroup[] = [
       { what: "List", ids: ["list"] },
       { what: "Indent / Outdent", ids: ["indent", "outdent"] },
       { what: "Split / Merge cell", ids: ["splitCell", "mergeCells"] },
+      // Sean, 2026-10-11: "ctrl + enter adds a newline without leaving the current cell..".
+      { what: "New line in the cell", ids: ["newlineInCell"] },
       { what: "Move cell up / down", ids: ["moveCellUp", "moveCellDown"], short: true },
       { what: "Move section up / down", ids: ["moveSectionUp", "moveSectionDown"], short: true },
       // Not a menu key: an accelerator would take Shift+Enter from every field (commands.ts); packages/editor/src/eval binds it.

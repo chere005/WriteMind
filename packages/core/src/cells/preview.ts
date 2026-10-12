@@ -18,7 +18,7 @@ import { firstCellFromBy, picked } from "./selection"
 import { positioned, type Block } from "../markdown/parser"
 import { fenced } from "../markdown/formatting"
 import { reminderBox } from "../markdown/sourceStyle"
-import { MARKDOWN_MARKER, escapePlain, unescapePlain } from "../markdown/plainText"
+import { MARKDOWN_MARKER, reescapePlain } from "../markdown/plainText"
 import {
   edit, end, lineRange, range, replacing, substring, type Edit, type Range,
 } from "../text/range"
@@ -507,7 +507,8 @@ export function returnInBlock(markdown: string, selection: Range): Edit | null {
     const marker = cell.block.head ?? 0
     if (marker > 0 && from <= marker) return edit(at, "\n\n" + text, range(at.location + 2 + marker, 0))
     if (marker > 0) tail = MARKDOWN_MARKER + "\n" + tail
-    else if (!cell.block.markdown) { head = escapePlain(unescapePlain(head)); tail = escapePlain(unescapePlain(tail)) }
+    // (An empty line the cell keeps, `<br>`, stays one in its half: reescapePlain.)
+    else if (!cell.block.markdown) { head = reescapePlain(head); tail = reescapePlain(tail) }
     const words = marker > 0 ? MARKDOWN_MARKER.length + 1 : 0
     return edit(at, head + "\n\n" + tail, range(at.location + head.length + 2 + words, 0))
   }

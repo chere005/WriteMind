@@ -16,8 +16,9 @@ import { positioned, type Block, type PositionedBlock } from "../markdown/parser
 import { setHeading } from "../markdown/formatting"
 import { cellSpacing } from "./apart"
 import { inlineSegments } from "../markdown/sourceStyle"
+import { isEmptyLine } from "../markdown/emptyLine"
 import {
-  MARKDOWN_MARKER, escapePlain, isMarkdownMarker, markdownCellEdit, plainLine, unescapeLineMapped, unescapePlain,
+  MARKDOWN_MARKER, escapeLine, isMarkdownMarker, markdownCellEdit, plainLine, reescapePlain, unescapeLineMapped,
   visibleWords, wholeChange,
 } from "../markdown/plainText"
 
@@ -170,7 +171,12 @@ export function makeTextCell(markdown: string, selection: Range): Edit | null {
   const cell = cellAt(positioned(markdown), selection.location)
   if (!cell || !isMarkdownCell(cell.block)) return null
   const source = substring(markdown, cell.range)
-  const words = escapePlain(visibleWords(source, inlineSegments))
+  // Line for line (`visibleWords` keeps the lines): an empty line the cell keeps (`<br>`, emptyLine.ts) is kept as one, read
+  // off the SOURCE — the words shown cannot tell it from a `<br>` written escaped.
+  const raw = source.split("\n")
+  if (raw.length > 0 && isMarkdownMarker(raw[0]!)) raw.shift()
+  const words = visibleWords(source, inlineSegments).split("\n")
+    .map((line, i) => (isEmptyLine(raw[i] ?? "") ? raw[i]!.trim() : escapeLine(line))).join("\n")
   // The caret keeps its place in the words as near as can be said: the same distance into them, or their end.
   const into = Math.max(0, selection.location - cell.range.location - markerLength(cell.block))
   return edit(cell.range, words, range(cell.range.location + Math.min(into, words.length), 0))
@@ -218,8 +224,9 @@ export function keepingHalves(markdown: string, change: Edit): Edit {
   let after = tail
   let replacement = change.replacement
   if (marker === 0 && isTextCell(cell.block)) {
-    before = escapePlain(unescapePlain(head))
-    after = escapePlain(unescapePlain(tail))
+    // (An empty line the cell keeps, `<br>`, stays one in its half: reescapePlain.)
+    before = reescapePlain(head)
+    after = reescapePlain(tail)
   } else if (marker === 0 && tail.trim().length > 0) {
     // An older note's markdown cell (markdown by the older-notes rule, no marker): each half is read on its own, and a
     // half without WriteMind's own markup would turn into a text cell. Both halves get a marker, as the older cell

@@ -23,7 +23,7 @@ press would run twice. Each command names its owner instead:
 
 | Owner | Hears it | Commands |
 |---|---|---|
-| `editor` | CodeMirror's keymap (`packages/editor/src/keys.ts`, `extras.ts`). The page stands down because the key arrives `defaultPrevented`. | the Format menu, Select Next / All Occurrences, Code Block |
+| `editor` | CodeMirror's keymap (`packages/editor/src/keys.ts`, `extras.ts`; Ctrl+Enter `emptyLines.ts`). The page stands down because the key arrives `defaultPrevented`. | the Format menu, Select Next / All Occurrences, Code Block |
 | `history` | `useUndo` (the words, the drawing and the FILE operations share one Undo: `docs/PLAN-undo.md`) | Undo, Redo |
 | `page` | `useChrome` in the page | File, View, Insert, Pen, Undo/Redo Drawing, Expand Selection, Find, Input Devices, Window, Help |
 | `main` | `useChrome`, which hands it to the main process (dialogs, the project file) | Project menu |
@@ -95,6 +95,7 @@ Mac app's own chord; "—" is a port-only key.
 | Format | Increase Indentation | Ctrl+] | ⌘] |
 | Format | Split Cell | Ctrl+D | ⌃D |
 | Format | Merge Cells | Ctrl+M | ⌃M |
+| Format | New Line in Cell | Ctrl+Enter | — |
 | Format | Duplicate Cell | Ctrl+Shift+D | ⌃⇧D |
 | Format | Evaluation Cell | Ctrl+Shift+8 | ⌘9 |
 | Format | Move Cell Up | Ctrl+Shift+Up | ⌃⇧↑ |
@@ -195,6 +196,7 @@ cell is the hidden line `<!-- markdown -->` over a paragraph. Both panes and the
 | Return in a list item, a to-do, a quote line or a table row | carries the cell on: the new `- `, `3. `, `- [ ] `, `> ` or empty row is part of the same cell, which grows to it (the parser reads a marker with nothing after it, under a list of its kind, as that list's next item) |
 | Return on an EMPTY list item, to-do or quote line (Sean, 2026-10-11: "exiting bullet points shouldn't exit the cell though, just add a newline after it") | takes the marker off and leaves the line: a newline after the list, the cell grown to it, no bar (the markdown side's `carryTheListOn`, the rendered page's `returnInBlock`); the next Return is the one below. An empty item in the middle of a list still splits it |
 | **Return again, on the new line** (the empty line, or the empty table row Return carried the cell on with) | ends the cell and arms the bar under it (`closingReturn`, core `cells/newline.ts`; `returnClosesTheCell`, `seams.ts`): the line goes with the newline before it, so the note keeps exactly the blank line that separates the cell from what follows (none at the end of the note), the caret hides and the bar with its + is the cursor, the caret waiting where an arrow would leave it (Up goes back to the end of the cell, the column kept on the markdown side; Escape too). A character, a paste or the + then opens the next cell at the bar, a third Return opens an empty one (the bar's own keys, unchanged). ONE Undo gives the line back with the caret on it, the next takes the first newline back. Not for a list that is only its empty item (the + menu just opened it: Return takes the marker away). Beside a picture or a drawing cell (nothing to grow) Return arms the bar on that side. Return in the body of a code block is a newline in the code |
+| **Ctrl+Enter** (⌘↩ on a Mac, and the real ⌃↩ there too; Format ▸ New Line in Cell; Sean, 2026-10-11: "ctrl + enter adds a newline without leaving the current cell..") | the newline that never leaves the cell (core `cells/lineInCell.ts`, editor `emptyLines.ts`): the line breaks at the caret and the caret stays in the SAME cell on the new line — no bar, no new item, no marker taken off, no second cell, again and again, empty lines too (Return, Return arms the bar; Ctrl+Enter, Ctrl+Enter does not). An empty line inside a cell is written `<br>` (core `markdown/emptyLine.ts`: why not a lone backslash), drawn as nothing on both pages; the caret stands after it, Left goes on to the line above, typing on it makes it words, Backspace takes the line away whole. A text or markdown cell: the words after the caret go down (kept words: a `#` there is escaped). A list item: the same item's next line, indented under its words. A quote: a new `> ` line. A code / maths / runnable block: a plain newline in the code (on the opening fence the first line of the code, on the closing fence the last). A heading, a rule, a table: nothing (one line each). At a bar, over held cells, between cells: nothing. One Undo per press. Shift+Enter is not this key (it runs a runnable cell) |
 | Copy / Cut in a text cell | the words, without the hidden backslashes (held cells copy whole, as markdown) |
 | Backspace at the start of a markdown cell's words, Delete at the end of the line above it | as if the marker were not there: the cell moves up, or its words join the line above (the marker goes with the line break) |
 

@@ -23,9 +23,11 @@ const LINES = [
   "text with trailing  ", "\t- tabbed",
   // A marker with nothing after it: the next item of the open list of its kind (2026-10-11), a paragraph of its own anywhere else.
   "-", "+", "*", "3.", "4)", "- ", "2. ", "  -",
+  // The empty line a cell keeps, and an item's next lines (Ctrl+Enter, 2026-10-11).
+  "<br>", "  <br>", "- <br>", "   more of the item", "\tmore", "<BR/>",
 ]
 const randomDoc = (lines: number): string => Array.from({ length: lines }, () => pick(LINES)).join("\n") + (rnd() < 0.3 ? "\n" : "")
-const FRAGMENTS = ["\n", "\n\n", "\n\n\n", "x", "# ", "- ", "```", "\n```\n", "> ", "---", " ", "a b c", "\n# H\n", "- [ ] ", "1. ", "```ts\n", "\n\n\n\n"]
+const FRAGMENTS = ["\n", "\n\n", "\n\n\n", "x", "# ", "- ", "```", "\n```\n", "> ", "---", " ", "a b c", "\n# H\n", "- [ ] ", "1. ", "```ts\n", "\n\n\n\n", "\n<br>", "\n  "]
 
 function randomEdit(text: string): { from: number; to: number; insert: string } {
   const from = Math.floor(rnd() * (text.length + 1))

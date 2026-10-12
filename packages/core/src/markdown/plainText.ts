@@ -18,6 +18,7 @@ import { edit, end, range, substring, type Edit, type Range } from "../text/rang
 import { bulletItem, dashItem, heading, isRule, numberedItem, todoItem } from "./parser"
 import { delimiterAligns } from "./table"
 import { pictureLine } from "./images"
+import { emptyLineSpan } from "./emptyLine"
 
 /** The line that makes the paragraph under it a markdown cell. An HTML comment: other markdown readers show nothing. */
 export const MARKDOWN_MARKER = "<!-- markdown -->"
@@ -107,10 +108,13 @@ function maskAnchors(line: string): string {
 }
 
 /**
- * What a text cell's line HIDES on screen, as [from, to) offsets: each escape's backslash, and each id anchor whole.
- * In order, never overlapping.
+ * What a text cell's line HIDES on screen, as [from, to) offsets: each escape's backslash, and each id anchor whole —
+ * and the `<br>` of an empty line the cell keeps (emptyLine.ts; Sean, 2026-10-11: "ctrl + enter adds a newline without
+ * leaving the current cell.."), the whole of what is written there. In order, never overlapping.
  */
 export function hiddenInText(line: string): Array<[number, number]> {
+  const kept = emptyLineSpan(line)
+  if (kept) return [kept]
   const escapes = escapeOffsets(line).map((at): [number, number] => [at, at + 1])
   const anchors = anchorSpans(line)
   if (anchors.length === 0) return escapes
@@ -343,6 +347,41 @@ function escapeInline(out: string, back: readonly number[], esc: Uint8Array): vo
 }
 
 export const escapeLine = (visible: string): string => escapeLineMapped(visible).text
+
+/**
+ * Whether a line AS THE FILE HOLDS IT is an empty line a text cell keeps (emptyLine.ts): `<br>` with nothing before it
+ * but indentation. Asked of the source, never of the words read out of it: a `<br>` somebody typed is written `\<br>`
+ * and reads as the same four characters.
+ */
+const keptLine = (line: string): boolean => {
+  const span = emptyLineSpan(line)
+  return span !== null && line.slice(0, span[0]).trim().length === 0
+}
+
+/**
+ * A text cell's source written again by the escape rule, line for line (a piece of a cell that now stands elsewhere: a
+ * `#` that was mid-line may start one): each escape read and written afresh, and each empty line the cell keeps (`<br>`,
+ * emptyLine.ts; Sean, 2026-10-11: "ctrl + enter adds a newline without leaving the current cell..") left as it is — it
+ * is nothing typed, and the escape rule would make it the words `<br>`.
+ */
+export const reescapePlain = (source: string): string =>
+  source.split("\n").map((line) => (keptLine(line) ? line : escapeLine(unescapeLine(line)))).join("\n")
+
+/** Words taken as LITERAL into a text cell, line for line, the empty lines a cell keeps (`<br>`) kept as they are. */
+export const escapePlainKeeping = (words: string): string =>
+  words.split("\n").map((line) => (keptLine(line) ? line : escapeLine(line))).join("\n")
+
+/**
+ * The line with a backslash before what would make it a block of its own at the head of a line — a heading's `#`, a
+ * list's marker, a quote's `>`, a fence, a rule, a table's pipe — and nothing else escaped: words that move to the head
+ * of a new line in a MARKDOWN cell or a list item stay its words (cells/lineInCell.ts).
+ */
+export function escapeLineHead(line: string): string {
+  if (line.trim().length === 0) return line
+  const back = Array.from({ length: line.length + 1 }, (_v, i) => i)
+  const at = lineStartEscape(line, back)
+  return at < 0 || at >= line.length ? line : line.slice(0, at) + "\\" + line.slice(at)
+}
 
 /** A text cell's words as the file holds them, line for line. */
 export const escapePlain = (visible: string): string => visible.split("\n").map(escapeLine).join("\n")

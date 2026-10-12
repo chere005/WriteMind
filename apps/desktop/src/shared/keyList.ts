@@ -39,7 +39,7 @@ export const KEY_MENUS: { menu: string; ids: string[] }[] = [
       ...HEADING_LADDER.map((level) => HEADING_COMMANDS.find((h) => h.level === level)!.id),
       "markdownCell",
       "bold", "italic", "underline", "strike", "list", "quote", "outdent", "indent",
-      "splitCell", "mergeCells", "duplicateCell", "evaluationCell", "deleteCell", "moveCellUp", "moveCellDown",
+      "splitCell", "mergeCells", "newlineInCell", "duplicateCell", "evaluationCell", "deleteCell", "moveCellUp", "moveCellDown",
       "moveSectionUp", "moveSectionDown",
     ],
   },
