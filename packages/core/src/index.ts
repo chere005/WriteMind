@@ -14,8 +14,9 @@ export * from "./text/findVisible"
 // The parser re-exports `Range` from there; everything else is its own.
 export {
   blocks, positioned, positionedUpdate, linesOf, heading, isRule, todoItem, bulletItem, dashItem, numberedItem,
+  isListBlock, listItemsOf, listStyleOfLine, itemNumbers,
   type Hull, type LineSource,
-  type Block, type PositionedBlock, type TodoItem,
+  type Block, type PositionedBlock, type TodoItem, type ListItem, type ListBlock,
 } from "./markdown/parser"
 export * from "./markdown/images"
 export * from "./markdown/table"

@@ -21,6 +21,12 @@ export interface TodoItem {
   done: boolean
 }
 
+export interface ListItem {
+  style: "dots" | "dashes" | "numbered" | "todo"
+  text: string
+  done: boolean
+}
+
 export type Block =
   | { kind: "heading"; level: number; text: string }
   | { kind: "paragraph"; text: string }
@@ -30,6 +36,8 @@ export type Block =
   /** A GFM task list: the words, and whether the box is ticked. */
   | { kind: "todos"; items: TodoItem[] }
   | { kind: "numbered"; items: string[] }
+  /** (Given since, 2026-10-11, with the rule below: a list whose touching lines mix kinds.) */
+  | { kind: "mixed"; items: ListItem[] }
   | { kind: "quote"; text: string }
   | { kind: "code"; language: string | null; body: string }
   | { kind: "rule" }
@@ -117,10 +125,10 @@ export function blocks(markdown: string): Block[] {
 export function positioned(markdown: string): PositionedBlock[] {
   const out: PositionedBlock[] = []
   let paragraph: string[] = []
-  let bullets: string[] = []
-  let todos: TodoItem[] = []
-  let dashes: string[] = []
-  let numbered: string[] = []
+  // (The second rule the frozen parser has been given since, 2026-10-11, Sean: "this should not be two separate cells":
+  // list lines that touch are ONE list whatever they are marked with. A list of one kind is still that kind's block;
+  // a list that mixes kinds is `mixed`. So the four lists are one list of items here.)
+  let list: ListItem[] = []
   let quote: string[] = []
   let code: string[] | null = null
   let codeLanguage: string | null = null
@@ -146,18 +154,23 @@ export function positioned(markdown: string): PositionedBlock[] {
     const kept = blockEnd
     blockEnd = endAt
     if (paragraph.length) { emit({ kind: "paragraph", text: paragraph.join(" ") }); paragraph = [] }
-    if (bullets.length) { emit({ kind: "bullets", items: bullets }); bullets = [] }
-    if (todos.length) { emit({ kind: "todos", items: todos }); todos = [] }
-    if (dashes.length) { emit({ kind: "dashes", items: dashes }); dashes = [] }
-    if (numbered.length) { emit({ kind: "numbered", items: numbered }); numbered = [] }
+    if (list.length) {
+      const styles = new Set(list.map((item) => item.style))
+      const texts = list.map((item) => item.text)
+      if (styles.size > 1) emit({ kind: "mixed", items: list })
+      else if (styles.has("dots")) emit({ kind: "bullets", items: texts })
+      else if (styles.has("dashes")) emit({ kind: "dashes", items: texts })
+      else if (styles.has("numbered")) emit({ kind: "numbered", items: texts })
+      else emit({ kind: "todos", items: list.map((item) => ({ text: item.text, done: item.done })) })
+      list = []
+    }
     if (quote.length) { emit({ kind: "quote", text: quote.join(" ") }); quote = [] }
     blockEnd = kept
   }
 
   /** The first line of a block sets its start; every line extends its end. */
   const openIfNeeded = () => {
-    if (!paragraph.length && !bullets.length && !todos.length && !dashes.length
-      && !numbered.length && !quote.length && code === null) {
+    if (!paragraph.length && !list.length && !quote.length && code === null) {
       blockStart = lineStart
     }
   }
@@ -249,7 +262,7 @@ export function positioned(markdown: string): PositionedBlock[] {
       lineStart += rawLine.length + 1; continue
     }
     if (line.startsWith(">")) {
-      if (paragraph.length || bullets.length || todos.length || dashes.length || numbered.length) flush(previousEnd)
+      if (paragraph.length || list.length) flush(previousEnd)
       openIfNeeded()
       quote.push(line.slice(1).trim())
       lineStart += rawLine.length + 1; continue
@@ -258,38 +271,38 @@ export function positioned(markdown: string): PositionedBlock[] {
     // would otherwise be a bullet whose words are a box.
     const todo = todoItem(line)
     if (todo) {
-      if (paragraph.length || bullets.length || dashes.length || numbered.length || quote.length) flush(previousEnd)
+      if (paragraph.length || quote.length) flush(previousEnd)
       openIfNeeded()
-      todos.push(todo)
+      list.push({ style: "todo", text: todo.text, done: todo.done })
       lineStart += rawLine.length + 1; continue
     }
-    // (The one rule the frozen parser has been given since, 2026-10-11, like `paragraphsAsOld` for text cells: a marker with
-    // nothing after it, straight under an open list of its own kind, is that list's next item and still empty.)
-    if (bullets.length && (line === "-" || line === "+")) { bullets.push(""); lineStart += rawLine.length + 1; continue }
-    if (dashes.length && line === "*") { dashes.push(""); lineStart += rawLine.length + 1; continue }
-    if (numbered.length && /^\d{1,4}[.)]$/.test(line)) { numbered.push(""); lineStart += rawLine.length + 1; continue }
+    // (The first rule the frozen parser has been given since, 2026-10-11, like `paragraphsAsOld` for text cells: a marker with
+    // nothing after it, straight under an open list, is that list's next item and still empty.)
+    if (list.length && (line === "-" || line === "+")) { list.push({ style: "dots", text: "", done: false }); lineStart += rawLine.length + 1; continue }
+    if (list.length && line === "*") { list.push({ style: "dashes", text: "", done: false }); lineStart += rawLine.length + 1; continue }
+    if (list.length && /^\d{1,4}[.)]$/.test(line)) { list.push({ style: "numbered", text: "", done: false }); lineStart += rawLine.length + 1; continue }
     const bullet = bulletItem(line)
     if (bullet !== null) {
-      if (paragraph.length || todos.length || dashes.length || numbered.length || quote.length) flush(previousEnd)
+      if (paragraph.length || quote.length) flush(previousEnd)
       openIfNeeded()
-      bullets.push(bullet)
+      list.push({ style: "dots", text: bullet, done: false })
       lineStart += rawLine.length + 1; continue
     }
     const dash = dashItem(line)
     if (dash !== null) {
-      if (paragraph.length || bullets.length || todos.length || numbered.length || quote.length) flush(previousEnd)
+      if (paragraph.length || quote.length) flush(previousEnd)
       openIfNeeded()
-      dashes.push(dash)
+      list.push({ style: "dashes", text: dash, done: false })
       lineStart += rawLine.length + 1; continue
     }
     const number = numberedItem(line)
     if (number !== null) {
-      if (paragraph.length || bullets.length || todos.length || dashes.length || quote.length) flush(previousEnd)
+      if (paragraph.length || quote.length) flush(previousEnd)
       openIfNeeded()
-      numbered.push(number)
+      list.push({ style: "numbered", text: number, done: false })
       lineStart += rawLine.length + 1; continue
     }
-    if (bullets.length || todos.length || dashes.length || numbered.length || quote.length) flush(previousEnd)
+    if (list.length || quote.length) flush(previousEnd)
     openIfNeeded()
     // The first line keeps the spaces it was written with, so an indented
     // paragraph is drawn indented. Four spaces is NOT a code block here —

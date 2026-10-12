@@ -70,13 +70,16 @@ describe("typing in a text cell is literal", () => {
     expect(type(make("- one\n- ", 8), 8, "two").doc.toString()).toBe("- one\n- two")
     expect(type(make("* one\n* ", 8), 8, "t").doc.toString()).toBe("* one\n* t")
     expect(type(make("- [ ] a\n- ", 10), 10, "b").doc.toString()).toBe("- [ ] a\n- b")
-    // ...and no hole: an empty text cell, a marker under words or a heading, another list's marker stay literal
+    // ...and no hole: an empty text cell, a marker under words or a heading stay literal
     let state = make("")
     for (const key of ["1", ".", " ", "x"]) state = type(state, state.doc.length, key)
     expect(state.doc.toString()).toBe("1\\. x")
     expect(type(make("words\n2. ", 9), 9, "x").doc.toString()).toBe("words\n2\\. x")
     expect(type(make("# H\n2. ", 7), 7, "x").doc.toString()).toBe("# H\n2\\. x")
-    expect(type(make("- a\n2. ", 7), 7, "x").doc.toString()).toBe("- a\n2\\. x")
+    // Another list's marker straight under a list is that list's next item now, of its own kind (it was literal, `2\. x`):
+    // list lines that touch are one list (Sean, 2026-10-11: "this should not be two separate cells").
+    expect(type(make("- a\n2. ", 7), 7, "x").doc.toString()).toBe("- a\n2. x")
+    expect(type(make("* a\n- ", 6), 6, "x").doc.toString()).toBe("* a\n- x")
     expect(type(make("1. a\n\n2. ", 9), 9, "x").doc.toString()).toBe("1. a\n\n2\\. x")
   })
 

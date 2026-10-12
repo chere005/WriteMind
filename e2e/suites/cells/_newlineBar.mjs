@@ -111,15 +111,19 @@ export async function runNewlineBar({ rendered }) {
 
         const back = await cellBrackets()
         ok("and the cell is lit and grown again", back[0].lit && (await litCount()) === 1, JSON.stringify(back))
-        // (On the rendered page a list's or a quote's marker coming off is a step of its own; on the markdown side it is one with the newline.)
-        const markerStep = exitsOf(kind) && rendered
+        // A list's or a quote's marker coming off is a step of its own, on BOTH pages. On the markdown side it used to undo with the
+        // newline when the two Returns came within half a second (`carryTheListOn` named no user event, so CodeMirror joined them; at
+        // 700 ms they were two steps): the review of the one-list branch, 2026-10-11, on Sean's probe of a list ("this should not be
+        // two separate cells") found Undo skipping the empty item on that side only. Each list Return is its own step now, as on the
+        // rendered page (`returnInBlock`) and as a plain Return.
+        const markerStep = exitsOf(kind)
         if (markerStep) {
           await key("z", { ctrl: true }); await sleep(350)
           ok("the next Undo gives the marker back", (await doc()) === kind.cell + "\n" + kind.carry + tail, JSON.stringify(await doc()))
         }
         await key("z", { ctrl: true }); await sleep(350)
         ok("the next Undo takes the newline back: the note and the caret as they were", (await doc()) === kind.cell + tail && (await sel())[0] === at && !(await armed()), JSON.stringify([await doc(), await sel(), await armed()]))
-        // (A list's or a quote's marker comes and goes with the newline that carried it: ONE step; the bar's Return is the other.)
+        // (Redo walks the same steps back: the newline, the marker coming off, the bar's Return.)
         for (let i = 0; i < (markerStep ? 3 : 2); i++) { await key("z", { ctrl: true, shift: true }); await sleep(300) }
         ok("Redo all the way: the bar again, the note as it was", (await doc()) === kind.cell + tail, JSON.stringify(await doc()))
       })

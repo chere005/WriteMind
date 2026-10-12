@@ -48,7 +48,9 @@ export function cellKindAt(state: EditorState): CellKind | null {
   const cell = index >= 0 ? cells[index]! : null
   // (On the empty line a single newline opened the caret is in the cell above, which has taken the line: core growth.ts.)
   if (!cell || (head > end(cell.range) && grownCell(state)?.cell !== cell)) return null
-  return kindOfBlock(cell.block)
+  // A list names the item the caret is on (list lines that touch are one cell, whatever they are marked with: Sean,
+  // 2026-10-11, "this should not be two separate cells"); on the grown line under it, its last item.
+  return kindOfBlock(cell.block, state.doc.lineAt(Math.min(head, end(cell.range))).text)
 }
 
 /** Whether two answers are the same: both none, or the same kind. */

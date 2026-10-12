@@ -12,12 +12,12 @@
  * spaces) are dropped and a line with a line break of its own is taken apart, so no blank line is ever written into the words.
  *
  * Two readings keep the reader's own markdown, because nothing is run together in them: a reading of ONE line (a struck
- * word, a line of algebra typeset as maths), and a reading that is all ONE LIST (every line a task `- [ ] milk`, or every line
- * a bullet or a number): a single list cell, one line to an item. Port-first (the Mac has no reader of its own for this): the
- * rule is the app's, and `insertReading` is the one door.
+ * word, a line of algebra typeset as maths), and a reading that is all ONE LIST (every line a task `- [ ] milk`, a bullet or
+ * a number, in any mix since list lines that touch are one cell, Sean 2026-10-11): a single list cell, one line to an item.
+ * Port-first (the Mac has no reader of its own for this): the rule is the app's, and `insertReading` is the one door.
  */
 
-import { positioned } from "../markdown/parser"
+import { isListBlock, positioned } from "../markdown/parser"
 import { escapePlain } from "../markdown/plainText"
 import { insertBlock } from "./editing"
 
@@ -31,10 +31,13 @@ export function readingLines(lines: readonly string[]): string[] {
 /** How many cells the parser reads in `markdown` (the blank lines between them are not cells). */
 const cellsIn = (markdown: string): number => positioned(markdown).filter((cell) => cell.block.kind !== "blank").length
 
-/** Whether the parser reads `markdown` as one list (tasks, bullets, dashes or numbers) and nothing else. */
+/**
+ * Whether the parser reads `markdown` as one list (tasks, bullets, dashes or numbers, or a list that mixes them: list
+ * lines that touch are one cell, Sean 2026-10-11) and nothing else.
+ */
 const oneList = (markdown: string): boolean => {
   const found = positioned(markdown).filter((cell) => cell.block.kind !== "blank")
-  return found.length === 1 && ["todos", "bullets", "dashes", "numbered"].includes(found[0]!.block.kind)
+  return found.length === 1 && isListBlock(found[0]!.block)
 }
 
 /**

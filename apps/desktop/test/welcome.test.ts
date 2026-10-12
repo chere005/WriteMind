@@ -11,7 +11,7 @@ import { promises as fs } from "node:fs"
 import os from "node:os"
 import path from "node:path"
 import { afterEach, describe, expect, it } from "vitest"
-import { blocks } from "@writemind/core"
+import { blocks, isListBlock, kindOfBlock, listItemsOf } from "@writemind/core"
 import { EVALUATORS, WM_TEXT, evaluatorTitle, formatExtension, formatTitle, offeredFormats } from "@writemind/core"
 import { COMMANDS, shown } from "../src/shared/commands"
 import {
@@ -140,7 +140,7 @@ describe("the quick reference's keys come from the command table", () => {
     const text = welcomeNote(process.platform)
     expect(text.startsWith("# WriteMind Quick Reference\n")).toBe(true)
     for (const name of [
-      "Cells", "Text and markdown cells", "Maths cells", "Tables", "Rendered page", "Toolbar", "Pen", "Tabs", "Move tabs", "Search notes", "Sidebar", "Undo",
+      "Cells", "Text and markdown cells", "Maths cells", "Tables", "Lists", "Rendered page", "Toolbar", "Pen", "Tabs", "Move tabs", "Search notes", "Sidebar", "Undo",
       "Drawing", "Runnable cells", "Language Setup", "Video pane", "Read words", "Pane tabs", "Wacom tablet", "Mathematica", "Wacom pen buttons", "Notes are files", "Updates", "About",
     ]) {
       expect(WELCOME_FEATURES.some((one) => one.startsWith(`**${name}:**`)), name).toBe(true)
@@ -331,6 +331,20 @@ describe("the feature list is true to the source", () => {
     expect(blocks(table).filter((one) => one.kind === "table").length).toBe(1)
     expect(features("Tables")).toContain("`| a | b |`")
     expect(features("Mathematica")).toContain("`.nb`")
+  })
+
+  it("Lists: touching lists of every kind are ONE cell, each item its own kind, and Style names the caret's item", () => {
+    // Sean, 2026-10-11, of a dashes list with a to-do list straight under it: "this should not be two separate cells".
+    const parsed = blocks("- dot\n* dash\n1. one\n- [ ] to do")
+    expect(parsed).toHaveLength(1)
+    expect(isListBlock(parsed[0]) && listItemsOf(parsed[0]).map((one) => one.style)).toEqual(["dots", "dashes", "numbered", "todo"])
+    expect(kindOfBlock(parsed[0], "- [ ] to do")).toEqual({ kind: "list", style: "todo" })
+    expect(kindOfBlock(parsed[0], "* dash")).toEqual({ kind: "list", style: "dashes" })
+    // The Style button asks the caret's line (packages/editor/src/cellKind.ts), and a blank line still makes two cells.
+    expect(read("packages/editor/src/cellKind.ts")).toContain("kindOfBlock(cell.block, state.doc.lineAt(")
+    expect(blocks("- dot\n\n- [ ] to do")).toHaveLength(2)
+    expect(features("Lists")).toContain("dots, dashes, numbers and to-dos written one under another are one cell")
+    expect(features("Lists")).toContain("Style names the one you are on")
   })
 })
 

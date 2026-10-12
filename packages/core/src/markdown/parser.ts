@@ -16,10 +16,21 @@ import { range, type Range } from "../text/range"
 import { inkCellId, mediaFile, pictureLine } from "./images"
 import { delimiterAligns, hasPipe, headerCells, tableOf, type TableAlign } from "./table"
 import { isMarkdownMarker, looksMarkdown, plainLine } from "./plainText"
+import type { ListStyle } from "./formatting"
 
 export type { Range }
 
 export interface TodoItem {
+  text: string
+  done: boolean
+}
+
+/**
+ * One item of a list, whatever it is marked with: a dot (`- `, `+ `), a dash (`* `), a number, or a box. `done` is a
+ * to-do's tick (false for every other kind). The items of a `mixed` block, and what `listItemsOf` makes of any list.
+ */
+export interface ListItem {
+  style: ListStyle
   text: string
   done: boolean
 }
@@ -39,6 +50,14 @@ export type Block =
   /** A GFM task list: the words, and whether the box is ticked. */
   | { kind: "todos"; items: TodoItem[] }
   | { kind: "numbered"; items: string[] }
+  /**
+   * A LIST OF MORE THAN ONE KIND, one cell (Sean, 2026-10-11, on a dashes list with a to-do list straight under it: "this
+   * should not be two separate cells"). List lines with no blank line between them are one list whatever they are marked
+   * with; a list of ONE kind is still that kind's block above (`bullets`, `dashes`, `todos`, `numbered`), as every note
+   * written before reads, and a list whose lines mix kinds is this, each item its own kind. `isListBlock` and
+   * `listItemsOf` answer for all five.
+   */
+  | { kind: "mixed"; items: ListItem[] }
   | { kind: "quote"; text: string }
   | { kind: "code"; language: string | null; body: string }
   | { kind: "rule" }
@@ -64,6 +83,71 @@ export type Block =
 export interface PositionedBlock {
   block: Block
   range: Range
+}
+
+/** A list block, of one kind or of several (`mixed`). */
+export type ListBlock = Extract<Block, { kind: "bullets" | "dashes" | "todos" | "numbered" | "mixed" }>
+
+/** Whether a block is a list: one of the four kinds, or a list that mixes them. Ask this, not the kinds one by one. */
+export function isListBlock(block: Block | null | undefined): block is ListBlock {
+  switch (block?.kind) {
+    case "bullets": case "dashes": case "todos": case "numbered": case "mixed": return true
+    default: return false
+  }
+}
+
+/** A list block's items, each with its own kind — the same for a list of one kind as for a mixed one. */
+export function listItemsOf(block: ListBlock): ListItem[] {
+  switch (block.kind) {
+    case "mixed": return block.items
+    case "todos": return block.items.map((item) => ({ style: "todo", text: item.text, done: item.done }))
+    case "bullets": return block.items.map((text) => ({ style: "dots", text, done: false }))
+    case "dashes": return block.items.map((text) => ({ style: "dashes", text, done: false }))
+    case "numbered": return block.items.map((text) => ({ style: "numbered", text, done: false }))
+  }
+}
+
+/**
+ * The block a run of list items is: the one kind's own block when every item is of that kind (what a note of one kind
+ * always read as), a `mixed` one when they are not.
+ */
+function listBlockOf(items: ListItem[]): Block {
+  const style = items[0]!.style
+  for (const item of items) if (item.style !== style) return { kind: "mixed", items }
+  switch (style) {
+    case "dots": return { kind: "bullets", items: items.map((item) => item.text) }
+    case "dashes": return { kind: "dashes", items: items.map((item) => item.text) }
+    case "numbered": return { kind: "numbered", items: items.map((item) => item.text) }
+    case "todo": return { kind: "todos", items: items.map((item) => ({ text: item.text, done: item.done })) }
+  }
+}
+
+/**
+ * Which kind of list item a line is (its indentation already off), or null for a line that is no item. A marker with
+ * nothing after it (`-`, `*`, `3.`, or `- ` before the trim) is an item of its kind too, still empty.
+ */
+export function listStyleOfLine(rest: string): ListStyle | null {
+  const line = rest.trim()
+  if (todoItem(line)) return "todo"
+  if (line === "-" || line === "+" || bulletItem(line) !== null) return "dots"
+  if (line === "*" || dashItem(line) !== null) return "dashes"
+  if (bareNumber(line) || numberedItem(line) !== null) return "numbered"
+  return null
+}
+
+/**
+ * The number each item of a list is drawn with, by the items' kinds in order: a numbered item's place in its RUN of
+ * numbered items, counted from one, and 0 for an item of any other kind (or a line that is no item). An item of another
+ * kind between two numbered ones starts the count again. Now that touching lists are one cell (Sean, 2026-10-11: "this
+ * should not be two separate cells") that keeps each run numbered as it was while it was a list of its own, and as the
+ * app writes it: Return under a number writes the next one (`listContinuation`), Style ▸ Numbered on one item writes
+ * `1. ` — so the number on the drawn page is the one the open cell shows. Counting on through the whole list made the
+ * number change as the caret left the cell. Indentation is not structure (a flat list): a nested numbered item counts in
+ * the run like any other. The rendered page, the PDF and the Wolfram notebook all ask this, so they cannot disagree.
+ */
+export function itemNumbers(styles: readonly (ListStyle | null)[]): number[] {
+  let counted = 0
+  return styles.map((style) => (style === "numbered" ? ++counted : (counted = 0)))
 }
 
 const trimmed = (line: string): string => line.trim()
@@ -179,10 +263,8 @@ class Machine {
   /** The open paragraph began with the markdown marker (its first entry in `paragraph`), and how long that line is. */
   private paraMarked = false
   private paraHead = 0
-  private bullets: string[] = []
-  private todos: TodoItem[] = []
-  private dashes: string[] = []
-  private numbered: string[] = []
+  /** The open list's items, each its own kind: list lines that touch are one list (`mixed`, Sean 2026-10-11). */
+  private list: ListItem[] = []
   private quote: string[] = []
   private code: string[] | null = null
   private codeLanguage: string | null = null
@@ -240,10 +322,7 @@ class Machine {
       this.paraRaw = []
       this.paraMarked = false
     }
-    if (this.bullets.length) { this.emit({ kind: "bullets", items: this.bullets }); this.bullets = [] }
-    if (this.todos.length) { this.emit({ kind: "todos", items: this.todos }); this.todos = [] }
-    if (this.dashes.length) { this.emit({ kind: "dashes", items: this.dashes }); this.dashes = [] }
-    if (this.numbered.length) { this.emit({ kind: "numbered", items: this.numbered }); this.numbered = [] }
+    if (this.list.length) { this.emit(listBlockOf(this.list)); this.list = [] }
     if (this.quote.length) { this.emit({ kind: "quote", text: this.quote.join(" ") }); this.quote = [] }
     if (this.table !== null) {
       const parts = tableOf(this.table)
@@ -255,8 +334,7 @@ class Machine {
 
   /** The first line of a block sets its start; every line extends its end. */
   private openIfNeeded(): void {
-    if (!this.paragraph.length && !this.bullets.length && !this.todos.length && !this.dashes.length
-      && !this.numbered.length && !this.quote.length && this.code === null && this.table === null) {
+    if (!this.paragraph.length && !this.list.length && !this.quote.length && this.code === null && this.table === null) {
       this.blockStart = this.lineStart
     }
   }
@@ -282,6 +360,13 @@ class Machine {
     this.emit({ kind: "blank", lines: count - 2 })
     this.blockStart = openStart
     this.blockEnd = openEnd
+  }
+
+  /** A list item: it joins the open list, whatever kinds that holds; a paragraph or a quote that is open ends first. */
+  private listItem(item: ListItem, previousEnd: number): void {
+    if (this.paragraph.length || this.quote.length) this.flush(previousEnd)
+    this.openIfNeeded()
+    this.list.push(item)
   }
 
   /** Whether the line just fed (it began at `at`) opened a block of its own rather than joining the one before. */
@@ -406,50 +491,46 @@ class Machine {
       this.lineStart += size; return
     }
     if (line.startsWith(">")) {
-      if (this.paragraph.length || this.bullets.length || this.todos.length || this.dashes.length || this.numbered.length) this.flush(previousEnd)
+      if (this.paragraph.length || this.list.length) this.flush(previousEnd)
       this.openIfNeeded()
       this.quote.push(line.slice(1).trim())
       this.lineStart += size; return
     }
+    // A LIST ITEM JOINS THE LIST IT TOUCHES, WHATEVER IT IS MARKED WITH (Sean, 2026-10-11: "this should not be two separate
+    // cells", of a to-do list straight under a dashes list): dots, dashes, numbers and boxes with no blank line between them
+    // are one list, one cell, each item still its own kind. Only a blank line, or a line that is no item, ends a list.
     // Before the plain bullet, because `- [ ] milk` starts with `- ` and
     // would otherwise be a bullet whose words are a box.
     const todo = todoItem(line)
     if (todo) {
-      if (this.paragraph.length || this.bullets.length || this.dashes.length || this.numbered.length || this.quote.length) this.flush(previousEnd)
-      this.openIfNeeded()
-      this.todos.push(todo)
+      this.listItem({ style: "todo", text: todo.text, done: todo.done }, previousEnd)
       this.lineStart += size; return
     }
-    // A marker with nothing after it, straight under an open list of its own kind, is that list's next item and still
+    // A marker with nothing after it, straight under an open list, is that list's next item and still
     // empty: what Return in a list writes (`- `, `2. `) before a word is typed after it. It used to read as a paragraph of
     // one marker touching the list, so the cell the caret was in was not the list's; a single newline grows the list
     // like it grows a paragraph (cells/growth.ts), and the new item is part of it. (To-do items and quote lines have
-    // always been read this way: `- [ ]` is an empty task, `>` an empty quote line.)
-    if (this.bullets.length && (line === "-" || line === "+")) { this.bullets.push(""); this.lineStart += size; return }
-    if (this.dashes.length && line === "*") { this.dashes.push(""); this.lineStart += size; return }
-    if (this.numbered.length && bareNumber(line)) { this.numbered.push(""); this.lineStart += size; return }
+    // always been read this way: `- [ ]` is an empty task, `>` an empty quote line.) Under a list of any kind, now that
+    // touching lists are one (2026-10-11): `-` under a dashes list is its next item, a dot.
+    if (this.list.length && (line === "-" || line === "+")) { this.list.push({ style: "dots", text: "", done: false }); this.lineStart += size; return }
+    if (this.list.length && line === "*") { this.list.push({ style: "dashes", text: "", done: false }); this.lineStart += size; return }
+    if (this.list.length && bareNumber(line)) { this.list.push({ style: "numbered", text: "", done: false }); this.lineStart += size; return }
     const bullet = bulletItem(line)
     if (bullet !== null) {
-      if (this.paragraph.length || this.todos.length || this.dashes.length || this.numbered.length || this.quote.length) this.flush(previousEnd)
-      this.openIfNeeded()
-      this.bullets.push(bullet)
+      this.listItem({ style: "dots", text: bullet, done: false }, previousEnd)
       this.lineStart += size; return
     }
     const dash = dashItem(line)
     if (dash !== null) {
-      if (this.paragraph.length || this.bullets.length || this.todos.length || this.numbered.length || this.quote.length) this.flush(previousEnd)
-      this.openIfNeeded()
-      this.dashes.push(dash)
+      this.listItem({ style: "dashes", text: dash, done: false }, previousEnd)
       this.lineStart += size; return
     }
     const number = numberedItem(line)
     if (number !== null) {
-      if (this.paragraph.length || this.bullets.length || this.todos.length || this.dashes.length || this.quote.length) this.flush(previousEnd)
-      this.openIfNeeded()
-      this.numbered.push(number)
+      this.listItem({ style: "numbered", text: number, done: false }, previousEnd)
       this.lineStart += size; return
     }
-    if (this.bullets.length || this.todos.length || this.dashes.length || this.numbered.length || this.quote.length) this.flush(previousEnd)
+    if (this.list.length || this.quote.length) this.flush(previousEnd)
     this.openIfNeeded()
     this.paraPrevEnd = previousEnd
     this.paraLastStart = this.lineStart

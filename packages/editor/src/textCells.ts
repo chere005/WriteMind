@@ -24,7 +24,7 @@ import {
 import { redoDepth } from "@codemirror/commands"
 import { Decoration, EditorView, ViewPlugin, keymap, type Command, type DecorationSet, type ViewUpdate } from "@codemirror/view"
 import {
-  MARKDOWN_MARKER, end, escapeLineMapped, escapeOffsets, firstCellFromBy, hiddenInText, isMarkdownMarker, isTextCell,
+  MARKDOWN_MARKER, end, escapeLineMapped, escapeOffsets, firstCellFromBy, hiddenInText, isListBlock, isMarkdownMarker, isTextCell,
   positioned, type PositionedBlock,
 } from "@writemind/core"
 import { cellWritten, itemOpenedField, notebook } from "./notebook"
@@ -104,20 +104,19 @@ function offMarkers(tr: Transaction): Transaction | readonly [Transaction, Trans
 // MARK: - Typing in a text cell is literal
 
 /** Blocks a line typed straight under one of them carries on, in markdown (a list's next item, a table's row). */
-const CARRIED_ON = new Set(["bullets", "dashes", "todos", "numbered", "quote", "table"])
+const carriedOn = (block: PositionedBlock["block"]): boolean =>
+  isListBlock(block) || block.kind === "quote" || block.kind === "table"
 
 /**
  * Whether `text`, a line that is an item's marker and nothing else (`2. `, `- `, `* `), is the next item of the list
- * `above` (the cell on the line over it): a number under a numbered list, `-` or `+` under dots, `*` under dashes, either
- * under a to-do list.
+ * `above` (the cell on the line over it). Any marker under any list: list lines that touch are one list whatever they
+ * are marked with (Sean, 2026-10-11: "this should not be two separate cells"), so `2. ` under dots is that list's next
+ * item, a numbered one.
  */
 function continuesList(text: string, above: PositionedBlock | undefined): boolean {
   const marker = /^\s*([-+*]|\d{1,4}[.)])\s*$/.exec(text)?.[1]
   if (!marker || !above) return false
-  const kind = above.block.kind
-  if (/^\d/.test(marker)) return kind === "numbered"
-  if (marker === "*") return kind === "dashes" || kind === "todos"
-  return kind === "bullets" || kind === "todos"
+  return isListBlock(above.block)
 }
 
 /**
@@ -190,7 +189,7 @@ function literalTyping(tr: Transaction): Transaction | TransactionSpec | readonl
     const over = cellAbove(line)
     if (over) {
       if (isTextCell(over.block)) return true
-      if (CARRIED_ON.has(over.block.kind) || over.block.kind === "paragraph") return false
+      if (carriedOn(over.block) || over.block.kind === "paragraph") return false
     }
     return !paste
   }

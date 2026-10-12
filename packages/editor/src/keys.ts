@@ -205,8 +205,15 @@ const backspaceOutdents: Command = (view) => {
   return true
 }
 
-/** Return at the end of a list item carries the list on. */
-const carryTheListOn: Command = (view) => {
+/**
+ * Return at the end of a list item carries the list on. Each one is its own undo step, never joined to the edit before
+ * it however quickly it comes (CodeMirror joins changes that touch within half a second, and this edit names no user
+ * event to stop it): a plain Return is never joined to what came before it, nor is the rendered page's list Return
+ * (`returnInBlock`), and two quick Returns in a list — the next item, then the empty item's marker off — undid as one
+ * on this side only (review of the one-list branch, 2026-10-11, on Sean's probe "* hello / * how", Return, Return).
+ * What is typed after it may still join it, as after a plain Return.
+ */
+export const carryTheListOn: Command = (view) => {
   const main = view.state.selection.main
   if (!main.empty) return false
   // The line the caret is in, from the document's own lines (not a string made of the whole note for every Return).
@@ -221,14 +228,14 @@ const carryTheListOn: Command = (view) => {
       range: { location: line.from, length: body.length },
       replacement: "",
       selection: { location: line.from, length: 0 },
-    })
+    }, "before")
     return true
   }
   applyEdit(view, {
     range: { location: main.from, length: 0 },
     replacement: "\n" + next,
     selection: { location: main.from + 1 + next.length, length: 0 },
-  })
+  }, "before")
   return true
 }
 

@@ -149,20 +149,21 @@ export const atBar = (view: EditorView): boolean =>
 
 /**
  * The one place a core `Edit` is applied, so undo sees it as one change. `apart`: its own undo step, never joined to
- * the edit before or after it however quickly they come (Ctrl+7 then Ctrl+Shift+7: one Ctrl+Z undoes each).
+ * the edit before or after it however quickly they come (Ctrl+7 then Ctrl+Shift+7: one Ctrl+Z undoes each); `"before"`:
+ * never joined to the edit before it, what is typed next may join it (a list Return, like a plain one).
  */
 export function applyEdit(view: EditorView, change: {
   range: Range
   replacement: string
   selection: Range
-}, apart = false): void {
+}, apart: boolean | "before" = false): void {
   if (atBar(view)) { view.focus(); return }
   const { range, replacement, selection } = change
   view.dispatch({
     changes: { from: range.location, to: range.location + range.length, insert: replacement },
     selection: { anchor: selection.location, head: selection.location + selection.length },
     scrollIntoView: true,
-    ...(apart ? { annotations: isolateHistory.of("full") } : {}),
+    ...(apart ? { annotations: isolateHistory.of(apart === true ? "full" : apart) } : {}),
   })
   view.focus()
 }

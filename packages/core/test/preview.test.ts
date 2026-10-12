@@ -669,9 +669,11 @@ describe("cells that touch are one thing to type in", () => {
       expect(found.map((one) => one.block.kind), JSON.stringify(carried)).toEqual(["paragraph", kind, "paragraph"])
       expect(found[1]!.range).toEqual(range(5, carried.length))
     }
-    // (A marker under a paragraph, a list of another kind or on its own is still just words.)
+    // (A marker under a paragraph or on its own is still just words. Under a list of another kind it is that list's next
+    // item, of its own kind: list lines that touch are one list — Sean, 2026-10-11: "this should not be two separate cells".)
     expect(positioned("words\n-").map((one) => one.block.kind)).toEqual(["paragraph"])
-    expect(positioned("* one\n-").map((one) => one.block.kind)).toEqual(["dashes", "paragraph"])
+    expect(positioned("* one\n-").map((one) => one.block)).toEqual([
+      { kind: "mixed", items: [{ style: "dashes", text: "one", done: false }, { style: "dots", text: "", done: false }] }])
     expect(positioned("- one\n\n-").map((one) => one.block.kind)).toEqual(["bullets", "paragraph"])
     expect(positioned("-").map((one) => one.block.kind)).toEqual(["paragraph"])
   })

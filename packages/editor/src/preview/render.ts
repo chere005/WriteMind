@@ -12,7 +12,7 @@
 
 import {
   bulletItem, codeTokens, dashItem, drawnRows, fenceLanguage, hiddenInText, fenced, inlineSegments, isMathFence, colouring,
-  isMarkdownMarker, numberedItem, todoItem,
+  isMarkdownMarker, itemNumbers, listStyleOfLine, numberedItem, todoItem,
   type Block, type InlineSegment,
 } from "@writemind/core"
 import { safeSpanStyle } from "../decorations"
@@ -194,11 +194,13 @@ const depthOf = (indent: string): number => {
 
 function listBlock(source: string, context: RenderContext): HTMLElement {
   const holder = make("div", "wm-pv wm-pv-list")
-  let counted = 0
+  const lines = linesOf(source).filter((line) => line.text.trim().length > 0)
+  // Each run of numbered items counts from one (core `itemNumbers`): an item of another kind between two numbered ones
+  // starts the count again, so the number drawn is the one the open cell shows (Sean, 2026-10-11, a list is one cell).
+  const numbers = itemNumbers(lines.map((line) => listStyleOfLine(line.text)))
   let boxes = 0
-  for (const line of linesOf(source)) {
+  for (const [index, line] of lines.entries()) {
     const trimmed = line.text.trim()
-    if (trimmed.length === 0) continue
     const lead = leading(line.text)
     const item = make("div", "wm-pv-li", holder)
     const depth = depthOf(line.text.slice(0, lead))
@@ -222,8 +224,7 @@ function listBlock(source: string, context: RenderContext): HTMLElement {
       if (bullet !== null) { marker = "•"; words = bullet; textAt = lead + 2 }
       else if (dash !== null) { marker = "–"; words = dash; textAt = lead + 2 }
       else if (numbered !== null) {
-        counted += 1
-        marker = `${counted}.`
+        marker = `${numbers[index]}.`
         words = numbered
         const digits = /^[0-9]+/.exec(trimmed)![0].length
         textAt = lead + digits + 2
@@ -326,7 +327,8 @@ export function renderBlock(block: Block, source: string, context: RenderContext
     case "heading": return headingBlock(source, context)
     case "paragraph": return paragraphBlock(block, source, context)
     case "quote": return quoteBlock(source, context)
-    case "bullets": case "dashes": case "todos": case "numbered": return listBlock(source, context)
+    // (A list that mixes kinds is one cell, each line drawn as its own kind: Sean, 2026-10-11.)
+    case "bullets": case "dashes": case "todos": case "numbered": case "mixed": return listBlock(source, context)
     case "code": return codeBlock(source, context)
     case "rule": return ruleBlock()
     case "blank": return make("div", "wm-pv wm-pv-blank")
@@ -346,7 +348,7 @@ export function estimatedHeight(block: Block, source: string): number {
     case "paragraph": return block.markdown ? Math.max(1, Math.ceil(source.length / 85)) * 22
       : source.split("\n").reduce((sum, line) => sum + Math.max(1, Math.ceil(line.length / 85)) * 22, 0)
     case "quote": return Math.max(1, Math.ceil(source.length / 80)) * 22
-    case "bullets": case "dashes": case "todos": case "numbered": return lines * 22
+    case "bullets": case "dashes": case "todos": case "numbered": case "mixed": return lines * 22
     // Its lines at the code size, and half that size of padding top and bottom (Mac e66379c).
     case "code": return Math.max(1, lines - 2) * 20.6 + 14
     case "rule": return 9

@@ -24,7 +24,7 @@
  * on screen and on paper and prints both, cell by cell.
  */
 
-import type { Block } from "../markdown/parser"
+import { itemNumbers, listItemsOf, type Block } from "../markdown/parser"
 import type { InkCell } from "../drawing/model"
 import { inkCellSvg } from "./inkSnapshot"
 import { codeTokens, type CodeTokenKind } from "../markdown/code"
@@ -142,22 +142,28 @@ export function blockHtml(block: Block, paper: string = PAPER_HEX, media?: Block
       return block.markdown
         ? `<div class="para">${inline(block.text)}</div>`
         : `<div class="para">${escapeHtml(block.text)}</div>`
-    case "bullets":
-      return `<div class="list">${block.items.map((item) => row("•", inline(item), `color:${SECONDARY}`)).join("")}</div>`
-    case "dashes":
-      return `<div class="list">${block.items.map((item) => row("–", inline(item), `color:${SECONDARY}`)).join("")}</div>`
-    case "numbered":
-      return `<div class="list">${block.items.map((item, index) =>
-        row(`${index + 1}.`, inline(item), `color:${SECONDARY};font-variant-numeric:tabular-nums`)).join("")}</div>`
-    case "todos":
-      return `<div class="list">${block.items.map((item) => {
-        const box = item.done
-          ? `<svg width="14" height="14" viewBox="0 0 14 14" aria-hidden="true"><rect x="0.5" y="0.5" width="13" height="13" rx="3" fill="#2D7DD2" stroke="#2D7DD2"/><path d="M3.4 7.2l2.4 2.4 4.8-5" fill="none" stroke="#fff" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>`
-          : `<svg width="14" height="14" viewBox="0 0 14 14" aria-hidden="true"><rect x="0.75" y="0.75" width="12.5" height="12.5" rx="3" fill="none" stroke="${SECONDARY}" stroke-width="1.3"/></svg>`
-        const words = inline(item.text)
-        return `<div class="row"><span class="box">${box}</span><span class="text"${item.done
-          ? ` style="text-decoration:line-through;text-decoration-color:${SECONDARY};color:${SECONDARY}"` : ""}>${words}</span></div>`
+    case "bullets": case "dashes": case "numbered": case "todos": case "mixed": {
+      // Each item as its own kind: a list can mix them, one cell (Sean, 2026-10-11: "this should not be two separate
+      // cells"). Each run of numbered items counts from one, as the rendered page numbers it (`itemNumbers`).
+      const items = listItemsOf(block)
+      const numbers = itemNumbers(items.map((item) => item.style))
+      return `<div class="list">${items.map((item, index) => {
+        switch (item.style) {
+          case "dots": return row("•", inline(item.text), `color:${SECONDARY}`)
+          case "dashes": return row("–", inline(item.text), `color:${SECONDARY}`)
+          case "numbered":
+            return row(`${numbers[index]}.`, inline(item.text), `color:${SECONDARY};font-variant-numeric:tabular-nums`)
+          case "todo": {
+            const box = item.done
+              ? `<svg width="14" height="14" viewBox="0 0 14 14" aria-hidden="true"><rect x="0.5" y="0.5" width="13" height="13" rx="3" fill="#2D7DD2" stroke="#2D7DD2"/><path d="M3.4 7.2l2.4 2.4 4.8-5" fill="none" stroke="#fff" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>`
+              : `<svg width="14" height="14" viewBox="0 0 14 14" aria-hidden="true"><rect x="0.75" y="0.75" width="12.5" height="12.5" rx="3" fill="none" stroke="${SECONDARY}" stroke-width="1.3"/></svg>`
+            const words = inline(item.text)
+            return `<div class="row"><span class="box">${box}</span><span class="text"${item.done
+              ? ` style="text-decoration:line-through;text-decoration-color:${SECONDARY};color:${SECONDARY}"` : ""}>${words}</span></div>`
+          }
+        }
       }).join("")}</div>`
+    }
     case "quote":
       return `<div class="quote"><span class="bar"></span><span class="text">${inline(block.text)}</span></div>`
     case "code": {
