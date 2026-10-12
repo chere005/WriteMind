@@ -42,11 +42,14 @@ export const WELCOME_INTRO =
  */
 export const welcomeFeatures = (mac: boolean): string[] => [
   "**Cells:** headings, text, markdown, lists, quotes, code, runnable code, maths, tables and drawings; the Style menu and the + between two cells make one.",
+  // Sean, 2026-10-11: "the input cursor should go to where it is typing when inserting a checklist or bullets.. typing a * while the
+  // input cursor is horizontal will start a markdown text cell with bullet points".
+  `**Lists:** List, the Style menu, the + and ${key("list", mac)} start a list where you are, the caret where its words go; \`*\` typed at the insertion line starts a bullet list.`,
+  // (Sean, 2026-10-11, of a dashes list with a to-do list under it: "this should not be two separate cells".)
+  "**Mixed lists:** dots, dashes, numbers and to-dos written one under another are one cell; each item keeps its kind, and Style names the one you are on.",
   `**Text and markdown cells:** ${key("heading:0", mac)} makes a text cell, shown exactly as typed; ${key("markdownCell", mac)} a markdown cell, read as markdown.`,
   `**Maths cells:** ${key("mathsCell", mac)} makes one, or turns a cell's words into one; Wolfram Language, typeset when the caret leaves. ${key("insertMath", mac)} opens the palette.`,
   "**Tables:** a pipe table (`| a | b |`) is one cell, a real table on the rendered page; Tab and Return move along it.",
-  // (Sean, 2026-10-11, of a dashes list with a to-do list under it: "this should not be two separate cells".)
-  "**Lists:** dots, dashes, numbers and to-dos written one under another are one cell; each item keeps its kind, and Style names the one you are on.",
   `**Rendered page:** ${key("toggleMode", mac)} shows the note as a finished page you can still type in.`,
   "**Toolbar:** Style, B I U S, font and colour, List, Quote, Code; then Text box, Picture, Table, Maths, Shapes and Move section up / down; ⋯ holds what does not fit.",
   `**Pen:** one button puts it down or up (${key("togglePen", mac)}); its menu picks Pen or Eraser, a colour and a width, and Pen always draws on a tablet.`,

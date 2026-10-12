@@ -138,8 +138,9 @@ describe("a list that mixes kinds is ONE cell, and the Style button names the it
 })
 
 describe("a cell a command has just opened EMPTY (the + menu's pick)", () => {
-  // The parser reads a lone marker as a paragraph, so a list the + menu has just opened would be named Text by the Style
-  // button; the command says which line it opened (`itemOpened`) and the button names the list.
+  // The parser read a lone marker as a paragraph, so a list the + menu had just opened was named Text by the Style button
+  // until the command said which line it opened (`itemOpened`). Since 2026-10-11 (Sean: "the input cursor should go to where it
+  // is typing when inserting a checklist or bullets") the parser names it itself (core `emptyItem`), opened or not.
   const items: [string, CellKind][] = [
     ["- ", { kind: "list", style: "dots" }], ["* ", { kind: "list", style: "dashes" }],
     ["1. ", { kind: "list", style: "numbered" }], ["- [ ] ", { kind: "list", style: "todo" }],
@@ -152,8 +153,10 @@ describe("a cell a command has just opened EMPTY (the + menu's pick)", () => {
     })
   }
 
-  it("leaves a marker TYPED by hand to the parser (nothing opened it): a lone `- ` is Text", () => {
-    expect(cellKindAt(stateAt("One\n\n- \n\nTwo", 7))).toEqual({ kind: "text" })
+  it("leaves a marker nothing opened to the parser, which reads a lone `- ` as an empty Dots item (it said Text until 2026-10-11)", () => {
+    expect(cellKindAt(stateAt("One\n\n- \n\nTwo", 7))).toEqual({ kind: "list", style: "dots" })
+    expect(cellKindAt(stateAt("One\n\n* \n\nTwo", 7))).toEqual({ kind: "list", style: "dashes" })
+    expect(cellKindAt(stateAt("One\n\n1. \n\nTwo", 8))).toEqual({ kind: "list", style: "numbered" })
   })
 
   it("stops naming it when the caret leaves the line or a word is typed (the field lets go)", () => {
@@ -170,13 +173,14 @@ describe("a cell a command has just opened EMPTY (the + menu's pick)", () => {
     expect(cellKindAt(stateAt(doc, "One\n\n<!-- markdown -->".length))).toEqual({ kind: "markdown" })
   })
 
-  it("the watcher hears the item being opened although the transaction that says so moves nothing", () => {
+  it("the watcher names the empty item at once, and the transaction that says it was opened changes nothing it hears", () => {
     const view = fakeView("One\n\n- \n\nTwo", 7)
     const heard: string[] = []
     watchCellKind(view, (kind) => heard.push(kind ? (kind.kind === "list" ? `list:${kind.style}` : kind.kind) : "none"))
-    expect(heard).toEqual(["text"])
+    // (It heard "text" first, and "list:dots" only when `itemOpened` came, until 2026-10-11: the parser names the item now.)
+    expect(heard).toEqual(["list:dots"])
     tell(view, { effects: itemOpened.of(5) })
-    expect(heard).toEqual(["text", "list:dots"])
+    expect(heard).toEqual(["list:dots"])
   })
 })
 

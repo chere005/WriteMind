@@ -140,7 +140,7 @@ describe("the quick reference's keys come from the command table", () => {
     const text = welcomeNote(process.platform)
     expect(text.startsWith("# WriteMind Quick Reference\n")).toBe(true)
     for (const name of [
-      "Cells", "Text and markdown cells", "Maths cells", "Tables", "Lists", "Rendered page", "Toolbar", "Pen", "Tabs", "Move tabs", "Search notes", "Sidebar", "Undo",
+      "Cells", "Lists", "Mixed lists", "Text and markdown cells", "Maths cells", "Tables", "Rendered page", "Toolbar", "Pen", "Tabs", "Move tabs", "Search notes", "Sidebar", "Undo",
       "Drawing", "Runnable cells", "Language Setup", "Video pane", "Read words", "Pane tabs", "Wacom tablet", "Mathematica", "Wacom pen buttons", "Notes are files", "Updates", "About",
     ]) {
       expect(WELCOME_FEATURES.some((one) => one.startsWith(`**${name}:**`)), name).toBe(true)
@@ -325,6 +325,20 @@ describe("the feature list is true to the source", () => {
     expect(line).toContain("project is a small JSON file")
   })
 
+  it("Lists: made where the caret is by the List button, the Style menu, the + and the key; a `*` at the bar opens a bullet list", () => {
+    // (Sean, 2026-10-11.) The marker alone is the list's empty item to the parser (core `emptyItem`), so the list is a list at once;
+    // the `*` typed at the armed bar is `typeAtTheBar` (seams.ts), which opens the dashes item `* `.
+    const line = features("Lists")
+    expect(line).toContain(shown("list", "win32")!)
+    expect(read("apps/desktop/src/renderer/TopBar.tsx")).toContain('label: "List"')
+    expect(blocks("- ")).toEqual([{ kind: "bullets", items: [""] }])
+    expect(blocks("* ")).toEqual([{ kind: "dashes", items: [""] }])
+    const seams = read("packages/editor/src/seams.ts")
+    expect(seams).toContain("export function typeAtTheBar")
+    expect(seams).toContain('setArmedType.of({ kind: "list", style: "dashes" })')
+    expect(line).toContain("`*` typed at the insertion line starts a bullet list")
+  })
+
   it("Tables, Mathematica and the rest name what the docs say is built", () => {
     // a pipe table is ONE cell (core `blocks`), and the line says what a table looks like as typed
     const table = "| a | b |\n|---|---|\n| 1 | 2 |\n"
@@ -333,7 +347,7 @@ describe("the feature list is true to the source", () => {
     expect(features("Mathematica")).toContain("`.nb`")
   })
 
-  it("Lists: touching lists of every kind are ONE cell, each item its own kind, and Style names the caret's item", () => {
+  it("Mixed lists: touching lists of every kind are ONE cell, each item its own kind, and Style names the caret's item", () => {
     // Sean, 2026-10-11, of a dashes list with a to-do list straight under it: "this should not be two separate cells".
     const parsed = blocks("- dot\n* dash\n1. one\n- [ ] to do")
     expect(parsed).toHaveLength(1)
@@ -343,8 +357,8 @@ describe("the feature list is true to the source", () => {
     // The Style button asks the caret's line (packages/editor/src/cellKind.ts), and a blank line still makes two cells.
     expect(read("packages/editor/src/cellKind.ts")).toContain("kindOfBlock(cell.block, state.doc.lineAt(")
     expect(blocks("- dot\n\n- [ ] to do")).toHaveLength(2)
-    expect(features("Lists")).toContain("dots, dashes, numbers and to-dos written one under another are one cell")
-    expect(features("Lists")).toContain("Style names the one you are on")
+    expect(features("Mixed lists")).toContain("dots, dashes, numbers and to-dos written one under another are one cell")
+    expect(features("Mixed lists")).toContain("Style names the one you are on")
   })
 })
 

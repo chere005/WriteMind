@@ -276,26 +276,31 @@ export function positioned(markdown: string): PositionedBlock[] {
       list.push({ style: "todo", text: todo.text, done: todo.done })
       lineStart += rawLine.length + 1; continue
     }
-    // (The first rule the frozen parser has been given since, 2026-10-11, like `paragraphsAsOld` for text cells: a marker with
-    // nothing after it, straight under an open list, is that list's next item and still empty.)
-    if (list.length && (line === "-" || line === "+")) { list.push({ style: "dots", text: "", done: false }); lineStart += rawLine.length + 1; continue }
-    if (list.length && line === "*") { list.push({ style: "dashes", text: "", done: false }); lineStart += rawLine.length + 1; continue }
-    if (list.length && /^\d{1,4}[.)]$/.test(line)) { list.push({ style: "numbered", text: "", done: false }); lineStart += rawLine.length + 1; continue }
-    const bullet = bulletItem(line)
+    // (The rule the frozen parser has been given since, 2026-10-11, like `paragraphsAsOld` for text cells: a marker with
+    // nothing after it is an item of its list with no words yet — straight under an open list of ANY kind that list's next
+    // item (touching lists are one: Sean, 2026-10-11, "this should not be two separate cells"), and anywhere else the first item
+    // of its list, as the item with words would be (Sean, 2026-10-11: "the input cursor should go to where it is typing when
+    // inserting a checklist or bullets"; the parser's `emptyItem`). Starting a list it is written with its space, and not
+    // straight under a paragraph's line, where it stays that paragraph's words as in every note before: the parser's
+    // `startsEmptyList`.)
+    const marker = line === "-" || line === "+" ? "bullets" : line === "*" ? "dashes" : /^\d{1,4}[.)]$/.test(line) ? "numbered" : null
+    const starts = !paragraph.length && /[ \t]\r?$/.test(rawLine)
+    const lone = marker !== null && (list.length > 0 || starts) ? marker : null
+    const bullet = bulletItem(line) ?? (lone === "bullets" ? "" : null)
     if (bullet !== null) {
       if (paragraph.length || quote.length) flush(previousEnd)
       openIfNeeded()
       list.push({ style: "dots", text: bullet, done: false })
       lineStart += rawLine.length + 1; continue
     }
-    const dash = dashItem(line)
+    const dash = dashItem(line) ?? (lone === "dashes" ? "" : null)
     if (dash !== null) {
       if (paragraph.length || quote.length) flush(previousEnd)
       openIfNeeded()
       list.push({ style: "dashes", text: dash, done: false })
       lineStart += rawLine.length + 1; continue
     }
-    const number = numberedItem(line)
+    const number = numberedItem(line) ?? (lone === "numbered" ? "" : null)
     if (number !== null) {
       if (paragraph.length || quote.length) flush(previousEnd)
       openIfNeeded()

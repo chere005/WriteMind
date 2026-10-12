@@ -221,9 +221,43 @@ describe("the bar the second Return puts up", () => {
 })
 
 describe("a table is ended by its empty row, a list or a quote by the Return AFTER its empty marker went, never with nothing above it", () => {
-  it("a list with a single empty item (just opened) is not ended by the rule: nothing is under it", () => {
-    expect(returnClosesTheCell(make("one\n\n- ", 7))).toBe(false)
-    expect(returnClosesTheCell(make("one\n\n> ", 7))).toBe(false)
+  it("a list with a single empty item (just opened), a cell of its own, goes and puts the bar up where it was", () => {
+    // It was "not ended by the rule: nothing is under it" until 2026-10-11, when a marker alone became the list's empty item
+    // (Sean: "the input cursor should go to where it is typing when inserting a checklist or bullets"): the rule's marker-off
+    // Return left a blank cell between the cells either side, and more of them at every Return on the rendered page.
+    for (const [text, caret, expected, bar] of [
+      ["one\n\n- ", 7, "one", 3], ["one\n\n> ", 7, "one", 3], ["one\n\n* \n\ntwo", 7, "one\n\ntwo", 5],
+    ] as const) {
+      const view = make(text, caret)
+      expect(returnClosesTheCell(view), text).toBe(true)
+      expect(doc(view), text).toBe(expected)
+      expect(armed(view), text).toBe(bar)
+      undo(view)
+      expect(doc(view), "one Undo gives the item back").toBe(text)
+      expect(head(view)).toBe(caret)
+    }
+    // (An empty item touching the cell above is the editor's own Return's: its marker goes.)
+    expect(returnClosesTheCell(make("# one\n- ", 8))).toBe(false)
+  })
+
+  it("one touching the cell BELOW goes with its own newline, and the cells above and below stay two, apart (2026-10-11)", () => {
+    // `a\n\n- \nb` with Return gave `a \nb` (the rule reached two characters back from `b` for the blank line): three cells made
+    // one, a stray space in it. The real keys reach it: `- Y`, Return, Return, `b`, then Y taken back and Return.
+    for (const [text, caret] of [
+      ["a\n\n- \nb", 5], ["a\n\n- [ ] \nb", 9], ["a\n\n1. \nb", 6], ["a\n\n> \nb", 5],
+    ] as const) {
+      const view = make(text, caret)
+      expect(returnClosesTheCell(view), text).toBe(true)
+      expect(doc(view), text).toBe("a\n\nb")
+      expect(notebook(view.state).cells.length, text).toBe(2)
+      expect(armed(view), `${text}: the bar over b`).toBe(3)
+      undo(view)
+      expect(doc(view), "one Undo gives the item back").toBe(text)
+    }
+    const first = make("- \nb", 2)
+    expect(returnClosesTheCell(first)).toBe(true)
+    expect(doc(first)).toBe("b")
+    expect(armed(first), "the bar over b, the note's first cell").toBe(0)
   })
 
   it("an empty item in the middle of a list is not the end of it", () => {

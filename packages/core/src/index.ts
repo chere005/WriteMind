@@ -13,7 +13,7 @@ export * from "./text/find"
 export * from "./text/findVisible"
 // The parser re-exports `Range` from there; everything else is its own.
 export {
-  blocks, positioned, positionedUpdate, linesOf, heading, isRule, todoItem, bulletItem, dashItem, numberedItem,
+  blocks, positioned, positionedUpdate, linesOf, heading, isRule, todoItem, bulletItem, dashItem, numberedItem, emptyItem,
   isListBlock, listItemsOf, listStyleOfLine, itemNumbers,
   type Hull, type LineSource,
   type Block, type PositionedBlock, type TodoItem, type ListItem, type ListBlock,
@@ -40,6 +40,7 @@ export * from "./cells/tableCells"
 export * from "./cells/seams"
 export * from "./cells/growth"
 export * from "./cells/newline"
+export * from "./cells/grownList"
 export * from "./cells/commands"
 export * from "./cells/subsections"
 export * from "./cells/apart"

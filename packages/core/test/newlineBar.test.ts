@@ -97,6 +97,9 @@ describe("Return on the empty item a list or a quote was carried on with is NOT 
     for (const [marked, expected] of [
       ["- one\n- |", "- one\n"], ["1. one\n2. |", "1. one\n"], ["- [ ] one\n- [ ] |", "- [ ] one\n"], ["> quoted\n> |", "> quoted\n"],
       ["- one\n- two\n- |", "- one\n- two\n"],
+      // A list of one empty item touching the cell above (2026-10-11): the cell's grown line is left. (`one\n- |` was here too;
+      // since the same day a marker alone under a paragraph's line is the paragraph's words, the parser's `startsEmptyList`.)
+      ["# H\n* |", "# H\n"], ["one\n- [ ] |", "one\n"], ["- a\n\n* b\n- |", "- a\n\n* b\n"],
     ] as const) {
       const { text, caret } = note(marked)
       const edit = returnInBlock(text, range(caret, 0))
@@ -123,9 +126,54 @@ describe("Return on the empty item a list or a quote was carried on with is NOT 
     expect(closingReturn(positioned(only), linesOf(only), range(only.length - 2, 0))).toEqual({ index: 0, remove: range(19, 8), below: true })
   })
 
-  it("is not an item with words, an empty item with nothing above it in its cell, or one in the middle of a cell", () => {
-    for (const marked of ["- one\n- two|", "- |", "> |", "a\n\n1. |", "- one\n- |\n- three"]) {
+  it("is not an item with words, an empty item touching the cell above, or one in the middle of a cell", () => {
+    // ("- |", "> |" and "a\n\n1. |" — an empty item with nothing above it in its cell — were here too until 2026-10-11: see below.)
+    for (const marked of ["- one\n- two|", "a\n- |", "# H\n* |", "- one\n- |\n- three"]) {
       expect(closedBy(marked), JSON.stringify(marked)).toBeNull()
+    }
+  })
+
+  it("takes a list that is ONE empty item and a cell of its own away, and the bar is up where it was", () => {
+    // Since 2026-10-11 (Sean: "typing a * while the input cursor is horizontal will start a markdown text cell with bullet points";
+    // "the input cursor should go to where it is typing when inserting a checklist or bullets") a marker alone is the list's empty
+    // item, and the bar opens one: Return on it before a word is typed leaves the note as it was before the list was chosen,
+    // with the bar up there. (Taking the marker off and leaving the line, the rule above, left a blank cell between the two.)
+    for (const [marked, expected, bar] of [
+      ["a\n\n* |\n\nb", "a\n\nb", { index: 1, below: false }],
+      ["a\n\n- |", "a", { index: 0, below: true }],
+      ["- [ ] |\n\nb", "b", { index: 0, below: false }],
+      ["a\n\n1. |\n\nb\n\nc", "a\n\nb\n\nc", { index: 1, below: false }],
+      ["a\n\n> |", "a", { index: 0, below: true }],
+      ["- |", "", { index: 0, below: false }],
+    ] as const) {
+      const closed = closedBy(marked)
+      expect(closed, marked).not.toBeNull()
+      expect(after(marked), marked).toBe(expected)
+      expect({ index: closed!.index, below: closed!.below }, marked).toEqual(bar)
+    }
+  })
+
+  it("takes one TOUCHING the cell below away with its own newline, and keeps the cells above and below apart (2026-10-11)", () => {
+    // Reached with real keys: `- Y`, Return, Return, `Zed` (the line the list's Return left, typed on, is the next cell touching
+    // it), then Y taken back and Return. The rule used to read the blank line two characters back from `Zed` and took the
+    // newlines above and the marker's dash with it: `a \nb`, three cells made one. It keeps the one blank line above.
+    for (const [marked, expected, bar] of [
+      ["a\n\n- |\nb", "a\n\nb", { index: 1, below: false }],
+      ["a\n\n- [ ] |\nb", "a\n\nb", { index: 1, below: false }],
+      ["a\n\n1. |\nb", "a\n\nb", { index: 1, below: false }],
+      ["a\n\n> |\nb", "a\n\nb", { index: 1, below: false }],
+      ["* |\nb", "b", { index: 0, below: false }],
+      ["- |\nb\n\nc", "b\n\nc", { index: 0, below: false }],
+      // Blank lines of white space either side: the first under the cell above is the one kept.
+      ["a\n  \n\n- |\n \nb", "a\n  \nb", { index: 1, below: false }],
+      ["a\n\n\n- |\nb", "a\n\nb", { index: 1, below: false }],
+    ] as const) {
+      const closed = closedBy(marked)
+      expect(closed, marked).not.toBeNull()
+      expect(after(marked), marked).toBe(expected)
+      expect({ index: closed!.index, below: closed!.below }, marked).toEqual(bar)
+      // The cells are what they were without the item: the one above and the one below, apart.
+      expect(positioned(after(marked)!).length, marked).toBe(positioned(note(marked).text).length - 1)
     }
   })
 })

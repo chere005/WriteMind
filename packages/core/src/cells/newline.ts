@@ -21,10 +21,21 @@
  *
  * A picture or an ink cell has no line to grow: it is drawn and never typed in, so Return with the caret beside it arms the
  * bar on that side — what an arrow does there — instead of starting a cell.
+ *
+ * A LIST THAT IS ONE EMPTY ITEM, A CELL OF ITS OWN — what the bar opens when a list is chosen there (the + menu's lists, the
+ * Style menu's and Ctrl+Shift+L at a bar, a `*` typed there: Sean, 2026-10-11, "typing a * while the input cursor is horizontal
+ * will start a markdown text cell with bullet points") and Return is pressed before a word is typed — has no cell left to keep
+ * a line in once its marker goes (the rule above would leave an empty line between two blank ones: a blank cell, and on the
+ * rendered page more of them at every Return). So Return takes it away, with the blank line that held it apart, and the bar is
+ * the cursor where it was: the note is what it was before the list was chosen; Backspace there does the same (`loneItemGoes`).
+ * (A quote of one empty line the same, and one with a cell touching it below. An empty item TOUCHING the cell above — a heading's
+ * or another list's line, written so in the note; a list chosen on the line a newline grew opens apart since 2026-10-11,
+ * `grownList.ts` — loses its marker by the rule above and leaves that cell's grown line.)
  */
 
 import { end, range, type Range } from "../text/range"
 import type { LineSource, PositionedBlock } from "../markdown/parser"
+import { listContinuation } from "./editing"
 import { growth } from "./growth"
 import { firstCellFromBy } from "./selection"
 
@@ -36,6 +47,9 @@ export interface ClosingReturn {
   /** The bar goes under the cell (true), or above it (a picture's start). */
   below: boolean
 }
+
+/** The kinds of cell whose one empty item Return takes away (above). */
+const LONE_ITEM_KINDS = new Set(["bullets", "dashes", "numbered", "todos", "quote"])
 
 /** A table row with nothing in any of its cells: only pipes and white space. */
 const emptyRow = (text: string): boolean => /^\s*\|[\s|]*$/.test(text)
@@ -67,6 +81,10 @@ export function closingReturn(cells: readonly PositionedBlock[], doc: LineSource
     return null
   }
 
+  // A list (or a quote) that is one empty item and a cell of its own: it goes, and the bar is up where it was.
+  const lone = loneItemGoes(cells, doc, caret)
+  if (lone) return lone
+
   // The last line of a table, with nothing in it: the row Return carried the cell on with. (A list's or a quote's empty item is not
   // ended here: see the top.)
   if (line.number < 2 || end(cell.range) !== line.to || cell.range.location >= line.from) return null
@@ -75,4 +93,51 @@ export function closingReturn(cells: readonly PositionedBlock[], doc: LineSource
   if (!(emptyRow(line.text) && doc.lineAt(cell.range.location).number + 1 < line.number)) return null
   const above = doc.line(line.number - 1)
   return { index, remove: range(above.to, line.to - above.to), below: true }
+}
+
+/**
+ * A LIST (OR A QUOTE) THAT IS ONE EMPTY ITEM AND A CELL OF ITS OWN, the caret after its marker: what goes when Return — or
+ * Backspace (Sean, 2026-10-11: the `*` typed at the bar, then Backspace, is the bar again, as one Undo and Return make it) — is
+ * pressed there before a word is typed, and where the bar is then. Null where the caret is not there. (A cell of its own: no
+ * line of words straight above it. One touching the cell BELOW — `a`, a blank line, `- `, then `b` on the next line, reached by
+ * typing `b` on the line a list's Return left and taking the item's words back — is one too: it goes with its own newline and
+ * the cells either side keep one blank line between them. Until 2026-10-11 the reach for that blank line read two characters
+ * back from `b` and took the cell above's newlines and the marker's dash with it, leaving `a \nb`: one cell out of three.)
+ */
+export function loneItemGoes(cells: readonly PositionedBlock[], doc: LineSource, caret: Range): ClosingReturn | null {
+  if (caret.length !== 0 || doc.length === 0 || cells.length === 0) return null
+  const at = Math.min(Math.max(caret.location, 0), doc.length)
+  const line = doc.lineAt(at)
+  const index = firstCellFromBy(cells, at + 1, (cell) => cell.range) - 1
+  const cell = index >= 0 ? cells[index] : undefined
+  if (!cell || !LONE_ITEM_KINDS.has(cell.block.kind) || cell.range.location !== line.from || end(cell.range) !== line.to) return null
+  if (at !== line.to || listContinuation(line.text) !== "") return null
+  if (line.number > 1 && doc.line(line.number - 1).text.trim().length !== 0) return null
+  // The item and the blank lines round it, as Backspace takes an empty cell (`removeBlock`): the cells either side keep ONE
+  // blank line between them — the first one under the cell above, which stays, and the newline that ends it.
+  let up = line.number - 1
+  while (up >= 1 && doc.line(up).text.trim().length === 0) up--
+  let down = line.number + 1
+  while (down <= doc.lines && doc.line(down).text.trim().length === 0) down++
+  let from: number
+  let to: number
+  if (up < 1) {
+    // The note's first cell: it goes with everything up to the next one.
+    from = 0
+    to = down <= doc.lines ? doc.line(down).from : doc.length
+  } else if (down > doc.lines) {
+    // The note's last cell: it goes with everything after the cell above.
+    from = doc.line(up).to
+    to = doc.length
+  } else {
+    // Between two cells (the one below touching it or not): line `up + 1` is a blank line, since the line straight above the
+    // item is. It stays; from its end to the newline before the cell below goes.
+    from = doc.line(up + 1).to
+    to = doc.line(down).from - 1
+  }
+  // The cells before what goes are where they were; the bar stands over the cell after it, else under the one before.
+  let before = 0
+  while (before < cells.length && cells[before]!.range.location < from) before++
+  const below = down > doc.lines && before > 0
+  return { index: below ? before - 1 : before, remove: range(from, to - from), below }
 }

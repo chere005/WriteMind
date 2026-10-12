@@ -669,12 +669,19 @@ describe("cells that touch are one thing to type in", () => {
       expect(found.map((one) => one.block.kind), JSON.stringify(carried)).toEqual(["paragraph", kind, "paragraph"])
       expect(found[1]!.range).toEqual(range(5, carried.length))
     }
-    // (A marker under a paragraph or on its own is still just words. Under a list of another kind it is that list's next
-    // item, of its own kind: list lines that touch are one list — Sean, 2026-10-11: "this should not be two separate cells".)
+    // A marker under a paragraph is still just words; a marker WRITTEN WITH ITS SPACE, as the app writes a list made empty,
+    // starts its own list anywhere else (Sean, 2026-10-11: "the input cursor should go to where it is typing when inserting a
+    // checklist or bullets"; the parser's `startsEmptyList`), and under a list of any kind it is that list's next item, of its
+    // own kind: list lines that touch are one list (Sean, 2026-10-11: "this should not be two separate cells").
+    expect(positioned("words\n- ").map((one) => one.block.kind)).toEqual(["paragraph"])
     expect(positioned("words\n-").map((one) => one.block.kind)).toEqual(["paragraph"])
     expect(positioned("* one\n-").map((one) => one.block)).toEqual([
       { kind: "mixed", items: [{ style: "dashes", text: "one", done: false }, { style: "dots", text: "", done: false }] }])
+    expect(positioned("* one\n- ").map((one) => one.block)).toEqual([
+      { kind: "mixed", items: [{ style: "dashes", text: "one", done: false }, { style: "dots", text: "", done: false }] }])
+    expect(positioned("- one\n\n- ").map((one) => one.block.kind)).toEqual(["bullets", "bullets"])
     expect(positioned("- one\n\n-").map((one) => one.block.kind)).toEqual(["bullets", "paragraph"])
+    expect(positioned("- ").map((one) => one.block.kind)).toEqual(["bullets"])
     expect(positioned("-").map((one) => one.block.kind)).toEqual(["paragraph"])
   })
 

@@ -60,14 +60,14 @@ export const notebook = (state: EditorState): Notebook => state.field(notebookFi
 export const cellWritten = Annotation.define<boolean>()
 
 /**
- * AN ITEM THE APP OPENED, not one that was typed. A list made by a command (the + menu, the Style menu, Ctrl+Shift+L at
- * a bar) is written as its marker and nothing else (`- `, `1. `), which the parser reads as a paragraph, so a text cell
- * of its own, and what is typed in a text cell is literal: the first word typed after the marker came out as `\- word`
- * (docs/PLAN-bars-2026-10.md (a), found 2026-10-10). The command says which line it opened (`itemOpened`), and the next
- * thing typed at the end of that line is the list's: the field is the start of that line, mapped through edits, and
- * is let go by any edit and by the caret leaving the line.
+ * AN ITEM THE APP OPENED, not one that was typed. A list made by a command at a bar (the + menu, the Style menu, Ctrl+Shift+L,
+ * a `*` typed there) is written as its marker and nothing else (`- `, `* `, `1. `). The parser read that as a paragraph, so
+ * a text cell, and the first word typed after the marker came out as `\- word` (docs/PLAN-bars-2026-10.md (a), found
+ * 2026-10-10); since 2026-10-11 it reads it as the list's empty item (core `emptyItem`), and what this field still says is
+ * that the marker's own space is there already (seams.ts `markersOwnSpace`: `*` then a space at the bar is `* `). The field is
+ * the start of that line, and is let go by any edit, by the caret leaving the line, and by `itemOpened.of(null)`.
  */
-export const itemOpened = StateEffect.define<number>()
+export const itemOpened = StateEffect.define<number | null>()
 
 export const itemOpenedField = StateField.define<number | null>({
   create: () => null,

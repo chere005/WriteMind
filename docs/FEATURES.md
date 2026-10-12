@@ -253,6 +253,18 @@ is how the code is put together.
   to-do's words on the rendered page joins them to the item above
   whatever it is, and the Style button names the item the caret is on. A
   blank line between two lists still makes them two.
+- **A list starts where you are, with the cursor where you type.** The List
+  button, the Style menu, the `+` and ⇧⌘L make a real list item wherever
+  the cursor is — on the insertion line, on an empty note, on the line under
+  a cell, or out of a line of words — and the cursor stands just past the
+  bullet or the box, where the first letter lands, at full height. On the
+  new line under a paragraph or a heading the list is a cell of its own
+  under it, as the insertion line would make it; under a list it is that
+  list's next item, the next number for a numbered one. Typing `*` on the
+  insertion line starts a bullet list there (`* ` and `*` then a space are
+  the same), ready for its first item; Return or Backspace before a word
+  takes it back to the insertion line, and so does one Undo. A `-` or `1.`
+  on a line of its own inside older text stays text.
 - **Code blocks, in five languages.** The `</>` button (⌘8) fences the
   selection or opens an empty block; its menu tags the fence with one of ten
   languages, and the block is coloured — in the editor

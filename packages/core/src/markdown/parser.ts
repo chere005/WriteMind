@@ -233,6 +233,23 @@ function bareNumber(line: string): boolean {
   return digits >= 1 && digits <= 4 && digits === line.length - 1 && (line[digits] === "." || line[digits] === ")")
 }
 
+/**
+ * AN ITEM WITH NO WORDS YET (Sean, 2026-10-11: "the input cursor should go to where it is typing when inserting a checklist or
+ * bullets"): a list marker and nothing after it — `- `, `+ `, `* `, `1. ` as the Style menu, the List button, the + menu and
+ * Return write it, trimmed to `-`, `+`, `*`, `1.` — the kind of list it would be an empty item of, or null. (A to-do's empty box,
+ * `- [ ]`, has always been an item: `todoItem`.) Where it IS one is the parser's (`Machine.feed`, `startsEmptyList`): under a
+ * list of its kind it is that list's next item, as Return writes it; it starts a list of its own only written as the app writes
+ * it, with the space after the marker, and not straight under a paragraph's line. It used to be a paragraph line
+ * unless a list of its kind was open above it, so a list chosen on an empty note or at a bar was a TEXT cell holding a literal
+ * `- `: drawn as the characters on the rendered page, named Text by the Style button, and the first word typed after it came out
+ * escaped (`\- x`).
+ */
+export function emptyItem(line: string): "bullets" | "dashes" | "numbered" | null {
+  if (line === "-" || line === "+") return "bullets"
+  if (line === "*") return "dashes"
+  return bareNumber(line) ? "numbered" : null
+}
+
 export function blocks(markdown: string): Block[] {
   return positioned(markdown).map((p) => p.block)
 }
@@ -372,6 +389,21 @@ class Machine {
   /** Whether the line just fed (it began at `at`) opened a block of its own rather than joining the one before. */
   opensBlockAt(at: number): boolean { return this.blockStart === at }
 
+  /**
+   * Whether a marker alone (`rawLine`, as written) STARTS a list, an item with no words yet (Sean, 2026-10-11: "the input cursor
+   * should go to where it is typing when inserting a checklist or bullets"): only written as the app writes it — the marker and
+   * the space after it, `- `, `* `, `1. ` — and not straight under a line of a paragraph, where it is that paragraph's words, as
+   * in every note before (and as CommonMark has it: an empty item cannot interrupt a paragraph). So a text cell with a lone `-`
+   * or `1.` on one of its lines, or a cell that is a `*` and nothing else, reads as it always did, and the editor, which draws a
+   * bullet only for a marker with its space (decorations.ts), agrees with the parser about what is a list. (Asked of the open
+   * paragraph, which the line then JOINS: a block never starts on a line whose reading the line above decided, so
+   * `positionedUpdate`, which restarts at a block's start with nothing open, reads it the same. A quote's line above could not be
+   * asked the same way — the marker's line would start a block of its own there — so under a quote it starts a list.)
+   */
+  private startsEmptyList(rawLine: string): boolean {
+    return this.paragraph.length === 0 && /[ \t]\r?$/.test(rawLine)
+  }
+
   feed(rawLine: string): void {
     const lineEnd = this.lineStart + rawLine.length
     // A line is split on "\n" alone, not on every Unicode newline: the line LENGTHS are what the ranges are built
@@ -506,26 +538,25 @@ class Machine {
       this.listItem({ style: "todo", text: todo.text, done: todo.done }, previousEnd)
       this.lineStart += size; return
     }
-    // A marker with nothing after it, straight under an open list, is that list's next item and still
-    // empty: what Return in a list writes (`- `, `2. `) before a word is typed after it. It used to read as a paragraph of
-    // one marker touching the list, so the cell the caret was in was not the list's; a single newline grows the list
-    // like it grows a paragraph (cells/growth.ts), and the new item is part of it. (To-do items and quote lines have
-    // always been read this way: `- [ ]` is an empty task, `>` an empty quote line.) Under a list of any kind, now that
-    // touching lists are one (2026-10-11): `-` under a dashes list is its next item, a dot.
-    if (this.list.length && (line === "-" || line === "+")) { this.list.push({ style: "dots", text: "", done: false }); this.lineStart += size; return }
-    if (this.list.length && line === "*") { this.list.push({ style: "dashes", text: "", done: false }); this.lineStart += size; return }
-    if (this.list.length && bareNumber(line)) { this.list.push({ style: "numbered", text: "", done: false }); this.lineStart += size; return }
-    const bullet = bulletItem(line)
+    // A marker with nothing after it is an item of its list with no words yet (`emptyItem`; Sean, 2026-10-11): straight under
+    // an open list it is that list's next item (what Return in a list writes, `- `, `2. `, before a word is typed after it) —
+    // under a list of ANY kind, now that touching lists are one cell (`-` under a dashes list is its next item, a dot) — and it
+    // starts its list anywhere but straight under a paragraph's line — on an empty note, at a bar — written WITH ITS SPACE, as
+    // the app writes it (`startsEmptyList`). (To-do items and quote lines have always been read this way: `- [ ]` is an empty
+    // task, `>` an empty quote line.)
+    const marker = emptyItem(line)
+    const empty = marker !== null && (this.list.length > 0 || this.startsEmptyList(rawLine)) ? marker : null
+    const bullet = bulletItem(line) ?? (empty === "bullets" ? "" : null)
     if (bullet !== null) {
       this.listItem({ style: "dots", text: bullet, done: false }, previousEnd)
       this.lineStart += size; return
     }
-    const dash = dashItem(line)
+    const dash = dashItem(line) ?? (empty === "dashes" ? "" : null)
     if (dash !== null) {
       this.listItem({ style: "dashes", text: dash, done: false }, previousEnd)
       this.lineStart += size; return
     }
-    const number = numberedItem(line)
+    const number = numberedItem(line) ?? (empty === "numbered" ? "" : null)
     if (number !== null) {
       this.listItem({ style: "numbered", text: number, done: false }, previousEnd)
       this.lineStart += size; return

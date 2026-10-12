@@ -27,7 +27,7 @@ import {
   MARKDOWN_MARKER, end, escapeLineMapped, escapeOffsets, firstCellFromBy, hiddenInText, isListBlock, isMarkdownMarker, isTextCell,
   positioned, type PositionedBlock,
 } from "@writemind/core"
-import { cellWritten, itemOpenedField, notebook } from "./notebook"
+import { cellWritten, notebook } from "./notebook"
 import { armSeam, armedField } from "./seams"
 import { heldCells } from "./brackets"
 
@@ -108,18 +108,6 @@ const carriedOn = (block: PositionedBlock["block"]): boolean =>
   isListBlock(block) || block.kind === "quote" || block.kind === "table"
 
 /**
- * Whether `text`, a line that is an item's marker and nothing else (`2. `, `- `, `* `), is the next item of the list
- * `above` (the cell on the line over it). Any marker under any list: list lines that touch are one list whatever they
- * are marked with (Sean, 2026-10-11: "this should not be two separate cells"), so `2. ` under dots is that list's next
- * item, a numbered one.
- */
-function continuesList(text: string, above: PositionedBlock | undefined): boolean {
-  const marker = /^\s*([-+*]|\d{1,4}[.)])\s*$/.exec(text)?.[1]
-  if (!marker || !above) return false
-  return isListBlock(above.block)
-}
-
-/**
  * The keys and the clipboard: typing, a paste, a drop, a delete, Find / Replace's replacement (`find.ts`) — and Return
  * (CodeMirror's newline and its indent).
  */
@@ -175,13 +163,10 @@ function literalTyping(tr: Transaction): Transaction | TransactionSpec | readonl
     const cell = i >= 0 ? cells[i] : undefined
     const line = oldDoc.lineAt(Math.min(old, oldDoc.length))
     if (cell && cell.block.kind !== "blank" && old >= cell.range.location && old <= end(cell.range)) {
-      // An item's marker and nothing else (`2. `, `- `: what Return in a list writes) is a paragraph to the parser,
-      // so a text cell of its own; straight under an item of its list it is that list's next item, and what is typed
-      // after it is the list's (`1. a`, Return, `b` is `2. b`, not `2\. b`). Only a line that is the whole cell's
-      // first line: `words` then `2. ` is one text cell, and stays literal.
-      if (isTextCell(cell.block) && cell.range.location === line.from && continuesList(line.text, cellAbove(line))) return false
-      // ...or an item a command opened a moment ago (the + menu's Dots List): what is typed after it is the list's.
-      if (isTextCell(cell.block) && cell.range.location === line.from && start.field(itemOpenedField, false) === line.from) return false
+      // (An item's marker and nothing else — `2. `, `- `, what Return in a list and the + menu's lists write — was a paragraph
+      // to the parser, a text cell, and two rules here kept what was typed after it the list's. Since 2026-10-11 it is the
+      // list's empty item to the parser itself, core `emptyItem` (Sean: "the input cursor should go to where it is typing when
+      // inserting a checklist or bullets"), and a lone marker TYPED in a text cell is escaped as it is typed.)
       return isTextCell(cell.block)
     }
     // On a line of its own: it joins the cell ending on the line above, or it is a new cell — plain words, unless it

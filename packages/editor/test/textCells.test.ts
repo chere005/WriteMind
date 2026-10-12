@@ -70,17 +70,28 @@ describe("typing in a text cell is literal", () => {
     expect(type(make("- one\n- ", 8), 8, "two").doc.toString()).toBe("- one\n- two")
     expect(type(make("* one\n* ", 8), 8, "t").doc.toString()).toBe("* one\n* t")
     expect(type(make("- [ ] a\n- ", 10), 10, "b").doc.toString()).toBe("- [ ] a\n- b")
-    // ...and no hole: an empty text cell, a marker under words or a heading stay literal
-    let state = make("")
-    for (const key of ["1", ".", " ", "x"]) state = type(state, state.doc.length, key)
-    expect(state.doc.toString()).toBe("1\\. x")
-    expect(type(make("words\n2. ", 9), 9, "x").doc.toString()).toBe("words\n2\\. x")
-    expect(type(make("# H\n2. ", 7), 7, "x").doc.toString()).toBe("# H\n2\\. x")
-    // Another list's marker straight under a list is that list's next item now, of its own kind (it was literal, `2\. x`):
-    // list lines that touch are one list (Sean, 2026-10-11: "this should not be two separate cells").
+    // ...and no hole: an empty text cell, a marker under words or a heading stay literal. TYPED a key at a time, as a person
+    // types them: since 2026-10-11 a marker alone is an empty item to the parser (Sean: "the input cursor should go to where it
+    // is typing when inserting a checklist or bullets"), so a text cell's lone `2. ` is escaped the moment its space is typed and
+    // stays words (a `2.` with no space yet starts no list, the parser's `startsEmptyList`, and is left as typed until the space
+    // comes).
+    const typed = (doc: string, keys: string[]): string => {
+      let state = make(doc, doc.length)
+      for (const key of keys) state = type(state, state.selection.main.head, key)
+      return state.doc.toString()
+    }
+    expect(typed("", ["1", ".", " ", "x"])).toBe("1\\. x")
+    expect(typed("words\n", ["2", ".", " ", "x"])).toBe("words\n2\\. x")
+    expect(typed("# H\n", ["2", ".", " ", "x"])).toBe("# H\n2\\. x")
+    expect(typed("1. a\n\n", ["2", ".", " ", "x"])).toBe("1. a\n\n2\\. x")
+    expect(typed("", ["-", " ", "x"])).toBe("\\- x")
+    expect(typed("", ["*", " ", "x"])).toBe("\\* x")
+    expect(typed("", ["-"])).toBe("-")
+    expect(typed("", ["-", " "])).toBe("\\- ")
+    // Another list's marker straight under a list is that list's next item, of its own kind (it was literal, `2\. x`): list
+    // lines that touch are one list (Sean, 2026-10-11: "this should not be two separate cells").
     expect(type(make("- a\n2. ", 7), 7, "x").doc.toString()).toBe("- a\n2. x")
     expect(type(make("* a\n- ", 6), 6, "x").doc.toString()).toBe("* a\n- x")
-    expect(type(make("1. a\n\n2. ", 9), 9, "x").doc.toString()).toBe("1. a\n\n2\\. x")
   })
 
   it("a paste into a text cell is literal", () => {
