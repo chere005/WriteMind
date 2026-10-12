@@ -246,10 +246,13 @@ is how the code is put together.
   everything that acts on a cell — Return, the arrows, moving it, Split and
   Merge, copying a held cell, Find, folding, the PDF and the Wolfram
   notebook — takes the whole list. Each item is still drawn as its own kind
-  on both pages (a box, a dash, a dot, its number, the numbers counting
-  through the list), a box still ticks, Return carries the item's own kind
-  on, and the Style button names the item the caret is on. A blank line
-  between two lists still makes them two.
+  on both pages (a box, a dash, a dot, its number: each run of numbers
+  counts from one, as Return and the Style menu write them, so a number
+  does not change when the caret leaves the list), a box still ticks,
+  Return carries the item's own kind on, Backspace at the start of a
+  to-do's words on the rendered page joins them to the item above
+  whatever it is, and the Style button names the item the caret is on. A
+  blank line between two lists still makes them two.
 - **Code blocks, in five languages.** The `</>` button (⌘8) fences the
   selection or opens an empty block; its menu tags the fence with one of ten
   languages, and the block is coloured — in the editor

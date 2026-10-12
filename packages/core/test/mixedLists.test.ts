@@ -1,10 +1,11 @@
 import { describe, expect, it } from "vitest"
 import {
-  blocks, isListBlock, linesOf, listItemsOf, listStyleOfLine, positioned, positionedUpdate, type Block, type ListItem,
+  blocks, isListBlock, itemNumbers, linesOf, listItemsOf, listStyleOfLine, positioned, positionedUpdate, type Block,
+  type ListItem,
 } from "../src/markdown/parser"
 import { apply, toggleList, toggleTodo } from "../src/markdown/formatting"
 import { kindOfBlock } from "../src/cells/types"
-import { keepsNewlines, returnInBlock } from "../src/cells/preview"
+import { keepsNewlines, listItemOnLine, returnInBlock } from "../src/cells/preview"
 import { closingReturn } from "../src/cells/newline"
 import { growth } from "../src/cells/growth"
 import { listContinuation, mergeCells, splitCell } from "../src/cells/editing"
@@ -84,6 +85,13 @@ describe("the parser: touching lists are one block", () => {
     // (Its own kind's empty item stays that kind's block; under words or on its own it is still a paragraph line.)
     expect(blocks("- a\n-")).toEqual([{ kind: "bullets", items: ["a", ""] }])
     expect(blocks("words\n*").map((one) => one.kind)).toEqual(["paragraph"])
+    // The review's differential (SPEC 2.4.3 says it): such a line is the list's, so words under it start a paragraph. It
+    // was a paragraph beginning `3.` under a list of another kind; under a list of its own kind it already read this way.
+    expect(blocks("- [x] e\n3.\nwords")).toEqual([
+      { kind: "mixed", items: [item("todo", "e", true), item("numbered", "")] },
+      { kind: "paragraph", text: "words" },
+    ])
+    expect(blocks("1. e\n3.\nwords").map((one) => one.kind)).toEqual(["numbered", "paragraph"])
   })
 
   it("keeps the ranges exact for the cells round a mixed list", () => {
@@ -120,6 +128,29 @@ describe("the list helpers", () => {
   it("listItemsOf gives the items of a one-kind list with their kind", () => {
     expect(listItemsOf({ kind: "todos", items: [{ text: "a", done: true }] })).toEqual([item("todo", "a", true)])
     expect(listItemsOf({ kind: "numbered", items: ["a"] })).toEqual([item("numbered", "a")])
+  })
+
+  it("itemNumbers counts each run of numbered items from one; any other kind, or no item, starts it again", () => {
+    expect(itemNumbers(["numbered", "numbered", "dashes", "numbered"])).toEqual([1, 2, 0, 1])
+    expect(itemNumbers(["todo", "numbered", "dots", "numbered", "numbered", null, "numbered"])).toEqual([0, 1, 0, 1, 2, 0, 1])
+    expect(itemNumbers(["numbered", "numbered", "numbered"])).toEqual([1, 2, 3])
+    expect(itemNumbers([])).toEqual([])
+    // Indentation is not structure (SPEC 2.4.3, a flat list): a nested number counts in its run, a nested dot ends it.
+    expect(itemNumbers(["1. a", "    1. x", "2. b"].map(listStyleOfLine))).toEqual([1, 2, 3])
+    expect(itemNumbers(["1. a", "    - x", "1. b"].map(listStyleOfLine))).toEqual([1, 0, 1])
+  })
+
+  it("listItemOnLine finds the words of an item of any kind, empty or not (what a reminder's Backspace joins to)", () => {
+    const words = (text: string): string | null => {
+      const found = listItemOnLine(range(0, text.length), text)
+      return found ? text.slice(found.text.location, found.text.location + found.text.length) : null
+    }
+    expect(["* dash", "- dot", "+ dot", "12. num", "3) num", "- [x] box", "  * nested", "-", "* ", "3.", "- [ ]", "- [ ] "].map(words))
+      .toEqual(["dash", "dot", "dot", "num", "num", "box", "nested", "", "", "", "", ""])
+    expect(["words", "# h", "> q", "", "*bold*"].map(words)).toEqual([null, null, null, null, null])
+    // (The line's newline is not words; an empty item's words are at the end of its line.)
+    expect(listItemOnLine(range(0, 4), "* a\nb")).toEqual({ line: range(0, 4), text: range(2, 1) })
+    expect(listItemOnLine(range(0, 2), "*\nb")).toEqual({ line: range(0, 2), text: range(1, 0) })
   })
 
   it("listStyleOfLine reads a line's kind of item, empty or not, indented or not", () => {
@@ -227,27 +258,67 @@ describe("a mixed list read, exported and brought in", () => {
     expect(positioned(readingSource(["- [ ] milk", "* eggs"])!)).toHaveLength(1)
   })
 
-  it("on paper each item is its own kind and the numbered ones count through the list", () => {
-    const html = blockHtml(blocks("* dash\n- [x] done\n1. one\n- dot\n2. two")[0]!)
-    const marks = [...html.matchAll(/<span class="(mark|box)"[^>]*>(.*?)<\/span>/g)].map((m) => (m[1] === "box" ? "box" : m[2]))
-    expect(marks).toEqual(["–", "box", "1.", "•", "2."])
-    expect(html.match(/<div class="row">/g)).toHaveLength(5)
+  // Each RUN of numbered items counts from one, an item of another kind starting the count again. They counted on through
+  // the whole list at first, which drew `1. d` under `* c` as 3 while the open cell showed the 1 it is written with, so the
+  // number changed as the caret left (review of the branch, 2026-10-11); a run is numbered as it was while it was a list of
+  // its own, and as Return and Style ▸ Numbered write it (Sean, 2026-10-11: "this should not be two separate cells").
+  it("on paper each item is its own kind, and each run of numbered items counts from one", () => {
+    const marksOf = (text: string): string[] => [...blockHtml(blocks(text)[0]!).matchAll(/<span class="(mark|box)"[^>]*>(.*?)<\/span>/g)]
+      .map((m) => (m[1] === "box" ? "box" : m[2]!))
+    expect(marksOf("* dash\n- [x] done\n1. one\n2. two\n- dot\n1. again")).toEqual(["–", "box", "1.", "2.", "•", "1."])
+    // (The review's note: `1. a 2. b * c 1. d` was drawn 1, 2, –, 3.)
+    expect(marksOf("1. a\n2. b\n* c\n1. d")).toEqual(["1.", "2.", "–", "1."])
+    expect(blockHtml(blocks("* dash\n- [x] done\n1. one")[0]!).match(/<div class="row">/g)).toHaveLength(3)
     // A one-kind list is drawn exactly as it was.
     expect(blockHtml(blocks("1. a\n2. b")[0]!)).toBe(blockHtml({ kind: "numbered", items: ["a", "b"] }))
   })
 
-  it("as a Wolfram notebook: a cell per item in its own style, the numbered items counting through the list", () => {
+  it("as a Wolfram notebook: a cell per item in its own style, each run of numbered items counting from one", () => {
     const render = (cell: PlannedCell): string => cell.pieces.map((piece) => (typeof piece === "string" ? piece : `<${piece.as}:${piece.job}>`)).join("")
-    const cells = wolframPlan("* dash\n- [ ] box\n1. one\n  - sub\n2. two\n- dot\n3. three", { inks: {}, bands: [], column: 700 }, new Map(), "file").cells.map(render)
+    const cells = wolframPlan("* dash\n- [ ] box\n1. one\n  - sub\n1. two\n2. three\n- dot\n1. four", { inks: {}, bands: [], column: 700 }, new Map(), "file").cells.map(render)
     expect(cells).toEqual([
       `Cell["dash", "Item", CellDingbat -> "\\:2013"]`,
       `Cell[TextData[{"\\:2610 ", "box"}], "Item"]`,
       `Cell["one", "ItemNumbered", CounterAssignments -> {{"ItemNumbered", 0}}]`,
       `Cell["sub", "Subitem"]`,
-      `Cell["two", "ItemNumbered", CounterAssignments -> {{"ItemNumbered", 1}}]`,
+      `Cell["two", "ItemNumbered", CounterAssignments -> {{"ItemNumbered", 0}}]`,
+      `Cell["three", "ItemNumbered"]`,
       `Cell["dot", "Item"]`,
-      `Cell["three", "ItemNumbered", CounterAssignments -> {{"ItemNumbered", 2}}]`,
+      `Cell["four", "ItemNumbered", CounterAssignments -> {{"ItemNumbered", 0}}]`,
     ])
+  })
+
+  it("the number drawn is the number written, for every list the app's own keys and Style menu make", () => {
+    // Sean's flow and the review's: a number, a to-do under it (Return carries the to-do on), Style ▸ Numbered, words.
+    const made = [
+      (() => {
+        let text = "1. a\n- [ ] x"
+        text = apply(text, returnInBlock(text, range(text.length, 0))!)
+        text = apply(text, toggleList(text, range(text.length, 0), "numbered"))
+        return text + "y"
+      })(),
+      (() => {
+        // Return, Return under a number (the next number, then the line cleared), Style ▸ Dashes, words, then numbers again.
+        let text = "1. a"
+        text = apply(text, returnInBlock(text, range(text.length, 0))!)
+        text += "b"
+        text = apply(text, returnInBlock(text, range(text.length, 0))!)
+        text = apply(text, returnInBlock(text, range(text.length, 0))!)
+        text = apply(text, toggleList(text, range(text.length, 0), "dashes")) + "c"
+        text = apply(text, returnInBlock(text, range(text.length, 0))!)
+        text = apply(text, returnInBlock(text, range(text.length, 0))!)
+        text = apply(text, toggleList(text, range(text.length, 0), "numbered")) + "d"
+        text = apply(text, returnInBlock(text, range(text.length, 0))!)
+        return text + "e"
+      })(),
+    ]
+    expect(made).toEqual(["1. a\n- [ ] x\n1. y", "1. a\n2. b\n* c\n1. d\n2. e"])
+    for (const text of made) {
+      expect(positioned(text), text).toHaveLength(1)
+      const lines = text.split("\n")
+      const written = lines.map((line) => Number(/^\s*(\d+)[.)]/.exec(line)?.[1] ?? 0))
+      expect(itemNumbers(lines.map(listStyleOfLine)), text).toEqual(written)
+    }
   })
 
   it("the note reads back as one cell: what is saved is the text, and the text parses to the one list", () => {

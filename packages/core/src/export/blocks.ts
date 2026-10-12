@@ -24,7 +24,7 @@
  * on screen and on paper and prints both, cell by cell.
  */
 
-import { listItemsOf, type Block } from "../markdown/parser"
+import { itemNumbers, listItemsOf, type Block } from "../markdown/parser"
 import type { InkCell } from "../drawing/model"
 import { inkCellSvg } from "./inkSnapshot"
 import { codeTokens, type CodeTokenKind } from "../markdown/code"
@@ -144,15 +144,15 @@ export function blockHtml(block: Block, paper: string = PAPER_HEX, media?: Block
         : `<div class="para">${escapeHtml(block.text)}</div>`
     case "bullets": case "dashes": case "numbered": case "todos": case "mixed": {
       // Each item as its own kind: a list can mix them, one cell (Sean, 2026-10-11: "this should not be two separate
-      // cells"). The numbered items count through the list, as the rendered page counts them.
-      let counted = 0
-      return `<div class="list">${listItemsOf(block).map((item) => {
+      // cells"). Each run of numbered items counts from one, as the rendered page numbers it (`itemNumbers`).
+      const items = listItemsOf(block)
+      const numbers = itemNumbers(items.map((item) => item.style))
+      return `<div class="list">${items.map((item, index) => {
         switch (item.style) {
           case "dots": return row("•", inline(item.text), `color:${SECONDARY}`)
           case "dashes": return row("–", inline(item.text), `color:${SECONDARY}`)
           case "numbered":
-            counted += 1
-            return row(`${counted}.`, inline(item.text), `color:${SECONDARY};font-variant-numeric:tabular-nums`)
+            return row(`${numbers[index]}.`, inline(item.text), `color:${SECONDARY};font-variant-numeric:tabular-nums`)
           case "todo": {
             const box = item.done
               ? `<svg width="14" height="14" viewBox="0 0 14 14" aria-hidden="true"><rect x="0.5" y="0.5" width="13" height="13" rx="3" fill="#2D7DD2" stroke="#2D7DD2"/><path d="M3.4 7.2l2.4 2.4 4.8-5" fill="none" stroke="#fff" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>`

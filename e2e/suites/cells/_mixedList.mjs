@@ -122,6 +122,61 @@ export async function runMixedList({ rendered }) {
     ok("and the cell is still one, lit", (await cellBrackets()).length === 1 && (await cellBrackets())[0].lit, JSON.stringify(await cellBrackets()))
   })
 
+  // Each RUN of numbered items counts from one (core `itemNumbers`). The numbers counted on through the whole list at first, so a
+  // `1. y` made under a to-do was drawn 2 once the caret left it, while the open cell showed the 1 it is written with (review,
+  // 2026-10-11). The app's own flow, then the review's note, by real keys and the real Style menu.
+  await test(`${side}: each run of numbered items counts from one, and a number does not change as the caret leaves the list`, async () => {
+    const drawn = async () => JSON.parse(await js(`JSON.stringify([...document.querySelectorAll('.wm-pv-list')].map(l=>[...l.querySelectorAll('.wm-pv-li')].map(li=>li.querySelector('.wm-pv-box')?'box':li.querySelector('.wm-pv-mark')?.textContent)))`))
+    const open = async () => JSON.parse(await js(`JSON.stringify([...document.querySelectorAll('.wm-pv-open-num')].map(n=>n.textContent))`))
+    const text = "1. a\n- [ ] x\n\nend"
+    await start(text, text.indexOf("\n\nend"))
+    await key("Enter"); await sleep(250)
+    await pickKind("list-numbered")
+    await typeText("y"); await sleep(350)
+    ok("Return under the to-do, Style ▸ Numbered, y: `1. y`, in the one cell", (await doc()) === "1. a\n- [ ] x\n1. y\n\nend" && (await cellBrackets()).length === 2, JSON.stringify([await doc(), await cellBrackets()]))
+    if (rendered) {
+      ok("open, the numbers are the ones written: 1. and 1.", JSON.stringify(await open()) === JSON.stringify(["1.", "1."]), JSON.stringify(await open()))
+      await setSel((await doc()).length); await sleep(350)
+      ok("drawn with the caret in `end`: 1., a box, 1. (it was 2.)", JSON.stringify(await drawn()) === JSON.stringify([["1.", "box", "1."]]), JSON.stringify(await drawn()))
+      const note = "1. a\n2. b\n* c\n1. d\n\nend"
+      await start(note, note.length)
+      ok("the review's note, drawn: 1., 2., a dash, 1. (it was 3.)", JSON.stringify(await drawn()) === JSON.stringify([["1.", "2.", "–", "1."]]), JSON.stringify(await drawn()))
+      await setSel(note.indexOf("d\n")); await sleep(350)
+      ok("and open: 1., 2., 1.", JSON.stringify(await open()) === JSON.stringify(["1.", "2.", "1."]), JSON.stringify(await open()))
+      await shot("rendered-run-numbers")
+    }
+  })
+
+  if (rendered) {
+    await test(`${side}: Backspace at the start of a to-do's words joins them to the dash above; Delete at its end pulls a number's words up`, async () => {
+      const text = "* a\n- [ ] b\n\nend"
+      await start(text, text.indexOf("b"))
+      await key("Backspace"); await sleep(300)
+      ok("Backspace: `* ab`, the caret at the seam (it did nothing under a dash)", (await doc()) === "* ab\n\nend" && (await sel())[0] === 3, JSON.stringify([await doc(), await sel()]))
+      await key("z", { ctrl: true }); await sleep(300)
+      ok("one Undo puts the to-do back", (await doc()) === text, JSON.stringify(await doc()))
+      const empty = "* a\n- [ ] \n\nend"
+      await start(empty, empty.indexOf("\n\nend"))
+      await key("Backspace"); await sleep(300)
+      ok("in an EMPTY to-do under a dash: the to-do goes, the caret at the end of the dash", (await doc()) === "* a\n\nend" && (await sel())[0] === 3, JSON.stringify([await doc(), await sel()]))
+      const below = "- [ ] a\n1. b\n\nend"
+      await start(below, 7)
+      await key("Delete"); await sleep(300)
+      ok("Delete at the end of a to-do over a number: `- [ ] ab`", (await doc()) === "- [ ] ab\n\nend" && (await sel())[0] === 7, JSON.stringify([await doc(), await sel()]))
+    })
+  }
+
+  await test(`${side}: two quick Returns in a list undo one at a time`, async () => {
+    const text = "* hello\n* how\n\nend"
+    await start(text, 13)
+    await key("Enter", { wait: 60 }); await key("Enter", { wait: 60 }); await sleep(250)
+    ok("Return, Return: the next item, then its marker off", (await doc()) === "* hello\n* how\n\n\nend", JSON.stringify(await doc()))
+    await key("z", { ctrl: true }); await sleep(300)
+    ok("one Undo gives the empty item back (on the markdown side it took both Returns)", (await doc()) === "* hello\n* how\n* \n\nend", JSON.stringify(await doc()))
+    await key("z", { ctrl: true }); await sleep(300)
+    ok("the next Undo takes the item away", (await doc()) === text, JSON.stringify(await doc()))
+  })
+
   await test(`${side}: the empty LAST item's Return keeps the line in the cell; the next arms the bar under the WHOLE cell`, async () => {
     const text = "* hello\n- [ ] Are you\n- [ ] "
     await start(text + "\n\nBelow", text.length)

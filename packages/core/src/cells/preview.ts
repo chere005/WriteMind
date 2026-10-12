@@ -15,7 +15,7 @@ import { openCell, type CellKind } from "./types"
 import { standsAlone } from "./apart"
 import { GAP_HEIGHT, seams, structuralLines, plusTarget, type CellBox, type Seam } from "./seams"
 import { firstCellFromBy, picked } from "./selection"
-import { positioned, type Block } from "../markdown/parser"
+import { listStyleOfLine, positioned, type Block } from "../markdown/parser"
 import { fenced } from "../markdown/formatting"
 import { reminderBox } from "../markdown/sourceStyle"
 import { MARKDOWN_MARKER, escapePlain, unescapePlain } from "../markdown/plainText"
@@ -604,6 +604,24 @@ export function previousReminder(line: Range, text: string): Reminder | null {
 export function nextReminder(line: Range, text: string): Reminder | null {
   if (end(line) >= text.length || !substring(text, line).endsWith("\n")) return null
   return reminderOnLine(lineRange(text, end(line)), text)
+}
+
+/**
+ * The item of ANY list kind on one line (a line range, newline and all): a reminder, a dot, a dash or a number, its
+ * `text` the WORDS after the marker (and the box), an empty range at the end of the line for an item with none yet. Null
+ * for a line that is no item. List lines that touch are one cell whatever they are marked with (Sean, 2026-10-11: "this
+ * should not be two separate cells"), so a reminder's neighbour in its list need not be a reminder: what a Backspace at
+ * the start of its words joins them to, or a Delete at their end pulls up.
+ */
+export function listItemOnLine(line: Range, text: string): { line: Range; text: Range } | null {
+  const reminder = reminderOnLine(line, text)
+  if (reminder) return { line, text: reminder.text }
+  const body = substring(text, line).replace(/\n$/, "")
+  if (listStyleOfLine(body) === null) return null
+  const head = /^[ \t]*(?:[-*+]|\d{1,4}[.)])(?: |$)/.exec(body)
+  if (!head) return null
+  const words = line.location + head[0].length
+  return { line, text: range(words, Math.max(0, line.location + body.length - words)) }
 }
 
 /**

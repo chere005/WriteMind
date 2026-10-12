@@ -12,7 +12,7 @@
 
 import {
   bulletItem, codeTokens, dashItem, drawnRows, fenceLanguage, hiddenInText, fenced, inlineSegments, isMathFence, colouring,
-  isMarkdownMarker, numberedItem, todoItem,
+  isMarkdownMarker, itemNumbers, listStyleOfLine, numberedItem, todoItem,
   type Block, type InlineSegment,
 } from "@writemind/core"
 import { safeSpanStyle } from "../decorations"
@@ -194,11 +194,13 @@ const depthOf = (indent: string): number => {
 
 function listBlock(source: string, context: RenderContext): HTMLElement {
   const holder = make("div", "wm-pv wm-pv-list")
-  let counted = 0
+  const lines = linesOf(source).filter((line) => line.text.trim().length > 0)
+  // Each run of numbered items counts from one (core `itemNumbers`): an item of another kind between two numbered ones
+  // starts the count again, so the number drawn is the one the open cell shows (Sean, 2026-10-11, a list is one cell).
+  const numbers = itemNumbers(lines.map((line) => listStyleOfLine(line.text)))
   let boxes = 0
-  for (const line of linesOf(source)) {
+  for (const [index, line] of lines.entries()) {
     const trimmed = line.text.trim()
-    if (trimmed.length === 0) continue
     const lead = leading(line.text)
     const item = make("div", "wm-pv-li", holder)
     const depth = depthOf(line.text.slice(0, lead))
@@ -222,8 +224,7 @@ function listBlock(source: string, context: RenderContext): HTMLElement {
       if (bullet !== null) { marker = "•"; words = bullet; textAt = lead + 2 }
       else if (dash !== null) { marker = "–"; words = dash; textAt = lead + 2 }
       else if (numbered !== null) {
-        counted += 1
-        marker = `${counted}.`
+        marker = `${numbers[index]}.`
         words = numbered
         const digits = /^[0-9]+/.exec(trimmed)![0].length
         textAt = lead + digits + 2

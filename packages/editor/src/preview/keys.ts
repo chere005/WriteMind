@@ -17,7 +17,7 @@ import {
   standsAlone, touchingRuns, type Edit, type PositionedBlock,
 } from "@writemind/core"
 import { awayField, putAway } from "./away"
-import { furnitureAt, reminderAt } from "./furniture"
+import { furnitureAt, listItemBeside, reminderAt } from "./furniture"
 import { contentEnd, fenceLines, fencePointer, landingOffFence, onFence } from "./fences"
 import { insideHidden } from "../fold"
 import { firstCellReaching } from "../seams"
@@ -84,6 +84,10 @@ export const previewBackspace: Command = (view) => {
  * one above (the only item of a list takes the block with it); in one with words they join the end of the item
  * above, the caret at the seam — and at the top of a list, with nothing to join to, nothing happens (a box is unmade
  * with the list buttons, as on the Mac).
+ *
+ * The item above (or below) is ANY item of the list, not only a reminder: list lines that touch are one cell whatever
+ * they are marked with (Sean, 2026-10-11: "this should not be two separate cells"), so a to-do under a dash joins its
+ * words to the dash's. Asking for a reminder alone left the key doing nothing there.
  */
 const reminderBackspace: Command = (view) => {
   const state = view.state
@@ -92,7 +96,7 @@ const reminderBackspace: Command = (view) => {
   if (!item || main.head !== item.text.location) return false
   const doc = state.doc
   const line = doc.lineAt(main.head)
-  const above = line.number > 1 ? reminderAt(state, doc.line(line.number - 1).from) : null
+  const above = line.number > 1 ? listItemBeside(state, line.from, doc.line(line.number - 1).from) : null
   const apply = (changes: { from: number; to: number; insert?: string }, caret: number, userEvent: string) =>
     view.dispatch({
       changes, selection: EditorSelection.cursor(caret), effects: armSeam.of(null), scrollIntoView: true, userEvent,
@@ -106,7 +110,7 @@ const reminderBackspace: Command = (view) => {
     apply({ from: doc.line(line.number - 1).to, to: line.to }, end(above.text), "delete.preview.item")
     return true
   }
-  const below = line.number < doc.lines ? reminderAt(state, doc.line(line.number + 1).from) : null
+  const below = line.number < doc.lines ? listItemBeside(state, line.from, doc.line(line.number + 1).from) : null
   if (below) {
     // The first item of a list: it goes, and the caret starts the one that takes its place.
     apply({ from: line.from, to: line.to + 1 }, below.text.location - (line.length + 1), "delete.preview.item")
@@ -149,9 +153,10 @@ const furnitureBackspace: Command = (view) => {
 
 /**
  * Delete at the end of a reminder's words joins the next item's words on: the port's mirror of the join above (the
- * editor's own Delete would pull the next box up into these words as text).
+ * editor's own Delete would pull the next box up into these words as text). The next item is any item of the list, a
+ * dash or a number as well as a reminder (one cell whatever its items are marked with, Sean 2026-10-11).
  */
-const reminderDelete: Command = (view) => {
+export const reminderDelete: Command = (view) => {
   if (!on(view) || barUp(view)) return false
   const state = view.state
   const { ranges, main } = state.selection
@@ -160,7 +165,7 @@ const reminderDelete: Command = (view) => {
   if (!item || main.head !== end(item.text)) return false
   const line = state.doc.lineAt(main.head)
   if (line.number >= state.doc.lines) return false
-  const next = reminderAt(state, state.doc.line(line.number + 1).from)
+  const next = listItemBeside(state, line.from, state.doc.line(line.number + 1).from)
   if (!next) return false
   view.dispatch({
     changes: { from: main.head, to: next.text.location },

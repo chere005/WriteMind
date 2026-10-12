@@ -20,7 +20,9 @@
 
 import { EditorSelection, EditorState, StateField, type Extension, type SelectionRange, type Transaction } from "@codemirror/state"
 import { Decoration, EditorView, type DecorationSet } from "@codemirror/view"
-import { cellFurniture, end, firstCellFromBy, outsideFurniture, reminderOnLine, type Range } from "@writemind/core"
+import {
+  cellFurniture, end, firstCellFromBy, isListBlock, listItemOnLine, outsideFurniture, reminderOnLine, type Range,
+} from "@writemind/core"
 import { notebook } from "../notebook"
 import { renderedField } from "../rendered"
 import { armSeam } from "../seams"
@@ -64,6 +66,26 @@ export function reminderAt(state: EditorState, pos: number): ReturnType<typeof r
   if (!found) return null
   const shift = (r: Range): Range => ({ location: r.location + line.from, length: r.length })
   return { line: { location: line.from, length: line.length }, text: shift(found.text), box: found.box + line.from, ticked: found.ticked }
+}
+
+/**
+ * The list item of ANY kind on the line `there`, when it is in the same cell as the line `here` — a reminder, a dot, a
+ * dash or a number (core `listItemOnLine`), its words as offsets in the note; null off the rendered page, in a code cell,
+ * on a line that is no item, or across a cell's edge (a rule written `* * *` touches a list and is no item of it). List
+ * lines that touch are one cell whatever they are marked with (Sean, 2026-10-11: "this should not be two separate
+ * cells"), so the item beside a reminder need not be a reminder.
+ */
+export function listItemBeside(state: EditorState, here: number, there: number): { line: Range; text: Range } | null {
+  if (!on(state)) return null
+  const line = state.doc.lineAt(there)
+  const cells = notebook(state).cells
+  const at = firstCellFromBy(cells, here + 1, (cell) => cell.range) - 1
+  const cell = at >= 0 ? cells[at]! : null
+  if (!cell || !isListBlock(cell.block) || here > end(cell.range)) return null
+  if (line.from < cell.range.location || line.to > end(cell.range)) return null
+  const found = listItemOnLine({ location: 0, length: line.length }, line.text)
+  if (!found) return null
+  return { line: { location: line.from, length: line.length }, text: { location: found.text.location + line.from, length: found.text.length } }
 }
 
 /** A caret put among the furniture of the new document, moved out of it. */

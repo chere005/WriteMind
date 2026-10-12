@@ -135,6 +135,21 @@ export function listStyleOfLine(rest: string): ListStyle | null {
   return null
 }
 
+/**
+ * The number each item of a list is drawn with, by the items' kinds in order: a numbered item's place in its RUN of
+ * numbered items, counted from one, and 0 for an item of any other kind (or a line that is no item). An item of another
+ * kind between two numbered ones starts the count again. Now that touching lists are one cell (Sean, 2026-10-11: "this
+ * should not be two separate cells") that keeps each run numbered as it was while it was a list of its own, and as the
+ * app writes it: Return under a number writes the next one (`listContinuation`), Style ▸ Numbered on one item writes
+ * `1. ` — so the number on the drawn page is the one the open cell shows. Counting on through the whole list made the
+ * number change as the caret left the cell. Indentation is not structure (a flat list): a nested numbered item counts in
+ * the run like any other. The rendered page, the PDF and the Wolfram notebook all ask this, so they cannot disagree.
+ */
+export function itemNumbers(styles: readonly (ListStyle | null)[]): number[] {
+  let counted = 0
+  return styles.map((style) => (style === "numbered" ? ++counted : (counted = 0)))
+}
+
 const trimmed = (line: string): string => line.trim()
 const leadingSpaces = (line: string): string => line.slice(0, line.length - line.trimStart().length)
 
