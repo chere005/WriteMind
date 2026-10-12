@@ -13,6 +13,7 @@
  */
 
 import { range, type Range } from "../../src/text/range"
+import { isEmptyLine, joinedLines } from "../../src/markdown/emptyLine"
 
 export type { Range }
 
@@ -122,6 +123,25 @@ export function blocks(markdown: string): Block[] {
   return positioned(markdown).map((p) => p.block)
 }
 
+/** (2026-10-11) How wide a line's indentation is, in columns (a tab to the next multiple of four). */
+function indentWidth(line: string): number {
+  let width = 0
+  for (const character of line) {
+    if (character === " ") width += 1
+    else if (character === "\t") width += 4 - (width % 4)
+    else break
+  }
+  return width
+}
+
+/** (2026-10-11) The column a list item's words start at: its indentation, its marker and the space after it (one to four). */
+function wordsColumn(rawLine: string): number {
+  const found = /^([ \t]*)([-*+]|\d{1,4}[.)])([ \t]*)/.exec(rawLine)
+  if (!found) return 2
+  const start = indentWidth(found[1]!) + found[2]!.length
+  return start + Math.min(Math.max(indentWidth(found[1]! + " ".repeat(found[2]!.length) + found[3]!) - start, 1), 4)
+}
+
 export function positioned(markdown: string): PositionedBlock[] {
   const out: PositionedBlock[] = []
   let paragraph: string[] = []
@@ -129,6 +149,7 @@ export function positioned(markdown: string): PositionedBlock[] {
   // list lines that touch are ONE list whatever they are marked with. A list of one kind is still that kind's block;
   // a list that mixes kinds is `mixed`. So the four lists are one list of items here.)
   let list: ListItem[] = []
+  let itemColumn = 0
   let quote: string[] = []
   let code: string[] | null = null
   let codeLanguage: string | null = null
@@ -164,7 +185,8 @@ export function positioned(markdown: string): PositionedBlock[] {
       else emit({ kind: "todos", items: list.map((item) => ({ text: item.text, done: item.done })) })
       list = []
     }
-    if (quote.length) { emit({ kind: "quote", text: quote.join(" ") }); quote = [] }
+    // (2026-10-11: a quote's empty line is an empty line of its words.)
+    if (quote.length) { emit({ kind: "quote", text: joinedLines(quote) }); quote = [] }
     blockEnd = kept
   }
 
@@ -274,6 +296,7 @@ export function positioned(markdown: string): PositionedBlock[] {
       if (paragraph.length || quote.length) flush(previousEnd)
       openIfNeeded()
       list.push({ style: "todo", text: todo.text, done: todo.done })
+      itemColumn = wordsColumn(rawLine)
       lineStart += rawLine.length + 1; continue
     }
     // (The rule the frozen parser has been given since, 2026-10-11, like `paragraphsAsOld` for text cells: a marker with
@@ -291,6 +314,7 @@ export function positioned(markdown: string): PositionedBlock[] {
       if (paragraph.length || quote.length) flush(previousEnd)
       openIfNeeded()
       list.push({ style: "dots", text: bullet, done: false })
+      itemColumn = wordsColumn(rawLine)
       lineStart += rawLine.length + 1; continue
     }
     const dash = dashItem(line) ?? (lone === "dashes" ? "" : null)
@@ -298,6 +322,7 @@ export function positioned(markdown: string): PositionedBlock[] {
       if (paragraph.length || quote.length) flush(previousEnd)
       openIfNeeded()
       list.push({ style: "dashes", text: dash, done: false })
+      itemColumn = wordsColumn(rawLine)
       lineStart += rawLine.length + 1; continue
     }
     const number = numberedItem(line) ?? (lone === "numbered" ? "" : null)
@@ -305,6 +330,17 @@ export function positioned(markdown: string): PositionedBlock[] {
       if (paragraph.length || quote.length) flush(previousEnd)
       openIfNeeded()
       list.push({ style: "numbered", text: number, done: false })
+      itemColumn = wordsColumn(rawLine)
+      lineStart += rawLine.length + 1; continue
+    }
+    // (And the rules given it since 2026-10-11 for Ctrl+Enter, Sean: "ctrl + enter adds a newline without leaving the current
+    // cell..": a line indented at least as far as the open list's last item's words, or the empty line a cell keeps (`<br>`),
+    // is that item's next line.)
+    if (list.length > 0
+      && (isEmptyLine(line) || (/^[ \t]/.test(rawLine) && indentWidth(rawLine) >= itemColumn))) {
+      const words = isEmptyLine(line) ? "" : line
+      const last = list[list.length - 1]!
+      list[list.length - 1] = { ...last, text: last.text + "\n" + words }
       lineStart += rawLine.length + 1; continue
     }
     if (list.length || quote.length) flush(previousEnd)

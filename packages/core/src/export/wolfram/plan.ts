@@ -23,6 +23,7 @@ import { isOut } from "../../eval/output"
 import { inkCellId, mediaFiles } from "../../markdown/images"
 import { itemNumbers, listItemsOf, positioned, type Block } from "../../markdown/parser"
 import { inlineSegments } from "../../markdown/sourceStyle"
+import { emptyLinesRead, isEmptyLine } from "../../markdown/emptyLine"
 import { isMathFence } from "../../math/typesetter"
 import { spanDeclarations } from "../inline"
 import { kernelSpelling, mathsCellSource } from "./maths"
@@ -120,6 +121,10 @@ const svgShown = (svg: string): number => {
   return found ? shownAt(Number(found[1])) : 1
 }
 
+/** A list's lines that start its items (an item's next lines left out), in order. */
+const itemLines = (source: string): string[] =>
+  source.split("\n").filter((line, index) => index === 0 || !(/^[ \t]/.test(line) && !/^[ \t]*(?:[-*+]|\d{1,4}[.)])(?:[ \t]|$)/.test(line)) && !isEmptyLine(line))
+
 /** A list item's depth from its source indentation (a tab is four columns): 0, 1 or 2. */
 export function listDepth(line: string): number {
   let width = 0
@@ -212,7 +217,8 @@ class Planner {
 
   /** A run list as a cell's content: one plain string, or `TextData[{…}]`. */
   content(text: string, wrap?: (run: Pieces) => Pieces, lead: string[] = []): Pieces {
-    const { runs, styled, plain } = this.runs(text)
+    // (An empty line a cell keeps, `<br>`, is an empty line of the words: markdown/emptyLine.ts.)
+    const { runs, styled, plain } = this.runs(emptyLinesRead(text))
     if (!styled && !wrap && lead.length === 0) return [wlString(plain)]
     const all: Pieces[] = [...lead.map((one) => [one]), ...(wrap ? runs.map(wrap) : runs)]
     return ["TextData[{", ...all.flatMap((run, index) => (index === 0 ? run : [", ", ...run])), "}]"]
@@ -259,8 +265,9 @@ class Planner {
         return
       case "bullets": case "dashes": case "numbered": case "todos": case "mixed": {
         // Each item as its own kind: a list can mix them, one cell (Sean, 2026-10-11: "this should not be two separate cells").
-        // An item is one line of the list's source (a list ends at the first line that is no item).
-        const lines = source.split("\n")
+        // One line per item: an item's next lines, indented under its words or kept empty, are the item's (Sean, 2026-10-11,
+        // "ctrl + enter adds a newline without leaving the current cell..").
+        const lines = itemLines(source)
         const items = listItemsOf(block)
         const numbers = itemNumbers(items.map((item) => item.style))
         items.forEach((item, index) => {

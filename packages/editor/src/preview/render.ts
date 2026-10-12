@@ -11,8 +11,8 @@
  */
 
 import {
-  bulletItem, codeTokens, dashItem, drawnRows, fenceLanguage, hiddenInText, fenced, inlineSegments, isMathFence, colouring,
-  emptyItem, isMarkdownMarker, itemNumbers, listStyleOfLine, numberedItem, todoItem,
+  bulletItem, codeTokens, dashItem, drawnRows, emptyLineSpan, lineBreakSpan, fenceLanguage, hiddenInText, fenced, inlineSegments, isMathFence,
+  colouring, emptyItem, isMarkdownMarker, itemNumbers, listStyleOfLine, numberedItem, todoItem,
   type Block, type InlineSegment,
 } from "@writemind/core"
 import { safeSpanStyle } from "../decorations"
@@ -111,6 +111,18 @@ function linesOf(source: string): Line[] {
 
 const leading = (text: string): number => text.length - text.trimStart().length
 
+/**
+ * AN EMPTY LINE A CELL KEEPS (`<br>`, core emptyLine.ts; Sean, 2026-10-11: "ctrl + enter adds a newline without leaving the
+ * current cell.."), drawn: a line with nothing on it that still holds its height (a zero-width space: a line break alone at
+ * the end of a block draws no line), and a click on it is a caret at the end of its line — after the `<br>`, where the
+ * caret stands on such a line (editor emptyLines.ts).
+ */
+function emptyLine(parent: HTMLElement, at: number): void {
+  const line = make("span", "wm-pv-t wm-pv-empty", parent)
+  line.dataset.at = String(at)
+  line.textContent = "\u200b"
+}
+
 // MARK: - Kinds
 
 function headingBlock(source: string, context: RenderContext): HTMLElement {
@@ -133,6 +145,8 @@ function textBlock(source: string): HTMLElement {
   const holder = make("div", "wm-pv wm-pv-p wm-pv-text")
   linesOf(source).forEach((line, index) => {
     if (index > 0) holder.appendChild(document.createElement("br"))
+    // (An empty line the cell keeps: nothing of it is drawn but the line.)
+    if (emptyLineSpan(line.text)) { emptyLine(holder, line.start + line.text.length); return }
     let from = 0
     const run = (to: number) => {
       if (to <= from) return
@@ -160,13 +174,33 @@ function paragraphBlock(block: Extract<Block, { kind: "paragraph" }>, source: st
   const holder = make("div", "wm-pv wm-pv-p")
   // (A markdown cell's marker line is not drawn: it is what makes the cell one.)
   const lines = linesOf(source).filter((line) => line.text.trim().length > 0 && !isMarkdownMarker(line.text))
+  // Its lines join as markdown joins them, with a space; an empty line it keeps is an empty line.
+  let words = false
   lines.forEach((line, index) => {
-    if (index > 0) holder.appendChild(document.createTextNode(" "))
+    const kept = emptyLineSpan(line.text)
+    if (kept) {
+      if (index > 0) holder.appendChild(document.createElement("br"))
+      emptyLine(holder, line.start + line.text.length)
+      words = false
+      return
+    }
+    // A line that starts afresh (`<br>` at its head: Ctrl+Enter in a markdown cell, the review of agent/ctrlenter P1): a
+    // line break, never the space a soft one is, and its words without the tag.
+    const broken = lineBreakSpan(line.text)
+    if (broken) {
+      if (index > 0) holder.appendChild(document.createElement("br"))
+      const rest = line.text.slice(broken[1])
+      inline(holder, rest.trim(), line.start + broken[1] + leading(rest), context)
+      words = true
+      return
+    }
+    if (index > 0) holder.appendChild(words ? document.createTextNode(" ") : document.createElement("br"))
     // The first line keeps the spaces it was written with, so an indented
     // paragraph is drawn indented.
     const lead = leading(line.text)
     if (index === 0 && lead > 0) holder.appendChild(document.createTextNode(line.text.slice(0, lead)))
     inline(holder, line.text.trim(), line.start + lead, context)
+    words = true
   })
   return holder
 }
@@ -175,13 +209,34 @@ function quoteBlock(source: string, context: RenderContext): HTMLElement {
   const holder = make("div", "wm-pv wm-pv-quote")
   const body = make("div", "wm-pv-quote-text", holder)
   const lines = linesOf(source).filter((line) => line.text.trim().length > 0)
+  // Its lines join as markdown joins them, with a space; a quote line with nothing on it is an empty line, and one that starts
+  // with `<br>` starts afresh (Ctrl+Enter writes both: Sean, 2026-10-11, "ctrl + enter adds a newline without leaving the
+  // current cell..").
+  let words = false
   lines.forEach((line, index) => {
-    if (index > 0) body.appendChild(document.createTextNode(" "))
     const lead = leading(line.text)
     let at = lead
     if (line.text[at] === ">") at++
     while (line.text[at] === " " || line.text[at] === "\t") at++
-    inline(body, line.text.slice(at).replace(/\s+$/, ""), line.start + at, context)
+    const text = line.text.slice(at).replace(/\s+$/, "")
+    if (text.length === 0 || emptyLineSpan(text)) {
+      if (index > 0) body.appendChild(document.createElement("br"))
+      emptyLine(body, line.start + line.text.length)
+      words = false
+      return
+    }
+    // A quote line that starts afresh (`<br>` at its head, Ctrl+Enter): a line break, and its words without the tag.
+    const broken = lineBreakSpan(text)
+    if (broken) {
+      if (index > 0) body.appendChild(document.createElement("br"))
+      const rest = text.slice(broken[1])
+      inline(body, rest.trim(), line.start + at + broken[1] + leading(rest), context)
+      words = true
+      return
+    }
+    if (index > 0) body.appendChild(words ? document.createTextNode(" ") : document.createElement("br"))
+    inline(body, text, line.start + at, context)
+    words = true
   })
   return holder
 }
@@ -195,13 +250,27 @@ const depthOf = (indent: string): number => {
 function listBlock(source: string, context: RenderContext): HTMLElement {
   const holder = make("div", "wm-pv wm-pv-list")
   const lines = linesOf(source).filter((line) => line.text.trim().length > 0)
+  // Which lines are an item's NEXT lines (core parser: an indented line, or an empty line kept, under an item is that item's —
+  // Sean, 2026-10-11, "ctrl + enter adds a newline without leaving the current cell.."): they go on in the words of the item
+  // drawn last.
+  const nextLine = lines.map((line, index) => index > 0 && listStyleOfLine(line.text) === null
+    && (leading(line.text) > 0 || !!emptyLineSpan(line.text)))
   // Each run of numbered items counts from one (core `itemNumbers`): an item of another kind between two numbered ones
   // starts the count again, so the number drawn is the one the open cell shows (Sean, 2026-10-11, a list is one cell).
-  const numbers = itemNumbers(lines.map((line) => listStyleOfLine(line.text)))
+  const numbers = itemNumbers(lines.filter((_, index) => !nextLine[index]).map((line) => listStyleOfLine(line.text)))
+  let items = 0
   let boxes = 0
+  let lastWords: HTMLElement | null = null
   for (const [index, line] of lines.entries()) {
     const trimmed = line.text.trim()
     const lead = leading(line.text)
+    if (nextLine[index] && lastWords) {
+      lastWords.appendChild(document.createElement("br"))
+      if (emptyLineSpan(line.text)) emptyLine(lastWords, line.start + line.text.length)
+      else inline(lastWords, trimmed, line.start + lead, context)
+      continue
+    }
+    const number = numbers[items++]
     const item = make("div", "wm-pv-li", holder)
     const depth = depthOf(line.text.slice(0, lead))
     if (depth > 0) item.style.paddingLeft = `${8 + depth * 18}px`
@@ -226,7 +295,7 @@ function listBlock(source: string, context: RenderContext): HTMLElement {
       if (bullet !== null) { marker = "•"; words = bullet; textAt = Math.min(lead + 2, line.text.length) }
       else if (dash !== null) { marker = "–"; words = dash; textAt = Math.min(lead + 2, line.text.length) }
       else if (numbered !== null) {
-        marker = `${numbers[index]}.`
+        marker = `${number}.`
         words = numbered
         const digits = /^[0-9]+/.exec(trimmed)![0].length
         textAt = Math.min(lead + digits + 2, line.text.length)
@@ -247,7 +316,10 @@ function listBlock(source: string, context: RenderContext): HTMLElement {
       mark.textContent = marker
     }
     const text = make("span", done ? "wm-pv-li-text wm-pv-done" : "wm-pv-li-text", item)
-    inline(text, words.replace(/\s+$/, ""), line.start + textAt, context)
+    // (An item whose first line is kept empty: the line, and nothing on it.)
+    if (emptyLineSpan(line.text)) emptyLine(text, line.start + line.text.length)
+    else inline(text, words.replace(/\s+$/, ""), line.start + textAt, context)
+    lastWords = text
   }
   return holder
 }

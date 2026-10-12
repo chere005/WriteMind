@@ -17,6 +17,8 @@ export { notebookKeys, wrap, heading, list, listStyleSource, quote, fence, maths
 export { cellsCopied, CELLS_MIME } from "./keys"
 // Text cells and markdown cells (docs/PLAN-text-cells.md): the hidden marker, literal typing, plain copy.
 export { textCells, markerField, hiddenMarkers, plainSelection, redoWaiting } from "./textCells"
+// Ctrl+Enter, the newline that never leaves the cell, and the empty line a cell keeps (`<br>`): part of `textCells`.
+export { emptyLines, newlineInCell, leftOffEmptyLine, emptyLineAt } from "./emptyLines"
 export { codeTypingKeys } from "./codeTyping"
 export { notebookTheme } from "./theme"
 export { textConventions } from "./conventions"

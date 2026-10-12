@@ -208,9 +208,10 @@ Inside a fenced block (2.4.9) every line belongs to the fence until it closes. O
 | 11 | `t` starts with `- ` or `+ `, or `t` is `-` or `+` and is an empty item (2.4.3) | bullet line |
 | 12 | `t` starts with `* `, or `t` is `*` and is an empty item (2.4.3) | dash line |
 | 13 | `t` is 1-4 digits then `. ` or `) `, or 1-4 digits then `.` or `)` alone and is an empty item (2.4.3) | numbered line |
-| 14 | otherwise | paragraph line |
+| 14 | a list (rules 10-13) is open, and the line is indented at least as far as the last item's words (its indentation, its marker and the one to four spaces after it, a tab to the next multiple of four), or is an empty line kept (2.4.11) | the list's last item goes on: the line is that item's next line (2026-10-11) |
+| 15 | otherwise | paragraph line |
 
-A line of rules 9-14 continues the open cell when it is of the same kind and otherwise ends it (so `- a` straight under a paragraph line starts a list, and `# h` straight under a list starts a heading). Rules 10-13 are ONE kind for this, a list: a todo, bullet, dash or numbered line continues an open list of any of them (2.4.3; 2026-10-11). Before rule 14, a BARE MARKER (`t` is exactly `-`, `+`, `*`, or 1-4 digits then `.` or `)`) while a list is open is that list's next item, empty, of the marker's kind (2.4.3); with no list open it is a paragraph line. Rules 2, 5, 6, 7, 8 end the open cell and a table, a fence, a heading, a rule and a picture are each their own cell **even when no blank line separates them** from the cell above or below.
+A line of rules 9-13 and 15 continues the open cell when it is of the same kind and otherwise ends it (so `- a` straight under a paragraph line starts a list, and `# h` straight under a list starts a heading). Rules 10-13 are ONE kind for this, a list: a todo, bullet, dash or numbered line continues an open list of any of them (2.4.3; 2026-10-11). Before rule 14, a BARE MARKER (`t` is exactly `-`, `+`, `*`, or 1-4 digits then `.` or `)`) while a list is open is that list's next item, empty, of the marker's kind (2.4.3); with no list open it is an empty item when written with its space and not straight under a paragraph line (2.4.3), and otherwise a paragraph line. Rules 2, 5, 6, 7, 8 end the open cell and a table, a fence, a heading, a rule and a picture are each their own cell **even when no blank line separates them** from the cell above or below.
 
 A cell's range runs from the first character of its first line to the last character of its last line, without the line break after it. A paragraph's range includes its marker line.
 
@@ -224,8 +225,8 @@ Example: `a`, 2 blank lines, `b`, 3 blank lines, `c` is the cells paragraph `a`,
 
 Only the body-text **paragraph** has two kinds.
 
-- A **markdown cell** is a paragraph whose first line is the marker `<!-- markdown -->` (alone on the line, surrounding white space allowed). Its words are the lines after the marker, joined with one space, read as markdown (2.5). The marker is part of the cell's range: deleting, moving or copying the cell takes it along. It is an HTML comment, so another markdown viewer shows nothing for it.
-- A **text cell** is any other paragraph: its words are its lines exactly as the person typed them, every line break kept, nothing drawn as formatting. The file spells it with the **escape rule**.
+- A **markdown cell** is a paragraph whose first line is the marker `<!-- markdown -->` (alone on the line, surrounding white space allowed). Its words are the lines after the marker, joined with one space, read as markdown (2.5); an empty line kept (2.4.11) is an empty line of the words, and a line that starts with `<br>` starts afresh (2.4.11). The marker is part of the cell's range: deleting, moving or copying the cell takes it along. It is an HTML comment, so another markdown viewer shows nothing for it.
+- A **text cell** is any other paragraph: its words are its lines exactly as the person typed them, every line break kept, nothing drawn as formatting (an empty line kept, 2.4.11, is an empty line of them). The file spells it with the **escape rule**.
 - **Older notes rule.** An unmarked paragraph that contains UNESCAPED markup WriteMind writes (a bold, italic or strike pair; a `<u>`, `<span ...>`, `<mark ...>` or `<a ...>` tag other than the id-only anchors of 2.6.3; a `[..](..)` link; a code span, which includes `wl:` maths) is read as a markdown cell. Readers MUST apply it. Writers write the marker on every markdown cell they write, and MUST NOT add or remove a marker on a cell the person did not edit.
 - Link anchors (2.6) are not markup for this purpose: a text cell that holds them stays a text cell.
 
@@ -269,7 +270,7 @@ as two lines.
 **Bold** joined with _this_ line.
 ```
 
-**2.4.3 Lists.** One item per line, a flat list: indentation in the source is kept and is not structure.
+**2.4.3 Lists.** One item per marker line, a flat list: indentation in the source is kept and is not structure. An item goes on over the lines rule 14 gives it — a line straight under it indented at least as far as its words (an item's next line: its words are the item's, after a line break), or an empty line kept (2.4.11) — as CommonMark's continuation lines do; a line that stands further left ends the list (2026-10-11; before that every line not an item ended it).
 
 A list is ONE cell however its items are marked (2026-10-11; Sean: "this should not be two separate cells"): dots, dashes, numbered and to-do lines (2.4.4) with no blank line between them are one list, and each item keeps its own kind (a dot, a dash, its number, a box). A list of one kind is that kind's list (the parser's `bullets`, `dashes`, `numbered`, `todos`); a list that mixes kinds is `mixed`, its items each with a kind. A numbered item is DRAWN with its place in its run of numbered items, counted from one: an item of any other kind between two numbered ones starts the count again (indentation does not matter, the list is flat). That is how each run was drawn while it was a cell of its own, and what writers write (the item after `2. ` is `3. `; a list command on one item writes `1. `). A blank line between two lists makes two cells. Note: a reader written before this reads such a list as one cell per run of one kind, touching; the text is the same.
 
@@ -322,7 +323,7 @@ An unknown reader shows a picture, or nothing, and preserves the line.
 - Body rows: while a line has an unescaped `|` and starts no other block (a list item, quote, heading, fence, rule or picture). `\|` is a pipe inside a cell; the pipes at the two ends are optional.
 - A short row is padded and a long one is cut to the header's width **in what is shown**; the source line is preserved.
 
-**2.4.8 Quote.** Lines starting with `>`; the words are what follows `>`, trimmed, joined with a space.
+**2.4.8 Quote.** Lines starting with `>`; the words are what follows `>`, trimmed, joined with a space; a quote line with nothing after its `>` (or only `<br>`, 2.4.11) is an empty line of the words (CommonMark's paragraph break inside a quote), and a quote line whose words start with `<br>` starts afresh (2.4.11; 2026-10-11).
 
 ```text
 > a quote
@@ -365,6 +366,21 @@ An **answer cell** is found by position: the cell after an evaluation cell, blan
 An unknown reader keeps the whole fence, info string and body.
 
 **2.4.10 Blank cell.** 2.2.
+
+**2.4.11 Empty line kept in a cell** (2026-10-11; Sean: "ctrl + enter adds a newline without leaving the current cell.."). A blank line ends a cell, so an EMPTY line inside a paragraph (a text or markdown cell) or a list item is written as `<br>` alone on its line: after a list item's head (its indentation, or its marker and box when it is the item's first line), with nothing after it but spaces. Readers also take `<br/>`, `<br />` and any case; writers write `<br>`. It is part of the cell (rule 14 for a list; a paragraph line otherwise), its words read it as an empty line, and WriteMind draws nothing for it. It is never what typing writes: in a text cell a typed `<br>` is escaped (`\<br>`, 2.3), and in a markdown cell `<br>` alone already is a line break. Another markdown viewer reads it as the line break it is (inside a paragraph or an item), or as nothing (at the end of one). In a quote it stands after the `> ` (`> <br>` is an empty line of the quote, as `>` alone is: 2.4.8); not in a fence, whose lines are kept raw.
+
+**A line that starts afresh** (2026-10-11, the review of agent/ctrlenter). In a markdown cell and a quote a single line break is a space (2.5, 2.4.8), so a line Ctrl+Enter starts there begins with the same `<br>`, words after it: `first\n<br>second` is two lines, "first" and "second", where `first\nsecond` is one, "first second". The `<br>` stands at the head of the line (after a quote's `> `), WriteMind draws nothing for it, and another markdown viewer draws the same two lines (the tag is a line break; the newline before it a space at a line's end). In a text cell, whose every line is a line already, a `<br>` at a line's head before words is read as nothing and is not written there (a text cell made from such a markdown cell or quote loses it); in a list item it is not written either.
+
+```text
+first line
+<br>
+after an empty line, still the same text cell
+
+- an item
+  <br>
+  its next line, after an empty one
+- the next item
+```
 
 ### 2.5 Inline markup
 
@@ -426,6 +442,7 @@ Precedence (what covers what): fenced bodies first, then double-backtick spans, 
 
 - One blank line above and below every cell it writes, none doubled, none at the start or end of the note; except that a line break alone is enough where the parser already ends the cell (2.2). Pasted cells, new cells, an answer cell and a duplicate follow the same rule.
 - A new markdown cell: marker first. A new text cell: the escape rule.
+- An empty line inside a paragraph or a list item: `<br>` (2.4.11), a list item's indented under its words; an item's next line indented under its words too.
 - Everything else as the tables above say it.
 
 ### 2.8 Example `note.mdwm`

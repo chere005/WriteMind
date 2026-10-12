@@ -166,6 +166,7 @@ export function buildMenu(options: MenuOptions): MenuItemConstructorOptions[] {
     SEPARATOR,
     item("splitCell", "Split Cell", { enabled: state.hasNote }),
     item("mergeCells", "Merge Cells", { enabled: state.hasNote }),
+    item("newlineInCell", "New Line in Cell", { enabled: state.hasNote }),
     SEPARATOR,
     item("duplicateCell", "Duplicate Cell", { enabled: state.hasNote }),
     // The Mac's order: a divider, then ⌘9 Evaluation Cell above Delete Cell (WriteMindApp.swift FormatMenu).

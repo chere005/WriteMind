@@ -13,7 +13,7 @@
 import { EditorSelection, Prec, type Extension, type StateEffect } from "@codemirror/state"
 import { EditorView, keymap, type Command } from "@codemirror/view"
 import {
-  apartAbove, backspaceInEmptyBlock, end, furnitureBehind, minimalChange, outdentForBackspace, returnInBlock, staysClosed,
+  apartAbove, backspaceInEmptyBlock, end, furnitureBehind, itemOfLine, minimalChange, outdentForBackspace, returnInBlock, staysClosed,
   standsAlone, touchingRuns, type Edit, type PositionedBlock,
 } from "@writemind/core"
 import { awayField, putAway } from "./away"
@@ -96,18 +96,22 @@ const reminderBackspace: Command = (view) => {
   if (!item || main.head !== item.text.location) return false
   const doc = state.doc
   const line = doc.lineAt(main.head)
-  const above = line.number > 1 ? listItemBeside(state, line.from, doc.line(line.number - 1).from) : null
+  const prev = line.number > 1 ? doc.line(line.number - 1) : null
+  const above = prev ? listItemBeside(state, line.from, prev.from) : null
+  // The item above ends on a next line of its own (Ctrl+Enter's, core itemLines.ts; 2026-10-11): it ends there.
+  const carried = !above && prev && (itemOfLine(notebook(state).cells, doc, prev.number)?.first ?? prev.number) !== prev.number
+  const aboveEnd = above ? end(above.text) : carried ? prev!.to : null
   const apply = (changes: { from: number; to: number; insert?: string }, caret: number, userEvent: string) =>
     view.dispatch({
       changes, selection: EditorSelection.cursor(caret), effects: armSeam.of(null), scrollIntoView: true, userEvent,
     })
   if (item.text.length > 0) {
-    if (above) apply({ from: end(above.text), to: main.head }, end(above.text), "delete.preview.join")
+    if (aboveEnd !== null) apply({ from: aboveEnd, to: main.head }, aboveEnd, "delete.preview.join")
     return true
   }
-  if (above) {
+  if (aboveEnd !== null) {
     // The line goes with the newline in front of it, so the last item of a note leaves no empty line behind.
-    apply({ from: doc.line(line.number - 1).to, to: line.to }, end(above.text), "delete.preview.item")
+    apply({ from: prev!.to, to: line.to }, aboveEnd, "delete.preview.item")
     return true
   }
   const below = line.number < doc.lines ? listItemBeside(state, line.from, doc.line(line.number + 1).from) : null
@@ -162,8 +166,10 @@ export const reminderDelete: Command = (view) => {
   const { ranges, main } = state.selection
   if (ranges.length !== 1 || !main.empty) return false
   const item = reminderAt(state, main.head)
-  if (!item || main.head !== end(item.text)) return false
   const line = state.doc.lineAt(main.head)
+  // (Or the end of a to-do's next line, Ctrl+Enter's: the to-do ends there. core itemLines.ts, 2026-10-11.)
+  const carried = !item && main.head === line.to && (itemOfLine(notebook(state).cells, state.doc, line.number)?.first ?? line.number) !== line.number
+  if (!carried && (!item || main.head !== end(item.text))) return false
   if (line.number >= state.doc.lines) return false
   const next = listItemBeside(state, line.from, state.doc.line(line.number + 1).from)
   if (!next) return false

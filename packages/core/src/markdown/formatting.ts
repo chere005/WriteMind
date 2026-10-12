@@ -12,7 +12,8 @@ import {
   clamped, edit, end, lineRange, range, replacing, substring,
   type Edit, type Range,
 } from "../text/range"
-import { numberedItem, todoItem } from "./parser"
+import { linesOf, numberedItem, positioned, todoItem, type LineSource, type PositionedBlock } from "./parser"
+import { lineBreakSpan } from "./emptyLine"
 import { cellSpacing } from "../cells/apart"
 import { keepingHalves } from "../cells/textCells"
 
@@ -172,9 +173,10 @@ export function prefixLength(line: string): number {
  * Rewrite every line the selection touches. A selection keeps the whole block
  * selected; a caret moves by however much its own line shifted.
  */
-function rewriteLines(text: string, selection: Range, transform: (line: string) => string): Edit {
+function rewriteLines(text: string, selection: Range, transform: (line: string) => string, cover?: Range): Edit {
   const where = clamped(selection, text.length)
-  let block = lineRangeCovering(text, where)
+  // (`cover`: the lines to rewrite when they are more than the selection's — a list item's next lines, `toggleList`.)
+  let block = lineRangeCovering(text, cover ? clamped(cover, text.length) : where)
   let body = substring(text, block)
   let trailingNewline = ""
   if (body.endsWith("\n")) {
@@ -191,8 +193,10 @@ function rewriteLines(text: string, selection: Range, transform: (line: string) 
     const caretOnThisLine = where.length === 0
       && where.location - block.location >= offset
       && where.location - block.location <= offset + line.length
+    const before = where.length === 0 && where.location - block.location > offset + line.length
     const next = transform(line)
-    if (caretOnThisLine) caretDelta = next.length - line.length
+    // (The lines above the caret's, rewritten too when `cover` reached above it, move it by what they gained.)
+    if (caretOnThisLine || before) caretDelta += next.length - line.length
     rewritten.push(next)
     offset += line.length + 1
   }
@@ -299,23 +303,89 @@ export function toggleQuote(text: string, selection: Range): Edit {
  * Make every line the selection touches an item in `style`, whatever list it
  * was in before; when they all already are, take the markers away — so the
  * button toggles, like the others.
+ *
+ * A LIST ITEM'S NEXT LINES (Ctrl+Enter writes them, Sean 2026-10-11: "ctrl + enter adds a newline without leaving the
+ * current cell.."; the review of agent/ctrlenter, P2) are not items: they stay under their item's words, re-indented under
+ * its new marker (a `1. ` is wider than a `- `), and with the markers taken away they are the paragraph's next lines. The
+ * lines rewritten are whole items: an item's next lines go with it, and a selection that starts on one starts at its item.
  */
 export function toggleList(text: string, selection: Range, style: ListStyle): Edit {
-  let block = lineRangeCovering(text, clamped(selection, text.length))
+  const where = clamped(selection, text.length)
+  const items = wholeItems(text, where)
+  let block = lineRangeCovering(text, items ?? where)
   let body = substring(text, block)
   if (body.endsWith("\n")) { body = body.slice(0, -1); block = range(block.location, block.length - 1) }
-  const nonEmpty = body.split("\n").filter((line) => !blank(line))
+  const lines = body.split("\n")
+  const carried = items ? nextLinesOfItems(text, block, lines) : lines.map(() => false)
+  const nonEmpty = lines.filter((line, i) => !blank(line) && !carried[i])
   const allStyled = nonEmpty.length > 0 && nonEmpty.every((line) => listMatches(style, dropIndent(line)))
 
   let number = 0
-  return rewriteLines(text, selection, (line) => {
+  let index = -1
+  // Where an item's next lines stand: under its words, as its marker is now.
+  let under = ""
+  return rewriteLines(text, where, (line) => {
+    index += 1
     const indent = leadingWhitespace(line)
     const rest = line.slice(indent.length)
-    if (allStyled) return indent + stripListMarker(rest)
+    if (carried[index]) return under + rest
+    if (allStyled) { under = indent; return indent + stripListMarker(rest) }
     if (rest.length === 0 && nonEmpty.length > 0) return line
     number += 1
-    return indent + listMarker(style, number) + stripListMarker(rest)
-  })
+    const marker = listMarker(style, number)
+    under = indent + " ".repeat(marker.length)
+    return indent + marker + withoutLineBreak(stripListMarker(rest))
+  }, items ?? undefined)
+}
+
+/**
+ * Words with the `<br>` a markdown cell's or a quote's line starts afresh with (Ctrl+Enter) taken off: an item is a line of
+ * its own already. An empty line's `<br>` stays (`- <br>`: an item with nothing on its line).
+ */
+function withoutLineBreak(words: string): string {
+  const span = lineBreakSpan(words)
+  return span && span[0] === 0 && words.slice(span[1]).trim().length > 0 ? words.slice(span[1]) : words
+}
+
+/** A line that is a list item of its own: a marker and a space (or nothing) after it. */
+const ITEM_LINE = /^[ \t]*(?:[-*+]|\d{1,4}[.)])(?:[ \t]|$)/
+
+/** Whether line `number` of `doc` is a list item's next line (no marker of its own, in a list cell: the parser's reading). */
+function isNextLine(cells: readonly PositionedBlock[], doc: LineSource, number: number): boolean {
+  const line = doc.line(number)
+  if (blank(line.text) || ITEM_LINE.test(line.text)) return false
+  const cell = cells.find((one) => line.from >= one.range.location && line.from <= end(one.range))
+  return cell !== undefined && LIST_KINDS.has(cell.block.kind)
+}
+const LIST_KINDS = new Set(["bullets", "dashes", "numbered", "todos"])
+
+/**
+ * The lines from the item `where` starts in to the last next line of the item it ends in — or null when there is no
+ * item's next line about (the note as it always was, read without the parser).
+ */
+function wholeItems(text: string, where: Range): Range | null {
+  const stop = end(where)
+  // (A cheap first look: no line of the note is indented or holds a `<br>`.)
+  if (!/\n[ \t]|<br/i.test(text)) return null
+  const cells = positioned(text)
+  const doc = linesOf(text)
+  let first = doc.lineAt(where.location).number
+  let last = doc.lineAt(Math.max(where.location, stop - (where.length > 0 && text[stop - 1] === "\n" ? 1 : 0))).number
+  const touches = (n: number) => isNextLine(cells, doc, n)
+  let any = false
+  for (let n = first; n <= last; n++) if (touches(n)) { any = true; break }
+  while (first > 1 && touches(first)) { first--; any = true }
+  while (last < doc.lines && touches(last + 1)) { last++; any = true }
+  if (!any) return null
+  return range(doc.line(first).from, doc.line(last).to - doc.line(first).from)
+}
+
+/** Which of `lines` (the lines of `block`, in order) are a list item's next lines. */
+function nextLinesOfItems(text: string, block: Range, lines: readonly string[]): boolean[] {
+  const cells = positioned(text)
+  const doc = linesOf(text)
+  const first = doc.lineAt(block.location).number
+  return lines.map((_line, i) => isNextLine(cells, doc, first + i))
 }
 
 /**

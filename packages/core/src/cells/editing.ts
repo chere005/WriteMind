@@ -14,7 +14,8 @@ import {
 } from "../text/range"
 import { linesOf, positioned, todoItem, type PositionedBlock } from "../markdown/parser"
 import { lineRangeCovering } from "../markdown/formatting"
-import { cellWordsStart, escapePlain } from "../markdown/plainText"
+import { cellWordsStart, escapePlainKeeping } from "../markdown/plainText"
+import { lineBreakSpan } from "../markdown/emptyLine"
 import { growth } from "./growth"
 import { sectionContaining, sections } from "./outline"
 import { isMarkdownCell, isTextCell, keepingHalves, markerLength } from "./textCells"
@@ -85,6 +86,17 @@ export function removeBlock(markdown: string, at: Range): { markdown: string; pr
  * the list instead of adding to it.
  */
 export function listContinuation(line: string): string | null {
+  const next = nextItemHead(line)
+  if (next === null) return null
+  return next.words.trim().length === 0 ? "" : next.head
+}
+
+/**
+ * The head the item after `line` starts with — its indentation, its marker (the next number; a task unticked), and the
+ * space after it — and `line`'s own words; null when `line` is no list item or quote line. `listContinuation` without
+ * the empty item's rule: an item whose words are on its next lines (Ctrl+Enter, `itemLines.ts`) is carried on too.
+ */
+export function nextItemHead(line: string): { head: string; words: string } | null {
   const indent = /^[ \t]*/.exec(line)![0]
   const rest = line.slice(indent.length)
 
@@ -93,11 +105,11 @@ export function listContinuation(line: string): string | null {
   const task = todoItem(rest)
   if (task) {
     const marker = rest.slice(0, 2)
-    return task.text.length === 0 ? "" : indent + marker + "[ ] "
+    return { head: indent + marker + "[ ] ", words: task.text }
   }
   for (const marker of ["- ", "* ", "+ ", "> "]) {
     if (!rest.startsWith(marker)) continue
-    return rest.slice(marker.length).trim().length === 0 ? "" : indent + marker
+    return { head: indent + marker, words: rest.slice(marker.length) }
   }
 
   const digits = /^[0-9]{1,4}/.exec(rest)?.[0] ?? ""
@@ -105,8 +117,7 @@ export function listContinuation(line: string): string | null {
     const afterDigits = rest.slice(digits.length)
     for (const marker of [". ", ") "]) {
       if (!afterDigits.startsWith(marker)) continue
-      if (afterDigits.slice(2).trim().length === 0) return ""
-      return indent + String(Number(digits) + 1) + marker
+      return { head: indent + String(Number(digits) + 1) + marker, words: afterDigits.slice(2) }
     }
   }
   return null
@@ -165,15 +176,46 @@ export function splitCell(text: string, selection: Range): Edit | null {
   const words = cellWordsStart(cell.block, cell.range)
   let start = caret
   let stop = caret
-  while (start > words && isBlankChar(text[start - 1])) start--
   const cellEnd = end(cell.range)
-  while (stop < cellEnd && isBlankChar(text[stop])) stop++
+  // So does an empty line the cell keeps there, and the `<br>` a line that starts afresh begins with (Ctrl+Enter, Sean
+  // 2026-10-11: "ctrl + enter adds a newline without leaving the current cell.."; the review of agent/ctrlenter, P3): the
+  // break between the two cells is the one blank line, and neither cell ends or starts with a line nobody can see.
+  for (;;) {
+    while (start > words && isBlankChar(text[start - 1])) start--
+    const kept = breakOnLine(text, start)
+    if (start > words && kept && kept.from >= words && start === kept.from + kept.span[1]) { start = kept.from; continue }
+    break
+  }
+  for (;;) {
+    while (stop < cellEnd && isBlankChar(text[stop])) stop++
+    const kept = breakOnLine(text, stop)
+    if (stop < cellEnd && kept && stop === kept.from + kept.span[0]) {
+      stop = Math.min(kept.alone ? kept.to : kept.from + kept.span[1], cellEnd)
+      continue
+    }
+    break
+  }
 
   const head = start > words ? text.slice(words, start) : ""
   const tail = text.slice(stop, cellEnd)
   if (head.trim().length === 0 || tail.trim().length === 0) return null
 
   return keepingHalves(text, edit(range(start, stop - start), "\n\n", range(start + 1, 0)))
+}
+
+/**
+ * The `<br>` at the head of the line `at` is on (`lineBreakSpan`) when nothing but indentation stands before it — an empty
+ * line a text cell, a markdown cell or a list keeps, or a markdown cell's line that starts afresh; never an item's own
+ * line (`- <br>`, whose marker is no white space) — with where the line is.
+ */
+function breakOnLine(text: string, at: number): { from: number; to: number; span: [number, number]; alone: boolean } | null {
+  const from = text.lastIndexOf("\n", at - 1) + 1
+  const eol = text.indexOf("\n", from)
+  const to = eol < 0 ? text.length : eol
+  const line = text.slice(from, to)
+  const span = lineBreakSpan(line)
+  if (!span || line.slice(0, span[0]).trim().length > 0) return null
+  return { from, to, span, alone: line.slice(span[1]).trim().length === 0 }
 }
 
 /**
@@ -212,7 +254,8 @@ export function mergeCells(text: string, selection: Range): Edit | null {
   const words = Math.min(second.range.location + head, text.length)
   if (isTextCell(first.block) && isMarkdownCell(second.block)) {
     const stop = Math.max(end(second.range), words)
-    const literal = escapePlain(text.slice(words, Math.max(words, end(second.range))))
+    // (An empty line the markdown cell keeps, `<br>`, is one in the text cell too: escapePlainKeeping.)
+    const literal = escapePlainKeeping(text.slice(words, Math.max(words, end(second.range))))
     return edit(range(seam, stop - seam), "\n" + literal, range(seam + 1, 0))
   }
   return edit(range(seam, Math.max(0, words - seam)), "\n", range(seam + 1, 0))

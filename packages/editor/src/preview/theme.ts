@@ -66,7 +66,11 @@ export const previewTheme = EditorView.theme({
     borderRadius: "3px",
     border: "1px solid var(--wm-faint)",
     cursor: "pointer",
-    alignSelf: "center",
+    // On the item's FIRST line, wherever its words go on to (a long item that wraps, an item's next line: Sean, 2026-10-11,
+    // "ctrl + enter adds a newline without leaving the current cell.."): the line is 15px set at 1.45, the box 15px with its
+    // border, so it stands (21.75 - 15) / 2 down. It used to be centred on the whole item.
+    alignSelf: "flex-start",
+    marginTop: "3.4px",
     color: "#fff",
   },
   ".wm-pv-box-done": { backgroundColor: "var(--wm-accent)", borderColor: "var(--wm-accent)" },

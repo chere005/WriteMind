@@ -17,6 +17,7 @@ import { inkCellId, mediaFile, pictureLine } from "./images"
 import { delimiterAligns, hasPipe, headerCells, tableOf, type TableAlign } from "./table"
 import { isMarkdownMarker, looksMarkdown, plainLine } from "./plainText"
 import type { ListStyle } from "./formatting"
+import { isEmptyLine, joinedLines } from "./emptyLine"
 
 export type { Range }
 
@@ -266,6 +267,30 @@ function continuesTable(line: string): boolean {
     && dashItem(line) === null && numberedItem(line) === null
 }
 
+/** How wide `line`'s indentation is, in columns (a tab to the next multiple of four). */
+function indentWidth(line: string): number {
+  let width = 0
+  for (const character of line) {
+    if (character === " ") width += 1
+    else if (character === "\t") width += 4 - (width % 4)
+    else break
+  }
+  return width
+}
+
+/**
+ * The column a list item's words start at — its indentation, its marker and the space after it (one to four; a box is
+ * words, as CommonMark has it) — the least a line under it is indented to be its next line.
+ */
+function wordsColumn(rawLine: string): number {
+  const found = /^([ \t]*)([-*+]|\d{1,4}[.)])([ \t]*)/.exec(rawLine)
+  if (!found) return 2
+  const start = indentWidth(found[1]!) + found[2]!.length
+  // (The spaces after the marker in columns: a tab there goes to the next multiple of four, as Ctrl+Enter's indentation does.)
+  const spaces = indentWidth(found[1]! + " ".repeat(found[2]!.length) + found[3]!) - start
+  return start + Math.min(Math.max(spaces, 1), 4)
+}
+
 /**
  * The parser as a MACHINE that is fed one line at a time. The whole-document `positioned` feeds it every line; the
  * incremental `positionedUpdate` starts it at the beginning of the block an edit touched and stops it as soon as it
@@ -282,6 +307,8 @@ class Machine {
   private paraHead = 0
   /** The open list's items, each its own kind: list lines that touch are one list (`mixed`, Sean 2026-10-11). */
   private list: ListItem[] = []
+  /** The column the open list's last item's words start at (`wordsColumn`): a line indented that far is the item's. */
+  private itemColumn = 0
   private quote: string[] = []
   private code: string[] | null = null
   private codeLanguage: string | null = null
@@ -331,7 +358,8 @@ class Machine {
       const words = marked ? this.paragraph.slice(1) : this.paragraph
       if (marked || looksMarkdown(this.paraRaw)) {
         const head = Math.min(this.paraHead, this.blockEnd - this.blockStart + 1)
-        this.emit(marked ? { kind: "paragraph", text: words.join(" "), markdown: true, head } : { kind: "paragraph", text: words.join(" "), markdown: true })
+        // (An empty line the cell keeps, `<br>`, is an empty line of its words: emptyLine.ts.)
+        this.emit(marked ? { kind: "paragraph", text: joinedLines(words), markdown: true, head } : { kind: "paragraph", text: joinedLines(words), markdown: true })
       } else {
         this.emit({ kind: "paragraph", text: this.paraRaw.map(plainLine).join("\n") })
       }
@@ -340,7 +368,8 @@ class Machine {
       this.paraMarked = false
     }
     if (this.list.length) { this.emit(listBlockOf(this.list)); this.list = [] }
-    if (this.quote.length) { this.emit({ kind: "quote", text: this.quote.join(" ") }); this.quote = [] }
+    // (A quote's empty line is an empty line of its words, as Ctrl+Enter makes one: emptyLine.ts `joinedLines`.)
+    if (this.quote.length) { this.emit({ kind: "quote", text: joinedLines(this.quote) }); this.quote = [] }
     if (this.table !== null) {
       const parts = tableOf(this.table)
       if (parts) this.emit({ kind: "table", header: parts.header, align: parts.align, rows: parts.rows })
@@ -380,10 +409,11 @@ class Machine {
   }
 
   /** A list item: it joins the open list, whatever kinds that holds; a paragraph or a quote that is open ends first. */
-  private listItem(item: ListItem, previousEnd: number): void {
+  private listItem(item: ListItem, previousEnd: number, rawLine: string): void {
     if (this.paragraph.length || this.quote.length) this.flush(previousEnd)
     this.openIfNeeded()
     this.list.push(item)
+    this.itemColumn = wordsColumn(rawLine)
   }
 
   /** Whether the line just fed (it began at `at`) opened a block of its own rather than joining the one before. */
@@ -535,7 +565,7 @@ class Machine {
     // would otherwise be a bullet whose words are a box.
     const todo = todoItem(line)
     if (todo) {
-      this.listItem({ style: "todo", text: todo.text, done: todo.done }, previousEnd)
+      this.listItem({ style: "todo", text: todo.text, done: todo.done }, previousEnd, rawLine)
       this.lineStart += size; return
     }
     // A marker with nothing after it is an item of its list with no words yet (`emptyItem`; Sean, 2026-10-11): straight under
@@ -548,17 +578,28 @@ class Machine {
     const empty = marker !== null && (this.list.length > 0 || this.startsEmptyList(rawLine)) ? marker : null
     const bullet = bulletItem(line) ?? (empty === "bullets" ? "" : null)
     if (bullet !== null) {
-      this.listItem({ style: "dots", text: bullet, done: false }, previousEnd)
+      this.listItem({ style: "dots", text: bullet, done: false }, previousEnd, rawLine)
       this.lineStart += size; return
     }
     const dash = dashItem(line) ?? (empty === "dashes" ? "" : null)
     if (dash !== null) {
-      this.listItem({ style: "dashes", text: dash, done: false }, previousEnd)
+      this.listItem({ style: "dashes", text: dash, done: false }, previousEnd, rawLine)
       this.lineStart += size; return
     }
     const number = numberedItem(line) ?? (empty === "numbered" ? "" : null)
     if (number !== null) {
-      this.listItem({ style: "numbered", text: number, done: false }, previousEnd)
+      this.listItem({ style: "numbered", text: number, done: false }, previousEnd, rawLine)
+      this.lineStart += size; return
+    }
+    // A LINE OF THE ITEM ABOVE (Sean, 2026-10-11: "ctrl + enter adds a newline without leaving the current cell.."): under an
+    // open list, a line that opens nothing of its own and is indented AT LEAST AS FAR AS THE LAST ITEM'S WORDS — or the empty
+    // line a cell keeps (`<br>`, emptyLine.ts) — is that item's next line (CommonMark's continuation line), and the list goes
+    // on. Ctrl+Enter in an item writes one, under the item's words (cells/lineInCell.ts). It used to end the list, the line a
+    // paragraph touching it — and still does when it stands left of the item's words (the review of agent/ctrlenter: notes
+    // written elsewhere are re-read only where CommonMark reads them the same way).
+    if (this.list.length > 0
+      && (isEmptyLine(line) || (rawLine.length > 0 && indentWidth(rawLine) >= this.itemColumn && /^[ \t]/.test(rawLine)))) {
+      this.carryItemOn(isEmptyLine(line) ? "" : line)
       this.lineStart += size; return
     }
     if (this.list.length || this.quote.length) this.flush(previousEnd)
@@ -574,6 +615,13 @@ class Machine {
     this.paraRaw.push(rawLine.endsWith("\r") ? rawLine.slice(0, -1) : rawLine)
     this.lineStart += size
   }
+
+  /** A line carried onto the open list's last item: its words on a line of their own (`""`: an empty line it keeps). */
+  private carryItemOn(words: string): void {
+    const last = this.list[this.list.length - 1]!
+    this.list[this.list.length - 1] = { ...last, text: last.text + "\n" + words }
+  }
+
 
   /** The end of the text: an unclosed fence still renders as code, the open block is closed, a trailing blank run is counted. */
   finish(): PositionedBlock[] {

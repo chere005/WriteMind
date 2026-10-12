@@ -7,6 +7,7 @@
  */
 
 import { isMarkdownMarker, plainLine, unescapeLine } from "../markdown/plainText"
+import { isEmptyLine, lineBreakSpan } from "../markdown/emptyLine"
 import { positioned } from "../markdown/parser"
 
 export interface Note {
@@ -70,15 +71,19 @@ export function makeNote(path: string, modified: number, contents: string): Note
 
   for (let index = 0; index < lines.length; index++) {
     const line = lines[index]!.trim()
-    // A markdown cell's marker is not words (docs/PLAN-text-cells.md); a text cell's escapes are not drawn.
-    if (line.length === 0 || isMarkdownMarker(line)) continue
+    // A markdown cell's marker is not words (docs/PLAN-text-cells.md); a text cell's escapes are not drawn; an empty line a
+    // cell keeps (`<br>`, markdown/emptyLine.ts) is an empty line.
+    if (line.length === 0 || isMarkdownMarker(line) || isEmptyLine(line)) continue
     if (title === null && line.startsWith("#")) {
       title = line.replace(/^#+/, "").trim()
       continue
     }
     if (snippetLines.length >= 2) continue
-    // A text cell's line as typed (its escapes and Link Here's anchors hidden); anything else with its markup off.
-    snippetLines.push(plain.has(index) ? plainLine(line) : stripInlineMarkup(unescapeLine(line)))
+    // A text cell's line as typed (its escapes and Link Here's anchors hidden); anything else with its markup off (and the
+    // `<br>` a line that starts afresh begins with: Ctrl+Enter in a markdown cell or a quote).
+    const broken = plain.has(index) ? null : lineBreakSpan(line)
+    const words = broken ? line.slice(0, broken[0]) + line.slice(broken[1]) : line
+    snippetLines.push(plain.has(index) ? plainLine(line) : stripInlineMarkup(unescapeLine(words)))
   }
 
   return {

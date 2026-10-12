@@ -76,6 +76,8 @@ describe("the quick reference's keys come from the command table", () => {
     expect(both("Bold / Italic / Underline")).toEqual(["Ctrl+B / I / U", "⌘B / I / U"])
     expect(both("Indent / Outdent")).toEqual(["Ctrl+] / Ctrl+[", "⌘] / ⌘["])
     expect(both("Split / Merge cell")).toEqual(["Ctrl+D / Ctrl+M", "⌃D / ⌃M"])
+    // Sean, 2026-10-11: "ctrl + enter adds a newline without leaving the current cell..".
+    expect(both("New line in the cell")).toEqual(["Ctrl+Enter", "⌘↩"])
     expect(both("Move cell up / down")).toEqual(["Ctrl+Shift+↑ / ↓", "⌃⇧↑ / ↓"])
     expect(both("Move section up / down")).toEqual(["Ctrl+↑ / ↓", "⌃⌘↑ / ↓"])
     expect(both("Run the cell")).toEqual(["Shift+Enter", "⇧↩"])
@@ -140,7 +142,7 @@ describe("the quick reference's keys come from the command table", () => {
     const text = welcomeNote(process.platform)
     expect(text.startsWith("# WriteMind Quick Reference\n")).toBe(true)
     for (const name of [
-      "Cells", "Lists", "Mixed lists", "Text and markdown cells", "Maths cells", "Tables", "Rendered page", "Toolbar", "Pen", "Tabs", "Move tabs", "Search notes", "Sidebar", "Undo",
+      "Cells", "Lists", "Mixed lists", "Text and markdown cells", "New line in a cell", "Maths cells", "Tables", "Rendered page", "Toolbar", "Pen", "Tabs", "Move tabs", "Search notes", "Sidebar", "Undo",
       "Drawing", "Runnable cells", "Language Setup", "Video pane", "Read words", "Pane tabs", "Wacom tablet", "Mathematica", "Wacom pen buttons", "Notes are files", "Updates", "About",
     ]) {
       expect(WELCOME_FEATURES.some((one) => one.startsWith(`**${name}:**`)), name).toBe(true)
@@ -191,6 +193,8 @@ describe("the feature list is true to the source", () => {
       ["Text and markdown cells", "Ctrl+7", "heading:0"], ["Text and markdown cells", "Ctrl+Shift+7", "markdownCell"],
       ["Maths cells", "Ctrl+9", "mathsCell"], ["Maths cells", "Ctrl+Shift+M", "insertMath"], ["Rendered page", "Ctrl+T", "toggleMode"],
       ["Drawing", "Ctrl+0", "insertInkCell"],
+      // Sean, 2026-10-11: "ctrl + enter adds a newline without leaving the current cell..".
+      ["New line in a cell", "Ctrl+Enter", "newlineInCell"],
     ]
     for (const [lead, key, id] of means) {
       expect(features(lead), `${lead} names ${key}`).toContain(key)
