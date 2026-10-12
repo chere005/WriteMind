@@ -13,7 +13,7 @@
  */
 
 import { edit, end, lineRange, range, replacing, type Edit, type Range } from "../text/range"
-import { positioned } from "../markdown/parser"
+import { isListBlock, listItemsOf, listStyleOfLine, positioned } from "../markdown/parser"
 import {
   codeBlock, headingName, HEADING_LADDER, listTitle, LIST_STYLES, setHeading,
   toggleList, toggleQuote, type Heading, type ListStyle,
@@ -90,16 +90,21 @@ export function kindName(kind: CellKind): string {
  * The kind of cell a parsed block is — what the toolbar's Style button names when the caret is in it. Null where the
  * block is no cell the Style menu knows (a rule, the blank lines the note holds on purpose). An answer under a runnable
  * cell (the ```out fence) is code, as it is drawn; a picture line that names an ink cell is a drawing cell.
+ *
+ * A LIST NAMES THE ITEM THE CARET IS ON: list lines that touch are one cell whatever they are marked with (Sean,
+ * 2026-10-11: "this should not be two separate cells"), so `line`, the caret's line in the cell, says which kind of
+ * item it is — a box is To-do, a `* ` Dashes, under one bracket. Without a line (or on a line that is no item), a list of
+ * one kind is that kind and a mixed one is its first item's.
  */
-export function kindOfBlock(block: Block | null | undefined): CellKind | null {
+export function kindOfBlock(block: Block | null | undefined, line?: string): CellKind | null {
   if (!block) return null
+  if (isListBlock(block)) {
+    // (`bullets` is Dots, `dashes` Dashes, `numbered` Numbered, `todos` To-do: the first item's kind is the list's.)
+    return { kind: "list", style: (line === undefined ? null : listStyleOfLine(line)) ?? listItemsOf(block)[0]?.style ?? "dots" }
+  }
   switch (block.kind) {
     case "paragraph": return block.markdown ? { kind: "markdown" } : { kind: "text" }
     case "heading": return kindForHeading(block.level as Heading)
-    case "bullets": return { kind: "list", style: "dots" }
-    case "dashes": return { kind: "list", style: "dashes" }
-    case "numbered": return { kind: "list", style: "numbered" }
-    case "todos": return { kind: "list", style: "todo" }
     case "quote": return { kind: "quote" }
     case "code":
       if (isMathFence(block.language)) return { kind: "maths" }

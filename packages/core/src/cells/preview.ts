@@ -269,7 +269,7 @@ export const staysClosed = (block: Block | null | undefined): boolean => block?.
 /** Return adds a line to a list, a quote or a fenced block; anywhere else it starts the next block. */
 export function keepsNewlines(block: Block | null | undefined): boolean {
   switch (block?.kind) {
-    case "bullets": case "todos": case "dashes": case "numbered": case "quote": case "code": return true
+    case "bullets": case "todos": case "dashes": case "numbered": case "mixed": case "quote": case "code": return true
     default: return false
   }
 }

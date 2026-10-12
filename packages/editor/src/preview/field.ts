@@ -24,7 +24,7 @@ import { RangeSet, StateField, type EditorState, type Extension, type Range as C
 import { Decoration, EditorView, WidgetType, type DecorationSet } from "@codemirror/view"
 import {
   apartAbove, cellStatesSparse, end, firstCellFromBy, isMathFence, PREVIEW_BLOCK_GAP, isStructuralLine, structuralLineStarts, toggleTodo, fenced,
-  fenceLanguage, staysClosed, standsAlone, todoItem, type Block, type CellState, type PositionedBlock, type Range,
+  fenceLanguage, isListBlock, staysClosed, standsAlone, todoItem, type Block, type CellState, type PositionedBlock, type Range,
 } from "@writemind/core"
 import { awayField } from "./away"
 import { armedField } from "../seams"
@@ -165,7 +165,6 @@ const openItem = Decoration.line({ class: "wm-pv-open-li" })
 const openDone = Decoration.line({ class: "wm-pv-open-li wm-pv-open-done" })
 /** The number of a numbered item, in the drawn list's marker column. */
 const openNumber = Decoration.mark({ class: "wm-pv-open-num" })
-const LISTS = new Set<Block["kind"]>(["bullets", "dashes", "numbered", "todos"])
 
 const selectionOf = (state: EditorState): Range[] =>
   state.selection.ranges.map((r) => ({ location: r.from, length: r.to - r.from }))
@@ -222,7 +221,8 @@ function entriesIn(state: EditorState, cells: readonly PositionedBlock[], states
         lines.push(fence.range(first.from))
         const last = doc.lineAt(Math.max(cell.range.location, end(cell.range)))
         if (last.number > first.number && /^\s*```\s*$/.test(last.text)) lines.push(fenceClose.range(last.from))
-      } else if (LISTS.has(cell.block.kind) && cell.range.length > 0) {
+      } else if (isListBlock(cell.block) && cell.range.length > 0) {
+        // (Any list, a mixed one too: each line is set out as its own kind of item, Sean 2026-10-11.)
         const last = doc.lineAt(end(cell.range)).number
         for (let n = doc.lineAt(cell.range.location).number; n <= last; n++) {
           const line = doc.line(n)

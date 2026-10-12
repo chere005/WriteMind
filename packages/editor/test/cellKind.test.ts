@@ -107,6 +107,36 @@ describe("cellKindAt", () => {
   })
 })
 
+describe("a list that mixes kinds is ONE cell, and the Style button names the item the caret is on", () => {
+  // Sean, 2026-10-11, of a dashes list with a to-do list straight under it: "this should not be two separate cells".
+  const MIXED = "* hello\n* how\n- [ ] Are you\n1. one"
+  const where = (needle: string, inside = 1): number => MIXED.indexOf(needle) + inside
+
+  it("a dash is Dashes, a box To-do, a number Numbered, in the one cell", () => {
+    expect(positioned(MIXED)).toHaveLength(1)
+    expect(cellKindAt(stateAt(MIXED, where("hello")))).toEqual({ kind: "list", style: "dashes" })
+    expect(cellKindAt(stateAt(MIXED, where("Are you")))).toEqual({ kind: "list", style: "todo" })
+    expect(cellKindAt(stateAt(MIXED, where("one")))).toEqual({ kind: "list", style: "numbered" })
+    // (At the very start of an item's line, its marker: still that item.)
+    expect(cellKindAt(stateAt(MIXED, where("- [ ]", 0)))).toEqual({ kind: "list", style: "todo" })
+  })
+
+  it("on the empty line a single newline (or an empty last item's Return) left under the list: its last item's kind", () => {
+    const grown = MIXED.replace("\n1. one", "") + "\n"
+    expect(cellKindAt(stateAt(grown, grown.length))).toEqual({ kind: "list", style: "todo" })
+  })
+
+  it("the watcher hears the kind change as the caret walks from a dash to a box inside the one cell", () => {
+    const view = fakeView(MIXED, where("hello"))
+    const heard: string[] = []
+    watchCellKind(view, (kind) => heard.push(kind?.kind === "list" ? kind.style : kind?.kind ?? "none"))
+    move(view, where("how"))
+    move(view, where("Are you"))
+    move(view, where("one"))
+    expect(heard).toEqual(["dashes", "todo", "numbered"])
+  })
+})
+
 describe("a cell a command has just opened EMPTY (the + menu's pick)", () => {
   // The parser reads a lone marker as a paragraph, so a list the + menu has just opened would be named Text by the Style
   // button; the command says which line it opened (`itemOpened`) and the button names the list.

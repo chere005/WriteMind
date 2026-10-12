@@ -208,10 +208,16 @@ describe("list styles", () => {
     expect(apply(text, toggleList(text, range(0, 11), "numbered"))).toBe("1. one\n2. two")
   })
 
-  it("keeps dots and dashes different blocks", () => {
+  it("keeps dots and dashes different kinds of item, in ONE list when they touch", () => {
     expect(blocks("- a\n- b")).toEqual([{ kind: "bullets", items: ["a", "b"] }])
     expect(blocks("* a\n* b")).toEqual([{ kind: "dashes", items: ["a", "b"] }])
+    // They were two blocks, two cells; Sean, 2026-10-11, of a dashes list with a to-do list under it: "this should not be
+    // two separate cells". Each item keeps its kind.
     expect(blocks("- a\n* b")).toEqual([
+      { kind: "mixed", items: [{ style: "dots", text: "a", done: false }, { style: "dashes", text: "b", done: false }] },
+    ])
+    // A blank line between them still makes two.
+    expect(blocks("- a\n\n* b")).toEqual([
       { kind: "bullets", items: ["a"] },
       { kind: "dashes", items: ["b"] },
     ])

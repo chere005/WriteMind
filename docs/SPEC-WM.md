@@ -210,7 +210,7 @@ Inside a fenced block (2.4.9) every line belongs to the fence until it closes. O
 | 13 | `t` is 1-4 digits then `. ` or `) ` | numbered line |
 | 14 | otherwise | paragraph line |
 
-A line of rules 9-14 continues the open cell when it is of the same kind and otherwise ends it (so `- a` straight under a paragraph line starts a list, and `# h` straight under a list starts a heading). Rules 2, 5, 6, 7, 8 end the open cell and a table, a fence, a heading, a rule and a picture are each their own cell **even when no blank line separates them** from the cell above or below.
+A line of rules 9-14 continues the open cell when it is of the same kind and otherwise ends it (so `- a` straight under a paragraph line starts a list, and `# h` straight under a list starts a heading). Rules 10-13 are ONE kind for this, a list: a todo, bullet, dash or numbered line continues an open list of any of them (2.4.3; 2026-10-11). Rules 2, 5, 6, 7, 8 end the open cell and a table, a fence, a heading, a rule and a picture are each their own cell **even when no blank line separates them** from the cell above or below.
 
 A cell's range runs from the first character of its first line to the last character of its last line, without the line break after it. A paragraph's range includes its marker line.
 
@@ -270,6 +270,8 @@ as two lines.
 ```
 
 **2.4.3 Lists.** One item per line, a flat list: indentation in the source is kept and is not structure.
+
+A list is ONE cell however its items are marked (2026-10-11; Sean: "this should not be two separate cells"): dots, dashes, numbered and to-do lines (2.4.4) with no blank line between them are one list, and each item keeps its own kind (a dot, a dash, its number, a box). A list of one kind is that kind's list (the parser's `bullets`, `dashes`, `numbered`, `todos`); a list that mixes kinds is `mixed`, its items each with a kind. The numbered items of a list are numbered through it, in order, whatever lies between them. A blank line between two lists makes two cells. Note: a reader written before this reads such a list as one cell per run of one kind, touching; the text is the same.
 
 | Kind | Marker | Writer writes |
 |---|---|---|
@@ -481,7 +483,7 @@ print(6 * 7)
 ```
 `````
 
-Cells, in order (what the 2.15.0 parser returns): heading 1; text paragraph (two lines; the escapes are gone from its words); text paragraph (the anchor is hidden); markdown paragraph (marker length 18); heading 2; bullets (2); dashes (1); todos (2: open, done); numbered (2); quote ("a quote over two lines"); rule; table (header `Key`,`Does`; aligns left, right; one row); picture; picture (drawing cell); code `wl`; code `eval python`; code `out`; code `python`.
+Cells, in order (what the 2.15.0 parser returns, but for the lists, which are one cell since 2026-10-11, 2.4.3): heading 1; text paragraph (two lines; the escapes are gone from its words); text paragraph (the anchor is hidden); markdown paragraph (marker length 18); heading 2; one list, mixed (7 items: dots 2, dash 1, to-do 2 open and done, numbered 2); quote ("a quote over two lines"); rule; table (header `Key`,`Does`; aligns left, right; one row); picture; picture (drawing cell); code `wl`; code `eval python`; code `out`; code `python`.
 
 ## 3. `drawing.json`: the drawing layer
 

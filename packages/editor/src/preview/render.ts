@@ -326,7 +326,8 @@ export function renderBlock(block: Block, source: string, context: RenderContext
     case "heading": return headingBlock(source, context)
     case "paragraph": return paragraphBlock(block, source, context)
     case "quote": return quoteBlock(source, context)
-    case "bullets": case "dashes": case "todos": case "numbered": return listBlock(source, context)
+    // (A list that mixes kinds is one cell, each line drawn as its own kind: Sean, 2026-10-11.)
+    case "bullets": case "dashes": case "todos": case "numbered": case "mixed": return listBlock(source, context)
     case "code": return codeBlock(source, context)
     case "rule": return ruleBlock()
     case "blank": return make("div", "wm-pv wm-pv-blank")
@@ -346,7 +347,7 @@ export function estimatedHeight(block: Block, source: string): number {
     case "paragraph": return block.markdown ? Math.max(1, Math.ceil(source.length / 85)) * 22
       : source.split("\n").reduce((sum, line) => sum + Math.max(1, Math.ceil(line.length / 85)) * 22, 0)
     case "quote": return Math.max(1, Math.ceil(source.length / 80)) * 22
-    case "bullets": case "dashes": case "todos": case "numbered": return lines * 22
+    case "bullets": case "dashes": case "todos": case "numbered": case "mixed": return lines * 22
     // Its lines at the code size, and half that size of padding top and bottom (Mac e66379c).
     case "code": return Math.max(1, lines - 2) * 20.6 + 14
     case "rule": return 9

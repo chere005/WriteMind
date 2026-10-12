@@ -233,8 +233,17 @@ describe("vector 7: the text grammar", () => {
     const cells = positioned(EXAMPLE).map((cell) => cell.block)
     const kinds = cells.filter((block) => block.kind !== "blank").map((block) =>
       block.kind === "paragraph" ? (block.markdown ? "markdown" : "text") : block.kind === "code" ? `code:${block.language}` : block.kind)
-    expect(kinds).toEqual(["heading", "text", "text", "markdown", "heading", "bullets", "dashes", "todos", "numbered", "quote", "rule",
+    // The example's lists touch, so they are ONE list cell, each item its own kind (they were four cells: bullets, dashes,
+    // todos, numbered; Sean, 2026-10-11: "this should not be two separate cells").
+    expect(kinds).toEqual(["heading", "text", "text", "markdown", "heading", "mixed", "quote", "rule",
       "table", "picture", "picture", "code:wl", "code:eval python", "code:out", "code:python"])
+    const list = cells.find((block) => block.kind === "mixed")
+    expect(list).toEqual({ kind: "mixed", items: [
+      { style: "dots", text: "dot item", done: false }, { style: "dots", text: "another dot", done: false },
+      { style: "dashes", text: "dash item", done: false },
+      { style: "todo", text: "still to do", done: false }, { style: "todo", text: "done", done: true },
+      { style: "numbered", text: "first", done: false }, { style: "numbered", text: "second", done: false },
+    ] })
     const first = cells.find((block) => block.kind === "paragraph")!
     expect(first).toMatchObject({ text: "Plain words, kept as typed.\nA second line stays a second line. # not a heading, *not bold* either." })
     const pictures = cells.filter((block) => block.kind === "picture")

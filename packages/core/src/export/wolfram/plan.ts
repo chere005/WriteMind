@@ -21,7 +21,7 @@
 import { colouring } from "../../eval/evaluator"
 import { isOut } from "../../eval/output"
 import { inkCellId, mediaFiles } from "../../markdown/images"
-import { positioned, type Block } from "../../markdown/parser"
+import { listItemsOf, positioned, type Block, type ListItem } from "../../markdown/parser"
 import { inlineSegments } from "../../markdown/sourceStyle"
 import { isMathFence } from "../../math/typesetter"
 import { spanDeclarations } from "../inline"
@@ -257,28 +257,32 @@ class Planner {
         if (!block.markdown) { this.add([`Cell[${wlString(block.text)}, "Text"]`]); return }
         this.add(["Cell[", ...this.content(block.text), `, "Text"]`])
         return
-      case "bullets": case "dashes": case "numbered": {
+      case "bullets": case "dashes": case "numbered": case "todos": case "mixed": {
+        // Each item as its own kind: a list can mix them, one cell (Sean, 2026-10-11: "this should not be two separate cells").
+        // An item is one line of the list's source (a list ends at the first line that is no item).
         const lines = source.split("\n")
-        const numbered = block.kind === "numbered"
-        block.items.forEach((item, index) => {
-          const style = itemStyle(listDepth(lines[index] ?? ""), numbered)
+        let counted = 0
+        let previous: ListItem["style"] | null = null
+        listItemsOf(block).forEach((item, index) => {
+          const depth = listDepth(lines[index] ?? "")
+          if (item.style === "todo") {
+            const content = item.done
+              ? this.content(item.text, (run) => ["StyleBox[", ...run, `, FontVariations -> {"StrikeThrough" -> True}, FontColor -> GrayLevel[0.5]]`], [wlString("☑ ")])
+              : this.content(item.text, undefined, [wlString("☐ ")])
+            this.add(["Cell[", ...content, `, ${wlString(itemStyle(depth, false))}]`])
+            previous = item.style
+            return
+          }
+          const numbered = item.style === "numbered"
+          if (numbered) counted += 1
           const extra = [
-            ...(block.kind === "dashes" ? [`CellDingbat -> "\\:2013"`] : []),
-            // Each numbered list counts from one, as it does on the page.
-            ...(numbered && index === 0 ? [`CounterAssignments -> {{"ItemNumbered", 0}}`] : []),
+            ...(item.style === "dashes" ? [`CellDingbat -> "\\:2013"`] : []),
+            // Each numbered list counts from one, as it does on the page; in a list that mixes kinds the numbered items count
+            // through it (the page's rule), so a number after another kind of item says where the count is.
+            ...(numbered && previous !== "numbered" ? [`CounterAssignments -> {{"ItemNumbered", ${counted - 1}}}`] : []),
           ]
-          this.add(["Cell[", ...this.content(item), `, ${wlString(style)}${extra.map((one) => ", " + one).join("")}]`])
-        })
-        return
-      }
-      case "todos": {
-        const lines = source.split("\n")
-        block.items.forEach((item, index) => {
-          const style = itemStyle(listDepth(lines[index] ?? ""), false)
-          const content = item.done
-            ? this.content(item.text, (run) => ["StyleBox[", ...run, `, FontVariations -> {"StrikeThrough" -> True}, FontColor -> GrayLevel[0.5]]`], [wlString("☑ ")])
-            : this.content(item.text, undefined, [wlString("☐ ")])
-          this.add(["Cell[", ...content, `, ${wlString(style)}]`])
+          this.add(["Cell[", ...this.content(item.text), `, ${wlString(itemStyle(depth, numbered))}${extra.map((one) => ", " + one).join("")}]`])
+          previous = item.style
         })
         return
       }

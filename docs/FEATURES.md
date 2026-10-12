@@ -210,7 +210,8 @@ is how the code is put together.
   In a reading of one line those marks are drawn (struck out, bold, typeset);
   in a text cell of several lines they are the characters it is written with
   (Ctrl+Shift+7 makes it a markdown cell, which draws them and runs its lines
-  together), and a reading that is all tasks, or all bullets, is one list.
+  together), and a reading that is all list lines (tasks, bullets, numbers, in
+  any mix) is one list.
   The picture itself stays (the words go in just under it);
   Undo takes the words back out. The video pane reads too: **Text** in the camera's box row, and on the
   Wacom sheet **Bring in ▸ Text** and the box row's **Text** read the handwriting (the boxed part, or
@@ -238,6 +239,17 @@ is how the code is put together.
   cell (a newline after the list, not an exit); the Return after that puts the bar under it. The
   list button's menu picks dots, dashes, numbers or to-dos — `- `, `* `,
   `1. ` and `- [ ] ` on disk, a round bullet, a dash and a number on the page.
+- **A list is one cell, whatever its items are marked with.** Dots,
+  dashes, numbers and to-dos written one under another with no blank line
+  between them are one list (Sean, 2026-10-11: "this should not be two
+  separate cells"): one bracket, no insertion bar between the kinds, and
+  everything that acts on a cell — Return, the arrows, moving it, Split and
+  Merge, copying a held cell, Find, folding, the PDF and the Wolfram
+  notebook — takes the whole list. Each item is still drawn as its own kind
+  on both pages (a box, a dash, a dot, its number, the numbers counting
+  through the list), a box still ticks, Return carries the item's own kind
+  on, and the Style button names the item the caret is on. A blank line
+  between two lists still makes them two.
 - **Code blocks, in five languages.** The `</>` button (⌘8) fences the
   selection or opens an empty block; its menu tags the fence with one of ten
   languages, and the block is coloured — in the editor
