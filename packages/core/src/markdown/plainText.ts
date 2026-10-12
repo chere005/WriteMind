@@ -18,7 +18,7 @@ import { edit, end, range, substring, type Edit, type Range } from "../text/rang
 import { bulletItem, dashItem, heading, isRule, numberedItem, todoItem } from "./parser"
 import { delimiterAligns } from "./table"
 import { pictureLine } from "./images"
-import { emptyLineSpan } from "./emptyLine"
+import { emptyLineSpan, lineBreakSpan } from "./emptyLine"
 
 /** The line that makes the paragraph under it a markdown cell. An HTML comment: other markdown readers show nothing. */
 export const MARKDOWN_MARKER = "<!-- markdown -->"
@@ -110,16 +110,26 @@ function maskAnchors(line: string): string {
 /**
  * What a text cell's line HIDES on screen, as [from, to) offsets: each escape's backslash, and each id anchor whole —
  * and the `<br>` of an empty line the cell keeps (emptyLine.ts; Sean, 2026-10-11: "ctrl + enter adds a newline without
- * leaving the current cell.."), the whole of what is written there. In order, never overlapping.
+ * leaving the current cell.."), the whole of what is written there. In order, never overlapping. A `<br>` at the head of
+ * a line of words (what a markdown cell or a quote starts a line afresh with — `lineBreakSpan` — come into a text cell by a
+ * change of kind) is hidden too: every line of a text cell is a line already, and a typed `<br>` is written `\<br>`.
  */
 export function hiddenInText(line: string): Array<[number, number]> {
   const kept = emptyLineSpan(line)
   if (kept) return [kept]
   const escapes = escapeOffsets(line).map((at): [number, number] => [at, at + 1])
   const anchors = anchorSpans(line)
-  if (anchors.length === 0) return escapes
-  if (escapes.length === 0) return anchors
-  return [...escapes, ...anchors].sort((a, b) => a[0] - b[0])
+  const broken = textLineBreak(line)
+  const lead: Array<[number, number]> = broken ? [broken] : []
+  if (anchors.length === 0) return lead.length ? [...lead, ...escapes] : escapes
+  if (escapes.length === 0) return [...lead, ...anchors]
+  return [...lead, ...[...escapes, ...anchors].sort((a, b) => a[0] - b[0])]
+}
+
+/** The `<br>` at the head of a text cell's line (nothing but indentation before it), when the line has one. */
+export function textLineBreak(line: string): [number, number] | null {
+  const span = lineBreakSpan(line)
+  return span !== null && line.slice(0, span[0]).trim().length === 0 ? span : null
 }
 
 /**
@@ -365,11 +375,20 @@ const keptLine = (line: string): boolean => {
  * is nothing typed, and the escape rule would make it the words `<br>`.
  */
 export const reescapePlain = (source: string): string =>
-  source.split("\n").map((line) => (keptLine(line) ? line : escapeLine(unescapeLine(line)))).join("\n")
+  source.split("\n").map((line) => (keptLine(line) ? line : escapeLine(unescapeLine(withoutBreak(line))))).join("\n")
 
-/** Words taken as LITERAL into a text cell, line for line, the empty lines a cell keeps (`<br>`) kept as they are. */
+/**
+ * Words taken as LITERAL into a text cell, line for line, the empty lines a cell keeps (`<br>`) kept as they are — and the
+ * `<br>` a markdown cell's line that starts afresh begins with dropped: a text cell's every line is a line of its own.
+ */
 export const escapePlainKeeping = (words: string): string =>
-  words.split("\n").map((line) => (keptLine(line) ? line : escapeLine(line))).join("\n")
+  words.split("\n").map((line) => (keptLine(line) ? line : escapeLine(withoutBreak(line)))).join("\n")
+
+/** `line` without the `<br>` at its head (`textLineBreak`), its indentation kept. */
+const withoutBreak = (line: string): string => {
+  const span = textLineBreak(line)
+  return span ? line.slice(0, span[0]) + line.slice(span[1]) : line
+}
 
 /**
  * The line with a backslash before what would make it a block of its own at the head of a line — a heading's `#`, a

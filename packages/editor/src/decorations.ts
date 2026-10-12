@@ -24,7 +24,7 @@ import {
   type DecorationSet, type ViewUpdate,
 } from "@codemirror/view"
 import {
-  anchorSpans, codeTokens, emptyLineSpan, escapeOffsets, firstCellFromBy, headingLevel, colouring, maskEscapes, toggleTodo, todoItem,
+  anchorSpans, codeTokens, emptyLineSpan, escapeOffsets, lineBreakSpan, textLineBreak, firstCellFromBy, headingLevel, colouring, maskEscapes, toggleTodo, todoItem,
   type Block, type CodeToken, type CodeTokenKind, type MarkerStructure, type Range,
 } from "@writemind/core"
 import { applyEdit, hullOf, notebook } from "./notebook"
@@ -373,8 +373,10 @@ function build(state: EditorState, from: number, to: number): { all: DecorationS
   const textLines = new Set<number>()
   const markerLines = new Set<number>()
   // The lines of the cells that can keep an empty line (`<br>`, core emptyLine.ts): a markdown cell's and a list's (a text
-  // cell's are `textLines`).
+  // cell's are `textLines`); and of those, a markdown cell's, whose lines a `<br>` at their head also starts afresh (a quote's
+  // lines are known by their `>`).
   const keepLines = new Set<number>()
+  const markdownLines = new Set<number>()
   for (let i = Math.max(0, firstCellFromBy(cells, from, (cell) => cell.range) - 1); i < cells.length; i++) {
     const cell = cells[i]!
     if (cell.range.location > to) break
@@ -383,7 +385,10 @@ function build(state: EditorState, from: number, to: number): { all: DecorationS
       const first = doc.lineAt(cell.range.location).number
       if (cell.block.head) markerLines.add(first)
       const last = doc.lineAt(cell.range.location + cell.range.length).number
-      for (let n = Math.max(first, startLine); n <= Math.min(last, endLine); n++) (cell.block.markdown ? keepLines : textLines).add(n)
+      for (let n = Math.max(first, startLine); n <= Math.min(last, endLine); n++) {
+        (cell.block.markdown ? keepLines : textLines).add(n)
+        if (cell.block.markdown) markdownLines.add(n)
+      }
       continue
     }
     if (KEEPS_LINES.has(cell.block.kind)) {
@@ -429,8 +434,20 @@ function build(state: EditorState, from: number, to: number): { all: DecorationS
     // `<br>` is drawn as nothing on both pages, even under the caret, and the caret steps over it whole (emptyLines.ts).
     const kept = textLines.has(number) || keepLines.has(number) ? emptyLineSpan(text) : null
     if (kept) entries.push({ from: line.from + kept[0], to: line.from + kept[1], deco: emptyLineHidden, kind: 1, atomic: true })
+    // A LINE THAT STARTS AFRESH in a markdown cell (the review of agent/ctrlenter, P1): the `<br>` in front of its words is drawn
+    // as nothing too, and the caret steps over it; its words are drawn as any line's.
+    const broken = !kept && markdownLines.has(number) ? lineBreakSpan(text) : null
+    if (broken) {
+      entries.push({ from: line.from + broken[0], to: line.from + broken[1], deco: emptyLineHidden, kind: 1, atomic: true })
+      inlineSpans(text.slice(broken[1]), line.from + broken[1], entries)
+      continue
+    }
     if (textLines.has(number)) {
       if (kept) continue
+      // (A `<br>` at the head of a line of words — a markdown cell's or a quote's line that started afresh, come into a text
+      // cell by a change of kind: core `hiddenInText` — is drawn as nothing, every line of a text cell being a line.)
+      const broken = textLineBreak(text)
+      if (broken) entries.push({ from: line.from + broken[0], to: line.from + broken[1], deco: emptyLineHidden, kind: 1, atomic: true })
       for (const at of escapeOffsets(text)) {
         entries.push({ from: line.from + at, to: line.from + at + 1, deco: escapeHidden, kind: 1, atomic: false })
         entries.push({ from: line.from + at, to: line.from + at + 2, deco: escapeHidden, kind: 1, atomic: "only" })
@@ -461,7 +478,12 @@ function build(state: EditorState, from: number, to: number): { all: DecorationS
       entries.push({ from: line.from, to: line.from, deco: quoted, kind: 0, atomic: false })
       const marker = /^>\s?/.exec(rest)![0]
       entries.push({ from: line.from + indent, to: line.from + indent + marker.length, deco: faded, kind: 1, atomic: true })
-      inlineSpans(rest.slice(marker.length), line.from + indent + marker.length, entries)
+      // A quote's `<br>` (its empty line, or the head of a line that starts afresh: Ctrl+Enter, core emptyLine.ts) is drawn as
+      // nothing, and the caret steps over it.
+      const quoteBreak = lineBreakSpan(text)
+      const words = quoteBreak && quoteBreak[0] === indent + marker.length ? quoteBreak[1] : indent + marker.length
+      if (words > indent + marker.length) entries.push({ from: line.from + quoteBreak![0], to: line.from + words, deco: emptyLineHidden, kind: 1, atomic: true })
+      inlineSpans(text.slice(words), line.from + words, entries)
       continue
     }
 

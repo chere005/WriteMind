@@ -11,11 +11,12 @@
  */
 
 import { blockContaining, insertBlock, listContinuation, removeBlock } from "./editing"
+import { returnInItem } from "./itemLines"
 import { openCell, type CellKind } from "./types"
 import { standsAlone } from "./apart"
 import { GAP_HEIGHT, seams, structuralLines, plusTarget, type CellBox, type Seam } from "./seams"
 import { firstCellFromBy, picked } from "./selection"
-import { positioned, type Block } from "../markdown/parser"
+import { linesOf, positioned, type Block } from "../markdown/parser"
 import { fenced } from "../markdown/formatting"
 import { reminderBox } from "../markdown/sourceStyle"
 import { MARKDOWN_MARKER, reescapePlain } from "../markdown/plainText"
@@ -449,6 +450,14 @@ export function returnInBlock(markdown: string, selection: Range): Edit | null {
     const opened = insertBlock(markdown, place)
     const added = opened.markdown.length - markdown.length
     return edit(range(place, 0), opened.markdown.slice(place, place + added), range(opened.caret, 0))
+  }
+
+  // A LIST ITEM'S NEXT LINES (Ctrl+Enter writes them; the review of agent/ctrlenter, P1): Return at the end of any line of
+  // an item that has them carries the list on after the item's last line, and at the start of a next line's words makes
+  // that line the next item — never a line of white space, which would end the list (itemLines.ts, the markdown side's too).
+  if (selection.length === 0) {
+    const item = returnInItem(cells, linesOf(markdown), range(caret, 0))
+    if (item) return edit(range(item.from, item.to - item.from), item.insert, range(item.caret, 0))
   }
 
   // A list item, wherever the parser put it: "- " with nothing after it is a

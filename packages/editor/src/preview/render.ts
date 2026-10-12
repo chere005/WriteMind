@@ -11,7 +11,7 @@
  */
 
 import {
-  bulletItem, codeTokens, dashItem, drawnRows, emptyLineSpan, fenceLanguage, hiddenInText, fenced, inlineSegments, isMathFence,
+  bulletItem, codeTokens, dashItem, drawnRows, emptyLineSpan, lineBreakSpan, fenceLanguage, hiddenInText, fenced, inlineSegments, isMathFence,
   colouring, isMarkdownMarker, numberedItem, todoItem,
   type Block, type InlineSegment,
 } from "@writemind/core"
@@ -184,6 +184,16 @@ function paragraphBlock(block: Extract<Block, { kind: "paragraph" }>, source: st
       words = false
       return
     }
+    // A line that starts afresh (`<br>` at its head: Ctrl+Enter in a markdown cell, the review of agent/ctrlenter P1): a
+    // line break, never the space a soft one is, and its words without the tag.
+    const broken = lineBreakSpan(line.text)
+    if (broken) {
+      if (index > 0) holder.appendChild(document.createElement("br"))
+      const rest = line.text.slice(broken[1])
+      inline(holder, rest.trim(), line.start + broken[1] + leading(rest), context)
+      words = true
+      return
+    }
     if (index > 0) holder.appendChild(words ? document.createTextNode(" ") : document.createElement("br"))
     // The first line keeps the spaces it was written with, so an indented
     // paragraph is drawn indented.
@@ -199,8 +209,9 @@ function quoteBlock(source: string, context: RenderContext): HTMLElement {
   const holder = make("div", "wm-pv wm-pv-quote")
   const body = make("div", "wm-pv-quote-text", holder)
   const lines = linesOf(source).filter((line) => line.text.trim().length > 0)
-  // Its lines join as markdown joins them, with a space; a quote line with nothing on it is an empty line (Ctrl+Enter writes
-  // one: Sean, 2026-10-11, "ctrl + enter adds a newline without leaving the current cell..").
+  // Its lines join as markdown joins them, with a space; a quote line with nothing on it is an empty line, and one that starts
+  // with `<br>` starts afresh (Ctrl+Enter writes both: Sean, 2026-10-11, "ctrl + enter adds a newline without leaving the
+  // current cell..").
   let words = false
   lines.forEach((line, index) => {
     const lead = leading(line.text)
@@ -212,6 +223,15 @@ function quoteBlock(source: string, context: RenderContext): HTMLElement {
       if (index > 0) body.appendChild(document.createElement("br"))
       emptyLine(body, line.start + line.text.length)
       words = false
+      return
+    }
+    // A quote line that starts afresh (`<br>` at its head, Ctrl+Enter): a line break, and its words without the tag.
+    const broken = lineBreakSpan(text)
+    if (broken) {
+      if (index > 0) body.appendChild(document.createElement("br"))
+      const rest = text.slice(broken[1])
+      inline(body, rest.trim(), line.start + at + broken[1] + leading(rest), context)
+      words = true
       return
     }
     if (index > 0) body.appendChild(words ? document.createTextNode(" ") : document.createElement("br"))

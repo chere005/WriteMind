@@ -102,17 +102,35 @@ describe("Ctrl+Enter in a text cell", () => {
 })
 
 describe("Ctrl+Enter in a markdown cell", () => {
-  it("breaks the line at the caret and keeps the marker over the words", () => {
-    expect(press("<!-- markdown -->\nsome **wo‸rds**")).toBe("<!-- markdown -->\nsome **wo\n‸rds**")
+  // The review of agent/ctrlenter (P1): a markdown cell's lines join with a space when it is drawn, so the line the key
+  // made was gone once the caret left the cell. The new line starts with `<br>` (markdown/emptyLine.ts `lineBreakSpan`),
+  // which keeps it a line of its own — it used to start with the words alone.
+  it("breaks the line at the caret and keeps the marker over the words; the new line starts afresh with `<br>`", () => {
+    expect(press("<!-- markdown -->\nsome **wo‸rds**")).toBe("<!-- markdown -->\nsome **wo\n<br>‸rds**")
     expect(press("<!-- markdown -->\nwords‸")).toBe("<!-- markdown -->\nwords\n<br>‸")
-    expect(press("<!-- markdown -->\n‸words")).toBe("<!-- markdown -->\n<br>\n‸words")
+    expect(press("<!-- markdown -->\n‸words")).toBe("<!-- markdown -->\n<br>\n<br>‸words")
     expect(kinds("<!-- markdown -->\n<br>\nwords")).toEqual(["paragraph"])
+    // Again, at the start of the words of the line it made: an empty line above them.
+    expect(press("<!-- markdown -->\na\n<br>‸b")).toBe("<!-- markdown -->\na\n<br>\n<br>‸b")
+    // (A caret handed in front of the `<br>` is read as after it: the one place on the line it stands.)
+    expect(press("<!-- markdown -->\na\n‸<br>b")).toBe("<!-- markdown -->\na\n<br>\n<br>‸b")
   })
 
-  it("the words moved to the head of a line do not become a block of their own", () => {
-    expect(press("<!-- markdown -->\nx ‸# y")).toBe("<!-- markdown -->\nx \n‸\\# y")
-    expect(press("<!-- markdown -->\nx ‸> y")).toBe("<!-- markdown -->\nx \n‸\\> y")
-    expect(kinds("<!-- markdown -->\nx \n\\# y")).toEqual(["paragraph"])
+  it("its words, drawn, keep the line: \"first\" and \"second\" are two lines, not one", () => {
+    expect(cellsOf("<!-- markdown -->\n**first** markdown line\n<br>second markdown line")[0]!.block)
+      .toMatchObject({ kind: "paragraph", markdown: true, text: "**first** markdown line\nsecond markdown line" })
+    // A soft line break (Return, typed on: no `<br>`) is a space, as it always was.
+    expect(cellsOf("<!-- markdown -->\nalpha\nbeta")[0]!.block).toMatchObject({ text: "alpha beta" })
+    expect(cellsOf("<!-- markdown -->\na\n<br>\n<br>b\nc")[0]!.block).toMatchObject({ text: "a\n\nb c" })
+  })
+
+  it("the words moved to the head of a line do not become a block of their own (the `<br>` stands before them)", () => {
+    expect(press("<!-- markdown -->\nx ‸# y")).toBe("<!-- markdown -->\nx \n<br>‸# y")
+    expect(press("<!-- markdown -->\nx ‸> y")).toBe("<!-- markdown -->\nx \n<br>‸> y")
+    expect(press("<!-- markdown -->\nx ‸- y")).toBe("<!-- markdown -->\nx \n<br>‸- y")
+    for (const note of ["<!-- markdown -->\nx \n<br># y", "<!-- markdown -->\nx \n<br>> y", "<!-- markdown -->\nx \n<br>- y"]) {
+      expect(kinds(note), note).toEqual(["paragraph"])
+    }
   })
 
   it("its words read an empty line it keeps as an empty line", () => {
@@ -174,13 +192,24 @@ describe("Ctrl+Enter in a list", () => {
 })
 
 describe("Ctrl+Enter in a quote", () => {
-  it("a new line of the quote, the caret after its `> `; an empty quote line is the quote's own empty line", () => {
-    expect(press("> a‸")).toBe("> a\n> ‸")
-    expect(press("> a\n> ‸")).toBe("> a\n> \n> ‸")
-    expect(press("> a‸b")).toBe("> a\n> ‸b")
+  // The review of agent/ctrlenter (P1): a quote's lines join with a space when it is drawn, as a markdown cell's do, so the
+  // new line starts with `<br>` (it used to be `> ` and the words alone).
+  it("a new line of the quote, `> <br>`, the caret after it; an empty quote line is the quote's own empty line", () => {
+    expect(press("> a‸")).toBe("> a\n> <br>‸")
+    expect(press("> a\n> ‸")).toBe("> a\n> \n> <br>‸")
+    expect(press("> a\n> <br>‸")).toBe("> a\n> <br>\n> <br>‸")
+    expect(press("> a‸b")).toBe("> a\n> <br>‸b")
+    expect(press("> a\n> <br>‸b")).toBe("> a\n> <br>\n> <br>‸b")
     expect(kinds("> a\n> \n> ")).toEqual(["quote"])
+    expect(kinds("> a\n> <br>\n> <br>b")).toEqual(["quote"])
     expect(cellsOf("> a\n>\n> b")[0]!.block).toEqual({ kind: "quote", text: "a\n\nb" })
-    expect(press("> a\n‸")).toBe("> a\n> \n> ‸")
+    expect(press("> a\n‸")).toBe("> a\n> <br>\n> <br>‸")
+  })
+
+  it("its words, drawn, keep the line: \"first quote line\" and \"second quote line\" are two lines", () => {
+    expect(cellsOf("> first quote line\n> <br>second quote line")[0]!.block)
+      .toEqual({ kind: "quote", text: "first quote line\nsecond quote line" })
+    expect(cellsOf("> qa\n> qb")[0]!.block).toEqual({ kind: "quote", text: "qa qb" })
   })
 })
 
@@ -231,7 +260,9 @@ describe("the empty line a cell keeps", () => {
     expect(emptyLineSpan("- [ ] <br>")).toEqual([6, 10])
     expect(emptyLineSpan("12. <BR/>")).toEqual([4, 9])
     expect(emptyLineSpan("<br />")).toEqual([0, 6])
-    for (const not of ["", "br", "a<br>", "<br>a", "\\<br>", "# <br>", "> <br>", "<br><br>", "-<br>"]) expect(isEmptyLine(not), not).toBe(false)
+    // (A quote's line too, since the review of agent/ctrlenter: `> <br>` is a quote's empty line, as `> ` is.)
+    expect(emptyLineSpan("> <br>")).toEqual([2, 6])
+    for (const not of ["", "br", "a<br>", "<br>a", "\\<br>", "# <br>", "<br><br>", "-<br>"]) expect(isEmptyLine(not), not).toBe(false)
     expect(emptyLinesRead("a\n  <br>\nb")).toBe("a\n  \nb")
     expect(joinedLines(["a", "b"])).toBe("a b")
     expect(joinedLines(["a", "<br>", "b", "c", ""])).toBe("a\n\nb c\n")

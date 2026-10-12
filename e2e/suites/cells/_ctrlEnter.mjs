@@ -119,7 +119,9 @@ export async function runCtrlEnter({ rendered }) {
     await start("> a", 3)
     await ctrlEnter()
     await typeText("b"); await sleep(250)
-    ok("a quote: `> b` under `> a`, one cell", (await doc()) === "> a\n> b" && (await cellBrackets()).length === 1, JSON.stringify(await doc()))
+    // (The new quote line starts with `<br>`, hidden: a quote's lines join with a space when it is drawn — the review of
+    // agent/ctrlenter, P1. It used to be `> b`.)
+    ok("a quote: `> <br>b` under `> a`, one cell", (await doc()) === "> a\n> <br>b" && (await cellBrackets()).length === 1, JSON.stringify(await doc()))
     await start("```\nx\n```", 5)
     await ctrlEnter()
     ok("a code block: an empty line in the code, the caret on it", (await doc()) === "```\nx\n\n```" && (await sel())[0] === 6 && (await cellBrackets()).length === 1, JSON.stringify([await doc(), await sel()]))
@@ -135,6 +137,119 @@ export async function runCtrlEnter({ rendered }) {
     await start("hello", 5)
     await menuClick("newlineInCell"); await sleep(400)
     ok("the menu item writes what the key does", (await doc()) === "hello\n<br>" && (await sel())[0] === 10 && !(await armed()), JSON.stringify([await doc(), await sel()]))
+  })
+
+  // THE REVIEW OF agent/ctrlenter (2026-10-11), P1: in a markdown cell and a quote a single newline is a space when the cell is
+  // drawn, so the line Ctrl+Enter made was gone the moment the caret left the cell. Read off the page as it is DRAWN.
+  await test(`${side}: in a markdown cell and a quote the line Ctrl+Enter makes is still a line once the caret leaves the cell`, async () => {
+    const text = "<!-- markdown -->\n**first** markdown line\n\n> first quote line\n\nlast"
+    await start(text, text.indexOf("\n\n>"))
+    await ctrlEnter()
+    await typeText("second markdown line"); await sleep(200)
+    const quoteEnd = (await doc()).indexOf("\n\nlast")
+    await setSel(quoteEnd); await sleep(250)
+    await ctrlEnter()
+    await typeText("second quote line"); await sleep(200)
+    const want = "<!-- markdown -->\n**first** markdown line\n<br>second markdown line\n\n> first quote line\n> <br>second quote line\n\nlast"
+    ok("the note: each new line starts with `<br>`, three cells", (await doc()) === want && (await cellBrackets()).length === 3, JSON.stringify([await doc(), (await cellBrackets()).length]))
+    // Out of both cells: the caret at the end of "last".
+    await setSel(want.length); await sleep(450)
+    if (rendered) {
+      const drawn = JSON.parse(await js(`JSON.stringify([...document.querySelectorAll('.wm-pv-p, .wm-pv-quote')].map(e=>e.innerText.replace(/\u200b/g,'')))`))
+      ok("drawn: the markdown cell is two lines", drawn.includes("first markdown line\nsecond markdown line"), JSON.stringify(drawn))
+      ok("drawn: the quote is two lines", drawn.includes("first quote line\nsecond quote line"), JSON.stringify(drawn))
+      await shot("rendered-markdown-quote-lines")
+    } else {
+      const lines = (await drawnLines()).map((line) => line.text)
+      ok("the markdown side draws nothing of either `<br>`: the words alone on their lines", lines.includes("second markdown line") && lines.some((line) => /second quote line$/.test(line) && !line.includes("<br>")) && !lines.some((line) => line.includes("<br>")), JSON.stringify(lines))
+    }
+    // Backspace at the start of the line's words joins it to the line above, as at the start of any line.
+    await setSel(want.indexOf("second markdown")); await sleep(300)
+    await key("Backspace"); await sleep(300)
+    ok("Backspace at the start of its words: one line again", (await doc()) === want.replace("\n<br>second markdown", "second markdown"), JSON.stringify(await doc()))
+    await key("z", { ctrl: true }); await sleep(300)
+    ok("one Undo gives the line back", (await doc()) === want, JSON.stringify(await doc()))
+  })
+
+  // P1: Return after Ctrl+Enter in a list carries the list on (3.9.0: "Return on a list item adds another item"); it used to
+  // write a line of white space that ended the list and armed the bar, or add no new item at all.
+  await test(`${side}: Return after Ctrl+Enter in a list adds the next item — in the middle and at the end of the list`, async () => {
+    await start("- one\n- two\n- three", 5)
+    await ctrlEnter()
+    await key("Enter"); await sleep(300)
+    ok("a middle item's empty line, then Return: the next item after it, one cell, no bar", (await doc()) === "- one\n  <br>\n- \n- two\n- three" && !(await armed()) && (await cellBrackets()).length === 1, JSON.stringify([await doc(), await armed(), (await cellBrackets()).length]))
+    await typeText("x"); await sleep(250)
+    ok("typed on: an item of the one list", (await doc()) === "- one\n  <br>\n- x\n- two\n- three" && (await cellBrackets()).length === 1, JSON.stringify([await doc(), (await cellBrackets()).length]))
+
+    await start("1. one\n2. two", 6)
+    await ctrlEnter()
+    await typeText("more"); await sleep(250)
+    await key("Enter"); await sleep(300)
+    ok("a numbered item's line of words, then Return: the next number after it, no bar", (await doc()) === "1. one\n   more\n2. \n2. two" && !(await armed()) && (await cellBrackets()).length === 1, JSON.stringify([await doc(), await armed()]))
+
+    await start("- one", 5)
+    await ctrlEnter()
+    await typeText("detail"); await sleep(250)
+    await key("Enter"); await sleep(300)
+    await typeText("two"); await sleep(250)
+    ok("the last item: Return after its next line is a new bullet, `two` an item of its own", (await doc()) === "- one\n  detail\n- two" && (await cellBrackets()).length === 1, JSON.stringify(await doc()))
+    if (!rendered) ok("two bullets are drawn", (await js(`document.querySelectorAll('.cm-content .wm-bullet').length`)) === 2, String(await js(`document.querySelectorAll('.cm-content .wm-bullet').length`)))
+
+    // Return at the end of an item's own line, its next line under it: the new item after the item's lines (the review's P3 f).
+    await start("- one\n  more\n- two", 5)
+    await key("Enter"); await sleep(300)
+    ok("Return at the end of `one`, `more` under it: the new item comes after `more`", (await doc()) === "- one\n  more\n- \n- two" && (await sel())[0] === 15, JSON.stringify([await doc(), await sel()]))
+  })
+
+  // P2: Backspace at the start of an item's next line's words joins it to the line above (it outdented it, and the list split).
+  await test(`${side}: Backspace at the start of an item's next line joins it to the line above; the List key keeps it the item's`, async () => {
+    await start("- one\n  more\n- two", 8)
+    await key("Backspace"); await sleep(300)
+    ok("bullets: one Backspace, `onemore`, one list", (await doc()) === "- onemore\n- two" && (await sel())[0] === 5 && (await cellBrackets()).length === 1, JSON.stringify([await doc(), await sel(), (await cellBrackets()).length]))
+    await start("- one\n  more\n- two", 5)
+    await key("Delete"); await sleep(300)
+    ok("Delete at the end of `one`: the same join from above, no indentation left between the words", (await doc()) === "- onemore\n- two" && (await sel())[0] === 5, JSON.stringify([await doc(), await sel()]))
+    await start("- [ ] milk", 10)
+    await ctrlEnter()
+    await typeText("eggs"); await sleep(250)
+    await setSel(17); await sleep(250)
+    await key("Backspace"); await sleep(300)
+    const after = await sel()
+    ok("a to-do: `milkeggs`, the caret between them, nothing selected", (await doc()) === "- [ ] milkeggs" && after[0] === 10 && after[1] === 10, JSON.stringify([await doc(), after]))
+    if (rendered) {
+      // The rendered page's to-dos are edited a box at a time (Mac 0fdd031): Backspace at the start of a to-do's words, and
+      // Delete at the end of the one above, join the words to where the to-do above ENDS — on its next line, Ctrl+Enter's.
+      const todos = "- [ ] a\n      more\n- [ ] b"
+      await start(todos, todos.length - 1)
+      await key("Backspace"); await sleep(300)
+      ok("rendered to-dos: Backspace at the start of `b` joins it to the end of `more`, no box pulled in", (await doc()) === "- [ ] a\n      moreb" && (await sel())[0] === todos.indexOf("more") + 4, JSON.stringify([await doc(), await sel()]))
+      await start(todos, todos.indexOf("more") + 4)
+      await key("Delete"); await sleep(300)
+      ok("rendered to-dos: Delete at the end of `more` the same", (await doc()) === "- [ ] a\n      moreb", JSON.stringify(await doc()))
+    }
+    // The List key (Dots) over the list: the item's next line is not made an item of its own; all dots already, it unlists.
+    await start("- one\n  more\n- two", 2)
+    await setSel(2, 18); await sleep(200)
+    await key("l", { ctrl: true, shift: true }); await sleep(350)
+    ok("the List key over it: the markers off, `more` a line of the paragraph, never `  - more`", (await doc()) === "one\nmore\ntwo", JSON.stringify(await doc()))
+  })
+
+  // P3: Shift+Left off an empty line, and Split Cell on one.
+  await test(`${side}: Shift+Left from an empty line takes the line break; Split Cell on one parts the cells there`, async () => {
+    await start("hello\n<br>\nworld", 10)
+    await key("ArrowLeft", { shift: true }); await sleep(250)
+    ok("Shift+Left: the selection runs to the end of hello at the first press", JSON.stringify(await sel()) === "[10,5]", JSON.stringify(await sel()))
+    // Up and Down go by where the caret is drawn, and the hidden `<br>` has no width: two presses cross the empty line.
+    await start("hello\n<br>\nworld", 0)
+    await key("ArrowDown", { shift: true }); await sleep(200)
+    await key("ArrowDown", { shift: true }); await sleep(250)
+    ok("Shift+Down twice from the start of hello: to the start of world", JSON.stringify(await sel()) === "[0,11]", JSON.stringify(await sel()))
+    await key("ArrowUp", { shift: true }); await sleep(200)
+    await key("ArrowUp", { shift: true }); await sleep(250)
+    ok("and Shift+Up twice: back to nothing selected at the start of hello", JSON.stringify(await sel()) === "[0,0]", JSON.stringify(await sel()))
+    await start("hello\n<br>\nworld", 10)
+    await menuClick("splitCell"); await sleep(400)
+    ok("Split Cell on the empty line: two cells, hello and world, no `<br>` left at either's edge", (await doc()) === "hello\n\nworld" && (await cellBrackets()).length === 2, JSON.stringify([await doc(), (await cellBrackets()).length]))
   })
 
   if (rendered) {

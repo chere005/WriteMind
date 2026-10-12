@@ -24,7 +24,7 @@ import {
 import { redoDepth } from "@codemirror/commands"
 import { Decoration, EditorView, ViewPlugin, keymap, type Command, type DecorationSet, type ViewUpdate } from "@codemirror/view"
 import {
-  MARKDOWN_MARKER, emptyLineSpan, end, escapeLineMapped, escapeOffsets, firstCellFromBy, hiddenInText, isMarkdownMarker,
+  MARKDOWN_MARKER, emptyLineSpan, textLineBreak, end, escapeLineMapped, escapeOffsets, firstCellFromBy, hiddenInText, isMarkdownMarker,
   isTextCell, positioned, type PositionedBlock,
 } from "@writemind/core"
 import { cellWritten, itemOpenedField, notebook } from "./notebook"
@@ -235,10 +235,15 @@ function literalTyping(tr: Transaction): Transaction | TransactionSpec | readonl
     const kept = emptyLineSpan(line.text)
     if (kept && !inserted.some(([from, to]) => from < line.from + kept[1] && to > line.from + kept[0])) continue
     if (!textAt(back.mapPos(line.from, 1))) continue
+    // A `<br>` at the head of a line of words (core `textLineBreak`: a markdown cell's or a quote's line that started afresh,
+    // come into a text cell) is nothing typed either: the line is written again without it, a text cell's lines being lines.
+    const broken = textLineBreak(line.text)
+    const dropped = broken && !inserted.some(([from, to]) => from < line.from + broken[1] && to > line.from + broken[0]) ? broken : null
     let visible = ""
     // Where each visible character is in the note now.
     const chars: number[] = []
     for (let q = line.from; q < line.to; q++) {
+      if (dropped && q >= line.from + dropped[0] && q < line.from + dropped[1]) continue
       if (!isInserted(q) && oldEscape(back.mapPos(q, 1))) continue
       visible += line.text[q - line.from]
       chars.push(q)

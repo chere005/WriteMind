@@ -115,9 +115,29 @@ export function blocks(markdown: string): Block[] {
   return positioned(markdown).map((p) => p.block)
 }
 
+/** (2026-10-11) How wide a line's indentation is, in columns (a tab to the next multiple of four). */
+function indentWidth(line: string): number {
+  let width = 0
+  for (const character of line) {
+    if (character === " ") width += 1
+    else if (character === "\t") width += 4 - (width % 4)
+    else break
+  }
+  return width
+}
+
+/** (2026-10-11) The column a list item's words start at: its indentation, its marker and the space after it (one to four). */
+function wordsColumn(rawLine: string): number {
+  const found = /^([ \t]*)([-*+]|\d{1,4}[.)])([ \t]*)/.exec(rawLine)
+  if (!found) return 2
+  const start = indentWidth(found[1]!) + found[2]!.length
+  return start + Math.min(Math.max(indentWidth(found[1]! + " ".repeat(found[2]!.length) + found[3]!) - start, 1), 4)
+}
+
 export function positioned(markdown: string): PositionedBlock[] {
   const out: PositionedBlock[] = []
   let paragraph: string[] = []
+  let itemColumn = 0
   let bullets: string[] = []
   let todos: TodoItem[] = []
   let dashes: string[] = []
@@ -263,18 +283,20 @@ export function positioned(markdown: string): PositionedBlock[] {
       if (paragraph.length || bullets.length || dashes.length || numbered.length || quote.length) flush(previousEnd)
       openIfNeeded()
       todos.push(todo)
+      itemColumn = wordsColumn(rawLine)
       lineStart += rawLine.length + 1; continue
     }
     // (The one rule the frozen parser has been given since, 2026-10-11, like `paragraphsAsOld` for text cells: a marker with
     // nothing after it, straight under an open list of its own kind, is that list's next item and still empty.)
-    if (bullets.length && (line === "-" || line === "+")) { bullets.push(""); lineStart += rawLine.length + 1; continue }
-    if (dashes.length && line === "*") { dashes.push(""); lineStart += rawLine.length + 1; continue }
-    if (numbered.length && /^\d{1,4}[.)]$/.test(line)) { numbered.push(""); lineStart += rawLine.length + 1; continue }
+    if (bullets.length && (line === "-" || line === "+")) { bullets.push(""); itemColumn = wordsColumn(rawLine); lineStart += rawLine.length + 1; continue }
+    if (dashes.length && line === "*") { dashes.push(""); itemColumn = wordsColumn(rawLine); lineStart += rawLine.length + 1; continue }
+    if (numbered.length && /^\d{1,4}[.)]$/.test(line)) { numbered.push(""); itemColumn = wordsColumn(rawLine); lineStart += rawLine.length + 1; continue }
     const bullet = bulletItem(line)
     if (bullet !== null) {
       if (paragraph.length || todos.length || dashes.length || numbered.length || quote.length) flush(previousEnd)
       openIfNeeded()
       bullets.push(bullet)
+      itemColumn = wordsColumn(rawLine)
       lineStart += rawLine.length + 1; continue
     }
     const dash = dashItem(line)
@@ -282,6 +304,7 @@ export function positioned(markdown: string): PositionedBlock[] {
       if (paragraph.length || bullets.length || todos.length || numbered.length || quote.length) flush(previousEnd)
       openIfNeeded()
       dashes.push(dash)
+      itemColumn = wordsColumn(rawLine)
       lineStart += rawLine.length + 1; continue
     }
     const number = numberedItem(line)
@@ -289,11 +312,14 @@ export function positioned(markdown: string): PositionedBlock[] {
       if (paragraph.length || bullets.length || todos.length || dashes.length || quote.length) flush(previousEnd)
       openIfNeeded()
       numbered.push(number)
+      itemColumn = wordsColumn(rawLine)
       lineStart += rawLine.length + 1; continue
     }
     // (And the rules given it since 2026-10-11 for Ctrl+Enter, Sean: "ctrl + enter adds a newline without leaving the current
-    // cell..": an indented line under an open list, or the empty line a cell keeps (`<br>`), is the last item's next line.)
-    if ((bullets.length || todos.length || dashes.length || numbered.length) && (/^[ \t]/.test(rawLine) || isEmptyLine(line))) {
+    // cell..": a line indented at least as far as the open list's last item's words, or the empty line a cell keeps (`<br>`),
+    // is that item's next line.)
+    if ((bullets.length || todos.length || dashes.length || numbered.length)
+      && (isEmptyLine(line) || (/^[ \t]/.test(rawLine) && indentWidth(rawLine) >= itemColumn))) {
       const words = isEmptyLine(line) ? "" : line
       if (bullets.length) bullets[bullets.length - 1] += "\n" + words
       else if (dashes.length) dashes[dashes.length - 1] += "\n" + words

@@ -8,7 +8,9 @@ import { foldField } from "../src/fold"
 import { renderedField } from "../src/rendered"
 import { holdingField } from "../src/preview/hold"
 import { textCells } from "../src/textCells"
-import { emptyLineAt, leftOffEmptyLine, newlineInCell } from "../src/emptyLines"
+import {
+  backspaceInItemLine, deleteIntoItemLine, emptyLineAt, leftOffEmptyLine, lineBreakAt, newlineInCell, selectLeftOffEmptyLine,
+} from "../src/emptyLines"
 
 /**
  * CTRL+ENTER IN THE EDITOR (Sean, 2026-10-11: "ctrl + enter adds a newline without leaving the current cell.."; "this
@@ -75,10 +77,11 @@ describe("the key", () => {
     newlineInCell(list.view)
     expect(doc(list.state())).toBe("- one\n  <br>\n- two")
     expect(cells(list.state())).toEqual(["bullets"])
+    // (A quote's new line starts with `<br>`: its lines join with a space when it is drawn — the review of agent/ctrlenter, P1.)
     const quote = make("> a")
     newlineInCell(quote.view)
     newlineInCell(quote.view)
-    expect(doc(quote.state())).toBe("> a\n> \n> ")
+    expect(doc(quote.state())).toBe("> a\n> <br>\n> <br>")
     expect(cells(quote.state())).toEqual(["quote"])
     const code = make("```py\nx\n```", 7)
     newlineInCell(code.view)
@@ -110,10 +113,14 @@ describe("the key", () => {
 })
 
 describe("the empty line it keeps, edited", () => {
-  it("typing on it makes it a line of words: the `<br>` goes in the same step (a text cell, a markdown cell, a list item)", () => {
+  // The review of agent/ctrlenter (P1): in a markdown cell and a quote the `<br>` stays in front of the words typed on the line
+  // — a single newline there is a space when the cell is drawn, and the `<br>` is what keeps them a line of their own. (It
+  // used to go there too, and the line Ctrl+Enter made was gone on the rendered page.)
+  it("typing on it makes it a line of words: the `<br>` goes in the same step in a text cell and a list item, and stays in front of the words in a markdown cell and a quote", () => {
     for (const [note, typed, after] of [
       ["hello\n<br>", "w", "hello\nw"],
-      ["<!-- markdown -->\nhello\n<br>", "*", "<!-- markdown -->\nhello\n*"],
+      ["<!-- markdown -->\nhello\n<br>", "*", "<!-- markdown -->\nhello\n<br>*"],
+      ["> hello\n> <br>", "w", "> hello\n> <br>w"],
       ["- one\n  <br>", "m", "- one\n  m"],
       ["- <br>\n  one", "z", "- z\n  one"],
     ] as const) {
@@ -197,5 +204,89 @@ describe("the empty line it keeps, edited", () => {
     code.view.dispatch({ selection: EditorSelection.cursor(4) })
     expect(head(code.state())).toBe(4)
     expect(emptyLineAt(code.state(), code.state().doc.line(2))).toBeNull()
+  })
+})
+
+describe("the review of agent/ctrlenter", () => {
+  it("P1: a markdown cell's and a quote's line that starts afresh keeps its `<br>` as it is typed, and the caret stands after it", () => {
+    const md = make("<!-- markdown -->\nfirst", 23)
+    newlineInCell(md.view)
+    for (const key of ["s", "e", "c"]) edit(md.view, head(md.state()), head(md.state()), key, "input.type")
+    expect(doc(md.state())).toBe("<!-- markdown -->\nfirst\n<br>sec")
+    expect(notebook(md.state()).cells[0]!.block).toMatchObject({ text: "first\nsec" })
+    // The caret put in front of the `<br>` stands after it, at the start of the words; Left goes on to the line above.
+    md.view.dispatch({ selection: EditorSelection.cursor(24) })
+    expect(head(md.state())).toBe(28)
+    expect(lineBreakAt(md.state(), md.state().doc.line(3))).toMatchObject({ alone: false, joins: true, first: false })
+    expect(leftOffEmptyLine(md.view)).toBe(true)
+    expect(head(md.state())).toBe(23)
+    const quote = make("> a", 3)
+    newlineInCell(quote.view)
+    edit(quote.view, head(quote.state()), head(quote.state()), "b", "input.type")
+    expect(doc(quote.state())).toBe("> a\n> <br>b")
+    expect(notebook(quote.state()).cells[0]!.block).toEqual({ kind: "quote", text: "a\nb" })
+  })
+
+  it("P1: Backspace at the start of such a line's words joins it to the line above, as at the start of any line", () => {
+    const md = make("<!-- markdown -->\nfirst\n<br>second", 28)
+    // (The editor's own Backspace takes the atomic `<br>` whole.)
+    edit(md.view, 24, 28, "", "delete.backward")
+    expect(doc(md.state())).toBe("<!-- markdown -->\nfirstsecond")
+    expect(head(md.state())).toBe(23)
+    undo(md.view)
+    expect(doc(md.state())).toBe("<!-- markdown -->\nfirst\n<br>second")
+    const quote = make("> first\n> <br>second", 14)
+    edit(quote.view, 10, 14, "", "delete.backward")
+    expect(doc(quote.state())).toBe("> firstsecond")
+    // A quote's empty line: Backspace takes the line, `>` and all.
+    const empty = make("> first\n> <br>", 14)
+    edit(empty.view, 10, 14, "", "delete.backward")
+    expect(doc(empty.state())).toBe("> first")
+    // Delete at the end of the line above joins over it: the `<br>` is no line's head any more, and goes.
+    const above = make("<!-- markdown -->\nfirst\n<br>second", 23)
+    above.view.dispatch(above.state().update({ changes: { from: 23, to: 24 }, userEvent: "delete.forward" }))
+    expect(doc(above.state())).toBe("<!-- markdown -->\nfirstsecond")
+  })
+
+  it("P1: a selection that took the hidden `<br>` with words (typed over, or deleted) leaves the rest a line of its own", () => {
+    const typedOver = make("<!-- markdown -->\nfirst\n<br>second", 24)
+    // (From the start of the line, as Shift+Home or a drag from the margin takes it: the `<br>` and "sec".)
+    typedOver.view.dispatch(typedOver.state().update({ changes: { from: 24, to: 31, insert: "S" }, selection: EditorSelection.cursor(25), userEvent: "input.type" }))
+    expect(doc(typedOver.state())).toBe("<!-- markdown -->\nfirst\n<br>Sond")
+    const deleted = make("> first\n> <br>second", 10)
+    deleted.view.dispatch(deleted.state().update({ changes: { from: 10, to: 17 }, userEvent: "delete.backward" }))
+    expect(doc(deleted.state())).toBe("> first\n> <br>ond")
+    expect(notebook(deleted.state()).cells[0]!.block).toEqual({ kind: "quote", text: "first\nond" })
+  })
+
+  it("P2: Backspace in an item's next line's indentation joins its words to the line above; Delete from above the same", () => {
+    const { view, state } = make("- one\n  more\n- two", 8)
+    expect(backspaceInItemLine(view)).toBe(true)
+    expect(doc(state())).toBe("- onemore\n- two")
+    expect(head(state())).toBe(5)
+    expect(cells(state())).toEqual(["bullets"])
+    undo(view)
+    expect(doc(state())).toBe("- one\n  more\n- two")
+    const todo = make("- [ ] milk\n      eggs", 17)
+    expect(backspaceInItemLine(todo.view)).toBe(true)
+    expect(doc(todo.state())).toBe("- [ ] milkeggs")
+    expect(todo.state().selection.main.empty).toBe(true)
+    const del = make("- one\n  more\n- two", 5)
+    expect(deleteIntoItemLine(del.view)).toBe(true)
+    expect(doc(del.state())).toBe("- onemore\n- two")
+    // Not its business in the middle of the words, nor in a text cell.
+    expect(backspaceInItemLine(make("- one\n  more", 10).view)).toBe(false)
+    expect(backspaceInItemLine(make("one\n  more", 6).view)).toBe(false)
+  })
+
+  it("P3 a: Shift+Left from an empty line takes the line break, not the hidden `<br>` alone", () => {
+    const { view, state } = make("hello\n<br>\nworld", 10)
+    expect(selectLeftOffEmptyLine(view)).toBe(true)
+    expect([state().selection.main.anchor, state().selection.main.head]).toEqual([10, 5])
+    // From further right, a selection already running: its head goes on the same way.
+    const run = make("hello\n<br>\nworld", 0)
+    run.view.dispatch({ selection: EditorSelection.range(13, 10) })
+    expect(selectLeftOffEmptyLine(run.view)).toBe(true)
+    expect([run.state().selection.main.anchor, run.state().selection.main.head]).toEqual([13, 5])
   })
 })

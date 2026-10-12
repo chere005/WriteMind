@@ -16,7 +16,7 @@ import { positioned, type Block, type PositionedBlock } from "../markdown/parser
 import { setHeading } from "../markdown/formatting"
 import { cellSpacing } from "./apart"
 import { inlineSegments } from "../markdown/sourceStyle"
-import { isEmptyLine } from "../markdown/emptyLine"
+import { isEmptyLine, lineBreakSpan } from "../markdown/emptyLine"
 import {
   MARKDOWN_MARKER, escapeLine, isMarkdownMarker, markdownCellEdit, plainLine, reescapePlain, unescapeLineMapped,
   visibleWords, wholeChange,
@@ -162,6 +162,13 @@ export function makeMarkdownCell(markdown: string, selection: Range): Edit | nul
   return edit(marker.range, marker.replacement, range(from, to - from))
 }
 
+/** Each line's `<br>` before words taken away (`lineBreakSpan`); an empty line's kept. */
+const emptyLinesKept = (source: string): string =>
+  source.includes("<") ? source.split("\n").map((line) => {
+    const span = lineBreakSpan(line)
+    return span && line.slice(span[1]).trim().length > 0 ? line.slice(0, span[0]) + line.slice(span[1]) : line
+  }).join("\n") : source
+
 /**
  * Ctrl+7 on a markdown cell: a text cell of the words it showed, line for line (the marker and the formatting gone;
  * Link Here's anchors, an inline picture's markdown and inline maths' `` `wl:…` `` source kept as literal words).
@@ -170,7 +177,9 @@ export function makeMarkdownCell(markdown: string, selection: Range): Edit | nul
 export function makeTextCell(markdown: string, selection: Range): Edit | null {
   const cell = cellAt(positioned(markdown), selection.location)
   if (!cell || !isMarkdownCell(cell.block)) return null
-  const source = substring(markdown, cell.range)
+  // (A line that starts afresh, `<br>` at its head before its words — Ctrl+Enter in a markdown cell — is just a line in a text
+  // cell: the tag goes.)
+  const source = emptyLinesKept(substring(markdown, cell.range))
   // Line for line (`visibleWords` keeps the lines): an empty line the cell keeps (`<br>`, emptyLine.ts) is kept as one, read
   // off the SOURCE — the words shown cannot tell it from a `<br>` written escaped.
   const raw = source.split("\n")

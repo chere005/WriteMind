@@ -12,11 +12,14 @@
  * the seams, the rendered page, a save and a move of the cell all read it as the cell's. What each kind of cell does:
  *
  * - A TEXT or MARKDOWN cell: the line breaks at the caret. A half with no words is an empty line the cell keeps; the words
- *   after the caret start the new line, written so they stay this cell's words (a text cell's by the escape rule, a
- *   markdown cell's with the head of the line escaped: `# x` moved to the start of a line is not a heading).
+ *   after the caret start the new line, written so they stay this cell's words. A text cell's by the escape rule; a
+ *   MARKDOWN cell's after a `<br>` (`lineBreakSpan`): there a single newline is a space when the cell is drawn, and the
+ *   line the key made would be gone (the review of agent/ctrlenter, P1), so the new line starts with the `<br>` that says it
+ *   starts afresh — which also keeps `# x` moved to the start of a line from being a heading.
  * - A LIST ITEM: the new line is the SAME item's next line, indented under its words (a continuation line, no marker), or
  *   an empty line it keeps. Never a new item.
- * - A QUOTE: a new line of the quote (`> `); an empty quote line is the quote's own empty line, so nothing more is written.
+ * - A QUOTE: a new line of the quote, `> <br>` and the words after the caret: a quote's lines join with a space as a
+ *   markdown cell's do, and the `<br>` keeps the new one a line of its own.
  * - A CODE, MATHS OR RUNNABLE-CODE FENCE: a plain newline (a fence holds empty lines already). On the opening fence's line
  *   the new line is the first of the code, on the closing fence's the last: a line outside the fence would be no part of it.
  * - A HEADING, A RULE, A TABLE: nothing. Each is one line by nature — a second line under a heading or a rule is a cell of
@@ -32,7 +35,7 @@
 
 import { end, range, type Range } from "../text/range"
 import type { LineSource, PositionedBlock } from "../markdown/parser"
-import { EMPTY_LINE, emptyLineSpan, lineHead } from "../markdown/emptyLine"
+import { EMPTY_LINE, emptyLineSpan, lineBreakSpan, lineHead } from "../markdown/emptyLine"
 import { escapeLine, escapeLineHead, unescapeLine, cellWordsStart } from "../markdown/plainText"
 import { isTextCell } from "./textCells"
 import { growth } from "./growth"
@@ -83,7 +86,7 @@ export function lineInCell(cells: readonly PositionedBlock[], doc: LineSource, s
     }
     if (cell.block.kind === "quote") {
       const lead = /^[ \t]*/.exec(doc.lineAt(end(cell.range)).text)![0]
-      const both = lead + "> \n" + lead + "> "
+      const both = lead + "> " + EMPTY_LINE + "\n" + lead + "> " + EMPTY_LINE
       return write(line.location, end(line), both, line.location + both.length)
     }
     return NONE
@@ -113,10 +116,13 @@ export function lineInCell(cells: readonly PositionedBlock[], doc: LineSource, s
 
   if (kind === "paragraph") {
     // (The caret is never on a markdown cell's marker line: from there it is at the start of the words.)
-    const from = Math.max(at, cellWordsStart(cell.block, cell.range))
-    const to = Math.max(stop, from)
+    let from = Math.max(at, cellWordsStart(cell.block, cell.range))
+    let to = Math.max(stop, from)
     const one = doc.lineAt(from)
     const two = doc.lineAt(to)
+    // The `<br>` a line starts with is no place for the caret: it stands after it (editor emptyLines.ts).
+    from = Math.max(from, one.from + (lineBreakSpan(one.text)?.[1] ?? 0))
+    to = Math.max(to, from, two.from + (lineBreakSpan(two.text)?.[1] ?? 0))
     // An empty line the cell keeps has no words: the caret on it is at its end.
     const keptOne = emptyLineSpan(one.text)
     const keptTwo = emptyLineSpan(two.text)
@@ -126,13 +132,16 @@ export function lineInCell(cells: readonly PositionedBlock[], doc: LineSource, s
       // Each half written by the escape rule again: a `#` that stood mid-line may start one now.
       head = escapeLine(unescapeLine(head))
       tail = escapeLine(unescapeLine(tail))
-    } else {
-      tail = escapeLineHead(tail)
+      const first = orEmpty("", head)
+      const second = tail.trim().length === 0 ? EMPTY_LINE : tail
+      const caret = one.from + first.length + 1 + (tail.trim().length === 0 ? second.length : 0)
+      return write(one.from, two.to, first + "\n" + second, caret)
     }
-    const first = orEmpty("", head)
-    const second = tail.trim().length === 0 ? EMPTY_LINE : tail
-    const caret = one.from + first.length + 1 + (tail.trim().length === 0 ? second.length : 0)
-    return write(one.from, two.to, first + "\n" + second, caret)
+    // A markdown cell: the new line starts with `<br>` (alone, the empty line), so it is a line of its own when the cell is
+    // drawn; a first half that is only a `<br>` now is the empty line it holds.
+    const first = orEmpty("", emptyLineSpan(head) ? "" : head)
+    const second = EMPTY_LINE + (tail.trim().length === 0 ? "" : tail)
+    return write(one.from, two.to, first + "\n" + second, one.from + first.length + 1 + EMPTY_LINE.length)
   }
 
   if (LISTS.has(kind)) {
@@ -159,15 +168,16 @@ export function lineInCell(cells: readonly PositionedBlock[], doc: LineSource, s
   if (kind === "quote") {
     const one = doc.lineAt(at)
     const two = doc.lineAt(stop)
-    const headOne = QUOTE_HEAD.exec(one.text)?.[0] ?? ""
-    const from = Math.max(at, one.from + headOne.length)
+    // The caret is never in the quote's `>` nor in front of the `<br>` a line starts with: it stands after them.
+    const from = Math.max(at, one.from + (lineBreakSpan(one.text)?.[1] ?? (QUOTE_HEAD.exec(one.text)?.[0] ?? "").length))
     const to = Math.max(stop, from)
     const lead = /^[ \t]*/.exec(one.text)![0]
     const first = one.text.slice(0, from - one.from)
-    const headTwo = two.number === one.number ? 0 : (QUOTE_HEAD.exec(two.text)?.[0] ?? "").length
+    const headTwo = two.number === one.number ? 0 : (lineBreakSpan(two.text)?.[1] ?? (QUOTE_HEAD.exec(two.text)?.[0] ?? "").length)
     const tail = two.text.slice(Math.max(to - two.from, headTwo))
-    const second = lead + "> " + tail.replace(/^[ \t]+/, "")
-    return write(one.from, two.to, first + "\n" + second, one.from + first.length + 1 + lead.length + 2)
+    // A quote's lines join with a space when it is drawn: the new one starts with `<br>` (alone: an empty line of the quote).
+    const second = lead + "> " + EMPTY_LINE + tail.replace(/^[ \t]+/, "")
+    return write(one.from, two.to, first + "\n" + second, one.from + first.length + 1 + lead.length + 2 + EMPTY_LINE.length)
   }
 
   // A heading, a rule, a table, a picture, a run of blank lines: one line by nature, or nothing to type in.

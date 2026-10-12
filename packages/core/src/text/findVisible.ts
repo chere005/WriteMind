@@ -12,7 +12,7 @@
  */
 
 import { hiddenInText } from "../markdown/plainText"
-import { emptyLineSpan } from "../markdown/emptyLine"
+import { emptyLineSpan, lineBreakSpan } from "../markdown/emptyLine"
 import type { PositionedBlock } from "../markdown/parser"
 import { isTextCell } from "../cells/textCells"
 import { findAll, defaultFindOptions, type FindOptions } from "./find"
@@ -26,15 +26,18 @@ const LINK_ADDRESS = /\]\(([^)\n]*)\)/g
 
 const LISTS = new Set(["bullets", "dashes", "numbered", "todos"])
 
-/** The `<br>` of each empty line a cell keeps, in `cell` (a text cell's are `hiddenInText`'s). */
-function keptLinesOf(text: string, cell: Range, out: HiddenSpans): void {
+/**
+ * The `<br>` of each empty line a cell keeps, in `cell` (a text cell's are `hiddenInText`'s) — and with `starts`, of each line
+ * that starts afresh too (a markdown cell's or a quote's: `lineBreakSpan`).
+ */
+function keptLinesOf(text: string, cell: Range, out: HiddenSpans, starts = false): void {
   const stop = cell.location + cell.length
   if (!text.slice(cell.location, stop).includes("<")) return
   let at = cell.location
   while (at <= stop) {
     let eol = text.indexOf("\n", at)
     if (eol < 0 || eol > stop) eol = stop
-    const span = emptyLineSpan(text.slice(at, eol))
+    const span = (starts ? lineBreakSpan : emptyLineSpan)(text.slice(at, eol))
     if (span) out.push([at + span[0], at + span[1]])
     at = eol + 1
   }
@@ -60,9 +63,14 @@ export function hiddenInNote(text: string, cells: readonly PositionedBlock[], dr
       keptLinesOf(text, cell.range, out)
       continue
     }
+    // A quote's and a markdown cell's lines that start afresh (Ctrl+Enter writes `<br>` at their head) hide it too.
+    if (cell.block.kind === "quote") {
+      keptLinesOf(text, cell.range, out, true)
+      continue
+    }
     if (cell.block.kind !== "paragraph") continue
     const start = cell.range.location
-    if (!isTextCell(cell.block)) keptLinesOf(text, cell.range, out)
+    if (!isTextCell(cell.block)) keptLinesOf(text, cell.range, out, true)
     if (cell.block.head) out.push([start, start + cell.block.head])
     if (!isTextCell(cell.block)) continue
     const stop = cell.range.location + cell.range.length

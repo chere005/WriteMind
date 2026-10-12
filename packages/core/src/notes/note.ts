@@ -7,7 +7,7 @@
  */
 
 import { isMarkdownMarker, plainLine, unescapeLine } from "../markdown/plainText"
-import { isEmptyLine } from "../markdown/emptyLine"
+import { isEmptyLine, lineBreakSpan } from "../markdown/emptyLine"
 import { positioned } from "../markdown/parser"
 
 export interface Note {
@@ -79,8 +79,11 @@ export function makeNote(path: string, modified: number, contents: string): Note
       continue
     }
     if (snippetLines.length >= 2) continue
-    // A text cell's line as typed (its escapes and Link Here's anchors hidden); anything else with its markup off.
-    snippetLines.push(plain.has(index) ? plainLine(line) : stripInlineMarkup(unescapeLine(line)))
+    // A text cell's line as typed (its escapes and Link Here's anchors hidden); anything else with its markup off (and the
+    // `<br>` a line that starts afresh begins with: Ctrl+Enter in a markdown cell or a quote).
+    const broken = plain.has(index) ? null : lineBreakSpan(line)
+    const words = broken ? line.slice(0, broken[0]) + line.slice(broken[1]) : line
+    snippetLines.push(plain.has(index) ? plainLine(line) : stripInlineMarkup(unescapeLine(words)))
   }
 
   return {

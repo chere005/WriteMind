@@ -103,9 +103,18 @@ is how the code is put together.
   cell's for real — its bracket, the seams, the rendered page, a save and
   reload, moving or copying the cell, the PDF and the Wolfram notebook (an
   empty line there) — and another markdown reader takes it as the line
-  break it is. One Undo takes one Ctrl+Enter back. (Another reader's
-  indented line straight under a list item is that item's next line too,
-  as in CommonMark; it used to be a cell of its own.)
+  break it is. One Undo takes one Ctrl+Enter back. In a markdown cell and
+  a quote, where a single newline is a space once the cell is drawn, the
+  new line starts with that same hidden `<br>` and keeps it in front of
+  the words typed on it, so it stays a line on the rendered page, in the
+  PDF and in Wolfram. The keys after it treat the line as the cell's own:
+  Return at its end grows the cell (the next Return arms the bar) — in a
+  list Return adds the next item after the item's lines; Backspace at the
+  start of a line's words joins it to the line above; the List key keeps
+  an item's next lines under it; Split Cell on an empty line parts the
+  cells there. (Another reader's line straight under a list item, indented
+  at least as far as the item's words, is that item's next line too, as in
+  CommonMark; it used to be a cell of its own.)
 - **Split a cell, merge two.** ⌃D cuts the cell the cursor is in, in two,
   at the cursor; ⌃M joins it to the one below (or, in the last cell, to the
   one above). Both work in the markdown and on the rendered page. A fence

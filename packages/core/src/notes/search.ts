@@ -24,7 +24,7 @@
  */
 
 import { isMarkdownMarker, unescapeLine } from "../markdown/plainText"
-import { isEmptyLine } from "../markdown/emptyLine"
+import { isEmptyLine, lineBreakSpan } from "../markdown/emptyLine"
 import { pictureLine } from "../markdown/images"
 import { isRule } from "../markdown/parser"
 import { stripInlineMarkup } from "./note"
@@ -130,8 +130,10 @@ export function plainSearchLine(raw: string): string | null {
   if (line.length === 0) return null
   // Most lines of most notes are words and nothing else: they start with a letter and hold no mark that markup uses.
   if (PLAIN.test(line)) return line
-  // (An empty line a cell keeps, `<br>`, is no words: markdown/emptyLine.ts.)
+  // (An empty line a cell keeps, `<br>`, is no words: markdown/emptyLine.ts. A line that starts afresh with one is its words.)
   if (isMarkdownMarker(line) || isEmptyLine(line)) return null
+  const broken = lineBreakSpan(line)
+  if (broken) return plainSearchLine(line.slice(0, broken[0]) + line.slice(broken[1]))
   // A fence's own line (```wl, ~~~), a rule, a picture or an ink cell.
   if (/^(```|~~~)[\w+#.\-]*$/.test(line) || isRule(line) || pictureLine(line) !== null) return null
   // A table's delimiter row (| --- | :---: |).

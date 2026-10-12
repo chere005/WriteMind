@@ -166,6 +166,30 @@ function continuesTable(line: string): boolean {
     && dashItem(line) === null && numberedItem(line) === null
 }
 
+/** How wide `line`'s indentation is, in columns (a tab to the next multiple of four). */
+function indentWidth(line: string): number {
+  let width = 0
+  for (const character of line) {
+    if (character === " ") width += 1
+    else if (character === "\t") width += 4 - (width % 4)
+    else break
+  }
+  return width
+}
+
+/**
+ * The column a list item's words start at — its indentation, its marker and the space after it (one to four; a box is
+ * words, as CommonMark has it) — the least a line under it is indented to be its next line.
+ */
+function wordsColumn(rawLine: string): number {
+  const found = /^([ \t]*)([-*+]|\d{1,4}[.)])([ \t]*)/.exec(rawLine)
+  if (!found) return 2
+  const start = indentWidth(found[1]!) + found[2]!.length
+  // (The spaces after the marker in columns: a tab there goes to the next multiple of four, as Ctrl+Enter's indentation does.)
+  const spaces = indentWidth(found[1]! + " ".repeat(found[2]!.length) + found[3]!) - start
+  return start + Math.min(Math.max(spaces, 1), 4)
+}
+
 /**
  * The parser as a MACHINE that is fed one line at a time. The whole-document `positioned` feeds it every line; the
  * incremental `positionedUpdate` starts it at the beginning of the block an edit touched and stops it as soon as it
@@ -180,6 +204,8 @@ class Machine {
   /** The open paragraph began with the markdown marker (its first entry in `paragraph`), and how long that line is. */
   private paraMarked = false
   private paraHead = 0
+  /** The column the open list's last item's words start at (`wordsColumn`): a line indented that far is the item's. */
+  private itemColumn = 0
   private bullets: string[] = []
   private todos: TodoItem[] = []
   private dashes: string[] = []
@@ -421,6 +447,7 @@ class Machine {
       if (this.paragraph.length || this.bullets.length || this.dashes.length || this.numbered.length || this.quote.length) this.flush(previousEnd)
       this.openIfNeeded()
       this.todos.push(todo)
+      this.itemColumn = wordsColumn(rawLine)
       this.lineStart += size; return
     }
     // A marker with nothing after it, straight under an open list of its own kind, is that list's next item and still
@@ -428,14 +455,15 @@ class Machine {
     // one marker touching the list, so the cell the caret was in was not the list's; a single newline grows the list
     // like it grows a paragraph (cells/growth.ts), and the new item is part of it. (To-do items and quote lines have
     // always been read this way: `- [ ]` is an empty task, `>` an empty quote line.)
-    if (this.bullets.length && (line === "-" || line === "+")) { this.bullets.push(""); this.lineStart += size; return }
-    if (this.dashes.length && line === "*") { this.dashes.push(""); this.lineStart += size; return }
-    if (this.numbered.length && bareNumber(line)) { this.numbered.push(""); this.lineStart += size; return }
+    if (this.bullets.length && (line === "-" || line === "+")) { this.bullets.push(""); this.itemColumn = wordsColumn(rawLine); this.lineStart += size; return }
+    if (this.dashes.length && line === "*") { this.dashes.push(""); this.itemColumn = wordsColumn(rawLine); this.lineStart += size; return }
+    if (this.numbered.length && bareNumber(line)) { this.numbered.push(""); this.itemColumn = wordsColumn(rawLine); this.lineStart += size; return }
     const bullet = bulletItem(line)
     if (bullet !== null) {
       if (this.paragraph.length || this.todos.length || this.dashes.length || this.numbered.length || this.quote.length) this.flush(previousEnd)
       this.openIfNeeded()
       this.bullets.push(bullet)
+      this.itemColumn = wordsColumn(rawLine)
       this.lineStart += size; return
     }
     const dash = dashItem(line)
@@ -443,6 +471,7 @@ class Machine {
       if (this.paragraph.length || this.bullets.length || this.todos.length || this.numbered.length || this.quote.length) this.flush(previousEnd)
       this.openIfNeeded()
       this.dashes.push(dash)
+      this.itemColumn = wordsColumn(rawLine)
       this.lineStart += size; return
     }
     const number = numberedItem(line)
@@ -450,14 +479,17 @@ class Machine {
       if (this.paragraph.length || this.bullets.length || this.todos.length || this.dashes.length || this.quote.length) this.flush(previousEnd)
       this.openIfNeeded()
       this.numbered.push(number)
+      this.itemColumn = wordsColumn(rawLine)
       this.lineStart += size; return
     }
     // A LINE OF THE ITEM ABOVE (Sean, 2026-10-11: "ctrl + enter adds a newline without leaving the current cell.."): under an
-    // open list, an indented line that opens nothing of its own — or the empty line a cell keeps (`<br>`, emptyLine.ts) — is
-    // the last item's next line (CommonMark's continuation line), and the list goes on. Ctrl+Enter in an item writes one
-    // (cells/lineInCell.ts). It used to end the list, the line a paragraph touching it.
+    // open list, a line that opens nothing of its own and is indented AT LEAST AS FAR AS THE LAST ITEM'S WORDS — or the empty
+    // line a cell keeps (`<br>`, emptyLine.ts) — is that item's next line (CommonMark's continuation line), and the list goes
+    // on. Ctrl+Enter in an item writes one, under the item's words (cells/lineInCell.ts). It used to end the list, the line a
+    // paragraph touching it — and still does when it stands left of the item's words (the review of agent/ctrlenter: notes
+    // written elsewhere are re-read only where CommonMark reads them the same way).
     if ((this.bullets.length || this.todos.length || this.dashes.length || this.numbered.length)
-      && (rawLine.startsWith(" ") || rawLine.startsWith("\t") || isEmptyLine(line))) {
+      && (isEmptyLine(line) || (rawLine.length > 0 && indentWidth(rawLine) >= this.itemColumn && /^[ \t]/.test(rawLine)))) {
       this.carryItemOn(isEmptyLine(line) ? "" : line)
       this.lineStart += size; return
     }

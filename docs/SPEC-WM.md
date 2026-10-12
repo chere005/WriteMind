@@ -208,7 +208,7 @@ Inside a fenced block (2.4.9) every line belongs to the fence until it closes. O
 | 11 | `t` starts with `- ` or `+ ` | bullet line |
 | 12 | `t` starts with `* ` | dash line |
 | 13 | `t` is 1-4 digits then `. ` or `) ` | numbered line |
-| 14 | a list (rules 10-13) is open, and the line starts with white space or is an empty line kept (2.4.11) | the list's last item goes on: the line is that item's next line (2026-10-11) |
+| 14 | a list (rules 10-13) is open, and the line is indented at least as far as the last item's words (its indentation, its marker and the one to four spaces after it, a tab to the next multiple of four), or is an empty line kept (2.4.11) | the list's last item goes on: the line is that item's next line (2026-10-11) |
 | 15 | otherwise | paragraph line |
 
 A line of rules 9-13 and 15 continues the open cell when it is of the same kind and otherwise ends it (so `- a` straight under a paragraph line starts a list, and `# h` straight under a list starts a heading). Rules 2, 5, 6, 7, 8 end the open cell and a table, a fence, a heading, a rule and a picture are each their own cell **even when no blank line separates them** from the cell above or below.
@@ -225,7 +225,7 @@ Example: `a`, 2 blank lines, `b`, 3 blank lines, `c` is the cells paragraph `a`,
 
 Only the body-text **paragraph** has two kinds.
 
-- A **markdown cell** is a paragraph whose first line is the marker `<!-- markdown -->` (alone on the line, surrounding white space allowed). Its words are the lines after the marker, joined with one space, read as markdown (2.5); an empty line kept (2.4.11) is an empty line of the words. The marker is part of the cell's range: deleting, moving or copying the cell takes it along. It is an HTML comment, so another markdown viewer shows nothing for it.
+- A **markdown cell** is a paragraph whose first line is the marker `<!-- markdown -->` (alone on the line, surrounding white space allowed). Its words are the lines after the marker, joined with one space, read as markdown (2.5); an empty line kept (2.4.11) is an empty line of the words, and a line that starts with `<br>` starts afresh (2.4.11). The marker is part of the cell's range: deleting, moving or copying the cell takes it along. It is an HTML comment, so another markdown viewer shows nothing for it.
 - A **text cell** is any other paragraph: its words are its lines exactly as the person typed them, every line break kept, nothing drawn as formatting (an empty line kept, 2.4.11, is an empty line of them). The file spells it with the **escape rule**.
 - **Older notes rule.** An unmarked paragraph that contains UNESCAPED markup WriteMind writes (a bold, italic or strike pair; a `<u>`, `<span ...>`, `<mark ...>` or `<a ...>` tag other than the id-only anchors of 2.6.3; a `[..](..)` link; a code span, which includes `wl:` maths) is read as a markdown cell. Readers MUST apply it. Writers write the marker on every markdown cell they write, and MUST NOT add or remove a marker on a cell the person did not edit.
 - Link anchors (2.6) are not markup for this purpose: a text cell that holds them stays a text cell.
@@ -270,7 +270,7 @@ as two lines.
 **Bold** joined with _this_ line.
 ```
 
-**2.4.3 Lists.** One item per marker line, a flat list: indentation in the source is kept and is not structure. An item goes on over the lines rule 14 gives it — a line that starts with white space straight under it (an item's next line: its words are the item's, after a line break), or an empty line kept (2.4.11) — as CommonMark's continuation lines do; a line that does not start with white space ends the list (2026-10-11; before that every line not an item ended it).
+**2.4.3 Lists.** One item per marker line, a flat list: indentation in the source is kept and is not structure. An item goes on over the lines rule 14 gives it — a line straight under it indented at least as far as its words (an item's next line: its words are the item's, after a line break), or an empty line kept (2.4.11) — as CommonMark's continuation lines do; a line that stands further left ends the list (2026-10-11; before that every line not an item ended it).
 
 | Kind | Marker | Writer writes |
 |---|---|---|
@@ -321,7 +321,7 @@ An unknown reader shows a picture, or nothing, and preserves the line.
 - Body rows: while a line has an unescaped `|` and starts no other block (a list item, quote, heading, fence, rule or picture). `\|` is a pipe inside a cell; the pipes at the two ends are optional.
 - A short row is padded and a long one is cut to the header's width **in what is shown**; the source line is preserved.
 
-**2.4.8 Quote.** Lines starting with `>`; the words are what follows `>`, trimmed, joined with a space; a quote line with nothing after its `>` is an empty line of the words (CommonMark's paragraph break inside a quote; 2026-10-11).
+**2.4.8 Quote.** Lines starting with `>`; the words are what follows `>`, trimmed, joined with a space; a quote line with nothing after its `>` (or only `<br>`, 2.4.11) is an empty line of the words (CommonMark's paragraph break inside a quote), and a quote line whose words start with `<br>` starts afresh (2.4.11; 2026-10-11).
 
 ```text
 > a quote
@@ -365,7 +365,9 @@ An unknown reader keeps the whole fence, info string and body.
 
 **2.4.10 Blank cell.** 2.2.
 
-**2.4.11 Empty line kept in a cell** (2026-10-11; Sean: "ctrl + enter adds a newline without leaving the current cell.."). A blank line ends a cell, so an EMPTY line inside a paragraph (a text or markdown cell) or a list item is written as `<br>` alone on its line: after a list item's head (its indentation, or its marker and box when it is the item's first line), with nothing after it but spaces. Readers also take `<br/>`, `<br />` and any case; writers write `<br>`. It is part of the cell (rule 14 for a list; a paragraph line otherwise), its words read it as an empty line, and WriteMind draws nothing for it. It is never what typing writes: in a text cell a typed `<br>` is escaped (`\<br>`, 2.3), and in a markdown cell `<br>` alone already is a line break. Another markdown viewer reads it as the line break it is (inside a paragraph or an item), or as nothing (at the end of one). Not in a quote, whose own empty line is `>` (2.4.8), and not in a fence, whose lines are kept raw.
+**2.4.11 Empty line kept in a cell** (2026-10-11; Sean: "ctrl + enter adds a newline without leaving the current cell.."). A blank line ends a cell, so an EMPTY line inside a paragraph (a text or markdown cell) or a list item is written as `<br>` alone on its line: after a list item's head (its indentation, or its marker and box when it is the item's first line), with nothing after it but spaces. Readers also take `<br/>`, `<br />` and any case; writers write `<br>`. It is part of the cell (rule 14 for a list; a paragraph line otherwise), its words read it as an empty line, and WriteMind draws nothing for it. It is never what typing writes: in a text cell a typed `<br>` is escaped (`\<br>`, 2.3), and in a markdown cell `<br>` alone already is a line break. Another markdown viewer reads it as the line break it is (inside a paragraph or an item), or as nothing (at the end of one). In a quote it stands after the `> ` (`> <br>` is an empty line of the quote, as `>` alone is: 2.4.8); not in a fence, whose lines are kept raw.
+
+**A line that starts afresh** (2026-10-11, the review of agent/ctrlenter). In a markdown cell and a quote a single line break is a space (2.5, 2.4.8), so a line Ctrl+Enter starts there begins with the same `<br>`, words after it: `first\n<br>second` is two lines, "first" and "second", where `first\nsecond` is one, "first second". The `<br>` stands at the head of the line (after a quote's `> `), WriteMind draws nothing for it, and another markdown viewer draws the same two lines (the tag is a line break; the newline before it a space at a line's end). In a text cell, whose every line is a line already, a `<br>` at a line's head before words is read as nothing and is not written there (a text cell made from such a markdown cell or quote loses it); in a list item it is not written either.
 
 ```text
 first line

@@ -13,7 +13,7 @@ import type { Extension } from "@codemirror/state"
 import { EditorView, keymap, type Command } from "@codemirror/view"
 import {
   BOLD, ITALIC, STRIKE, UNDERLINE_CLOSE, UNDERLINE_OPEN, copyCell, deleteCell, duplicateCell,
-  editsOver, movingCells, pasteCell, plainCells,
+  editsOver, movingCells, pasteCell, plainCells, returnInItem,
   caretLine, codeBlock, indent, listContinuation, mergeCells, moveSection, outdent,
   outdentForBackspace, setHeading, splitCell, substring, toggleList, toggleQuote, toggleWrap,
   kindForHeading, makeMarkdownCell, makeTextCell, positioned, viaMarkdownCells, wholeChange,
@@ -25,7 +25,7 @@ import { codeTypingKeys } from "./codeTyping"
 import { makesCellAfter } from "./dock"
 import { extraKeys } from "./extras"
 import { setHolding } from "./preview/hold"
-import { applyEdit, grownCell, notebookField } from "./notebook"
+import { applyEdit, grownCell, notebook, notebookField } from "./notebook"
 import { armedField, openArmed, openCellAt, setArmedType } from "./seams"
 import { caretInEmptyCell } from "./textCells"
 import { backspaceMayOutdent } from "./windowed"
@@ -209,6 +209,20 @@ const backspaceOutdents: Command = (view) => {
 const carryTheListOn: Command = (view) => {
   const main = view.state.selection.main
   if (!main.empty) return false
+  // An item with next lines (Ctrl+Enter writes them, Sean 2026-10-11: "ctrl + enter adds a newline without leaving the current
+  // cell.."): the next item goes after the item's last line, never a line of white space that would end the list (core
+  // itemLines.ts; the rendered page's returnInBlock asks the same).
+  if (view.state.selection.ranges.length === 1) {
+    const item = returnInItem(notebook(view.state).cells, view.state.doc, { location: main.from, length: 0 })
+    if (item) {
+      applyEdit(view, {
+        range: { location: item.from, length: item.to - item.from },
+        replacement: item.insert,
+        selection: { location: item.caret, length: 0 },
+      })
+      return true
+    }
+  }
   // The line the caret is in, from the document's own lines (not a string made of the whole note for every Return).
   const line = view.state.doc.lineAt(main.from)
   const body = line.text
