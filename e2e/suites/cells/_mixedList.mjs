@@ -254,7 +254,7 @@ export async function runMixedList({ rendered }) {
     ok("a list, a quote, a list, touching: three cells (and end)", (await cellBrackets()).length === 4, JSON.stringify(await cellBrackets()))
     // The control for the probe's "no seam" check: two cells that touch DO have a seam between them, and the sweep finds it.
     await start("* a\n> q\n\nend", "* a\n> q\n\nend".length)
-    const pair = (await rows()).filter((row) => /^(–|•)?\s*a$/.test(row.text.trim()) || row.text.includes("q"))
+    const pair = (await rows()).filter((row) => /^(–|•)?[\s\u2060]*a$/.test(row.text.trim()) || row.text.includes("q"))
     ok("the dash row and the quote row are there", pair.length === 2, JSON.stringify(await rows()))
     if (pair.length === 2) {
       const seams = await seamBetween(pair[0], pair[1])

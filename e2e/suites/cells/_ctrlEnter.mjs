@@ -7,7 +7,7 @@
 // Ctrl+Enter back, and the lines survive a save and a reload. The real keys and the real mouse, on the markdown side and on the
 // rendered page. The rules: core cells/lineInCell.ts, editor emptyLines.ts (unit tests: core and editor lineInCell.test.ts).
 import path from "node:path"
-import { ok, test, js, sleep, until, freshNote, setDoc, doc, sel, key, click, focus, setSel, setRendered, armed, typeText, shot, reloadApp, openNote, waitFor, menuClick } from "../../lib/harness.mjs"
+import { ok, test, js, sleep, until, freshNote, setDoc, doc, sel, key, click, clickEl, focus, setSel, setRendered, armed, typeText, shot, reloadApp, openNote, waitFor, menuClick } from "../../lib/harness.mjs"
 import { readWm } from "../../lib/wm.mjs"
 
 export async function runCtrlEnter({ rendered }) {
@@ -228,6 +228,9 @@ export async function runCtrlEnter({ rendered }) {
       ok("rendered to-dos: Delete at the end of `more` the same", (await doc()) === "- [ ] a\n      moreb", JSON.stringify(await doc()))
     }
     // The List key (Dots) over the list: the item's next line is not made an item of its own; all dots already, it unlists.
+    // (The key writes the style last chosen, which the app remembers — another script may have left it Numbered: choose Dots.)
+    await start("x", 1)
+    await clickEl('[data-bar=style]'); await sleep(250); await clickEl('.float-menu [data-bar="kind-list-dots"]'); await sleep(350)
     await start("- one\n  more\n- two", 2)
     await setSel(2, 18); await sleep(200)
     await key("l", { ctrl: true, shift: true }); await sleep(350)
