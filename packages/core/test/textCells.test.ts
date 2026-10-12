@@ -28,16 +28,17 @@ describe("the escape rule", () => {
     }
   })
 
-  it("escapes a list marker standing alone, which is an empty item to the parser", () => {
-    // Was "writes nothing" for `- ` and `1.` until 2026-10-11, when a marker with no words became an item of its list (Sean:
-    // "the input cursor should go to where it is typing when inserting a checklist or bullets"): in a text cell it stays words.
+  it("escapes a list marker standing alone WITH ITS SPACE, which can start a list to the parser", () => {
+    // Was "writes nothing" for `- ` until 2026-10-11, when a marker with no words became an item of its list (Sean: "the input
+    // cursor should go to where it is typing when inserting a checklist or bullets"): in a text cell it stays words. A marker
+    // with no space after it starts no list (the parser's `startsEmptyList`) and is left as it was written.
     expect(escapeLine("- ")).toBe("\\- ")
-    expect(escapeLine("-")).toBe("\\-")
-    expect(escapeLine("+")).toBe("\\+")
-    expect(escapeLine("*")).toBe("\\*")
-    expect(escapeLine("1.")).toBe("1\\.")
-    expect(escapeLine("12)")).toBe("12\\)")
-    for (const words of ["-", "- ", "*", "+", "1.", "Alpha\n-", "Alpha\n1.\nBeta"]) {
+    expect(escapeLine("+ ")).toBe("\\+ ")
+    expect(escapeLine("* ")).toBe("\\* ")
+    expect(escapeLine("1. ")).toBe("1\\. ")
+    expect(escapeLine("12) ")).toBe("12\\) ")
+    for (const words of ["-", "+", "*", "1.", "12)"]) expect(escapeLine(words), words).toBe(words)
+    for (const words of ["-", "- ", "* ", "*", "+", "1.", "1. ", "Alpha\n-", "Alpha\n- ", "Alpha\n1.\nBeta"]) {
       expect(blocks(escapePlain(words)), words).toEqual([{ kind: "paragraph", text: words }])
     }
   })

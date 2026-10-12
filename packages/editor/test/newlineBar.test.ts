@@ -236,8 +236,28 @@ describe("a table is ended by its empty row, a list or a quote by the Return AFT
       expect(doc(view), "one Undo gives the item back").toBe(text)
       expect(head(view)).toBe(caret)
     }
-    // (An empty item touching the cell above — a list chosen on a grown line — is the editor's own Return's: its marker goes.)
-    expect(returnClosesTheCell(make("one\n- ", 6))).toBe(false)
+    // (An empty item touching the cell above is the editor's own Return's: its marker goes.)
+    expect(returnClosesTheCell(make("# one\n- ", 8))).toBe(false)
+  })
+
+  it("one touching the cell BELOW goes with its own newline, and the cells above and below stay two, apart (2026-10-11)", () => {
+    // `a\n\n- \nb` with Return gave `a \nb` (the rule reached two characters back from `b` for the blank line): three cells made
+    // one, a stray space in it. The real keys reach it: `- Y`, Return, Return, `b`, then Y taken back and Return.
+    for (const [text, caret] of [
+      ["a\n\n- \nb", 5], ["a\n\n- [ ] \nb", 9], ["a\n\n1. \nb", 6], ["a\n\n> \nb", 5],
+    ] as const) {
+      const view = make(text, caret)
+      expect(returnClosesTheCell(view), text).toBe(true)
+      expect(doc(view), text).toBe("a\n\nb")
+      expect(notebook(view.state).cells.length, text).toBe(2)
+      expect(armed(view), `${text}: the bar over b`).toBe(3)
+      undo(view)
+      expect(doc(view), "one Undo gives the item back").toBe(text)
+    }
+    const first = make("- \nb", 2)
+    expect(returnClosesTheCell(first)).toBe(true)
+    expect(doc(first)).toBe("b")
+    expect(armed(first), "the bar over b, the note's first cell").toBe(0)
   })
 
   it("an empty item in the middle of a list is not the end of it", () => {

@@ -8,7 +8,8 @@ import { list } from "../src/keys"
 import { itemOpenedField, notebook, notebookField } from "../src/notebook"
 import { renderedField } from "../src/rendered"
 import {
-  armSeam, armedField, armedTypeField, barComesBack, barFromField, markersOwnSpace, returnClosesTheCell, setArmedType, typeAtTheBar,
+  armSeam, armedField, armedTypeField, backspaceTakesTheItem, barComesBack, barFromField, markersOwnSpace, returnClosesTheCell,
+  setArmedType, typeAtTheBar,
 } from "../src/seams"
 
 /**
@@ -131,5 +132,30 @@ describe("a * typed at the bar", () => {
     expect(returnClosesTheCell(view)).toBe(true)
     expect(doc(view)).toBe(NOTE)
     expect(view.state.field(armedField)).toBe(7)
+  })
+
+  it("Backspace on the `*` before a word is typed does the same, in the middle and at the two ends (2026-10-11)", () => {
+    // It took the marker alone: `Alpha\n\n\n\nBeta`, an empty line in a cell of its own with no bar, and at the tail newlines that
+    // were saved (`...Gamma\n\n`).
+    for (const [offset, caret] of [[0, 0], [7, 6], [NOTE.length, NOTE.length]] as const) {
+      const view = barAt(offset, caret)
+      type(view, "*")
+      expect(doc(view)).not.toBe(NOTE)
+      expect(backspaceTakesTheItem(view), String(offset)).toBe(true)
+      expect(doc(view), String(offset)).toBe(NOTE)
+      expect(view.state.field(armedField), String(offset)).toBe(offset)
+      // One Undo gives the item back.
+      undo(view)
+      expect(doc(view)).not.toBe(NOTE)
+    }
+  })
+
+  it("Backspace is not the rule's once the item has words, or past the first character of its marker", () => {
+    const view = barAt(7, 6)
+    type(view, "*")
+    type(view, "x")
+    expect(backspaceTakesTheItem(view)).toBe(false)
+    expect(backspaceTakesTheItem(fakeView("Alpha\n\n- [ ] \n\nBeta", 10))).toBe(false)
+    expect(backspaceTakesTheItem(fakeView("- one\n- ", 8)), "the empty LAST item of a longer list: the editor's own").toBe(false)
   })
 })

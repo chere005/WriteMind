@@ -7,12 +7,15 @@
 // Cmd/Ctrl+Shift+L, Return on an item — and every place — an empty note, a bar, the line a newline grew under a text cell and
 // under a list, a line of words — the note holds a REAL list item (the Style button names the list), and the caret is DRAWN where
 // the first typed character then lands (the item's text column: past the bullet or the box and its gap, not on it) at that
-// character's full height; the typed character is the item's words (never `\- x`, never a text cell).
+// character's full height; the typed character is the item's words (never `\- x`, never a text cell). On the line a newline grew
+// under a text cell the list is a cell of its own under it, as the bar would make it; under a numbered list Numbered counts on.
+// An older note's lone `-`, `1.` and `*` stay text (2026-10-11).
 //
 // A `*` typed at the bar (the horizontal cursor) at the first seam, a middle one and the tail is the empty dashes item `* ` (the
 // Style button says Dashes), the caret where its words go; `* ` (star, space) is the same single `* `; one Undo takes it back to
 // the armed bar. The 3.8.0/3.9.0 Return rules hold in that list: Return adds an item, Return on the empty last item takes its
-// marker and keeps the line, the next Return arms the bar; Return on the `*` before a word is typed puts the bar back.
+// marker and keeps the line, the next Return arms the bar; Return or Backspace on the `*` before a word is typed puts the bar back,
+// and Return on a lone empty item that touches the cell below keeps the cells either side apart.
 //
 // On the rendered page with the pen down the pen's layer owns the pointer, so a bar is armed with the arrow keys (as it can be),
 // and the + it shows is pressed with the mouse (Canvas.tsx `plusAt`).
@@ -133,9 +136,11 @@ export async function runListItems({ rendered, pen }) {
     })
   }
 
-  // ---- the line a newline grew under a text cell: the list is a cell of its own touching it, the caret in its item
+  // ---- the line a newline grew under a text cell: the list is a cell of its own UNDER it, as the bar would open it (2026-10-11:
+  // it was a second cell touching the first, drawn apart on the rendered page and hugging on the markdown side), the caret in its
+  // item; one Undo gives the grown line back
   for (const [how, kind] of [["Style", "dots"], ["List menu", "todo"], ["List button", "todo"]]) {
-    const name = `${where}: ${how} > ${LABELS[kind]} on the line a newline grew under a text cell`
+    const name = `${where}: ${how} > ${LABELS[kind]} on the line a newline grew under a text cell opens it as the bar would`
     await test(name, async () => {
       await start("Alpha\n\nBeta", 5)
       await key("Enter"); await sleep(250)
@@ -145,8 +150,42 @@ export async function runListItems({ rendered, pen }) {
       else await clickEl("[data-bar=list]")
       await sleep(300)
       const marker = MARKERS[kind]
-      await itemReady(`Alpha\n${marker}\n\nBeta`, 6 + marker.length, LABELS[kind])
+      want("three cells: the list is one of its own, apart from Alpha", (await brackets()).length === 3, (await brackets()).length)
       if (how === "Style") await shot(`${tag}-dots-grown-line`)
+      await itemReady(`Alpha\n\n${marker}\n\nBeta`, 7 + marker.length, LABELS[kind])
+      await key("z", { ctrl: true }); await sleep(200)
+      await key("z", { ctrl: true }); await sleep(250)
+      want("Undo, Undo: the x, then the list; the grown line is back", (await doc()) === "Alpha\n\n\nBeta" && same(await sel(), [6, 6]), [await doc(), await sel()])
+      return say(name)
+    })
+  }
+
+  // ---- the line a newline grew under a numbered list: Numbered counts on (it wrote `1. ` under `2. b`)
+  {
+    const name = `${where}: Style > Numbered on the line a newline grew under a numbered list writes the next number`
+    await test(name, async () => {
+      await start("1. a\n2. b\n\nBeta", 9)
+      await key("Enter"); await sleep(250)
+      await key("Enter"); await sleep(250)
+      want("Return, Return: the grown line under the list", (await doc()) === "1. a\n2. b\n\n\nBeta", await doc())
+      await style("numbered")
+      await itemReady("1. a\n2. b\n3. \n\nBeta", 13, "Numbered")
+      want("one cell: the list", (await brackets()).length === 2, (await brackets()).length)
+      return say(name)
+    })
+  }
+
+  // ---- OLD NOTES KEEP THEIR SHAPE: a lone `-` or `1.` in a text cell, a cell that is a `*`, are words as they always were
+  {
+    const name = `${where}: a lone -, 1. and * in an older note's text cells stay text, three cells`
+    await test(name, async () => {
+      await start("Alpha\n-\nBeta\n\nShopping:\n1.\n\n*", 2)
+      want("three cells, as before 2026-10-11", (await brackets()).length === 3, (await brackets()).length)
+      want("the Style button says Text", (await styleWord()) === "Text", await styleWord())
+      if (rendered) {
+        const lists = Number(await js(`document.querySelectorAll('.wm-pv-list').length`))
+        want("the rendered page draws no list", lists === 0, lists)
+      }
       return say(name)
     })
   }
@@ -268,6 +307,47 @@ export async function runListItems({ rendered, pen }) {
       await key("Enter"); await sleep(300)
       want("the note is as it was", (await doc()) === D0, await doc())
       want("the bar is up where it was", (await armed()) && same(await sel(), barSel), { armed: await armed(), sel: await sel(), was: barSel })
+      return say(name)
+    })
+  }
+
+  // ---- Backspace on the * before a word is typed: the bar again (it took the marker alone and left an empty cell, no bar)
+  for (const seam of ["middle", "tail"]) {
+    const name = `${where}: Backspace on the * typed at the ${seam} seam's bar puts the bar back where it was`
+    await test(name, async () => {
+      const barSel = await armAt(seam)
+      await typeText("*"); await sleep(250)
+      await key("Backspace"); await sleep(300)
+      want("the note is as it was", (await doc()) === D0, await doc())
+      want("the bar is up where it was", (await armed()) && same(await sel(), barSel), { armed: await armed(), sel: await sel(), was: barSel })
+      want("three cells", (await brackets()).length === 3, (await brackets()).length)
+      return say(name)
+    })
+  }
+
+  // ---- Return on a lone empty item that TOUCHES the cell below: it goes, the cells above and below stay two (it made them one,
+  // `Alpha \nZed`). The route Sean's keys take: `- Y`, Return, Return, `Zed`, back after Y, Backspace, Return.
+  {
+    const name = `${where}: Return on a lone empty item touching the cell below takes it away and keeps the cells apart`
+    await test(name, async () => {
+      await start("Alpha\n\n- Y", 10)
+      await key("Enter"); await sleep(250)
+      await key("Enter"); await sleep(250)
+      await typeText("Zed"); await sleep(250)
+      want("the route: Zed typed on the line under the list", (await doc()) === "Alpha\n\n- Y\nZed", await doc())
+      await setSel(10); await focus(); await sleep(250)
+      await key("Backspace"); await sleep(250)
+      want("Backspace takes the Y", (await doc()) === "Alpha\n\n- \nZed", await doc())
+      await key("Enter"); await sleep(300)
+      want("Return takes the item away, the two cells apart", (await doc()) === "Alpha\n\nZed", await doc())
+      want("two cells", (await brackets()).length === 2, (await brackets()).length)
+      want("the bar is up over Zed", await armed(), await armed())
+      for (const marker of ["- [ ] ", "1. ", "> "]) {
+        await start(`Alpha\n\n${marker}\nZed`, 7 + marker.length)
+        await key("Enter"); await sleep(300)
+        want(`"${marker}": the item goes, the cells apart`, (await doc()) === "Alpha\n\nZed", await doc())
+        want(`"${marker}": the bar is up`, await armed(), await armed())
+      }
       return say(name)
     })
   }

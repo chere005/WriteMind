@@ -464,9 +464,10 @@ export function returnInBlock(markdown: string, selection: Range): Edit | null {
     // THE LAST ITEM, EMPTY (Sean, 2026-10-11: "exiting bullet points shouldn't exit the cell though, just add a newline after it"):
     // its marker goes and the line stays, the empty line under the list that the cell grows to (growth.ts); the Return after
     // that one is the bar's (newline.ts). The markdown side's carryTheListOn does the same.
-    // (An item that is the whole of its list counts when it TOUCHES the cell above — a list chosen on the line a newline grew
-    // under a cell, Sean 2026-10-11: its marker goes and that cell's grown line is left, as on the markdown side. One that is a
-    // cell of its own is taken away before this, the bar up where it was: newline.ts.)
+    // (An item that is the whole of its list counts when it TOUCHES the cell above — a heading's or another list's line, as the
+    // note has it (Sean 2026-10-11; a list chosen on the line a newline grew opens apart now, grownList.ts): its marker goes and
+    // that cell's grown line is left, as on the markdown side. One that is a cell of its own is taken away before this, the bar
+    // up where it was: newline.ts.)
     const touchesAbove = at.location >= 2 && markdown.charCodeAt(at.location - 1) === 10 && markdown.charCodeAt(at.location - 2) !== 10
     if ((line.location > at.location || touchesAbove) && end(at) === line.location + body.length) {
       return edit(range(line.location, body.length), "", range(line.location, 0))

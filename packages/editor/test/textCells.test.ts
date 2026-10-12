@@ -72,8 +72,9 @@ describe("typing in a text cell is literal", () => {
     expect(type(make("- [ ] a\n- ", 10), 10, "b").doc.toString()).toBe("- [ ] a\n- b")
     // ...and no hole: an empty text cell, a marker under words or a heading, another list's marker stay literal. TYPED a key
     // at a time, as a person types them: since 2026-10-11 a marker alone is an empty item to the parser (Sean: "the input
-    // cursor should go to where it is typing when inserting a checklist or bullets"), so a text cell's lone `2.` is escaped the
-    // moment it is typed and stays words (these were written as the unescaped `2. ` with only the `x` typed, until then).
+    // cursor should go to where it is typing when inserting a checklist or bullets"), so a text cell's lone `2. ` is escaped the
+    // moment its space is typed and stays words (these were written as the unescaped `2. ` with only the `x` typed, until then;
+    // a `2.` with no space yet starts no list, the parser's `startsEmptyList`, and is left as typed until the space comes).
     const typed = (doc: string, keys: string[]): string => {
       let state = make(doc, doc.length)
       for (const key of keys) state = type(state, state.selection.main.head, key)
@@ -84,6 +85,10 @@ describe("typing in a text cell is literal", () => {
     expect(typed("# H\n", ["2", ".", " ", "x"])).toBe("# H\n2\\. x")
     expect(typed("- a\n", ["2", ".", " ", "x"])).toBe("- a\n2\\. x")
     expect(typed("1. a\n\n", ["2", ".", " ", "x"])).toBe("1. a\n\n2\\. x")
+    expect(typed("", ["-", " ", "x"])).toBe("\\- x")
+    expect(typed("", ["*", " ", "x"])).toBe("\\* x")
+    expect(typed("", ["-"])).toBe("-")
+    expect(typed("", ["-", " "])).toBe("\\- ")
   })
 
   it("a paste into a text cell is literal", () => {

@@ -266,8 +266,13 @@ export function positioned(markdown: string): PositionedBlock[] {
     // (The one rule the frozen parser has been given since, 2026-10-11, like `paragraphsAsOld` for text cells: a marker with
     // nothing after it is an item of its list with no words yet — straight under an open list of its own kind that list's next
     // item, and anywhere else the first item of its list, as the item with words would be (Sean, 2026-10-11: "the input cursor
-    // should go to where it is typing when inserting a checklist or bullets"; the parser's `emptyItem`).)
-    const lone = line === "-" || line === "+" ? "bullets" : line === "*" ? "dashes" : /^\d{1,4}[.)]$/.test(line) ? "numbered" : null
+    // should go to where it is typing when inserting a checklist or bullets"; the parser's `emptyItem`). Starting a list it is
+    // written with its space, and not straight under a paragraph's line, where it stays that paragraph's words as in every note
+    // before: the parser's `startsEmptyList`.)
+    const marker = line === "-" || line === "+" ? "bullets" : line === "*" ? "dashes" : /^\d{1,4}[.)]$/.test(line) ? "numbered" : null
+    const own = marker === "bullets" ? bullets.length : marker === "dashes" ? dashes.length : marker === "numbered" ? numbered.length : 0
+    const starts = !paragraph.length && /[ \t]\r?$/.test(rawLine)
+    const lone = marker !== null && (own > 0 || starts) ? marker : null
     const bullet = bulletItem(line) ?? (lone === "bullets" ? "" : null)
     if (bullet !== null) {
       if (paragraph.length || todos.length || dashes.length || numbered.length || quote.length) flush(previousEnd)

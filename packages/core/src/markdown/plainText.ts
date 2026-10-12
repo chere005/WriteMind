@@ -222,8 +222,9 @@ function lineStartEscape(out: string, back: number[]): number {
   if (out.charCodeAt(lead) === 92) return -1
   const first = back[lead]!
   if (line.startsWith("```") || line.startsWith(">") || (line.startsWith("#") && heading(line) !== null)) return first
-  // (A marker alone is an item with no words yet, `emptyItem` (Sean, 2026-10-11): a text cell's lone `-` is escaped too.)
-  const empty = emptyItem(line)
+  // (A marker alone WITH ITS SPACE starts a list, an item with no words yet (`emptyItem`, the parser's `startsEmptyList`; Sean,
+  // 2026-10-11): a text cell's lone `- ` is escaped too. A `-` with no space after it is words wherever it is, and is left be.)
+  const empty = /[ \t]$/.test(out) ? emptyItem(line) : null
   if (isRule(line) || todoItem(line) !== null || bulletItem(line) !== null || dashItem(line) !== null
     || empty === "bullets" || empty === "dashes") return first
   if (numberedItem(line) !== null || empty === "numbered") {

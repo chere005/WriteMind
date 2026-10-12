@@ -16,7 +16,7 @@ import {
   editsOver, movingCells, pasteCell, plainCells,
   caretLine, codeBlock, indent, listContinuation, mergeCells, moveSection, outdent,
   outdentForBackspace, setHeading, splitCell, substring, toggleList, toggleQuote, toggleWrap,
-  kindForHeading, makeMarkdownCell, makeTextCell, positioned, viaMarkdownCells, wholeChange,
+  kindForHeading, listOnGrownLine, makeMarkdownCell, makeTextCell, positioned, viaMarkdownCells, wholeChange,
   MATH_FENCE, mathsAsCode, mathsAsText, mathsCellPlan, tableBlock,
   type CellKind, type Edit, type Heading, type ListStyle, type Range,
 } from "@writemind/core"
@@ -116,7 +116,21 @@ export const heading = (level: Heading): Command => level === 0 ? textCell
   : nameKind(kindForHeading(level), run(unmarked((text, where) => setHeading(text, where, level))))
 
 export const list = (style: ListStyle): Command =>
-  nameKind({ kind: "list", style }, run(unmarked((text, where) => toggleList(text, where, style))))
+  nameKind({ kind: "list", style }, (view) => grownLineList(view, style) || run(unmarked((text, where) => toggleList(text, where, style)))(view))
+
+/**
+ * A list chosen on the LINE A NEWLINE GREW under a cell (Sean, 2026-10-11: "the input cursor should go to where it is typing when
+ * inserting a checklist or bullets"): under a cell that is not a list it is the cell the bar under that cell would open, the
+ * grown line gone (it was a second cell touching the first, or the paragraph's words); under a numbered list Numbered counts on
+ * (core `listOnGrownLine`). Elsewhere the list's command, as ever. One edit, its own undo step.
+ */
+function grownLineList(view: EditorView, style: ListStyle): boolean {
+  if (grownCell(view.state) === null) return false
+  const change = listOnGrownLine(view.state.doc.toString(), selection(view), style)
+  if (!change) return false
+  applyEdit(view, change, true)
+  return true
+}
 
 /**
  * The style Format ▸ List writes: the one the chevron beside the list button

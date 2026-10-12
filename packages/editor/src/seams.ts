@@ -17,8 +17,8 @@ import {
 import { invertedEffects, isolateHistory } from "@codemirror/commands"
 import { Decoration, EditorView, ViewPlugin, keymap, type Command, type ViewUpdate } from "@codemirror/view"
 import {
-  between, closingReturn, end, firstCellFromBy, openCell, PREVIEW_BLOCK_GAP, seamAt, seams, armIn, type CellBox, type CellKind,
-  type PositionedBlock, type Range, type Seam,
+  between, closingReturn, end, firstCellFromBy, loneItemGoes, openCell, PREVIEW_BLOCK_GAP, seamAt, seams, armIn, type CellBox, type CellKind,
+  type ClosingReturn, type LineSource, type PositionedBlock, type Range, type Seam,
 } from "@writemind/core"
 import { barCaret, sameLineOnScreen, seamBeneath, shownBeyond, sideMove, verticalMove, type BarMove } from "./barWalk"
 import { insideHidden, revealAt } from "./fold"
@@ -772,12 +772,35 @@ const barKeys = keymap.of([
  * opens an empty cell, `barKeys`), a note that cannot be written to.
  */
 export const returnClosesTheCell: Command = (view) => {
+  const closed = closingAsked(view, closingReturn)
+  return closed !== null && closeTheCell(view, closed)
+}
+
+/**
+ * BACKSPACE ON A LIST THAT IS ONE EMPTY ITEM, A CELL OF ITS OWN (Sean, 2026-10-11: "typing a * while the input cursor is
+ * horizontal will start a markdown text cell with bullet points"): the caret after its marker, before a word is typed — the
+ * `*` typed at the bar a moment ago, a pick from the + — Backspace takes the cell away and the bar is up where it was, as one
+ * Undo and Return there do (core `loneItemGoes`). It took the marker alone and left an empty line in a cell of its own (three
+ * brackets, the Style button saying Text, no bar), and at the note's end newlines that were saved.
+ */
+export const backspaceTakesTheItem: Command = (view) => {
+  const closed = closingAsked(view, loneItemGoes)
+  return closed !== null && closeTheCell(view, closed)
+}
+
+/** What `rule` says of the caret, where Return or Backspace is ours to answer: one caret, no bar up, nothing held, writable. */
+function closingAsked(view: EditorView,
+  rule: (cells: readonly PositionedBlock[], doc: LineSource, caret: Range) => ClosingReturn | null): ClosingReturn | null {
   const state = view.state
   const main = state.selection.main
-  if (state.readOnly || state.selection.ranges.length !== 1 || !main.empty) return false
-  if ((state.field(armedField, false) ?? null) !== null || state.field(holdingField, false)) return false
-  const closed = closingReturn(notebook(state).cells, state.doc, { location: main.head, length: 0 })
-  if (!closed) return false
+  if (state.readOnly || state.selection.ranges.length !== 1 || !main.empty) return null
+  if ((state.field(armedField, false) ?? null) !== null || state.field(holdingField, false)) return null
+  return rule(notebook(state).cells, state.doc, { location: main.head, length: 0 })
+}
+
+/** Carry out a `ClosingReturn`: what goes goes, in a step of its own, and the bar is up beside the cell it names. */
+function closeTheCell(view: EditorView, closed: ClosingReturn): boolean {
+  const state = view.state
   // The column the caret is at rides with the bar, as an arrow's does: Up from here goes back to the end of the cell, and Down into
   // the cell below at that column (measured now, where the cell's end is: the line that goes is under it).
   const cellEnd = end(notebook(state).cells[closed.index]!.range)
@@ -949,7 +972,7 @@ export const seamExtensions = (onPlusPressed: (view: EditorView, seam: Seam) => 
   EditorView.editorAttributes.compute([armedField], (state) =>
     (state.field(armedField, false) ?? null) !== null ? { class: "wm-armed" } : ({} as Record<string, string>)),
   // Ahead of the table's Return and the rendered page's, which are at the highest precedence too (and come after these).
-  Prec.highest(keymap.of([{ key: "Enter", run: returnClosesTheCell }])),
+  Prec.highest(keymap.of([{ key: "Enter", run: returnClosesTheCell }, { key: "Backspace", run: backspaceTakesTheItem }])),
   Prec.high(barKeys),
   Prec.high(arrowKeys),
   Prec.high(pasteAtTheBar),
