@@ -3,7 +3,8 @@
 // horizontal will start a markdown text cell with bullet points with the input cursor ready to start typing", "the input cursor
 // should go to where it is typing when inserting a checklist or bullets", "this should not be two separate cells" and "ctrl +
 // enter adds a newline without leaving the current cell..". Each has its own scripts (editor/10-12, cells/22-25); this is the
-// note Sean was making when he asked, start to end, on the markdown side and the rendered page: a `*` at the bar, dashes, Return,
+// note Sean was making when he asked, start to end, on the markdown side and the rendered page: a `*` at the bar, dots (Sean,
+// 2026-10-12: "dots"), Return,
 // Return, Style ▸ To-do, to-dos, Ctrl+Enter in a to-do, Return after it — one list cell all the way, the caret drawn where each
 // first character lands, and the note saved as typed.
 import {
@@ -40,24 +41,24 @@ for (const rendered of [false, true]) {
     ok("Down from the end of the cell arms the bar", await armed())
 
     await typeText("*"); await sleep(400)
-    ok("a `*` at the bar opens a bullet list: `* `", (await doc()) === "Top\n\n* " && !(await armed()), JSON.stringify(await doc()))
-    ok("the Style button says Dashes", (await label()) === "Dashes", String(await label()))
+    ok("a `*` at the bar opens a bullet list of dots: `- `", (await doc()) === "Top\n\n- " && !(await armed()), JSON.stringify(await doc()))
+    ok("the Style button says Dots", (await label()) === "Dots", String(await label()))
     await typeAtCaret("after the `*`", "hello")
-    ok("the words are the item's, not escaped", (await doc()) === "Top\n\n* hello", JSON.stringify(await doc()))
+    ok("the words are the item's, not escaped", (await doc()) === "Top\n\n- hello", JSON.stringify(await doc()))
 
     await key("Enter"); await sleep(300)
-    await typeAtCaret("after Return on a dash", "there")
+    await typeAtCaret("after Return on a dot", "there")
     await key("Enter"); await sleep(300)
     await key("Enter"); await sleep(300)
-    ok("Return on the empty dash takes its marker off and keeps the line in the cell",
-      (await doc()) === "Top\n\n* hello\n* there\n" && !(await armed()), JSON.stringify([await doc(), await armed()]))
+    ok("Return on the empty dot takes its marker off and keeps the line in the cell",
+      (await doc()) === "Top\n\n- hello\n- there\n" && !(await armed()), JSON.stringify([await doc(), await armed()]))
 
     await pickKind("list-todo")
-    ok("Style ▸ To-do makes that line a to-do", (await doc()) === "Top\n\n* hello\n* there\n- [ ] ", JSON.stringify(await doc()))
+    ok("Style ▸ To-do makes that line a to-do", (await doc()) === "Top\n\n- hello\n- there\n- [ ] ", JSON.stringify(await doc()))
     await typeAtCaret("after Style ▸ To-do", "Are you")
     await key("Enter"); await sleep(300)
     await typeAtCaret("after Return on a to-do", "Doing today")
-    ok("two cells: Top, and the list (dashes and to-dos together)", (await cells()) === 2, String(await cells()))
+    ok("two cells: Top, and the list (dots and to-dos together)", (await cells()) === 2, String(await cells()))
     ok("the Style button names the item the caret is on: To-do", (await label()) === "To-do", String(await label()))
 
     await key("Enter", { modifiers: CTRL }); await sleep(300)
@@ -71,7 +72,7 @@ for (const rendered of [false, true]) {
     ok("Return after it adds the next to-do after the item's last line",
       (await doc()).endsWith("- [ ] Doing today\n      and more\n- [ ] "), JSON.stringify(await doc()))
     await typeAtCaret("after Return under Ctrl+Enter's line", "Last")
-    const want = "Top\n\n* hello\n* there\n- [ ] Are you\n- [ ] Doing today\n      and more\n- [ ] Last"
+    const want = "Top\n\n- hello\n- there\n- [ ] Are you\n- [ ] Doing today\n      and more\n- [ ] Last"
     ok("the note is exactly what was typed", (await doc()) === want, JSON.stringify(await doc()))
     ok("and it is still two cells", (await cells()) === 2, String(await cells()))
 
@@ -81,7 +82,7 @@ for (const rendered of [false, true]) {
       const drawn = JSON.parse(await js(`JSON.stringify({ boxes: document.querySelectorAll('.wm-pv-box').length,
         marks: [...document.querySelectorAll('.wm-pv-mark')].map(e=>e.textContent),
         items: [...document.querySelectorAll('.wm-pv-li')].map(e=>e.innerText.trim()) })`))
-      ok("the rendered page draws two dashes and three boxes", drawn.boxes === 3 && JSON.stringify(drawn.marks) === JSON.stringify(["–", "–"]), JSON.stringify(drawn))
+      ok("the rendered page draws two dots and three boxes", drawn.boxes === 3 && JSON.stringify(drawn.marks) === JSON.stringify(["•", "•"]), JSON.stringify(drawn))
       ok("and `and more` is a line of `Doing today`, not an item", drawn.items.some((one) => /^Doing today\s*\n\s*and more$/.test(one)) && drawn.items.length === 5, JSON.stringify(drawn.items))
     } else {
       ok("the markdown side draws three boxes", (await js(`document.querySelectorAll('.wm-todo').length`)) === 3)

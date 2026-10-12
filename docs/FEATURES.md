@@ -292,8 +292,8 @@ is how the code is put together.
   new line under a paragraph or a heading the list is a cell of its own
   under it, as the insertion line would make it; under a list it is that
   list's next item, the next number for a numbered one. Typing `*` on the
-  insertion line starts a bullet list there (`* ` and `*` then a space are
-  the same), ready for its first item; Return or Backspace before a word
+  insertion line starts a bullet list of dots there (`- `; `*` then a space
+  is the same), ready for its first item; Return or Backspace before a word
   takes it back to the insertion line, and so does one Undo. A `-` or `1.`
   on a line of its own inside older text stays text.
 - **Code blocks, in five languages.** The `</>` button (⌘8) fences the

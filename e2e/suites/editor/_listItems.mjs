@@ -11,8 +11,8 @@
 // under a text cell the list is a cell of its own under it, as the bar would make it; under a numbered list Numbered counts on.
 // An older note's lone `-`, `1.` and `*` stay text (2026-10-11).
 //
-// A `*` typed at the bar (the horizontal cursor) at the first seam, a middle one and the tail is the empty dashes item `* ` (the
-// Style button says Dashes), the caret where its words go; `* ` (star, space) is the same single `* `; one Undo takes it back to
+// A `*` typed at the bar (the horizontal cursor) at the first seam, a middle one and the tail is the empty dots item `- ` (the
+// Style button says Dots; Sean, 2026-10-12: "dots"), the caret where its words go; `* ` (star, space) is the same single `- `; one Undo takes it back to
 // the armed bar. The 3.8.0/3.9.0 Return rules hold in that list: Return adds an item, Return on the empty last item takes its
 // marker and keeps the line, the next Return arms the bar; Return or Backspace on the `*` before a word is typed puts the bar back,
 // and Return on a lone empty item that touches the cell below keeps the cells either side apart.
@@ -27,9 +27,9 @@ import {
 const D0 = "Alpha\n\nBeta\n\nGamma"
 // [where the caret goes first, the arrow that arms the bar from there, the note with a `*` typed there, the caret in it]
 const SEAMS = {
-  first: [0, "ArrowUp", "* \n\n" + D0, 2],
-  middle: [5, "ArrowDown", "Alpha\n\n* \n\nBeta\n\nGamma", 9],
-  tail: [D0.length, "ArrowDown", D0 + "\n\n* ", D0.length + 4],
+  first: [0, "ArrowUp", "- \n\n" + D0, 2],
+  middle: [5, "ArrowDown", "Alpha\n\n- \n\nBeta\n\nGamma", 9],
+  tail: [D0.length, "ArrowDown", D0 + "\n\n- ", D0.length + 4],
 }
 const MARKERS = { dots: "- ", dashes: "* ", numbered: "1. ", todo: "- [ ] " }
 const LABELS = { dots: "Dots", dashes: "Dashes", numbered: "Numbered", todo: "To-do" }
@@ -249,12 +249,12 @@ export async function runListItems({ rendered, pen }) {
 
   // ---- a `*` at the bar: the bullet list, at each seam; one Undo back to the bar
   for (const seam of ["first", "middle", "tail"]) {
-    const name = `${where}: * typed at the ${seam} seam's bar opens a dashes item, one Undo puts the bar back`
+    const name = `${where}: * typed at the ${seam} seam's bar opens a dots item, one Undo puts the bar back`
     await test(name, async () => {
       const barSel = await armAt(seam)
       const [, , expected, caret] = SEAMS[seam]
       await typeText("*"); await sleep(250)
-      await itemReady(expected, caret, "Dashes")
+      await itemReady(expected, caret, "Dots")
       if (seam === "middle") await shot(`${tag}-star-at-bar`)
       await key("z", { ctrl: true }); await sleep(200)
       want("the first Undo takes the x", (await doc()) === expected, await doc())
@@ -266,14 +266,14 @@ export async function runListItems({ rendered, pen }) {
   }
 
   {
-    const name = `${where}: * then a space at the bar is one "* ", and the words are the item's`
+    const name = `${where}: * then a space at the bar is one "- ", and the words are the item's`
     await test(name, async () => {
       await armAt("middle")
       await typeText("* "); await sleep(200)
-      want("the note holds one `* `", (await doc()) === "Alpha\n\n* \n\nBeta\n\nGamma", await doc())
+      want("the note holds one `- `", (await doc()) === "Alpha\n\n- \n\nBeta\n\nGamma", await doc())
       await typeText("milk"); await sleep(200)
-      want("the words are the item's", (await doc()) === "Alpha\n\n* milk\n\nBeta\n\nGamma", await doc())
-      want("the Style button says Dashes", (await styleWord()) === "Dashes", await styleWord())
+      want("the words are the item's", (await doc()) === "Alpha\n\n- milk\n\nBeta\n\nGamma", await doc())
+      want("the Style button says Dots", (await styleWord()) === "Dots", await styleWord())
       return say(name)
     })
   }
@@ -285,16 +285,16 @@ export async function runListItems({ rendered, pen }) {
       await armAt("middle")
       await typeText("*a"); await sleep(150)
       await key("Enter"); await sleep(250)
-      want("Return adds an item", (await doc()) === "Alpha\n\n* a\n* \n\nBeta\n\nGamma", await doc())
+      want("Return adds an item", (await doc()) === "Alpha\n\n- a\n- \n\nBeta\n\nGamma", await doc())
       await typeText("b"); await sleep(150)
       await key("Enter"); await sleep(250)
       await key("Enter"); await sleep(300)
-      want("Return on the empty last item takes its marker and keeps the line", (await doc()) === "Alpha\n\n* a\n* b\n\n\nBeta\n\nGamma" && same(await sel(), [15, 15]), [await doc(), await sel()])
-      want("...the list's line: no bar, the Style button says Dashes", !(await armed()) && (await styleWord()) === "Dashes", { armed: await armed(), label: await styleWord() })
+      want("Return on the empty last item takes its marker and keeps the line", (await doc()) === "Alpha\n\n- a\n- b\n\n\nBeta\n\nGamma" && same(await sel(), [15, 15]), [await doc(), await sel()])
+      want("...the list's line: no bar, the Style button says Dots", !(await armed()) && (await styleWord()) === "Dots", { armed: await armed(), label: await styleWord() })
       await key("Enter"); await sleep(300)
-      want("the Return after it arms the bar under the list", (await armed()) && (await doc()) === "Alpha\n\n* a\n* b\n\nBeta\n\nGamma", [await armed(), await doc()])
+      want("the Return after it arms the bar under the list", (await armed()) && (await doc()) === "Alpha\n\n- a\n- b\n\nBeta\n\nGamma", [await armed(), await doc()])
       await typeText("z"); await sleep(200)
-      want("a character there opens the next cell", (await doc()) === "Alpha\n\n* a\n* b\n\nz\n\nBeta\n\nGamma", await doc())
+      want("a character there opens the next cell", (await doc()) === "Alpha\n\n- a\n- b\n\nz\n\nBeta\n\nGamma", await doc())
       return say(name)
     })
   }

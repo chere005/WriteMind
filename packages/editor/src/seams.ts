@@ -677,9 +677,10 @@ export function openArmed(view: EditorView, written: string, literal = true, apa
 
 /**
  * A `*` TYPED AT THE BAR OPENS A BULLET LIST (Sean, 2026-10-11: "typing a * while the input cursor is horizontal will start a
- * markdown text cell with bullet points with the input cursor ready to start typing"). Markdown's `* ` is the bullet list, which
- * WriteMind draws with a dash: the cell the bar opens is that list's empty item `* `, made as the + menu's Dashes makes it (one
- * Undo takes it back to the bar), the caret where its words go, and what is typed next is the item's words. A `*` typed with
+ * markdown text cell with bullet points with the input cursor ready to start typing"; 2026-10-12, asked dashes or dots: "dots").
+ * The cell the bar opens is a DOTS list's empty item `- `, made as the + menu's Dots makes it (one Undo takes it back to the
+ * bar), the caret where its words go, and what is typed next is the item's words. (3.10.0 wrote markdown's own `* `, which
+ * WriteMind draws with a dash.) A `*` typed with
  * more after it in one go (`* milk`, a composed input) opens the item with the rest as its words. Only at a bar whose kind is
  * still plain text: a kind chosen on the + takes the `*` as a character of its own. It replaces the 3.9.0 handling, which made
  * the cell a markdown paragraph holding a `*` (the next key gave `*x`, no list) and was not heard on the keydown path below.
@@ -688,7 +689,7 @@ export function typeAtTheBar(view: EditorView, text: string): boolean {
   if (text.length === 0 || (view.state.field(armedField, false) ?? null) === null) return false
   const star = /^\*(?: |$)/.exec(text)
   if (star && (view.state.field(armedTypeField, false) ?? { kind: "text" }).kind === "text") {
-    view.dispatch({ effects: setArmedType.of({ kind: "list", style: "dashes" }) })
+    view.dispatch({ effects: setArmedType.of({ kind: "list", style: "dots" }) })
     const words = text.slice(star[0].length)
     // (The empty item is a step of its own, as a pick from the + menu is; words typed with it go in with it.)
     return openArmed(view, words, true, words === "")
@@ -700,9 +701,9 @@ const typingAtTheBar = EditorView.inputHandler.of((view, _from, _to, text) => ty
 
 /**
  * THE MARKER'S OWN SPACE (Sean, 2026-10-11): `*` then a space at the bar is the `* ` a person types for a bullet, and the `*`
- * has already written the item's `* ` — so the space typed straight after a marker the bar opened (`itemOpened`: the + menu's
- * lists, the Style menu's and Ctrl+Shift+L at a bar, the `*`) is that space, already there, and writes nothing: `* ` stays
- * `* `, not `*  `. Once: the next space is a word's.
+ * has already written the item's `- ` — so the space typed straight after a marker the bar opened (`itemOpened`: the + menu's
+ * lists, the Style menu's and Ctrl+Shift+L at a bar, the `*`) is that space, already there, and writes nothing: `- ` stays
+ * `- `, not `-  `. Once: the next space is a word's.
  */
 export function markersOwnSpace(view: EditorView, from: number, to: number, text: string): boolean {
   if (text !== " " || from !== to) return false

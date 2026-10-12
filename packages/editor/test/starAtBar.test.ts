@@ -14,9 +14,8 @@ import {
 
 /**
  * A `*` TYPED AT THE BAR OPENS A BULLET LIST (Sean, 2026-10-11: "typing a * while the input cursor is horizontal will start a
- * markdown text cell with bullet points with the input cursor ready to start typing"): the cell is the empty dashes item `* `
- * (markdown's bullet list, drawn with a dash), the caret where its words go, the Style button says Dashes; `* ` is the same
- * single `* `; one Undo takes the cell back to the armed bar — at the two ends of the note too, where no caret can arm it
+ * markdown text cell with bullet points with the input cursor ready to start typing"; 2026-10-12: "dots"): the cell is the empty
+ * dots item `- `, the caret where its words go, the Style button says Dots; `* ` is the same single `- `; one Undo takes the cell back to the armed bar — at the two ends of the note too, where no caret can arm it
  * (`barComesBack`). It used to make a markdown paragraph holding a `*`, and the next key gave `*x`. The real keys on both pages:
  * e2e/suites/editor/10..12 (`_listItems.mjs`).
  */
@@ -59,20 +58,20 @@ const head = (view: EditorView): number => view.state.selection.main.head
 describe("a * typed at the bar", () => {
   // [the seam, the bar's offset, where the caret waits, the note with the `*` typed, the caret in its item]
   const SEAMS: [string, number, number, string, number][] = [
-    ["the first seam", 0, 0, "* \n\n" + NOTE, 2],
-    ["a middle seam", 7, 6, "Alpha\n\n* \n\nBeta\n\nGamma", 9],
-    ["the tail", NOTE.length, NOTE.length, NOTE + "\n\n* ", NOTE.length + 4],
+    ["the first seam", 0, 0, "- \n\n" + NOTE, 2],
+    ["a middle seam", 7, 6, "Alpha\n\n- \n\nBeta\n\nGamma", 9],
+    ["the tail", NOTE.length, NOTE.length, NOTE + "\n\n- ", NOTE.length + 4],
   ]
   for (const [name, offset, caret, written, inside] of SEAMS) {
-    it(`at ${name}: opens the empty dashes item, the caret where its words go, named Dashes; one Undo puts the bar back`, () => {
+    it(`at ${name}: opens the empty dots item, the caret where its words go, named Dots; one Undo puts the bar back`, () => {
       const view = barAt(offset, caret)
       type(view, "*")
       expect(doc(view)).toBe(written)
       expect(head(view)).toBe(inside)
       expect(view.state.field(armedField)).toBeNull()
-      expect(cellKindAt(view.state)).toEqual({ kind: "list", style: "dashes" })
+      expect(cellKindAt(view.state)).toEqual({ kind: "list", style: "dots" })
       const cell = notebook(view.state).cells.find((one) => one.range.location <= inside && inside <= one.range.location + one.range.length)
-      expect(cell?.block).toEqual({ kind: "dashes", items: [""] })
+      expect(cell?.block).toEqual({ kind: "bullets", items: [""] })
       type(view, "x")
       expect(doc(view)).toBe(written.slice(0, inside) + "x" + written.slice(inside))
       undo(view)
@@ -86,20 +85,20 @@ describe("a * typed at the bar", () => {
     })
   }
 
-  it("star then space is one `* `, and the next words are the item's (a second space is a word's)", () => {
+  it("star then space is one `- `, and the next words are the item's (a second space is a word's)", () => {
     const view = barAt(7, 6)
     type(view, "*")
     type(view, " ")
-    expect(doc(view)).toBe("Alpha\n\n* \n\nBeta\n\nGamma")
+    expect(doc(view)).toBe("Alpha\n\n- \n\nBeta\n\nGamma")
     expect(head(view)).toBe(9)
     type(view, " ")
-    expect(doc(view)).toBe("Alpha\n\n*  \n\nBeta\n\nGamma")
+    expect(doc(view)).toBe("Alpha\n\n-  \n\nBeta\n\nGamma")
   })
 
   it("`* milk` typed in one go (a composed input) opens the item with its words", () => {
     const view = barAt(7, 6)
     type(view, "* milk")
-    expect(doc(view)).toBe("Alpha\n\n* milk\n\nBeta\n\nGamma")
+    expect(doc(view)).toBe("Alpha\n\n- milk\n\nBeta\n\nGamma")
     expect(head(view)).toBe(13)
   })
 
