@@ -238,6 +238,14 @@ is how the code is put together.
   cell (a newline after the list, not an exit); the Return after that puts the bar under it. The
   list button's menu picks dots, dashes, numbers or to-dos — `- `, `* `,
   `1. ` and `- [ ] ` on disk, a round bullet, a dash and a number on the page.
+- **A list starts where you are, with the cursor where you type.** The List
+  button, the Style menu, the `+` and ⇧⌘L make a real list item wherever
+  the cursor is — on the insertion line, on an empty note, on the line under
+  a cell, or out of a line of words — and the cursor stands just past the
+  bullet or the box, where the first letter lands, at full height. Typing
+  `*` on the insertion line starts a bullet list there (`* ` and `*` then a
+  space are the same), ready for its first item; Return before a word
+  takes it back to the insertion line, and so does one Undo.
 - **Code blocks, in five languages.** The `</>` button (⌘8) fences the
   selection or opens an empty block; its menu tags the fence with one of ten
   languages, and the block is coloured — in the editor

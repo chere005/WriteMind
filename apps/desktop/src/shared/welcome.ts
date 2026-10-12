@@ -42,6 +42,9 @@ export const WELCOME_INTRO =
  */
 export const welcomeFeatures = (mac: boolean): string[] => [
   "**Cells:** headings, text, markdown, lists, quotes, code, runnable code, maths, tables and drawings; the Style menu and the + between two cells make one.",
+  // Sean, 2026-10-11: "the input cursor should go to where it is typing when inserting a checklist or bullets.. typing a * while the
+  // input cursor is horizontal will start a markdown text cell with bullet points".
+  `**Lists:** List, the Style menu, the + and ${key("list", mac)} start a list where you are, the caret where its words go; \`*\` typed at the insertion line starts a bullet list.`,
   `**Text and markdown cells:** ${key("heading:0", mac)} makes a text cell, shown exactly as typed; ${key("markdownCell", mac)} a markdown cell, read as markdown.`,
   `**Maths cells:** ${key("mathsCell", mac)} makes one, or turns a cell's words into one; Wolfram Language, typeset when the caret leaves. ${key("insertMath", mac)} opens the palette.`,
   "**Tables:** a pipe table (`| a | b |`) is one cell, a real table on the rendered page; Tab and Return move along it.",

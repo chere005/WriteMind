@@ -264,25 +264,25 @@ export function positioned(markdown: string): PositionedBlock[] {
       lineStart += rawLine.length + 1; continue
     }
     // (The one rule the frozen parser has been given since, 2026-10-11, like `paragraphsAsOld` for text cells: a marker with
-    // nothing after it, straight under an open list of its own kind, is that list's next item and still empty.)
-    if (bullets.length && (line === "-" || line === "+")) { bullets.push(""); lineStart += rawLine.length + 1; continue }
-    if (dashes.length && line === "*") { dashes.push(""); lineStart += rawLine.length + 1; continue }
-    if (numbered.length && /^\d{1,4}[.)]$/.test(line)) { numbered.push(""); lineStart += rawLine.length + 1; continue }
-    const bullet = bulletItem(line)
+    // nothing after it is an item of its list with no words yet — straight under an open list of its own kind that list's next
+    // item, and anywhere else the first item of its list, as the item with words would be (Sean, 2026-10-11: "the input cursor
+    // should go to where it is typing when inserting a checklist or bullets"; the parser's `emptyItem`).)
+    const lone = line === "-" || line === "+" ? "bullets" : line === "*" ? "dashes" : /^\d{1,4}[.)]$/.test(line) ? "numbered" : null
+    const bullet = bulletItem(line) ?? (lone === "bullets" ? "" : null)
     if (bullet !== null) {
       if (paragraph.length || todos.length || dashes.length || numbered.length || quote.length) flush(previousEnd)
       openIfNeeded()
       bullets.push(bullet)
       lineStart += rawLine.length + 1; continue
     }
-    const dash = dashItem(line)
+    const dash = dashItem(line) ?? (lone === "dashes" ? "" : null)
     if (dash !== null) {
       if (paragraph.length || bullets.length || todos.length || numbered.length || quote.length) flush(previousEnd)
       openIfNeeded()
       dashes.push(dash)
       lineStart += rawLine.length + 1; continue
     }
-    const number = numberedItem(line)
+    const number = numberedItem(line) ?? (lone === "numbered" ? "" : null)
     if (number !== null) {
       if (paragraph.length || bullets.length || todos.length || dashes.length || quote.length) flush(previousEnd)
       openIfNeeded()

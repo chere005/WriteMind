@@ -205,9 +205,9 @@ Inside a fenced block (2.4.9) every line belongs to the fence until it closes. O
 | 8 | `t` is exactly one picture (2.4.6) | a picture cell, one line |
 | 9 | `t` starts with `>` | quote line |
 | 10 | `t` is a task item (2.4.4) | todo line |
-| 11 | `t` starts with `- ` or `+ ` | bullet line |
-| 12 | `t` starts with `* ` | dash line |
-| 13 | `t` is 1-4 digits then `. ` or `) ` | numbered line |
+| 11 | `t` starts with `- ` or `+ `, or `t` is `-` or `+` | bullet line |
+| 12 | `t` starts with `* `, or `t` is `*` | dash line |
+| 13 | `t` is 1-4 digits then `. ` or `) `, or 1-4 digits then `.` or `)` and nothing else | numbered line |
 | 14 | otherwise | paragraph line |
 
 A line of rules 9-14 continues the open cell when it is of the same kind and otherwise ends it (so `- a` straight under a paragraph line starts a list, and `# h` straight under a list starts a heading). Rules 2, 5, 6, 7, 8 end the open cell and a table, a fence, a heading, a rule and a picture are each their own cell **even when no blank line separates them** from the cell above or below.
@@ -231,7 +231,7 @@ Only the body-text **paragraph** has two kinds.
 
 **The escape rule.** A text cell's file text is its visible words with a backslash in front of each character that would otherwise change the file's meaning, and in front of nothing else. A reader reads `\` followed by one of ``\ ` * _ { } [ ] ( ) # + - . ! ~ < > |`` as that character alone (the backslash hidden); any other backslash is itself. The writer escapes:
 
-- at the head of a line: `#` of a heading, `-` `*` `+` of a list or a rule, `>`, the `.` or `)` of `1.`, the first backtick of a fence, the `!` of a picture line, the first unescaped `|` of a table line or delimiter row;
+- at the head of a line: `#` of a heading, `-` `*` `+` of a list (a marker standing alone too) or a rule, `>`, the `.` or `)` of `1.` (and of a lone `1.`), the first backtick of a fence, the `!` of a picture line, the first unescaped `|` of a table line or delimiter row;
 - inside a line: the opening mark (both characters when it is doubled: `**`, `__`, `~~`, doubled backticks) of the first piece of markup the line would form, then the next, until none is left: `*`, `_`, `` ` ``, `[`, `<` (a tag or `<!`), `~`;
 - a `\` that precedes a character the reader would take it to escape.
 
@@ -277,7 +277,7 @@ as two lines.
 | dashes | `* ` | `* ` |
 | numbered | 1-4 digits, then `. ` or `) ` | `1. `, `2. `, ... |
 
-A marker with no words (`- ` alone) trims to `-` and is a paragraph line. The number of a numbered item is not significant on reading.
+A marker with no words (`- ` alone, which trims to `-`; `* `, `1. `) is an item of its list with no words yet, wherever an item with words would be one: the next item of an open list of its kind, else the first item of a list of its own (straight under a paragraph line too, as `- a` would be). [new: 2.15.0 and the port up to 3.9.0 read it as a paragraph line unless a list of its kind was open above it; it is what the app writes for a list made empty, `- `, `1. `, before a word is typed.] The number of a numbered item is not significant on reading.
 
 ```text
 - dot
@@ -774,7 +774,7 @@ Each is an input and an expected result; build the archive with any ZIP library 
 4. **Future version.** `manifest.version` 2 with an entry the reader does not know: opens, the editor is read-only, no autosave runs, the file's SHA-256 is unchanged after a session of attempted edits.
 5. **Hostile names.** Archives whose entries are named `../x`, `/abs`, `a\b`, `C:/x`, `media/../../x`, `a//b`, a duplicate `media/a.png` twice, and `media/A.png` plus `media/a.png`; each is refused (the last as a writer error, the others on reading), the file is not modified, and nothing is created outside a temporary directory.
 6. **Atomic write and guard.** (a) Kill the process after the temporary file is written and before the rename: the target is byte-identical to before; `Name.wm.tmp` is not listed as a note. (b) Between opening and saving change the file on disk: the save writes nothing, keeps the buffer, reports it. (c) Delete the file, then save: nothing is written. (d) Record the order of calls for one save: write temp, fsync temp, guard, rename, fsync directory.
-7. **Text grammar.** The 2.8 example parses to the cell list under it; and `a`, two blank lines, `b`, three blank lines, `c` gives paragraph, paragraph, blank (1), paragraph; `-` alone, `- ` alone and `#nospace` and `####### seven` are paragraph lines; an unclosed fence is a code cell to the end; `- [x]done` is a dot item whose words are `[x]done`, not a task; `\|` stays inside a table cell.
+7. **Text grammar.** The 2.8 example parses to the cell list under it; and `a`, two blank lines, `b`, three blank lines, `c` gives paragraph, paragraph, blank (1), paragraph; `#nospace` and `####### seven` are paragraph lines and `-` alone or `- ` alone an empty dot item; an unclosed fence is a code cell to the end; `- [x]done` is a dot item whose words are `[x]done`, not a task; `\|` stays inside a table cell.
 8. **Escape rule.** For the visible words `# not a heading\n- or a list\n**x** 1. a_b`, the file text is `\# not a heading\n\- or a list\n\*\*x** 1. a_b`; it parses to one text cell with those words; an unmarked paragraph `**x**` is a markdown cell; adding the marker does not change what it shows; `<!-- markdown -->` typed as words is written `\<!-- markdown -->`.
 9. **Drawing decode.** `drawing.json` = `{"zzz":1,"strokes":[{"points":[]},{"id":"x","points":[{"x":0,"y":0}]}],"items":[{"kind":"sticker"},{"kind":"shape","id":"h","shapeKind":"hexagon"},{"kind":"stroke","id":"p","points":[{"x":0,"y":0},{"x":1,"y":1}],"pressures":[1]},null]}`. Decoded model: items `x` (stroke), `h` (rectangle, defaults), `p` (stroke, no pressures); `damaged` true. Saved back with the 3.6 preservation: `zzz`, the sticker, `shapeKind` `hexagon`, the stroke with no points and the `null` are all still in the file (as opaque entries of `items`; `strokes` itself is not written).
 10. **Conversion.** A folder with `A.md` (text: a heading, `[B](B.md#wm-12ab34cd)`, `![](.drawings/media/3f9c2a7e5b1d4c80.png)`, an ink cell line, and a code fence containing `.drawings/media/x.png`), `Sec/B.md` with `<a id="wm-12ab34cd"></a>`, the sidecar `.drawings/A-<sha1("A.md")[:12]>.json` with an image and a cell, the picture and the snapshot in `.drawings/media`. Result: `A.wm` and `Sec/B.wm`; `A.wm`'s text has `[B](B.wm#wm-12ab34cd)`, `![](media/3f9c2a7e5b1d4c80.png)`, `![ink](snapshots/ink-....svg)`, and the fence untouched; `A.wm` has the picture and the snapshot with the source bytes; `manifest.legacy.sha256` is A.md's; the backup folder holds `A.md`, `Sec/B.md` and `.drawings/` byte-identical; the folder has no `.md`; `order.json` names `A.wm`; a second run changes nothing and makes no backup folder.

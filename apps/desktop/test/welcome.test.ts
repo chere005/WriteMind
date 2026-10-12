@@ -140,7 +140,7 @@ describe("the quick reference's keys come from the command table", () => {
     const text = welcomeNote(process.platform)
     expect(text.startsWith("# WriteMind Quick Reference\n")).toBe(true)
     for (const name of [
-      "Cells", "Text and markdown cells", "Maths cells", "Tables", "Rendered page", "Toolbar", "Pen", "Tabs", "Move tabs", "Search notes", "Sidebar", "Undo",
+      "Cells", "Lists", "Text and markdown cells", "Maths cells", "Tables", "Rendered page", "Toolbar", "Pen", "Tabs", "Move tabs", "Search notes", "Sidebar", "Undo",
       "Drawing", "Runnable cells", "Language Setup", "Video pane", "Read words", "Pane tabs", "Wacom tablet", "Mathematica", "Wacom pen buttons", "Notes are files", "Updates", "About",
     ]) {
       expect(WELCOME_FEATURES.some((one) => one.startsWith(`**${name}:**`)), name).toBe(true)
@@ -323,6 +323,20 @@ describe("the feature list is true to the source", () => {
     expect(line).toContain(`\`${WM_TEXT}\``)
     expect(PROJECT_EXTENSION).toBe("writemind-project")
     expect(line).toContain("project is a small JSON file")
+  })
+
+  it("Lists: made where the caret is by the List button, the Style menu, the + and the key; a `*` at the bar opens a bullet list", () => {
+    // (Sean, 2026-10-11.) The marker alone is the list's empty item to the parser (core `emptyItem`), so the list is a list at once;
+    // the `*` typed at the armed bar is `typeAtTheBar` (seams.ts), which opens the dashes item `* `.
+    const line = features("Lists")
+    expect(line).toContain(shown("list", "win32")!)
+    expect(read("apps/desktop/src/renderer/TopBar.tsx")).toContain('label: "List"')
+    expect(blocks("- ")).toEqual([{ kind: "bullets", items: [""] }])
+    expect(blocks("* ")).toEqual([{ kind: "dashes", items: [""] }])
+    const seams = read("packages/editor/src/seams.ts")
+    expect(seams).toContain("export function typeAtTheBar")
+    expect(seams).toContain('setArmedType.of({ kind: "list", style: "dashes" })')
+    expect(line).toContain("`*` typed at the insertion line starts a bullet list")
   })
 
   it("Tables, Mathematica and the rest name what the docs say is built", () => {

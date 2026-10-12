@@ -6,9 +6,11 @@ import { textCells } from "../src/textCells"
 
 /**
  * An item a command opened (docs/PLAN-bars-2026-10.md (a), found 2026-10-10): the + menu's Dots List, the Style menu and
- * Ctrl+Shift+L at a bar write the marker alone (`- `, `* `, `1. `). The parser reads that as a paragraph, a text cell,
- * and what is typed in a text cell is literal, so the first word came out as `\- word`. The command says which line it
- * opened, and the next thing typed at its end is the list's.
+ * Ctrl+Shift+L at a bar write the marker alone (`- `, `* `, `1. `). The parser read that as a paragraph, a text cell,
+ * and what is typed in a text cell is literal, so the first word came out as `\- word`. Since 2026-10-11 (Sean: "the input
+ * cursor should go to where it is typing when inserting a checklist or bullets") the parser reads a marker alone as an empty
+ * item of its list (core `emptyItem`), so the word is the list's whoever wrote the marker; a marker TYPED in a text cell is
+ * escaped as it is typed, and stays words.
  */
 const make = (doc: string, at: number): EditorState => EditorState.create({
   doc, selection: EditorSelection.single(at), extensions: [notebookField, itemOpenedField, armedField, textCells],
@@ -30,7 +32,9 @@ describe("an item a command opened", () => {
   }
 
   it("a marker TYPED by hand is still literal text (nothing opened it)", () => {
-    const state = type(make("One\n\n- \n\nTwo", 7), 7, "word")
+    // (Typed a key at a time, as a person does: the `-` alone is escaped the moment it is typed, 2026-10-11.)
+    let state = make("One\n\n\n\nTwo", 5)
+    for (const key of ["-", " ", "word"]) state = type(state, state.selection.main.head, key)
     expect(state.doc.toString()).toBe("One\n\n\\- word\n\nTwo")
   })
 
@@ -40,12 +44,14 @@ describe("an item a command opened", () => {
     expect(state.field(itemOpenedField)).toBeNull()
   })
 
-  it("is let go when the caret leaves the line, and a later `- ` there is literal again", () => {
+  it("is let go when the caret leaves the line (and a later word there is the item's all the same: the parser's reading)", () => {
     let state = open(make("One\n\n- \n\nTwo", 7), 5)
     state = state.update({ selection: EditorSelection.cursor(1) }).state
     expect(state.field(itemOpenedField)).toBeNull()
     state = state.update({ selection: EditorSelection.cursor(7) }).state
     state = type(state, 7, "word")
-    expect(state.doc.toString()).toBe("One\n\n\\- word\n\nTwo")
+    // Was `\- word` (a text cell's literal) until 2026-10-11: a marker alone is an empty item to the parser now (Sean: "the
+    // input cursor should go to where it is typing when inserting a checklist or bullets").
+    expect(state.doc.toString()).toBe("One\n\n- word\n\nTwo")
   })
 })

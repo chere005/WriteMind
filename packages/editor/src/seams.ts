@@ -14,7 +14,7 @@
 import {
   EditorSelection, Prec, StateEffect, StateField, type EditorState, type Extension, type Transaction,
 } from "@codemirror/state"
-import { isolateHistory } from "@codemirror/commands"
+import { invertedEffects, isolateHistory } from "@codemirror/commands"
 import { Decoration, EditorView, ViewPlugin, keymap, type Command, type ViewUpdate } from "@codemirror/view"
 import {
   between, closingReturn, end, firstCellFromBy, openCell, PREVIEW_BLOCK_GAP, seamAt, seams, armIn, type CellBox, type CellKind,
@@ -23,7 +23,7 @@ import {
 import { barCaret, sameLineOnScreen, seamBeneath, shownBeyond, sideMove, verticalMove, type BarMove } from "./barWalk"
 import { insideHidden, revealAt } from "./fold"
 import { holdingField, setHolding } from "./preview/hold"
-import { cellWritten, grownCell, itemOpened, lastLineAt, notebook, type GrownCell } from "./notebook"
+import { cellWritten, grownCell, itemOpened, itemOpenedField, lastLineAt, notebook, type GrownCell } from "./notebook"
 import { gapAt } from "./apart"
 import { renderedField } from "./rendered"
 import { PLUS_HIT, onPlusMarker, plusMarker } from "./plusMarker"
@@ -641,11 +641,23 @@ function rewrite(view: EditorView, markdown: string, caret: number, apart = fals
   // hidden", queued for the edit, leaves it where it is.)
   const head = view.state.selection.main.head
   if (revealAt(view, head)) view.dispatch({ selection: EditorSelection.cursor(head), scrollIntoView: true })
-  // A list opened empty (`- `, `* `, `1. `): the words typed after its marker are the item's, not a text cell's literal
-  // (notebook.ts `itemOpened`).
+  // A list opened empty (`- `, `* `, `1. `): its marker's own space is there already (`markersOwnSpace`, notebook.ts
+  // `itemOpened`). (The words typed after it are the item's: the parser reads a marker alone as an empty item, core `emptyItem`.)
   const line = view.state.doc.lineAt(view.state.selection.main.head)
   if (view.state.selection.main.head === line.to && OPEN_ITEM.test(line.text)) view.dispatch({ effects: itemOpened.of(line.from) })
 }
+
+/**
+ * UNDO PUTS THE BAR BACK UP (Sean, 2026-10-11: one Undo takes a cell the bar opened — a `*` typed there, a pick from the + —
+ * back to the armed bar). The history keeps the caret, and between two cells the caret on the blank line arms the bar by
+ * itself; at the two ends of the note (above the first cell, after the last) nothing but an `armSeam` can, so a change that
+ * WROTE at a bar and put it out leaves, for its Undo, the bar it put out.
+ */
+export const barComesBack = invertedEffects.of((tr) => {
+  if (!tr.docChanged || !tr.effects.some((effect) => effect.is(armSeam) && effect.value === null)) return []
+  const was = tr.startState.field(armedField, false) ?? null
+  return was === null ? [] : [armSeam.of(was)]
+})
 
 /** An item's marker and nothing else, as `openCell` writes one. */
 const OPEN_ITEM = /^\s*([-+*]|\d{1,4}[.)])\s*$/
@@ -663,17 +675,45 @@ export function openArmed(view: EditorView, written: string, literal = true, apa
   return true
 }
 
-const typingAtTheBar = EditorView.inputHandler.of((view, _from, _to, text) => {
-  if (text.length === 0) return false
-  // A leading `*` is the Markdown list gesture. The bar normally opens a
-  // literal text cell, so choose Markdown before the first character is
-  // written; otherwise the text-cell escaper makes the list marker literal.
-  if (text === "*" || text.startsWith("* ")) {
-    const kind = view.state.field(armedTypeField, false) ?? { kind: "text" as const }
-    if (kind.kind === "text") view.dispatch({ effects: setArmedType.of({ kind: "markdown" }) })
+/**
+ * A `*` TYPED AT THE BAR OPENS A BULLET LIST (Sean, 2026-10-11: "typing a * while the input cursor is horizontal will start a
+ * markdown text cell with bullet points with the input cursor ready to start typing"). Markdown's `* ` is the bullet list, which
+ * WriteMind draws with a dash: the cell the bar opens is that list's empty item `* `, made as the + menu's Dashes makes it (one
+ * Undo takes it back to the bar), the caret where its words go, and what is typed next is the item's words. A `*` typed with
+ * more after it in one go (`* milk`, a composed input) opens the item with the rest as its words. Only at a bar whose kind is
+ * still plain text: a kind chosen on the + takes the `*` as a character of its own. It replaces the 3.9.0 handling, which made
+ * the cell a markdown paragraph holding a `*` (the next key gave `*x`, no list) and was not heard on the keydown path below.
+ */
+export function typeAtTheBar(view: EditorView, text: string): boolean {
+  if (text.length === 0 || (view.state.field(armedField, false) ?? null) === null) return false
+  const star = /^\*(?: |$)/.exec(text)
+  if (star && (view.state.field(armedTypeField, false) ?? { kind: "text" }).kind === "text") {
+    view.dispatch({ effects: setArmedType.of({ kind: "list", style: "dashes" }) })
+    const words = text.slice(star[0].length)
+    // (The empty item is a step of its own, as a pick from the + menu is; words typed with it go in with it.)
+    return openArmed(view, words, true, words === "")
   }
   return openArmed(view, text)
-})
+}
+
+const typingAtTheBar = EditorView.inputHandler.of((view, _from, _to, text) => typeAtTheBar(view, text))
+
+/**
+ * THE MARKER'S OWN SPACE (Sean, 2026-10-11): `*` then a space at the bar is the `* ` a person types for a bullet, and the `*`
+ * has already written the item's `* ` — so the space typed straight after a marker the bar opened (`itemOpened`: the + menu's
+ * lists, the Style menu's and Ctrl+Shift+L at a bar, the `*`) is that space, already there, and writes nothing: `* ` stays
+ * `* `, not `*  `. Once: the next space is a word's.
+ */
+export function markersOwnSpace(view: EditorView, from: number, to: number, text: string): boolean {
+  if (text !== " " || from !== to) return false
+  const state = view.state
+  const opened = state.field(itemOpenedField, false) ?? null
+  if (opened === null || state.selection.ranges.length !== 1) return false
+  const line = state.doc.lineAt(from)
+  if (line.from !== opened || from !== line.to || !OPEN_ITEM.test(line.text) || !/\s$/.test(line.text)) return false
+  view.dispatch({ effects: itemOpened.of(null) })
+  return true
+}
 
 /**
  * A BAR WITH NOWHERE FOR THE BROWSER'S CARET: the bar under the last cell of a note that does not end with a newline, when that
@@ -691,7 +731,8 @@ const typingWithNowhereToType = EditorView.domEventHandlers({
     const selection = (view.root as Document).getSelection?.()
     if (selection && selection.rangeCount > 0 && selection.anchorNode && view.contentDOM.contains(selection.anchorNode)) return false
     event.preventDefault()
-    return openArmed(view, event.key)
+    // (The same as typing where there is a caret: a `*` opens the bullet list, `typeAtTheBar`.)
+    return typeAtTheBar(view, event.key)
   },
 })
 
@@ -900,6 +941,8 @@ export const seamExtensions = (onPlusPressed: (view: EditorView, seam: Seam) => 
   barFromField,
   dropBarField,
   typingAtTheBar,
+  EditorView.inputHandler.of(markersOwnSpace),
+  barComesBack,
   // An attribute the editor owns, not a class toggled by hand: CodeMirror
   // rewrites the root's class list whenever focus changes, which wiped a
   // hand-set class and put the caret back on screen beside the bar.

@@ -149,6 +149,21 @@ function bareNumber(line: string): boolean {
   return digits >= 1 && digits <= 4 && digits === line.length - 1 && (line[digits] === "." || line[digits] === ")")
 }
 
+/**
+ * AN ITEM WITH NO WORDS YET (Sean, 2026-10-11: "the input cursor should go to where it is typing when inserting a checklist or
+ * bullets"): a list marker and nothing after it — `- `, `+ `, `* `, `1. ` as the Style menu, the List button, the + menu and
+ * Return write it, trimmed to `-`, `+`, `*`, `1.` — is that list's first (or next) item, empty, wherever an item with words
+ * would be one. It used to be a paragraph line unless a list of its kind was open above it, so a list chosen on an empty note
+ * or under a cell was a TEXT cell holding a literal `- `: drawn as the characters on the rendered page, named Text by the Style
+ * button, and the first word typed after it came out escaped (`\- x`). The kind it opens, or null. (A to-do's empty box,
+ * `- [ ]`, has always been an item: `todoItem`.)
+ */
+export function emptyItem(line: string): "bullets" | "dashes" | "numbered" | null {
+  if (line === "-" || line === "+") return "bullets"
+  if (line === "*") return "dashes"
+  return bareNumber(line) ? "numbered" : null
+}
+
 export function blocks(markdown: string): Block[] {
   return positioned(markdown).map((p) => p.block)
 }
@@ -420,29 +435,27 @@ class Machine {
       this.todos.push(todo)
       this.lineStart += size; return
     }
-    // A marker with nothing after it, straight under an open list of its own kind, is that list's next item and still
-    // empty: what Return in a list writes (`- `, `2. `) before a word is typed after it. It used to read as a paragraph of
-    // one marker touching the list, so the cell the caret was in was not the list's; a single newline grows the list
-    // like it grows a paragraph (cells/growth.ts), and the new item is part of it. (To-do items and quote lines have
-    // always been read this way: `- [ ]` is an empty task, `>` an empty quote line.)
-    if (this.bullets.length && (line === "-" || line === "+")) { this.bullets.push(""); this.lineStart += size; return }
-    if (this.dashes.length && line === "*") { this.dashes.push(""); this.lineStart += size; return }
-    if (this.numbered.length && bareNumber(line)) { this.numbered.push(""); this.lineStart += size; return }
-    const bullet = bulletItem(line)
+    // A marker with nothing after it is an item of its list with no words yet (`emptyItem`; Sean, 2026-10-11): straight under
+    // an open list of its own kind it is that list's next item (what Return in a list writes, `- `, `2. `, before a word is
+    // typed after it), and anywhere else it starts its list, as the item with words would — on an empty note, at a bar, on the
+    // line a newline grew under a cell (cells/growth.ts). (To-do items and quote lines have always been read this way: `- [ ]`
+    // is an empty task, `>` an empty quote line.)
+    const empty = emptyItem(line)
+    const bullet = bulletItem(line) ?? (empty === "bullets" ? "" : null)
     if (bullet !== null) {
       if (this.paragraph.length || this.todos.length || this.dashes.length || this.numbered.length || this.quote.length) this.flush(previousEnd)
       this.openIfNeeded()
       this.bullets.push(bullet)
       this.lineStart += size; return
     }
-    const dash = dashItem(line)
+    const dash = dashItem(line) ?? (empty === "dashes" ? "" : null)
     if (dash !== null) {
       if (this.paragraph.length || this.bullets.length || this.todos.length || this.numbered.length || this.quote.length) this.flush(previousEnd)
       this.openIfNeeded()
       this.dashes.push(dash)
       this.lineStart += size; return
     }
-    const number = numberedItem(line)
+    const number = numberedItem(line) ?? (empty === "numbered" ? "" : null)
     if (number !== null) {
       if (this.paragraph.length || this.bullets.length || this.todos.length || this.dashes.length || this.quote.length) this.flush(previousEnd)
       this.openIfNeeded()

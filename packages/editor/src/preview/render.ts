@@ -12,7 +12,7 @@
 
 import {
   bulletItem, codeTokens, dashItem, drawnRows, fenceLanguage, hiddenInText, fenced, inlineSegments, isMathFence, colouring,
-  isMarkdownMarker, numberedItem, todoItem,
+  emptyItem, isMarkdownMarker, numberedItem, todoItem,
   type Block, type InlineSegment,
 } from "@writemind/core"
 import { safeSpanStyle } from "../decorations"
@@ -216,17 +216,19 @@ function listBlock(source: string, context: RenderContext): HTMLElement {
       words = todo.text
       textAt = lead + 5 + (trimmed.slice(5).startsWith(" ") ? 1 : 0)
     } else {
-      const bullet = bulletItem(trimmed)
-      const dash = bullet === null ? dashItem(trimmed) : null
-      const numbered = bullet === null && dash === null ? numberedItem(trimmed) : null
-      if (bullet !== null) { marker = "•"; words = bullet; textAt = lead + 2 }
-      else if (dash !== null) { marker = "–"; words = dash; textAt = lead + 2 }
+      // (A marker alone is an item with no words yet, core `emptyItem` (Sean, 2026-10-11): its bullet is drawn, not a `-`.)
+      const empty = emptyItem(trimmed)
+      const bullet = bulletItem(trimmed) ?? (empty === "bullets" ? "" : null)
+      const dash = bullet === null ? dashItem(trimmed) ?? (empty === "dashes" ? "" : null) : null
+      const numbered = bullet === null && dash === null ? numberedItem(trimmed) ?? (empty === "numbered" ? "" : null) : null
+      if (bullet !== null) { marker = "•"; words = bullet; textAt = Math.min(lead + 2, line.text.length) }
+      else if (dash !== null) { marker = "–"; words = dash; textAt = Math.min(lead + 2, line.text.length) }
       else if (numbered !== null) {
         counted += 1
         marker = `${counted}.`
         words = numbered
         const digits = /^[0-9]+/.exec(trimmed)![0].length
-        textAt = lead + digits + 2
+        textAt = Math.min(lead + digits + 2, line.text.length)
       } else {
         words = trimmed
       }

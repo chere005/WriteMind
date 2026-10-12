@@ -669,11 +669,13 @@ describe("cells that touch are one thing to type in", () => {
       expect(found.map((one) => one.block.kind), JSON.stringify(carried)).toEqual(["paragraph", kind, "paragraph"])
       expect(found[1]!.range).toEqual(range(5, carried.length))
     }
-    // (A marker under a paragraph, a list of another kind or on its own is still just words.)
-    expect(positioned("words\n-").map((one) => one.block.kind)).toEqual(["paragraph"])
-    expect(positioned("* one\n-").map((one) => one.block.kind)).toEqual(["dashes", "paragraph"])
-    expect(positioned("- one\n\n-").map((one) => one.block.kind)).toEqual(["bullets", "paragraph"])
-    expect(positioned("-").map((one) => one.block.kind)).toEqual(["paragraph"])
+    // A marker under a paragraph, a list of another kind or on its own was still just words until 2026-10-11, when Sean asked
+    // for "the input cursor [to] go to where it is typing when inserting a checklist or bullets": it is an empty item of its own
+    // list now, starting it where an item with words would (`emptyItem`), so the Style menu's list under a paragraph is a list.
+    expect(positioned("words\n-").map((one) => one.block.kind)).toEqual(["paragraph", "bullets"])
+    expect(positioned("* one\n-").map((one) => one.block.kind)).toEqual(["dashes", "bullets"])
+    expect(positioned("- one\n\n-").map((one) => one.block.kind)).toEqual(["bullets", "bullets"])
+    expect(positioned("-").map((one) => one.block.kind)).toEqual(["bullets"])
   })
 
   it("does not join cells with a blank line between them", () => {

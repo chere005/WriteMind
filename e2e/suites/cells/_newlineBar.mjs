@@ -142,7 +142,7 @@ export async function runNewlineBar({ rendered }) {
     ok("Backspace twice takes the character and the newline away", (await doc()) === "# Title" && (await sel())[0] === 7, JSON.stringify([await doc(), await sel()]))
   })
 
-  await test(`${side}: a list's empty item: the Return takes the marker off and stays in the cell, the one after it arms the bar; a list that is only an empty item is not ended`, async () => {
+  await test(`${side}: a list's empty item: the Return takes the marker off and stays in the cell, the one after it arms the bar; a list that is only an empty item goes, the bar back`, async () => {
     await start("- one\n- two", 11)
     await key("Enter"); await sleep(250)
     ok("the new item is the list's: ONE bracket, lit, three lines", (await doc()) === "- one\n- two\n- " && (await cellBrackets()).length === 1 && (await litCount()) === 1, JSON.stringify([await doc(), await cellBrackets()]))
@@ -150,11 +150,14 @@ export async function runNewlineBar({ rendered }) {
     ok("the marker is gone, the line stays in the list's cell, no bar", (await doc()) === "- one\n- two\n" && !(await armed()) && (await litCount()) === 1 && (await cellBrackets()).length === 1, JSON.stringify([await doc(), await armed(), await cellBrackets()]))
     await key("Enter"); await sleep(300)
     ok("the next Return takes the line away and the bar is up under the list", (await doc()) === "- one\n- two" && (await armed()), JSON.stringify([await doc(), await armed()]))
-    // A list just opened (the + menu) with nothing in it: Return takes the marker away, as it always did.
+    // A list just opened (the + menu) with nothing in it. Until 2026-10-11 Return took its marker away and left the line ("not ended into a
+    // bar": an empty line between two blank ones on the markdown side, an empty block on the rendered page). Since then a marker alone is
+    // the list's empty item (Sean: "the input cursor should go to where it is typing when inserting a checklist or bullets.. typing a * while
+    // the input cursor is horizontal will start a markdown text cell with bullet points"), and Return on one that is a cell of its own takes
+    // it away and puts the bar back where it was (core newline.ts; editor/10..12 press it after a `*` at the bar).
     await start("hello\n\n- ", 9)
     await key("Enter"); await sleep(300)
-    // (What it leaves is the page's own: the markdown side leaves the empty line the marker was on; the rendered page leaves an empty block.)
-    ok("a lone empty item is not ended into a bar: its marker goes and no bar is up", !(await doc()).includes("- ") && !(await armed()) && (await doc()).startsWith("hello\n\n"), JSON.stringify([await doc(), await armed(), await sel()]))
+    ok("a lone empty item goes and the bar is up where it was", (await doc()) === "hello" && (await armed()), JSON.stringify([await doc(), await armed(), await sel()]))
   })
 
   await test(`${side}: Shift+Return is the single newline it was: twice makes a blank line and arms nothing`, async () => {

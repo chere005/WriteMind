@@ -21,7 +21,7 @@
 import { RangeSetBuilder, type ChangeDesc, type EditorState, type Extension, type Range as CMRange } from "@codemirror/state"
 import {
   Decoration, EditorView, ViewPlugin, WidgetType,
-  type DecorationSet, type ViewUpdate,
+  type DecorationSet, type Rect, type ViewUpdate,
 } from "@codemirror/view"
 import {
   anchorSpans, codeTokens, escapeOffsets, firstCellFromBy, headingLevel, colouring, maskEscapes, toggleTodo, todoItem,
@@ -31,6 +31,42 @@ import { applyEdit, hullOf, notebook } from "./notebook"
 import { marksAway, renderedField } from "./rendered"
 import { armedField } from "./seams"
 
+// MARK: - A list item's marker, and where the caret stands after it
+
+/**
+ * THE CARET AFTER A MARKER STANDS WHERE THE WORDS GO (Sean, 2026-10-11: "the input cursor should go to where it is typing when
+ * inserting a checklist or bullets"). A marker is a widget over `- ` or `- [ ] `, and with no words after it yet (an item just
+ * made by the List button, the Style menu, the + menu, Return) CodeMirror drew the caret off the widget's own box: a to-do's
+ * caret stood ON its box at the box's height (13 px), and a bullet's on the rendered page hugged the dot, short of the gap the
+ * words start after. So the marker carries, after its glyph and the gap the theme gives it, a WORD JOINER (U+2060: no width, no
+ * line break, nothing drawn) — a character of the line's own font standing exactly where the first typed character will — and
+ * the caret at the marker's end is measured off it (`coordsAt`): the item's text column, at a typed character's full height.
+ */
+const CARET_STOP = "\u2060"
+
+/** The marker's element (`glyph`: the bullet or the box), wrapped with the caret's stop after it. */
+function markerWithStop(glyph: HTMLElement): HTMLElement {
+  const marker = document.createElement("span")
+  marker.className = "wm-item-marker"
+  marker.append(glyph, document.createTextNode(CARET_STOP))
+  return marker
+}
+
+/** Where the caret at the END of a marker (`pos` > 0) is drawn: off the stop. Null leaves CodeMirror to measure. */
+function caretAfterMarker(dom: HTMLElement, pos: number): Rect | null {
+  if (pos === 0) return null
+  const stop = dom.lastChild
+  if (!stop || stop.nodeType !== 3 || !stop.textContent) return null
+  const range = document.createRange()
+  range.setStart(stop, 0)
+  range.setEnd(stop, stop.textContent.length)
+  const rects = range.getClientRects()
+  let rect: DOMRect = range.getBoundingClientRect()
+  for (let i = 0; i < rects.length; i++) if (rects[i]!.bottom > rects[i]!.top) { rect = rects[i]!; break }
+  if (!(rect.bottom > rect.top)) return null
+  return { left: rect.left, right: rect.left, top: rect.top, bottom: rect.bottom }
+}
+
 /** A round bullet where the file has `- ` (or `+ `), a dash where it has `* ` — the Mac's `BulletGlyphs`. */
 class BulletWidget extends WidgetType {
   constructor(readonly glyph: string) { super() }
@@ -38,9 +74,10 @@ class BulletWidget extends WidgetType {
     const dot = document.createElement("span")
     dot.className = "wm-bullet"
     dot.textContent = this.glyph
-    return dot
+    return markerWithStop(dot)
   }
   override eq(other: BulletWidget): boolean { return other.glyph === this.glyph }
+  override coordsAt(dom: HTMLElement, pos: number): Rect | null { return caretAfterMarker(dom, pos) }
   override ignoreEvent(): boolean { return false }
 }
 
@@ -50,15 +87,18 @@ class TodoWidget extends WidgetType {
 
   override eq(other: TodoWidget): boolean { return other.done === this.done }
 
+  override coordsAt(dom: HTMLElement, pos: number): Rect | null { return caretAfterMarker(dom, pos) }
+
   override toDOM(view: EditorView): HTMLElement {
     const box = document.createElement("span")
     box.className = this.done ? "wm-todo wm-todo-done" : "wm-todo"
     box.textContent = this.done ? "✓" : ""
     box.setAttribute("role", "checkbox")
     box.setAttribute("aria-checked", this.done ? "true" : "false")
+    const marker = markerWithStop(box)
     box.onmousedown = (event) => {
       event.preventDefault()
-      const line = view.state.doc.lineAt(view.posAtDOM(box))
+      const line = view.state.doc.lineAt(view.posAtDOM(marker))
       const change = toggleTodo(view.state.doc.toString(),
         { location: line.from, length: line.length }, 0)
       if (!change) return
@@ -71,7 +111,7 @@ class TodoWidget extends WidgetType {
         })
       } else applyEdit(view, change)
     }
-    return box
+    return marker
   }
 
   override ignoreEvent(): boolean { return false }
@@ -315,6 +355,19 @@ const touches = (state: EditorState, from: number, to: number): boolean =>
 const BULLET = /^([ \t]*)[-*+] /
 
 /**
+ * Whether a bullet's `- ` (it starts at `at`, on a line whose text after it is `after`) shows as the file has it, to be edited:
+ * the selection is in it or against it — except a caret just after the marker of an item with NO WORDS yet (Sean, 2026-10-11:
+ * "the input cursor should go to where it is typing when inserting a checklist or bullets"). There the caret is where the words
+ * go, and the bullet stays drawn: shown as `- ` the caret stood a few pixels short of where the first character lands once the
+ * bullet came back with it. (A caret at the line's start still shows the marker.)
+ */
+function markerShown(state: EditorState, at: number, after: string): boolean {
+  if (!touches(state, at, at + 2)) return false
+  const bare = after.trim().length === 0
+  return !bare || state.selection.ranges.some((r) => !(r.empty && r.head >= at + 2) && r.from <= at + 2 && r.to >= at)
+}
+
+/**
  * Which bullet markers the selection is inside, as a key: when it changes the
  * `- ` must be drawn as the file has it, and until it does the decorations
  * are exactly what they were.
@@ -343,7 +396,7 @@ function editingKey(state: EditorState): string {
       const found = BULLET.exec(line.text)
       if (found && !todoItem(line.text.slice(found[1]!.length))) {
         const from = line.from + found[1]!.length
-        if (r.from <= from + 2 && r.to >= from) key += `${from},`
+        if (markerShown(state, from, line.text.slice(found[0].length))) key += `${from},`
       }
       if (line.number >= last.number) break
       line = doc.line(line.number + 1)
@@ -467,7 +520,7 @@ function build(state: EditorState, from: number, to: number): { all: DecorationS
       entries.push({
         // (On the rendered page it is furniture, and drawn even there: preview/furniture.ts keeps the caret out.)
         from: at, to: at + 2, kind: 1, atomic: true,
-        deco: touches(state, at, at + 2) && !state.field(renderedField, false) ? faded : rest[0] === "*" ? dashMark : bulletMark,
+        deco: markerShown(state, at, rest.slice(2)) && !state.field(renderedField, false) ? faded : rest[0] === "*" ? dashMark : bulletMark,
       })
       inlineSpans(rest.slice(2), at + 2, entries)
       continue

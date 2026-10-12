@@ -59,6 +59,35 @@ describe("the parser", () => {
   it("does not read a box with no space after it as a task", () => {
     expect(blocks("- []x")).toEqual<Block[]>([{ kind: "bullets", items: ["[]x"] }])
   })
+
+  // Port-first (the Mac reads a lone marker as a paragraph line): Sean, 2026-10-11, "the input cursor should go to where it is
+  // typing when inserting a checklist or bullets" — a list made by a command is its marker alone until a word is typed.
+  it("reads a marker with no words as an empty item of its list, wherever an item with words would be one", () => {
+    const kinds = (text: string) => positioned(text).map((cell) => cell.block)
+    // An empty note, the page between two cells (the bar's), a list of its own kind above (the next item).
+    expect(kinds("- ")).toEqual<Block[]>([{ kind: "bullets", items: [""] }])
+    expect(kinds("* ")).toEqual<Block[]>([{ kind: "dashes", items: [""] }])
+    expect(kinds("+")).toEqual<Block[]>([{ kind: "bullets", items: [""] }])
+    expect(kinds("1. ")).toEqual<Block[]>([{ kind: "numbered", items: [""] }])
+    expect(kinds("12)")).toEqual<Block[]>([{ kind: "numbered", items: [""] }])
+    expect(kinds("a\n\n- \n\nb")).toEqual<Block[]>([
+      { kind: "paragraph", text: "a" }, { kind: "bullets", items: [""] }, { kind: "paragraph", text: "b" },
+    ])
+    expect(kinds("- one\n- ")).toEqual<Block[]>([{ kind: "bullets", items: ["one", ""] }])
+    // On the line under a cell (the line a newline grew): the list's own cell, touching it, as `- x` there always was.
+    expect(kinds("a\n- ")).toEqual<Block[]>([{ kind: "paragraph", text: "a" }, { kind: "bullets", items: [""] }])
+    expect(kinds("# H\n1. ")).toEqual<Block[]>([{ kind: "heading", level: 1, text: "H" }, { kind: "numbered", items: [""] }])
+    // A list of another kind above: a list of its own (touching).
+    expect(kinds("* one\n- ")).toEqual<Block[]>([{ kind: "dashes", items: ["one"] }, { kind: "bullets", items: [""] }])
+    // Its range is the line as written, the space after the marker included: the caret after it is in the cell.
+    expect(positioned("a\n\n* ")[1]!.range).toEqual({ location: 3, length: 2 })
+    // Not a marker: two of them, a rule, a number with more after it, an escaped one (a text cell's words).
+    expect(kinds("--")[0]!.kind).toBe("paragraph")
+    expect(kinds("***")[0]!.kind).toBe("rule")
+    expect(kinds("1.5")[0]!.kind).toBe("paragraph")
+    expect(kinds("\\-")[0]!.kind).toBe("paragraph")
+    expect(kinds("12345.")[0]!.kind).toBe("paragraph")
+  })
 })
 
 /** Transcribed from `WriteMindTests/BlankLineTests.swift`. */

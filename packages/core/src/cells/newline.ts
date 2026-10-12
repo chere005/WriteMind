@@ -21,10 +21,20 @@
  *
  * A picture or an ink cell has no line to grow: it is drawn and never typed in, so Return with the caret beside it arms the
  * bar on that side — what an arrow does there — instead of starting a cell.
+ *
+ * A LIST THAT IS ONE EMPTY ITEM, A CELL OF ITS OWN — what the bar opens when a list is chosen there (the + menu's lists, the
+ * Style menu's and Ctrl+Shift+L at a bar, a `*` typed there: Sean, 2026-10-11, "typing a * while the input cursor is horizontal
+ * will start a markdown text cell with bullet points") and Return is pressed before a word is typed — has no cell left to keep
+ * a line in once its marker goes (the rule above would leave an empty line between two blank ones: a blank cell, and on the
+ * rendered page more of them at every Return). So Return takes it away, with the blank line that held it apart, and the bar is
+ * the cursor where it was: the note is what it was before the list was chosen. (A quote of one empty line the same. An empty
+ * item TOUCHING the cell above — a list chosen on the line a newline grew — loses its marker by the rule above and leaves that
+ * cell's grown line, which is what it was before.)
  */
 
 import { end, range, type Range } from "../text/range"
 import type { LineSource, PositionedBlock } from "../markdown/parser"
+import { listContinuation } from "./editing"
 import { growth } from "./growth"
 import { firstCellFromBy } from "./selection"
 
@@ -36,6 +46,9 @@ export interface ClosingReturn {
   /** The bar goes under the cell (true), or above it (a picture's start). */
   below: boolean
 }
+
+/** The kinds of cell whose one empty item Return takes away (above). */
+const LONE_ITEM_KINDS = new Set(["bullets", "dashes", "numbered", "todos", "quote"])
 
 /** A table row with nothing in any of its cells: only pipes and white space. */
 const emptyRow = (text: string): boolean => /^\s*\|[\s|]*$/.test(text)
@@ -65,6 +78,24 @@ export function closingReturn(cells: readonly PositionedBlock[], doc: LineSource
     if (at === end(cell.range)) return { index, remove: null, below: true }
     if (at === cell.range.location) return { index, remove: null, below: false }
     return null
+  }
+
+  // A list (or a quote) that is one empty item and a cell of its own: it goes, and the bar is up where it was.
+  if (LONE_ITEM_KINDS.has(cell.block.kind) && cell.range.location === line.from && end(cell.range) === line.to && at === line.to
+    && listContinuation(line.text) === "" && (line.number === 1 || doc.line(line.number - 1).text.trim().length === 0)) {
+    // The item and the blank lines round it, as Backspace takes an empty cell (`removeBlock`): the cells either side keep ONE
+    // blank line between them.
+    let up = line.number - 1
+    while (up >= 1 && doc.line(up).text.trim().length === 0) up--
+    let down = line.number + 1
+    while (down <= doc.lines && doc.line(down).text.trim().length === 0) down++
+    const from = up >= 1 ? doc.line(up).to : 0
+    const to = down <= doc.lines ? (up >= 1 ? doc.line(down).from - 2 : doc.line(down).from) : doc.length
+    // The cells before what goes are where they were; the bar stands over the cell after it, else under the one before.
+    let before = 0
+    while (before < cells.length && cells[before]!.range.location < from) before++
+    const below = down > doc.lines && before > 0
+    return { index: below ? before - 1 : before, remove: range(from, to - from), below }
   }
 
   // The last line of a table, with nothing in it: the row Return carried the cell on with. (A list's or a quote's empty item is not

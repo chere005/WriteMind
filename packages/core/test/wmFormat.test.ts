@@ -248,11 +248,16 @@ describe("vector 7: the text grammar", () => {
     expect(kinds).toEqual(["paragraph", "paragraph", "blank:1", "paragraph"])
   })
 
-  it("reads `-` alone, `- ` alone, `#nospace` and `####### seven` as paragraph lines", () => {
-    for (const line of ["-", "- ", "#nospace", "####### seven"]) {
+  it("reads `#nospace` and `####### seven` as paragraph lines, and `-` alone or `- ` alone as an empty dot item", () => {
+    for (const line of ["#nospace", "####### seven"]) {
       const found = blocks(line).filter((block) => block.kind !== "blank")
       expect(found.map((block) => block.kind), line).toEqual(["paragraph"])
     }
+    // Changed 2026-10-11 (Sean: "the input cursor should go to where it is typing when inserting a checklist or bullets"): a
+    // marker with no words is an item of its list with no words yet (SPEC-WM 2.4.3), not a paragraph line.
+    for (const line of ["-", "- ", "+"]) expect(blocks(line), line).toEqual([{ kind: "bullets", items: [""] }])
+    expect(blocks("* ")).toEqual([{ kind: "dashes", items: [""] }])
+    expect(blocks("1. ")).toEqual([{ kind: "numbered", items: [""] }])
   })
 
   it("makes an unclosed fence a code cell to the end, and `- [x]done` a dot item and not a task", () => {

@@ -23,8 +23,22 @@ const randomLine = (): string => Array.from({ length: Math.floor(rnd() * 9) }, (
 
 describe("the escape rule", () => {
   it("writes nothing for words with nothing special in them", () => {
-    for (const words of ["foo", "two words", "a * b", "snake_case_name", "2 * 3 * 4", "#hashtag", "- ", "1.", "a | b", "x < y"]) {
+    for (const words of ["foo", "two words", "a * b", "snake_case_name", "2 * 3 * 4", "#hashtag", "1.5", "a | b", "x < y"]) {
       expect(escapeLine(words), words).toBe(words)
+    }
+  })
+
+  it("escapes a list marker standing alone, which is an empty item to the parser", () => {
+    // Was "writes nothing" for `- ` and `1.` until 2026-10-11, when a marker with no words became an item of its list (Sean:
+    // "the input cursor should go to where it is typing when inserting a checklist or bullets"): in a text cell it stays words.
+    expect(escapeLine("- ")).toBe("\\- ")
+    expect(escapeLine("-")).toBe("\\-")
+    expect(escapeLine("+")).toBe("\\+")
+    expect(escapeLine("*")).toBe("\\*")
+    expect(escapeLine("1.")).toBe("1\\.")
+    expect(escapeLine("12)")).toBe("12\\)")
+    for (const words of ["-", "- ", "*", "+", "1.", "Alpha\n-", "Alpha\n1.\nBeta"]) {
+      expect(blocks(escapePlain(words)), words).toEqual([{ kind: "paragraph", text: words }])
     }
   })
 
