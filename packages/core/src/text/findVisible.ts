@@ -24,7 +24,7 @@ export type HiddenSpans = Array<[number, number]>
 /** A link's address, `(https://…)` after its words' bracket. */
 const LINK_ADDRESS = /\]\(([^)\n]*)\)/g
 
-const LISTS = new Set(["bullets", "dashes", "numbered", "todos"])
+const LISTS = new Set(["bullets", "dashes", "numbered", "todos", "mixed"])
 
 /**
  * The `<br>` of each empty line a cell keeps, in `cell` (a text cell's are `hiddenInText`'s) — and with `starts`, of each line

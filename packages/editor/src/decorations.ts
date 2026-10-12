@@ -206,7 +206,7 @@ const escapeHidden = Decoration.replace({})
 
 /** The `<br>` of an empty line a cell keeps (core emptyLine.ts): drawn as nothing, and the caret steps over it whole. */
 const emptyLineHidden = Decoration.replace({})
-const KEEPS_LINES = new Set<Block["kind"]>(["bullets", "dashes", "numbered", "todos"])
+const KEEPS_LINES = new Set<Block["kind"]>(["bullets", "dashes", "numbered", "todos", "mixed"])
 
 /** The colours of a code block, kept while the block is: an edit makes a new block, and the old one is let go. */
 const tokenCache = new WeakMap<Block, CodeToken[]>()

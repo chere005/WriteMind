@@ -357,7 +357,7 @@ function isNextLine(cells: readonly PositionedBlock[], doc: LineSource, number: 
   const cell = cells.find((one) => line.from >= one.range.location && line.from <= end(one.range))
   return cell !== undefined && LIST_KINDS.has(cell.block.kind)
 }
-const LIST_KINDS = new Set(["bullets", "dashes", "numbered", "todos"])
+const LIST_KINDS = new Set(["bullets", "dashes", "numbered", "todos", "mixed"])
 
 /**
  * The lines from the item `where` starts in to the last next line of the item it ends in — or null when there is no

@@ -36,7 +36,7 @@ import { armedField } from "./seams"
 import { holdingField } from "./preview/hold"
 
 /** The cells whose lines can be empty lines they keep: a paragraph (a text cell or a markdown cell), a list and a quote. */
-const KEEPS = new Set(["paragraph", "bullets", "dashes", "numbered", "todos", "quote"])
+const KEEPS = new Set(["paragraph", "bullets", "dashes", "numbered", "todos", "mixed", "quote"])
 
 /** The `<br>` at the head of a line its cell keeps it on, as offsets in the note (`lineBreakAt`). */
 export interface LineBreak {
