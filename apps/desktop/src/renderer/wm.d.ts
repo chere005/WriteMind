@@ -98,6 +98,7 @@ declare global {
       e2eSetBounds?(bounds: unknown): Promise<void>
       e2eTold?(): Promise<{ message: string; detail: string }[]>
       e2eClipboard?(command: "read" | "save" | "restore"): Promise<Record<string, string> | boolean>
+      e2eNotesChanged?(): Promise<void>
       /** The tablet pen's native feed (shared/pen.ts PenApi); present on every platform, `available: false` off Windows. */
       pen: import("../shared/pen").PenApi
       /** Where the Quick Reference is (or will be) in the notes root (main/welcome.ts); absent in an old preload. */

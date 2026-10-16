@@ -85,6 +85,8 @@ jobs:
           path: |
             e2e/.results/**
             !e2e/.results/**/profile/**
+          # `.results` is a hidden folder, and upload-artifact leaves those out unless told: no report was ever uploaded.
+          include-hidden-files: true
           if-no-files-found: ignore
           retention-days: 14
 

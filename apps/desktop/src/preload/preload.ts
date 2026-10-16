@@ -206,6 +206,7 @@ const api = {
     e2eSetBounds: (bounds: unknown) => ipcRenderer.invoke("e2e:setBounds", bounds),
     e2eTold: () => ipcRenderer.invoke("e2e:told"),
     e2eClipboard: (command: "read" | "save" | "restore") => ipcRenderer.invoke("e2e:clipboard", command),
+    e2eNotesChanged: () => ipcRenderer.invoke("e2e:notesChanged"),
   } : {}),
   /**
    * The undo journal of FILE steps (main/undoJournal.ts, docs/PLAN-undo.md): what is on top of its stacks, take the top one

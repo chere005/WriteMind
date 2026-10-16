@@ -180,6 +180,12 @@ export async function restartInstance(dir, overrides = {}) {
   })
 }
 
+/**
+ * A fresh temp folder, by its LONG name. A Windows runner's `os.tmpdir()` is an 8.3 short path (`C:\Users\RUNNER~1\…`), and
+ * every instance's notes folder, profile and log went under it, so the notes root the app reported and every path a script
+ * compared was spelled as no Documents folder ever is. `realpathSync.native` asks the system (the JS `realpathSync` keeps
+ * `RUNNER~1`); on a Mac it is `/private/var/…` for `/var/…`, the name the folder watcher reports.
+ */
 export function makeTempDir(prefix = "wm-e2e-") {
-  return fs.mkdtempSync(path.join(os.tmpdir(), prefix))
+  return fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), prefix)))
 }

@@ -844,6 +844,10 @@ app.whenReady().then(async () => {
       submenu: one.submenu ? dump(one.submenu.items) : undefined,
     }))
     ipcMain.handle("e2e:pick", (_event, answer: string) => { e2ePick = answer })
+    // The page's own New Note reads the tree again after `createNote` (App.tsx `newNote`); a script that makes a note with
+    // `window.wm.createNote` asks for that read here. The folder watcher never says it: the app's own writes are not
+    // echoed to the page (`wroteRecently`), and only a Mac's watcher adds an event for the folder itself, which hid this.
+    ipcMain.handle("e2e:notesChanged", () => { window?.webContents.send("notes:changed") })
     // The shell's own cost: IPC counts and times, and a sampling profile (docs/PERF.md).
     installPerfProbe(ipcMain)
     // The window's OS-level facts, checked from outside: not the page's.

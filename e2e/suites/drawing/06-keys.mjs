@@ -4,7 +4,7 @@
 // and a cancelled label does not swallow the next one. Unit side: apps/desktop/test/layerKeys.test.ts.
 import {
   js, ok, finish, sleep, drag, click, dblclick, key, typeText, freshNote, saved, canvasBox, arm, CTRL, MOD, SHIFT,
-  doc, setDoc, sel, setSel, focus, handles, shot, waitFor, press, line, send, armed,
+  doc, setDoc, sel, setSel, focus, handles, shot, waitFor, press, line, send, armed, makeNote,
 } from "../../lib/harness.mjs"
 
 const file = await freshNote({ rendered: true })
@@ -144,8 +144,7 @@ ok("Ctrl+X cuts the picked object", (await shapes()).length === 0 && (await doc(
 await setDoc("abcdef", 6); await focus()
 await place()
 ok("a shape is picked in the first note", (await handleCount()) >= 3)
-const second = await js(`(async () => { const root = (await window.wm.capabilities()).root; return window.wm.createNote(root) })()`)
-await sleep(900)
+const second = await makeNote(await js(`window.wm.capabilities().then(c => c.root)`))
 await js(`(() => { const r = [...document.querySelectorAll('.note-row')].find(x => x.dataset.path === ${JSON.stringify(second)}); r?.click() })()`)
 await waitFor(`document.querySelector('.cm-content') && !!document.querySelector('.wm-canvas')`)
 await sleep(700)

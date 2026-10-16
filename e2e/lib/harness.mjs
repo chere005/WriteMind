@@ -419,13 +419,24 @@ export async function pickCodeLanguage(language) {
  * A fresh note, open, with the pen up. Returns its path. `rendered`: the page ink layer (`.wm-canvas`) belongs to the
  * rendered page (2.17.0), so a script that draws asks for it; the others keep the source editor they always had.
  */
+/**
+ * A new note in `folder`, made as the page's own New Note makes one (App.tsx `newNote`): `createNote`, and then the tree read
+ * again, which is the page's half of it. The folder watcher does not do that half: the app never echoes its own writes to the
+ * page, and a Mac's watcher only happens to add an event for the folder itself (Windows reports the note alone, and the
+ * sidebar never listed it: 88 scripts on the CI runner, 2026-10-16). Returns the file once its row is in the sidebar.
+ */
+export async function makeNote(folder) {
+  const file = await js(`window.wm.createNote(${JSON.stringify(folder)})`)
+  await js(`window.wm.e2eNotesChanged()`)
+  await waitFor(`[...document.querySelectorAll('.note-row')].some(r => r.dataset.path === ${JSON.stringify(file)})`)
+  return file
+}
 export async function freshNote({ video = false, rendered = false } = {}) {
   await waitFor(`!!window.wm`)
   // The video pane may start open; editor and drawing tests want the whole width unless they ask for it.
   if (!video && (await js(`!!document.querySelector('.camera')`))) { await js(`document.querySelector('[data-bar=video]')?.click()`); await sleep(300) }
   const root = await js(`window.wm.capabilities().then(c => c.root)`)
-  const file = await js(`window.wm.createNote(${JSON.stringify(root)})`)
-  await sleep(900)
+  const file = await makeNote(root)
   const name = file.split(/[\\/]/).pop().replace(/\.wm$/, "")
   await js(`(() => { const r=[...document.querySelectorAll('.note-row')]; const m=r.find(x=>x.dataset.path===${JSON.stringify(file)})||r.find(x=>x.textContent.includes(${JSON.stringify(name)}))||r[0]; m.click() })()`)
   if (rendered) { await waitFor(`!!document.querySelector('.cm-editor')`); await setRendered(true) }

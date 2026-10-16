@@ -3,7 +3,7 @@
 // try works), undoing the creation of the note that is open in a tab, and a restart (no backup survives it).
 import fs from "node:fs"
 import path from "node:path"
-import { ok, finish, js, sleep, notesDir, resetNotes, writeNoteFile, reloadApp, restartApp, doc, shot, typeText } from "../../lib/harness.mjs"
+import { ok, finish, js, sleep, notesDir, resetNotes, writeNoteFile, reloadApp, restartApp, doc, shot, typeText, makeNote } from "../../lib/harness.mjs"
 import { backupFolders, dragRow, footerName, journalState, listing, openRow, tabCount, textOnDisk, trashNoteViaEditMode, typeAtEnd, undoKey, sidebarRows } from "../../lib/undoSteps.mjs"
 
 await resetNotes({ reload: false })
@@ -76,8 +76,7 @@ if (process.platform !== "win32") {
 }
 
 // --- undoing the creation of the note that is open
-const made = await js(`window.wm.createNote(${JSON.stringify(root)})`)
-await sleep(900)
+const made = await makeNote(root)
 await openRow(path.basename(made))
 await typeAtEnd("fresh")
 const tabs = await tabCount()
