@@ -182,7 +182,14 @@ check_app() {
     codesign -d --entitlements - "$app" 2> /dev/null | grep -q 'com.apple.security.device.camera' \
       && ok "$name: camera entitlement" || fail "$name: no camera entitlement"
     spctl -a -vv "$app" > /dev/null 2>&1 && ok "$name: spctl accepts it" || fail "$name: spctl -a -vv rejects it"
-    xcrun stapler validate "$app" > /dev/null 2>&1 && ok "$name: notarization ticket stapled" || fail "$name: xcrun stapler validate failed"
+    # (Asked up to three times, half a minute apart: `stapler validate` asks Apple's ticket service, and the 3.12.0 release's
+    # Mac job failed on it once and passed when run again, nothing changed: a word from a service, not from the app.)
+    stapled=0
+    for try in 1 2 3; do
+      if xcrun stapler validate "$app" > /dev/null 2>&1; then stapled=1; break; fi
+      [ "$try" -lt 3 ] && sleep 30
+    done
+    [ "$stapled" = 1 ] && ok "$name: notarization ticket stapled" || fail "$name: xcrun stapler validate failed (three tries)"
   else
     if printf '%s\n' "$details" | grep -q '^Signature=adhoc$'; then
       ok "$name: signed ad hoc"

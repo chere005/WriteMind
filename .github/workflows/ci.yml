@@ -9,7 +9,11 @@
 name: CI
 
 on:
+  # Branches only: a release tag is the Release workflow's, which typechecks and runs the unit tests itself. A tag pushed
+  # with its commit ran CI twice on the same commit (once for main, once for the tag) and doubled the chances of a
+  # runner's hiccup mailing a failure.
   push:
+    branches: ["**"]
   pull_request:
   workflow_dispatch:
 

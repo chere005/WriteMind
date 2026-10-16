@@ -15,7 +15,7 @@
  * only the stand-ins, and %LOCALAPPDATA% (where the real winget's alias lives), Program Files, %APPDATA% and
  * %ProgramData% are scratch folders.
  */
-import { spawn, spawnSync } from "node:child_process"
+import { spawn } from "node:child_process"
 import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, writeFileSync } from "node:fs"
 import os from "node:os"
 import path from "node:path"
@@ -257,10 +257,30 @@ function environment(m: Machine, more: Record<string, string> = {}): Record<stri
 
 const helperArguments = (args: string[]): string[] => ["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-File", helper, ...args]
 
+/**
+ * PowerShell run to the end, WITHOUT BLOCKING the test worker: its exit code, and what it printed. These forty tests used
+ * spawnSync, a PowerShell start of two to four seconds each, back to back, and held the worker's event loop for 59 s of
+ * the file's 59 s: vitest's own messages to its worker wait at most 60 s for an answer, so on a slow CI runner the run
+ * failed with "[vitest-worker]: Timeout calling onTaskUpdate" though every test passed (CI on main, 2026-10-11 and
+ * 2026-10-16; the 3.6.0 release's Windows job). Async, the worker answers between and during them.
+ */
+function capture(args: string[], env: NodeJS.ProcessEnv, timeout: number): Promise<{ code: number | null; stdout: string; stderr: string }> {
+  return new Promise((resolve) => {
+    const child = spawn(powershell, args, { env })
+    let stdout = ""
+    let stderr = ""
+    child.stdout.setEncoding("utf8").on("data", (chunk: string) => { stdout += chunk })
+    child.stderr.setEncoding("utf8").on("data", (chunk: string) => { stderr += chunk })
+    const late = setTimeout(() => child.kill(), timeout)
+    child.on("close", (code) => { clearTimeout(late); resolve({ code, stdout, stderr }) })
+    child.on("error", (error) => { clearTimeout(late); resolve({ code: null, stdout, stderr: stderr + String(error) }) })
+  })
+}
+
 /** The helper, run to the end. (Not windowsHide: that starts PowerShell with no console, and winget shares its console.) */
-function run(m: Machine, args: string[], more: Record<string, string> = {}): { code: number | null; out: string } {
-  const r = spawnSync(powershell, helperArguments(args), { env: environment(m, more), encoding: "utf8", timeout: 90_000 })
-  return { code: r.status, out: `${r.stdout ?? ""}${r.stderr ?? ""}` }
+async function run(m: Machine, args: string[], more: Record<string, string> = {}): Promise<{ code: number | null; out: string }> {
+  const r = await capture(helperArguments(args), environment(m, more), 90_000)
+  return { code: r.code, out: `${r.stdout}${r.stderr}` }
 }
 
 /** An INI the helper wrote (UTF-16 with a BOM, for the installer's ReadINIStr). */
@@ -276,13 +296,13 @@ const put = (file: string, body = ""): string => {
 }
 
 describe.skipIf(!windows)("installer-tools.ps1 under Windows PowerShell 5.1", () => {
-  beforeAll(() => {
+  beforeAll(async () => {
     const dir = realpathSync.native(mkdtempSync(path.join(os.tmpdir(), "wm-tools-bin-")))
     const source = put(path.join(dir, "StandIn.cs"), STAND_IN)
     const exe = path.join(dir, "StandIn.exe")
-    const built = spawnSync(powershell, ["-NoProfile", "-NonInteractive", "-Command",
+    const built = await capture(["-NoProfile", "-NonInteractive", "-Command",
       "Add-Type -Path $env:WM_STAND_IN_SOURCE -OutputType ConsoleApplication -OutputAssembly $env:WM_STAND_IN_EXE"],
-    { env: { ...process.env, WM_STAND_IN_SOURCE: source, WM_STAND_IN_EXE: exe }, encoding: "utf8", timeout: 120_000 })
+    { ...process.env, WM_STAND_IN_SOURCE: source, WM_STAND_IN_EXE: exe }, 120_000)
     if (!existsSync(exe)) throw new Error(`the stand-in did not compile: ${built.stdout}${built.stderr}`)
     bins.winget = path.join(dir, "winget")
     bins.py = path.join(dir, "py")
@@ -293,49 +313,49 @@ describe.skipIf(!windows)("installer-tools.ps1 under Windows PowerShell 5.1", ()
     }
   }, 180_000)
 
-  it("parses with no errors", () => {
-    const r = spawnSync(powershell, ["-NoProfile", "-NonInteractive", "-Command",
+  it("parses with no errors", async () => {
+    const r = await capture(["-NoProfile", "-NonInteractive", "-Command",
       "$e = $null; [void][System.Management.Automation.Language.Parser]::ParseFile($env:WM_HELPER, [ref]$null, [ref]$e); " +
       "\"errors=$($e.Count)\"; $e | ForEach-Object { $_.Extent.StartLineNumber.ToString() + ': ' + $_.Message }"],
-    { env: { ...process.env, WM_HELPER: helper }, encoding: "utf8", timeout: 60_000 })
+    { ...process.env, WM_HELPER: helper }, 60_000)
     expect(r.stdout.trim()).toBe("errors=0")
   }, 90_000)
 
-  it("-Detect on a bare machine (WRITEMIND_TOOLS_PRETEND=missing) finds nothing", () => {
+  it("-Detect on a bare machine (WRITEMIND_TOOLS_PRETEND=missing) finds nothing", async () => {
     const m = machine([bins.winget])
     const out = path.join(m.base, "detect.ini")
-    expect(run(m, ["-Detect", "-Out", out], { WRITEMIND_TOOLS_PRETEND: "missing" }).code).toBe(0)
+    expect((await run(m, ["-Detect", "-Out", out], { WRITEMIND_TOOLS_PRETEND: "missing" })).code).toBe(0)
     expect(ini(out)).toMatchObject({ python: "", wolfram: "", activated: "0" })
   }, 120_000)
 
   for (const { folders, pick } of fixture.python) {
-    it(`-Detect picks the Python tools.ts picks: ${folders.join(", ")} -> ${pick}`, () => {
+    it(`-Detect picks the Python tools.ts picks: ${folders.join(", ")} -> ${pick}`, async () => {
       const m = machine()
       const dir = path.join(m.local, "Programs", "Python")
       for (const name of folders) put(path.join(dir, name, "python.exe"))
       const out = path.join(m.base, "detect.ini")
-      expect(run(m, ["-Detect", "-Out", out]).code).toBe(0)
+      expect((await run(m, ["-Detect", "-Out", out])).code).toBe(0)
       expect(ini(out).python).toBe(path.join(dir, pick, "python.exe"))
     }, 120_000)
   }
 
   for (const { folders, pick } of fixture.wolfram) {
-    it(`-Detect picks the Wolfram Engine tools.ts picks: ${folders.join(", ")} -> ${pick}`, () => {
+    it(`-Detect picks the Wolfram Engine tools.ts picks: ${folders.join(", ")} -> ${pick}`, async () => {
       const m = machine()
       const engines = path.join(m.pf, "Wolfram Research", "Wolfram Engine")
       for (const name of folders) put(path.join(engines, name, "wolframscript.exe"))
       const out = path.join(m.base, "detect.ini")
-      expect(run(m, ["-Detect", "-Out", out]).code).toBe(0)
+      expect((await run(m, ["-Detect", "-Out", out])).code).toBe(0)
       expect(ini(out).wolfram).toBe(path.join(engines, pick, "wolframscript.exe"))
     }, 120_000)
   }
 
-  it("-Detect looks past a Store placeholder at the front of the PATH to a real python.exe behind it", () => {
+  it("-Detect looks past a Store placeholder at the front of the PATH to a real python.exe behind it", async () => {
     const real = path.join(realpathSync.native(mkdtempSync(path.join(os.tmpdir(), "wm-tools-real-"))), "Python314")
     put(path.join(real, "python.exe"))
     const m = machine([bins.store, real])
     const out = path.join(m.base, "detect.ini")
-    expect(run(m, ["-Detect", "-Out", out]).code).toBe(0)
+    expect((await run(m, ["-Detect", "-Out", out])).code).toBe(0)
     expect(ini(out).python).toBe(path.join(real, "python.exe"))
   }, 120_000)
 
@@ -354,12 +374,12 @@ describe.skipIf(!windows)("installer-tools.ps1 under Windows PowerShell 5.1", ()
     expect(ini(out).python).toBe(path.join(bins.py, "py.exe"))
   }, 120_000)
 
-  it("a dry run names the documented commands, runs nothing and exits 0", () => {
+  it("a dry run names the documented commands, runs nothing and exits 0", async () => {
     const m = machine([bins.winget])
     const result = path.join(m.base, "result.ini")
     const log = path.join(m.base, "tools-setup.log")
     const recorded = path.join(m.base, "args.txt")
-    const r = run(m, ["-Python", "-Wolfram", "-Activate", "-DryRun", "-NoWait", "-Log", log, "-Result", result],
+    const r = await run(m, ["-Python", "-Wolfram", "-Activate", "-DryRun", "-NoWait", "-Log", log, "-Result", result],
       { WRITEMIND_TOOLS_PRETEND: "missing", FAKE_WINGET_ARGS: recorded })
     expect(r.code).toBe(0)
     expect(ini(result)).toMatchObject({ python: "dry run", wolfram: "dry run", activate: "dry run" })
@@ -370,10 +390,10 @@ describe.skipIf(!windows)("installer-tools.ps1 under Windows PowerShell 5.1", ()
     expect(existsSync(recorded)).toBe(false)
   }, 120_000)
 
-  it("a dry run fails nothing: Activate with no engine and none ticked, and no winget, still exit 0", () => {
+  it("a dry run fails nothing: Activate with no engine and none ticked, and no winget, still exit 0", async () => {
     const m = machine()
     const result = path.join(m.base, "result.ini")
-    const r = run(m, ["-Python", "-Activate", "-DryRun", "-NoWait", "-Result", result], { WRITEMIND_TOOLS_PRETEND: "missing" })
+    const r = await run(m, ["-Python", "-Activate", "-DryRun", "-NoWait", "-Result", result], { WRITEMIND_TOOLS_PRETEND: "missing" })
     expect(r.code).toBe(0)
     expect(ini(result)).toMatchObject({ python: "dry run (winget missing)", activate: "dry run (wolframscript.exe not found)" })
   }, 120_000)
@@ -393,12 +413,12 @@ describe.skipIf(!windows)("installer-tools.ps1 under Windows PowerShell 5.1", ()
     { exit: 1, python: "failed: winget exit code 0x00000001", code: 1 },
   ]
   for (const { exit, python, code } of outcomes) {
-    it(`winget exits ${exit}: the console shows winget's lines, the result says only "${python}"`, () => {
+    it(`winget exits ${exit}: the console shows winget's lines, the result says only "${python}"`, async () => {
       const m = machine([bins.winget])
       const result = path.join(m.base, "result.ini")
       const log = path.join(m.base, "tools-setup.log")
       const recorded = path.join(m.base, "args.txt")
-      const r = run(m, ["-Python", "-NoWait", "-Log", log, "-Result", result],
+      const r = await run(m, ["-Python", "-NoWait", "-Log", log, "-Result", result],
         { FAKE_WINGET_EXIT: String(exit), FAKE_WINGET_ARGS: recorded })
       expect(r.code).toBe(code)
       // winget's own output reaches the console (here, the pipe the console's handles are)...
@@ -415,20 +435,20 @@ describe.skipIf(!windows)("installer-tools.ps1 under Windows PowerShell 5.1", ()
     }, 120_000)
   }
 
-  it("installs the Wolfram Engine with no scope and no switches of its own", () => {
+  it("installs the Wolfram Engine with no scope and no switches of its own", async () => {
     const m = machine([bins.winget])
     const result = path.join(m.base, "result.ini")
     const recorded = path.join(m.base, "args.txt")
-    const r = run(m, ["-Wolfram", "-NoWait", "-Result", result], { FAKE_WINGET_EXIT: "0", FAKE_WINGET_ARGS: recorded })
+    const r = await run(m, ["-Wolfram", "-NoWait", "-Result", result], { FAKE_WINGET_EXIT: "0", FAKE_WINGET_ARGS: recorded })
     expect(r.code).toBe(0)
     expect(ini(result).wolfram).toBe("installed")
     expect(readFileSync(recorded, "utf8").split("\n")).toEqual(["install", "--id", WOLFRAM_ID, "--exact", "--source", "winget", ...AGREEMENTS])
   }, 120_000)
 
-  it("with no winget at all: failed, said so, exit 1", () => {
+  it("with no winget at all: failed, said so, exit 1", async () => {
     const m = machine()
     const result = path.join(m.base, "result.ini")
-    const r = run(m, ["-Python", "-NoWait", "-Result", result])
+    const r = await run(m, ["-Python", "-NoWait", "-Result", result])
     expect(r.code).toBe(1)
     expect(ini(result)).toMatchObject({ python: "failed: winget is missing", winget: "missing" })
   }, 120_000)

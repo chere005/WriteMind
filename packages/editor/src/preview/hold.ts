@@ -37,7 +37,9 @@ export const holdingField = StateField.define<boolean>({
  * key is being heard but BEFORE any key command has run (the editor flushes what it has seen of the page's selection first).
  * Everything the person does is taken: the arrows, a click, the brackets, a command's own selection.
  */
-let lastInput = 0
+// (Never, until the first: 0 was "at the page's start", and for the first 150 ms of a page — of a test worker, where a CI
+// runner's unit test failed now and then, "expected 14 to be 5" — every read-back counted as just after a key.)
+let lastInput = Number.NEGATIVE_INFINITY
 let flushing = false
 const INPUT = ["mousedown", "pointerdown", "touchstart", "compositionstart", "beforeinput", "paste", "cut", "copy", "dragstart"]
 const HEARD_FOR = 150
