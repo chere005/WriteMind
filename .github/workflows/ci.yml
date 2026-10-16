@@ -52,7 +52,9 @@ jobs:
     name: End-to-end (optional)
     needs: verify
     runs-on: windows-latest
-    timeout-minutes: 40
+    # 40 was enough only while 88 scripts crashed in their first two seconds (no sidebar row for a note a script made): run
+    # in full they took 42 minutes to get through 88 of 125 on 2026-10-16.
+    timeout-minutes: 90
     # The suites drive the real app on a hosted desktop: until they have proven steady there they inform, not block.
     continue-on-error: true
     env:
