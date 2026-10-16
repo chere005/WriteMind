@@ -7,11 +7,23 @@ import { mayWrite } from "../src/notes/writing"
 describe("a note's row", () => {
   const path = "/tmp/WriteMindTests/Ideas for spring.md"
 
-  it("takes its title from the first heading", () => {
-    const note = makeNote(path, 0, "\n\n## Garden plan\nbeds\nseeds\nthird")
+  it("takes its title from the first heading while it is still called Untitled", () => {
+    const note = makeNote("/tmp/WriteMindTests/Untitled 2.md", 0, "\n\n## Garden plan\nbeds\nseeds\nthird")
     expect(note.title).toBe("Garden plan")
     expect(note.snippet).toBe("beds · seeds")
+    expect(makeNote("/tmp/WriteMindTests/Untitled.wm", 0, "# Groceries\nmilk").title).toBe("Groceries")
     expect(stem(path)).toBe("Ideas for spring")
+  })
+
+  // PORT-ONLY (Sean, 2026-10-16: "opening projects should match the name of the WM file"): a note with a name of its own is
+  // called that, whatever its first heading says; the Mac's rows took the first heading always.
+  it("is called by its file's name once it has one, whatever its first heading says", () => {
+    const note = makeNote(path, 0, "\n\n## Garden plan\nbeds\nseeds\nthird")
+    expect(note.title).toBe("Ideas for spring")
+    expect(note.snippet).toBe("beds · seeds")
+    const projekt = makeNote("/Users/s/Downloads/Projekt.wm", 0, "![Schemat](media/a.png)\n\n## Dane:\n\n```wl\na == 2\n```")
+    expect(projekt.title).toBe("Projekt")
+    expect(makeNote("/n/Untitled notes.wm", 0, "# Heading").title).toBe("Untitled notes")
   })
 
   it("falls back to the file name", () => {
@@ -38,6 +50,7 @@ describe("a note's row", () => {
 
   it("falls back to the file name for an empty heading", () => {
     expect(makeNote(path, 0, "#\n").title).toBe("Ideas for spring")
+    expect(makeNote("/tmp/Untitled 3.md", 0, "#\n").title).toBe("Untitled 3")
   })
 })
 

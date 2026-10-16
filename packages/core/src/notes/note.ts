@@ -2,8 +2,10 @@
  * A row in the sidebar: the file, when it changed, its title and a two-line
  * snippet. Ported from `WriteMind/Notes/Note.swift`.
  *
- * The title is the note's first `# heading`, falling back to the file name —
- * nothing is stored beside the file, because the file is the note.
+ * The title is the FILE'S NAME (Sean, 2026-10-16: "opening projects should match the name of the WM file": a Projekt.wm
+ * whose first heading is a section's, "Dane:", was listed and tabbed as "Dane:"). Only a note still called what the app
+ * named it when it was made — "Untitled", "Untitled 2" — takes its first `# heading`, as the Mac's rows always did, so a
+ * new note is called what is typed at its top. Nothing is stored beside the file, because the file is the note.
  */
 
 import { isMarkdownMarker, plainLine, unescapeLine } from "../markdown/plainText"
@@ -25,6 +27,9 @@ export function stem(path: string): string {
   const dot = name.lastIndexOf(".")
   return dot > 0 ? name.slice(0, dot) : name
 }
+
+/** A name the app gave a note it made (`createNote`: "Untitled", then "Untitled 2", "Untitled 3"…). */
+export const isPlaceholderName = (name: string): boolean => /^Untitled(?: \d+)?$/.test(name)
 
 /** Plain text from a markdown line: drop the markers it carries. */
 export function stripInlineMarkup(line: string): string {
@@ -86,10 +91,12 @@ export function makeNote(path: string, modified: number, contents: string): Note
     snippetLines.push(plain.has(index) ? plainLine(line) : stripInlineMarkup(unescapeLine(words)))
   }
 
+  // (The first heading is not snippet words either way: under the file's name it is what the note is about.)
+  const name = stem(path)
   return {
     path,
     modified,
-    title: title && title.length > 0 ? title : stem(path),
+    title: !isPlaceholderName(name) || !title ? name : title,
     snippet: snippetLines.join(" · "),
   }
 }

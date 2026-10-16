@@ -27,7 +27,9 @@ expectWorld("the start", W[0], { front: "Alpha", text: A0, caret: [11, 11], note
 await styleMenu("heading-1")
 let got = await world()
 const A1 = "alpha\n\n# beta words\n\ngamma\n"
-expectWorld("step 1, Style > Title", got, { front: "beta words", text: A1, notes: true, files: FILES0, rows: ROWS0, disk: { "Alpha.wm": A1, "Other.wm": "other\n", "Sec/In.wm": "inside\n" }, footer: "Alpha.wm" })
+// (The tab is called by the file's name, not by the Title just made: Sean, 2026-10-16, "opening projects should match the name of
+// the WM file".)
+expectWorld("step 1, Style > Title", got, { front: "Alpha", text: A1, notes: true, files: FILES0, rows: ROWS0, disk: { "Alpha.wm": A1, "Other.wm": "other\n", "Sec/In.wm": "inside\n" }, footer: "Alpha.wm" })
 ok("step 1: the caret is on the same words (beta|)", got.text.slice(0, got.caret[1]).endsWith("# beta"), JSON.stringify(got.caret))
 W.push(got)
 await sleep(700)
@@ -35,19 +37,19 @@ await sleep(700)
 // ---- 2. the tab's menu: Rename… (a file step)
 await tabMenu("Alpha.wm", "Rename…"); await dialog("Beta")
 got = await world()
-expectWorld("step 2, tab menu > Rename… Beta", got, { front: "beta words", text: A1, caret: W[1].caret, notes: true, files: ["Beta.wm", "Other.wm", "Sec/", "Sec/In.wm"], rows: ["Beta.wm", "Other.wm", "Sec", "Sec/In.wm"], disk: { "Beta.wm": A1, "Other.wm": "other\n" }, footer: "Beta.wm" })
+expectWorld("step 2, tab menu > Rename… Beta", got, { front: "Beta", text: A1, caret: W[1].caret, notes: true, files: ["Beta.wm", "Other.wm", "Sec/", "Sec/In.wm"], rows: ["Beta.wm", "Other.wm", "Sec", "Sec/In.wm"], disk: { "Beta.wm": A1, "Other.wm": "other\n" }, footer: "Beta.wm" })
 W.push(got)
 
 // ---- 3. the sidebar row's menu: Move to ▸ Sec (a file step)
 await rowMenu("Beta.wm", "Move to", { sub: "Sec" })
 got = await world()
-expectWorld("step 3, sidebar row menu > Move to > Sec", got, { front: "beta words", text: A1, caret: W[1].caret, notes: true, files: ["Other.wm", "Sec/", "Sec/Beta.wm", "Sec/In.wm"], rows: ["Other.wm", "Sec", "Sec/Beta.wm", "Sec/In.wm"], disk: { "Sec/Beta.wm": A1 }, footer: "Beta.wm" })
+expectWorld("step 3, sidebar row menu > Move to > Sec", got, { front: "Beta", text: A1, caret: W[1].caret, notes: true, files: ["Other.wm", "Sec/", "Sec/Beta.wm", "Sec/In.wm"], rows: ["Other.wm", "Sec", "Sec/Beta.wm", "Sec/In.wm"], disk: { "Sec/Beta.wm": A1 }, footer: "Beta.wm" })
 W.push(got)
 
 // ---- 4. the sidebar row's menu: Move to Trash… on another note (a file step)
 await rowMenu("Other.wm", "Move to Trash…"); await dialog()
 got = await world()
-expectWorld("step 4, sidebar row menu > Move to Trash… Other", got, { front: "beta words", text: A1, caret: W[1].caret, notes: true, files: ["Sec/", "Sec/Beta.wm", "Sec/In.wm"], rows: ["Sec", "Sec/Beta.wm", "Sec/In.wm"], footer: "Beta.wm" })
+expectWorld("step 4, sidebar row menu > Move to Trash… Other", got, { front: "Beta", text: A1, caret: W[1].caret, notes: true, files: ["Sec/", "Sec/Beta.wm", "Sec/In.wm"], rows: ["Sec", "Sec/Beta.wm", "Sec/In.wm"], footer: "Beta.wm" })
 ok("step 4: the note that was trashed is not on disk (the OS Trash has it)", !got.files.includes("Other.wm"))
 W.push(got)
 
@@ -56,7 +58,7 @@ let armedAt = null
 await seamPick("Quote", 3, { onMenu: async () => { armedAt = await world() } })
 got = await world()
 const A5 = "alpha\n\n# beta words\n\n> \n\ngamma\n"
-expectWorld("step 5, seam + > Quote", got, { front: "beta words", text: A5, notes: true, files: ["Sec/", "Sec/Beta.wm", "Sec/In.wm"], rows: ["Sec", "Sec/Beta.wm", "Sec/In.wm"], footer: "Beta.wm" })
+expectWorld("step 5, seam + > Quote", got, { front: "Beta", text: A5, notes: true, files: ["Sec/", "Sec/Beta.wm", "Sec/In.wm"], rows: ["Sec", "Sec/Beta.wm", "Sec/In.wm"], footer: "Beta.wm" })
 ok("step 5: the caret is inside the new quote cell, after its marker", got.caret[0] === got.caret[1] && got.caret[1] === "alpha\n\n# beta words\n\n> ".length, JSON.stringify(got.caret))
 await sleep(900)
 W.push(await world())

@@ -52,15 +52,17 @@ ok("the file is renamed on disk, extension kept", exists("Zulu.wm") && !exists("
 t = await tabs()
 ok("the tab follows the file (same tab, new path)", t.length === 3 && t.some((x) => /Zulu\.wm$/.test(x.path)) && !t.some((x) => /Alpha\.wm$/.test(x.path)), JSON.stringify(t))
 ok("and so does the sidebar", await js(`[...document.querySelectorAll('.note-row')].some((r) => /Zulu\\.wm$/.test(r.dataset.path))`))
+// A note is called by its file's name (Sean, 2026-10-16: "opening projects should match the name of the WM file"): the tab says Zulu.
+ok("the tab is called by the new name", t.some((x) => x.name === "Zulu" && /Zulu\.wm$/.test(x.path)) && !t.some((x) => x.name === "Alpha"), JSON.stringify(t))
 // a name already taken is made unique (the sidebar's rename does the same): nothing is overwritten
-await openMenuOn("Alpha")
+await openMenuOn("Zulu")
 await rowClick("Rename"); await sleep(300)
 await js(`document.querySelector('[data-modal=prompt] input').select()`)
 await typeText("Bravo"); await key("Enter"); await sleep(900)
 ok("a name already taken is numbered, and the other note is untouched", exists("Bravo 2.wm") && exists("Bravo.wm") && !exists("Zulu.wm"))
 ok("the dialog closed and the keyboard is back in the note", !(await js(`!!document.querySelector('[data-modal=prompt]')`)) && (await typingBack()))
 // Escape in the dialog asks nothing
-await openMenuOn("Alpha")
+await openMenuOn("Bravo 2")
 await rowClick("Rename"); await sleep(300)
 await key("Escape"); await sleep(250)
 ok("Escape in the dialog leaves the file alone", !(await js(`!!document.querySelector('[data-modal=prompt]')`)) && exists("Bravo 2.wm"))

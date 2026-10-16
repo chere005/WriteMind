@@ -3,10 +3,10 @@ const J = async (expr) => JSON.parse(await js(`JSON.stringify(${expr})`))
 const view = `document.querySelector('.cm-content').cmTile.view`
 const doc = () => js(`${view}.state.doc.toString()`)
 const item = async (top, label) => (await menu()).find((t) => t.label === top).submenu.find((i) => i.label === label)
-const openHead = async () => { await closeAllTabs(); await js(`[...document.querySelectorAll('.note-row')].find(r=>r.textContent.startsWith('Head'))?.click()`); await sleep(800) }
+const openHead = async () => { await closeAllTabs(); await js(`[...document.querySelectorAll('.note-row')].find(r=>r.textContent.startsWith('Cells'))?.click()`); await sleep(800) }
 const caretAt = (needle, plus = 0) => js(`(() => { const v = ${view}; const at = v.state.doc.toString().indexOf(${JSON.stringify(needle)}) + ${plus}; v.dispatch({ selection: { anchor: at } }); v.focus() })()`)
 
-// A small notes folder: Cells ("Head"), Second, Third and a fourth, so the sidebar has something to edit.
+// A small notes folder: Cells (its first heading "Head"; its row says Cells, the file's name), Second, Third and a fourth.
 await seedNotes({
   "Cells.md": "# Head\n\nbody one\n\nbody two\n\n# Next\n\nTail",
   "Second.md": "# Second\n\nsecond body text\n",

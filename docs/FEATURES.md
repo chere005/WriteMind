@@ -4,8 +4,11 @@ The tour. [README](../README.md) is the short version; [AGENTS.md](../AGENTS.md)
 is how the code is put together.
 
 - **Notes are files.** `~/Documents/WriteMind/*.wm`, one per note: a ZIP that
-  holds the words, the drawing and the pictures (docs/SPEC-WM.md). The title is
-  the note's first `# heading`, or its file name. Notes from before (`.md` plus
+  holds the words, the drawing and the pictures (docs/SPEC-WM.md). A note is
+  called by its file name in the sidebar, its tab and the window (Sean,
+  2026-10-16: "opening projects should match the name of the WM file"); only a
+  note still called Untitled takes its first `# heading`, so a new note is
+  called what you type at its top. Rename… renames the file. Notes from before (`.md` plus
   `.drawings/`) are converted on first launch and the originals kept in a backup
   folder.
 - **Sections are folders.** Make a section in the sidebar and it is a folder

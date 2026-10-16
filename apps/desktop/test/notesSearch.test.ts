@@ -36,8 +36,8 @@ function counting(): { ports: SearchPorts; reads: string[]; stats: number } {
 describe("searching real notes", () => {
   it("finds a note by its title, by its words, and by the file's name, and says where each is", async () => {
     const home = scratch()
-    writeWm(path.join(home, "Heat.wm"), "# Heat flow\nthe gauge reads low\n")
-    writeWm(path.join(home, "Ideas", "Spring.wm"), "# Spring plan\nplant the gauge seeds\n")
+    writeWm(path.join(home, "Heat flow.wm"), "# Heat flow\nthe gauge reads low\n")
+    writeWm(path.join(home, "Ideas", "Spring plan.wm"), "# Spring plan\nplant the gauge seeds\n")
     writeWm(path.join(home, "Ideas", "2026", "Gauge notes.wm"), "just words\n")
     const found = await new NotesSearch().run(1, await treeOf(home), "gauge")
     expect(found.searched).toBe(3)
@@ -53,7 +53,7 @@ describe("searching real notes", () => {
 
   it("is case-blind and accent-blind, in the words and in the title", async () => {
     const home = scratch()
-    writeWm(path.join(home, "a.wm"), "# Le Café\nUne ÉCOLE de musique\n")
+    writeWm(path.join(home, "Le Café.wm"), "# Le Café\nUne ÉCOLE de musique\n")
     const tree = await treeOf(home)
     const search = new NotesSearch()
     expect(titles(await search.run(1, tree, "CAFE"))).toEqual(["Le Café"])
@@ -70,14 +70,16 @@ describe("searching real notes", () => {
       const file = writeWm(path.join(home, name), text)
       utimesSync(file, old + age, old + age)
     }
-    make("body.wm", "# Zeta\nsome kiwi here\n", 4)
+    // (A note is called by its file's name, core note.ts — Sean, 2026-10-16 — so "named kiwi" is a title with the word in it;
+    // the file-name tier is a note still called Untitled whose heading is its title.)
+    make("Zeta.wm", "# Zeta\nsome kiwi here\n", 4)
     make("named kiwi.wm", "# Plain\nnothing\n", 3)
-    make("contains.wm", "# Big kiwi pie\n", 2)
-    make("starts old.wm", "# Kiwi old\n", 0)
-    make("starts new.wm", "# Kiwi new\n", 1)
+    make("Big kiwi pie.wm", "# Big kiwi pie\n", 2)
+    make("Kiwi old.wm", "# Kiwi old\n", 0)
+    make("Kiwi new.wm", "# Kiwi new\n", 1)
     const found = await new NotesSearch().run(1, await treeOf(home), "kiwi")
-    expect(titles(found)).toEqual(["Kiwi new", "Kiwi old", "Big kiwi pie", "Plain", "Zeta"])
-    expect(found.hits.map((hit) => hit.tier)).toEqual([0, 0, 1, 2, 3])
+    expect(titles(found)).toEqual(["Kiwi new", "Kiwi old", "named kiwi", "Big kiwi pie", "Zeta"])
+    expect(found.hits.map((hit) => hit.tier)).toEqual([0, 0, 1, 1, 3])
   })
 
   it("is nothing for a blank query and for a project with no tree", async () => {
@@ -107,7 +109,7 @@ describe("searching real notes", () => {
     setProjectFolders([one, two])
     const tree = await projectTree([one, two], one, "Both")
     const found = await new NotesSearch().run(1, tree, "shared")
-    expect(Object.fromEntries(found.hits.map((hit) => [hit.title, hit.where]))).toEqual({ A: "Work", B: "Home › Sub" })
+    expect(Object.fromEntries(found.hits.map((hit) => [hit.title, hit.where]))).toEqual({ a: "Work", b: "Home › Sub" })
   })
 
   it("finds a note that is in the tree twice (a project folder inside another) once", async () => {
@@ -160,7 +162,7 @@ describe("what the search reads", () => {
     writeWm(b, "# B\nbeta and gamma and more\n")
     const found = await search.run(2, tree, "gamma")
     expect(disk.reads).toEqual(["b.wm"])
-    expect(titles(found)).toEqual(["B"])
+    expect(titles(found)).toEqual(["b"])
   })
 
   it("forgets a note that is gone, and does not find it", async () => {
@@ -173,7 +175,7 @@ describe("what the search reads", () => {
     const { rmSync } = await import("node:fs")
     rmSync(gone)
     const found = await search.run(2, tree, "alpha")
-    expect(titles(found)).toEqual(["A"])
+    expect(titles(found)).toEqual(["a"])
     expect(found.unreadable).toBe(0)
     expect(search.held.notes).toBe(1)
   })
@@ -217,7 +219,7 @@ describe("a note that is being written, damaged or gone", () => {
     truncateSync(cut, 120)
     const found = await new NotesSearch().run(1, await treeOf(home), "broken")
     // the fine note by its words, the damaged one by its file name (its title is its file name: nothing could be read)
-    expect(titles(found).sort()).toEqual(["Fine", "broken one"].sort())
+    expect(titles(found).sort()).toEqual(["fine", "broken one"].sort())
     expect(found.unreadable).toBe(3)
     const another = await new NotesSearch().run(2, await treeOf(home), "nothing like it")
     expect(another.hits).toEqual([])
@@ -238,7 +240,7 @@ describe("a note that is being written, damaged or gone", () => {
     const { renameSync } = await import("node:fs")
     renameSync(a, path.join(home, "moved.wm"))
     const found = await new NotesSearch().run(1, tree, "same")
-    expect(titles(found)).toEqual(["B"])
+    expect(titles(found)).toEqual(["b"])
     expect(found.unreadable).toBe(0)
   })
 })
@@ -278,7 +280,7 @@ describe("a lot of notes", () => {
     const first = performance.now() - started
     clearInterval(timer)
     expect(found.searched).toBe(3000)
-    expect(titles(found)).toEqual(["Note 2999"])
+    expect(titles(found)).toEqual(["n2999"])
     // never one long block: the timer, which needs the loop, ran while the notes were being looked at
     expect(turns).toBeGreaterThan(5)
     // and from the cache the next is fast

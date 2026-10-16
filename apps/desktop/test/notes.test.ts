@@ -391,7 +391,8 @@ describe("the notes themselves", () => {
 describe("a big folder", () => {
   it("is read with every note's own heading, however many there are (the first 8 KiB of each note.mdwm, not the whole file)", async () => {
     const home = scratch()
-    for (let n = 0; n < 700; n++) writeWm(path.join(home, `note-${n}.wm`), `# Heading ${n}\n\nbody\n`)
+    // (Notes still called Untitled take their first heading for a title, core note.ts: the heading is what is looked for.)
+    for (let n = 0; n < 700; n++) writeWm(path.join(home, `Untitled ${n}.wm`), `# Heading ${n}\n\nbody\n`)
     const tree = await readTree(home, home, { folders: {} })
     expect(tree.notes).toHaveLength(700)
     expect(tree.notes.every((row) => row.title === `Heading ${path.basename(row.path).replace(/\D/g, "")}`)).toBe(true)
@@ -408,7 +409,8 @@ describe("a big folder", () => {
     writeFileSync(path.join(home, "Note.TXT"), "x")
     note(home, "Upper.WM", "# Upper\n")
     const tree = await readTree(home, home, { folders: {} })
-    expect(tree.notes.map((row) => row.title).sort()).toEqual(["Real", "Upper"])
+    // (A note is called by its file's name: Sean, 2026-10-16, "opening projects should match the name of the WM file".)
+    expect(tree.notes.map((row) => row.title).sort()).toEqual(["Upper", "real"])
   })
 
   it("shows a file called .wm that is not a note by its name, and does not remember that row as the note", async () => {
@@ -420,12 +422,13 @@ describe("a big folder", () => {
 
   it("does not remember a row it could not read as if it were the note (EMFILE gave file names for titles that stuck)", async () => {
     const home = scratch()
-    const file = note(home, "real.wm", "# The Real Heading\n")
+    // (A note still called Untitled is called by its first heading once it is read: that is the row the test looks at.)
+    const file = note(home, "Untitled.wm", "# The Real Heading\n")
     note(home, "other.wm", "# Other\n")
     const open = fsp.open.bind(fsp)
     let failing = true
     vi.spyOn(fsp, "open").mockImplementation(async (target, ...rest) => {
-      if (failing && String(target).endsWith("real.wm")) throw Object.assign(new Error("EMFILE: too many open files"), { code: "EMFILE" })
+      if (failing && String(target).endsWith("Untitled.wm")) throw Object.assign(new Error("EMFILE: too many open files"), { code: "EMFILE" })
       return open(target, ...(rest as [])) as never
     })
     const first = await readTree(home, home, { folders: {} })
@@ -440,15 +443,16 @@ describe("a big folder", () => {
 // not looked at again (500 notes: 510 stat calls per save, 18 ms of CPU).
 describe("trusting the watcher", () => {
   const titles = (tree: { notes: { title: string }[] }) => tree.notes.map((row) => row.title).sort()
+  // (The notes are called Untitled, so each row's title is its first heading, core note.ts: what was read is what shows.)
 
   it("keeps a note it was not told about, and looks again at one it was", async () => {
     const home = scratch()
-    const a = note(home, "a.wm", "# First\n")
-    note(home, "b.wm", "# Second\n")
+    const a = note(home, "Untitled.wm", "# First\n")
+    note(home, "Untitled 2.wm", "# Second\n")
     setWatched([home])
     expect(titles(await projectTree([home], home, "P"))).toEqual(["First", "Second"])       // the full look
     // changed behind its back: the cache stands (the watcher has not said a word)
-    note(home, "a.wm", "# Changed behind the watcher\n")
+    note(home, "Untitled.wm", "# Changed behind the watcher\n")
     expect(titles(await projectTree([home], home, "P"))).toEqual(["First", "Second"])
     // the watcher says so: looked at again
     fileChanged(a)
@@ -457,10 +461,10 @@ describe("trusting the watcher", () => {
 
   it("sees a new file, a removed file and a rename at once: the listing is always read", async () => {
     const home = scratch()
-    const a = note(home, "a.wm", "# A\n")
+    const a = note(home, "Untitled.wm", "# A\n")
     setWatched([home])
     await projectTree([home], home, "P")
-    note(home, "c.wm", "# C\n")
+    note(home, "Untitled 3.wm", "# C\n")
     expect(titles(await projectTree([home], home, "P"))).toEqual(["A", "C"])
     await fsp.rm(a)
     expect(titles(await projectTree([home], home, "P"))).toEqual(["C"])
@@ -468,22 +472,22 @@ describe("trusting the watcher", () => {
 
   it("trusts nothing without a watcher, and nothing after the watcher failed", async () => {
     const home = scratch()
-    note(home, "a.wm", "# One\n")
+    note(home, "Untitled.wm", "# One\n")
     await projectTree([home], home, "P")
     // The size differs, so the stat tells even inside one tick of the file clock (no watcher on: every look is a full
     // one). ("# Two\n" was as long as "# One\n": the test then hung on the file time changing, and failed now and then.)
-    note(home, "a.wm", "# Two words\n")
+    note(home, "Untitled.wm", "# Two words\n")
     expect(titles(await projectTree([home], home, "P"))).toEqual(["Two words"])
     setWatched([home])
     await projectTree([home], home, "P")
-    note(home, "a.wm", "# Three\n")
+    note(home, "Untitled.wm", "# Three\n")
     forgetTrust()
     expect(titles(await projectTree([home], home, "P"))).toEqual(["Three"])
   })
 
   it("our own saves are looked at again (a save is a write the watcher also hears, but not before the next look)", async () => {
     const home = scratch()
-    const a = note(home, "a.wm", "# Before\n")
+    const a = note(home, "Untitled.wm", "# Before\n")
     setWatched([home])
     await readNote(a)
     await projectTree([home], home, "P")

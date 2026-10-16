@@ -96,11 +96,11 @@ describe("the sidebar's tree for a project", () => {
     writeWm(path.join(other, "two.wm"), "# Two")
     const single = await projectTree([home], home, "P")
     expect(single.path).toBe(home)
-    expect(single.notes.map((note) => note.title)).toEqual(["One"])
+    expect(single.notes.map((note) => note.title)).toEqual(["one"])
     const both = await projectTree([home, other], home, "P")
     expect(both.path).toBe("")
     expect(both.sections.map((one) => one.path)).toEqual([home, other])
-    expect(both.sections[1]!.notes.map((note) => note.title)).toEqual(["Two"])
+    expect(both.sections[1]!.notes.map((note) => note.title)).toEqual(["two"])
   })
 
   it("keeps an excluded folder out, and leaves it on disk", async () => {
