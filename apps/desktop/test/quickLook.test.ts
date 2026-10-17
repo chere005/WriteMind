@@ -250,7 +250,8 @@ describe("packaging", () => {
       "--sign", "ABCDEF0123", "--force", "--keychain", "/tmp/k.keychain", "--timestamp", "--options", "runtime",
       "--entitlements", hook.ENTITLEMENTS, "/x/WriteMind.app/Contents/PlugIns/WriteMindPreview.appex",
     ])
-    expect(hook.ENTITLEMENTS).toMatch(/apps\/desktop\/quicklook\/WriteMindPreview\.entitlements$/)
+    // (A path of this machine's: backslashes on the Windows runner, where the hook is never run but the test is.)
+    expect(hook.ENTITLEMENTS.replaceAll("\\", "/")).toMatch(/apps\/desktop\/quicklook\/WriteMindPreview\.entitlements$/)
     expect(args.join(" ")).not.toContain("entitlements.mac.plist")
   })
 
