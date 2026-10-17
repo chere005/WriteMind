@@ -3,12 +3,8 @@
 // @e2e timeout=240
 import fs from "node:fs"
 import path from "node:path"
-import { ok, note, finish, js, sleep, typeText, notesDir, resetNotes, writeNoteFile, reloadApp, waitFor, key, shot, closeAllTabs } from "../../lib/harness.mjs"
+import { ok, note, finish, js, sleep, typeText, notesDir, resetNotes, writeNoteFile, reloadApp, waitFor, key, shot } from "../../lib/harness.mjs"
 
-// NOTHING OPEN FIRST. A note left open would go with the old folder, and in its place the app opens the project's first note and
-// gives it the keyboard (App.tsx `keepOnly`, Notebook.tsx): on the Windows runner that landed seconds after the 3,000 rows were
-// drawn, after the first letter of the search below, and the rest of the typing went into Note 2996.
-await closeAllTabs()
 await resetNotes({ reload: false })
 const N = 3000
 for (let i = 0; i < N; i++) {
@@ -20,6 +16,12 @@ await reloadApp()
 await waitFor(`document.querySelectorAll('.note-row').length >= ${N}`, 60000)
 note(`${N} rows drawn ${Date.now() - started} ms after the reload`)
 ok("every note has a row", (await js(`document.querySelectorAll('.note-row').length`)) === N)
+// THE LAUNCH IS NOT OVER WITH THE ROWS: with no tab to bring back the app opens the project's first note and gives it the keyboard
+// (useSession.ts `restore`, as the Mac does). On the Windows runner that came seconds after the rows, after the first letter of the
+// search below, and the rest of the typing went into Note 2996. The search starts once that note is open.
+await waitFor(`!!document.querySelector('.cm-content')`, 60000)
+note(`the first note open ${Date.now() - started} ms after the reload`)
+await sleep(300)
 
 const query = async (words) => {
   await js(`(() => { const i = document.querySelector('[data-sidebar=search]'); i.focus(); i.select() })()`)
