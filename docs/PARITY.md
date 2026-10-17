@@ -76,6 +76,7 @@ Evidence is `C:\CLAUDIO\agents\e2e\p1\` (port 9412; `t-projects`, `t-export`, `t
 | The first note opens on launch when there is no session (`selection = notes.first`) | same | works |
 | Adding the same folder twice | one folder (paths tidied; case-blind on Windows) | works. A folder inside another may be added (both then show, as on the Mac) |
 | Unsaved buffers in the session | carried since e2-editor-polish (hot exit): see "The editor, polished" | works |
+| Where each note was scrolled to (Sean, 2026-10-16: "remember scroll position when switching tabs or reopening writemind"). **Port-only**: the Mac's `ProjectSession` keeps the caret and the folds, and a note shown again centres its caret | `SessionNote.scroll` (core `session.ts`: the offset of the first character on the top line, how far above the edge that line starts, and its first words), read off the page and put back by `editor/scrollPlace.ts`, held while the page measures itself; a state set with no place (a link, a link just written) and a session from before still centre the caret | built: `packages/core/test/session.test.ts`, e2e `tabs/07`, `editor/13` |
 
 ### Export (File ▸ Export ▸ PDF…)
 

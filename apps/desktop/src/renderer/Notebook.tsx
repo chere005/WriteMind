@@ -14,8 +14,9 @@ import {
   armAt, armedField, cellBrackets, folding, foldField, foldedKeys, linkClicks, linkTrigger, mathRendering, notebookDecorations, notebookKeys,
   notebookState, notebookTheme, textConventions, pasteHtmlAsText, drawingPasted, pasteDrawing, hiddenMarkerDeletion, find, preview, rendered, renderedField, markersField, seamExtensions,
   setFolds, setPreview, setRendered, setMarkers, listStyleSource, revealAt, PLUS_CENTRE_X, PLUS_DIAMETER,
+  scrollPlaces, scrollPlaceOf, restoreScrollPlace, samePlace,
 } from "@writemind/editor"
-import { ALL_KINDS, openCell, type CodeLanguage, type ListStyle, type Seam } from "@writemind/core"
+import { ALL_KINDS, openCell, type CodeLanguage, type ListStyle, type ScrollPlace, type Seam } from "@writemind/core"
 import { textTimeline } from "./editTimeline"
 import { historyOf, stashText, takeText } from "./noteHistory"
 import { cellsCopied, evaluationCells, evalHost, inkCellPainter, pictureCells, type InkCellPainter } from "@writemind/editor"
@@ -29,6 +30,22 @@ import "./editor.css"
 
 export interface NotebookHandle { view: EditorView | null }
 
+/** How long the page is still before where it is scrolled to is read and kept (scrollPlace.ts). */
+const SCROLL_PAUSE = 120
+
+/** Each open editor's "say where the page is now", for `keepPlaceNow`. */
+const placeNow = new WeakMap<EditorView, () => void>()
+
+/**
+ * Read where this editor's page is scrolled to NOW and report it (`onViewState`), not when the scrolling pauses: the
+ * session is about to be written (useSession's `settle`) — a quit, a reload, another project, or the session's own
+ * debounce. A page still gliding after a trackpad flick sends scroll events for a second or more, and a quit in the
+ * middle of that kept the place from before the whole flick (reviewer, 2026-10-16).
+ */
+export function keepPlaceNow(editor: EditorView | null): void {
+  if (editor) placeNow.get(editor)?.()
+}
+
 /** A note of a newer format is read-only here (SPEC-WM 1.8): the editor takes no edit, whatever state it is brought back with. */
 const readOnlySwitch = new Compartment()
 
@@ -40,6 +57,12 @@ export interface ViewState {
   anchor?: number
   /** Open any closed section that hides the caret (a link landed in it). */
   reveal?: boolean
+  /**
+   * Where the note was scrolled to (Sean, 2026-10-16: "remember scroll position when switching tabs or reopening
+   * writemind"): shown again, it comes back there and not with the caret in the middle. A state set WITHOUT one is a
+   * deliberate move — a link followed to a place, a link just written — and the caret is brought into view as before.
+   */
+  scroll?: ScrollPlace
 }
 
 interface Props {
@@ -95,6 +118,8 @@ export function Notebook({ file, text, version, restore, readOnly, rendered: sho
   linkRef.current = onLink
   const restoreRef = useRef(restore)
   restoreRef.current = restore
+  /** Where this note's page is scrolled to, as last read (or as remembered, until the page has been read). */
+  const place = useRef<ScrollPlace | null>(null)
   const readOnlyRef = useRef(readOnly === true)
   readOnlyRef.current = readOnly === true
   const renderedRef = useRef(showRendered)
@@ -178,17 +203,20 @@ export function Notebook({ file, text, version, restore, readOnly, rendered: sho
       pasteHtmlAsText,
       keymap.of([...standardKeymap, ...historyKeymap, ...defaultKeymap]),
       notebookTheme,
+      // Where the page is scrolled to, kept for when the note is shown again (scrollPlace.ts).
+      scrollPlaces,
       EditorView.updateListener.of((update) => {
         if (update.docChanged) {
           const snapshot = update.state.doc
           latest.current(() => snapshot.toString())
         }
-        // The session keeps the caret and what was closed, per note.
+        // The session keeps the caret and what was closed, per note (and the place it was scrolled to, as last read).
         const foldsMoved = update.state.field(foldField) !== update.startState.field(foldField)
         if (update.selectionSet || foldsMoved || update.docChanged) {
           reportRef.current?.(file, {
             caret: update.state.selection.main.head,
             collapsed: foldedKeys(update.state),
+            ...(place.current ? { scroll: place.current } : {}),
           })
         }
       }),
@@ -200,8 +228,9 @@ export function Notebook({ file, text, version, restore, readOnly, rendered: sho
       state: aside ? aside.update({ effects: StateEffect.reconfigure.of(extensions) }).state : EditorState.create({ doc: text, extensions }),
       parent: host.current,
     })
-    // A note coming back where it was left: its closed sections, and its caret.
+    // A note coming back where it was left: its closed sections, its caret, and where it was scrolled to.
     const back = restoreRef.current
+    place.current = back?.scroll ?? null
     const effects: StateEffect<unknown>[] = [setRendered.of(renderedRef.current === true), setMarkers.of(markersRef.current !== false), readOnlySwitch.reconfigure(EditorState.readOnly.of(readOnlyRef.current))]
     if (back && back.collapsed.length > 0) effects.push(setFolds.of(back.collapsed))
     editor.dispatch({ effects })
@@ -215,13 +244,44 @@ export function Notebook({ file, text, version, restore, readOnly, rendered: sho
         },
       })
     }
-    if (back && back.caret > 0) {
+    // The page where it was scrolled to: the same words at the top, to the pixel as near as the layout allows, held there
+    // while the page measures itself (Sean, 2026-10-16: "remember scroll position when switching tabs or reopening
+    // writemind"). A note with no remembered place — opened for the first time, from a session written before places were
+    // kept, or sent to a place on purpose (a link) — brings its caret to the middle as it always did.
+    if (back?.scroll) {
+      restoreScrollPlace(editor, back.scroll)
+      place.current = scrollPlaceOf(editor)
+    } else if (back && back.caret > 0) {
       editor.dispatch({ effects: EditorView.scrollIntoView(editor.state.selection.main.head, { y: "center" }) })
     }
+    // Every scroll is a new place, read once the scrolling pauses (a wheel turned is a scroll event every frame, and nothing
+    // reads the place until the note is left or the session is written; leaving reads it at once, below).
+    const report = (now: ScrollPlace | null) => {
+      if (!now || samePlace(now, place.current)) return
+      place.current = now
+      reportRef.current?.(file, { caret: editor.state.selection.main.head, collapsed: foldedKeys(editor.state), scroll: now })
+    }
+    let pause: number | null = null
+    const scrolled = () => {
+      if (pause !== null) window.clearTimeout(pause)
+      pause = window.setTimeout(() => { pause = null; report(scrollPlaceOf(editor)) }, SCROLL_PAUSE)
+    }
+    editor.scrollDOM.addEventListener("scroll", scrolled, { passive: true })
+    placeNow.set(editor, () => {
+      if (pause !== null) { window.clearTimeout(pause); pause = null }
+      if (editor.dom.isConnected) report(scrollPlaceOf(editor))
+    })
     view.current = editor
     onReady(editor)
     editor.focus()
-    return () => { stashText(file, editor.state); editor.destroy(); view.current = null }
+    return () => {
+      // Leaving the note (another tab, a closed one): its place as it is now, while the page is still laid out (a note whose
+      // tab was closed is not kept: the app drops what it is told about a note that is not open).
+      editor.scrollDOM.removeEventListener("scroll", scrolled)
+      placeNow.get(editor)?.()
+      placeNow.delete(editor)
+      stashText(file, editor.state); editor.destroy(); view.current = null
+    }
     // A new FILE is a new document; text arriving from outside is handled
     // below, so this must not run for every keystroke.
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -233,10 +293,17 @@ export function Notebook({ file, text, version, restore, readOnly, rendered: sho
     const editor = view.current
     if (!editor) return
     if (editor.state.doc.length === text.length && editor.state.doc.toString() === text) return
+    // Where the page is scrolled to stays where it is (Sean, 2026-10-16: "remember scroll position when switching tabs or
+    // reopening writemind"): the whole document is replaced, and CodeMirror maps the line at the top to the start of the
+    // change — the top of the note — so another program adding a line at the END sent the page to the top, and that top was
+    // then read and kept as the note's place. The words at the top are found again in the new text and held there (lines
+    // above them that came or went included) while the page re-measures.
+    const kept = scrollPlaceOf(editor)
     // Its own undo step, never joined to typing: Undo brings the words that were there back ("Undo Edit"). Not an edit that
     // was not wanted: the same words arriving again change nothing (the early return above), so a reload that did not change
     // the text leaves the note's history alone.
     editor.dispatch({ changes: { from: 0, to: editor.state.doc.length, insert: text }, annotations: isolateHistory.of("full") })
+    if (kept) restoreScrollPlace(editor, kept)
     // `version` is a dependency on purpose: the same words arriving twice
     // are still an instruction to replace what is in the editor.
     // eslint-disable-next-line react-hooks/exhaustive-deps

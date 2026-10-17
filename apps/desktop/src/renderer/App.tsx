@@ -37,7 +37,7 @@ import { CameraPane, type Capture } from "./CameraPane"
 import { PaneDivider } from "./PaneDivider"
 import { TabBar } from "./TabBar"
 import { canStep, moveKeyed, stepKeyed } from "./tabOrder"
-import { Notebook, type ViewState } from "./Notebook"
+import { Notebook, keepPlaceNow, type ViewState } from "./Notebook"
 import { LinkBanner, type LinkRequest } from "./LinkBanner"
 import { FindBar, type FindRequest } from "./FindBar"
 import { chipLine, escapeStops, modeChip } from "./modeChip"
@@ -1139,6 +1139,8 @@ export function App() {
     projectFile: project ? project.file : undefined,
     buffer: () => (dirty.current && openRef.current
       ? { path: openRef.current, text: textRef.current, base: fingerprintOf(baseText.current) } : null),
+    // Where the note in front is scrolled to, read as the session is written (Notebook keepPlaceNow).
+    settle: () => keepPlaceNow(viewRef.current),
   })
   sessionRef.current = session
   touchBuffer.current = session.touchBuffer
@@ -1188,6 +1190,9 @@ export function App() {
     if (root && session.ready && !switching.current) void keepOnly(root)
   }, [root]) // eslint-disable-line react-hooks/exhaustive-deps
   const onViewState = useCallback((file: string, state: ViewState) => {
+    // (A note's editor says where it was scrolled to as it is let go — and it is let go after its tab has closed too, when
+    // what is remembered about it has just been dropped on purpose: closeWhere, keepOnly. A note that is not open is not kept.)
+    if (!openList.current.some((note) => note.path === file)) return
     viewStates.current.set(file, state)
     session.touch()
   }, [session])

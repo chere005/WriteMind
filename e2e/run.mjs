@@ -285,6 +285,13 @@ async function runSuite(suite, round) {
     const gone = inst
     inst = null
     await stopInstance(gone)
+    // A script that restarted the app (harness restartApp) left ANOTHER electron on the same profile, and only its
+    // instance.json knows its pid: that one is stopped too. (Left alone it outlived the run on a Mac and on Linux, where
+    // there is no sweep, and the folder that named it was deleted with the run's temp root: editor/06, editor/13.)
+    try {
+      const now = readInstance(gone.dir)
+      if (now.pid && now.pid !== gone.pid) await stopInstance(now)
+    } catch { /* no instance.json: nothing was restarted */ }
   }
   const bring = async (script) => {
     const wantVideo = script.video ? (needFixtures()[script.video] ?? null) : (suite.conf.video ? needFixtures()[suite.conf.video] : null)

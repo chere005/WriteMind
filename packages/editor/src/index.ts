@@ -57,3 +57,6 @@ export { mathRendering, mathElement, mathDOM, installMathStyles, showsSource, MA
 export {
   evaluationCells, evalHost, evalField, evaluationCell, runCell, evaluatesHere, groupsIn, type EvalHost,
 } from "./eval/index"
+// Where a note is scrolled to, read off the page and put back (Sean, 2026-10-16: "remember scroll position when switching tabs or
+// reopening writemind").
+export { scrollPlaces, scrollPlaceOf, restoreScrollPlace, samePlace } from "./scrollPlace"
