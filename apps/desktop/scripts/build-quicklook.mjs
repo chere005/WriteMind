@@ -1,7 +1,8 @@
 // The Quick Look extension's script (apps/desktop/src/quicklook/preview.ts): the core's page renderer as ONE classic
 // script, for a bare JavaScriptCore context - no modules, no require, no DOM. tools/build-quicklook.sh puts it in the
-// extension's Resources; apps/desktop/test/quickLookBundle.test.ts builds it with this same function and runs it in
-// a Node `vm` context that has nothing but the language, which is what JavaScriptCore gives it.
+// extension's Resources; apps/desktop/test/quickLook.test.ts builds it with this same function and runs it in
+// a Node `vm` context that has nothing but the language, which is what JavaScriptCore gives it - and, on a Mac, in the
+// system's JavaScriptCore itself with its JIT off, as the sandboxed extension runs it.
 //
 //   node apps/desktop/scripts/build-quicklook.mjs <out-file>
 import { build } from "esbuild"

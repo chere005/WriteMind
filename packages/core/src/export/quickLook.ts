@@ -8,10 +8,10 @@
  * (`inkCellSvg`) and the free ink is `inkPieces` (drawing.ts), each object where it sits. What is different is only
  * what a preview cannot do:
  *
- * - NOTHING IS MEASURED. The PDF lays the cells out in a hidden window, reads their heights and places them; a Quick Look
- *   page runs no script (and this one forbids it: `PREVIEW_CSP`). So the cells are laid out IN FLOW, in exactly the
- *   column the PDF measures (`measureHtml`: the page's margins, one gap after each cell, `runGaps` before it), and the
- *   free ink is a layer over that column in the same coordinates. A cell is where the PDF would have measured it.
+ * - NOTHING IS MEASURED. The PDF lays the cells out in a hidden window, reads their heights and places them; a preview
+ *   page carries no script of its own. So the cells are laid out IN FLOW, in exactly the column the PDF measures
+ *   (`measureHtml`: the page's margins, one gap after each cell, `runGaps` before it), and the free ink is a layer
+ *   over that column in the same coordinates. A cell is where the PDF would have measured it.
  * - THE PANE IS THE CORE'S FALLBACK. The drawing is stored as fractions of the editor pane it was drawn in (SPEC-WM
  *   3.2), and the file does not say how big that pane was: the preview takes `FALLBACK_PANE` (900 × 600), the pane
  *   the PDF itself uses before a window has said its size. Ink drawn in a pane of another size lands proportionally
@@ -26,13 +26,21 @@
  *   mapped to the app's dark ones by `DARK_CSS`.
  * - BIG NOTES ARE CUT, and the page says so at its foot: the first `PREVIEW_LIMITS.chars` characters (at a line end) and
  *   the first `PREVIEW_LIMITS.cells` cells; the free ink is drawn only down to the last cell shown, and not at all
- *   past `PREVIEW_LIMITS.inkItems` objects.
+ *   past `PREVIEW_LIMITS.inkItems` objects; and the ink of the drawing cells and the free ink together stops at
+ *   `PREVIEW_LIMITS.inkPoints`. The extension's JavaScriptCore has no JIT, so what bounds a preview's time is that
+ *   every step of the writing is ONE PASS over what it reads (inline.ts reads links, bold and tags by hand for that:
+ *   their patterns were quadratic, and a crafted line held the preview for minutes).
  * - PICTURES ARE ATTACHMENTS. A picture is an entry of the archive, so its URL is `cid:wmN` and `attachments` says which
  *   entry each one is; the extension unpacks only those. A picture that is not in the file is the line-tall placeholder
  *   the page shows, and a picture on the web is that placeholder too: a preview loads nothing from the network.
- * - NO SCRIPT RUNS. Every word of the note goes through the same escaping the PDF's does; the one event handler the
- *   PDF writes (a picture that fails to load turns into its placeholder) is taken out, and the page carries a
- *   Content-Security-Policy that allows inline style and `cid:` / `data:` pictures and nothing else.
+ * - NOTHING IN A NOTE CAN RUN, AND THE WRITING IS WHAT SEES TO IT. Quick Look's web view runs script, and it does NOT
+ *   enforce a Content-Security-Policy the page carries: the review of 2026-10-17 had a crafted drawing.json run
+ *   script and fetch from the network with `PREVIEW_CSP` in the page. So every word of the note goes through the
+ *   same escaping the PDF's does, every colour from the drawing is a colour or nothing (drawing.ts `paintHex`),
+ *   every other attribute is escaped, and the one event handler the PDF writes (a picture that fails to load turns
+ *   into its placeholder) is taken out. test/hostileDrawing.test.ts and test/quickLook.test.ts read the page as a
+ *   browser's tokenizer does and fail on any element, handler or address that is not the renderer's own. The policy
+ *   is still written into the page, for anything else that shows it, and nothing relies on it.
  *
  * A note that cannot be shown (a hostile name, a manifest that is not WriteMind's, a newer format) is a plain sentence
  * (`previewMessageHtml`), never an exception: `renderQuickLook` answers every input with a page.
@@ -57,9 +65,32 @@ export const PREVIEW_LIMITS = {
   cells: 400,
   /** Objects of the free drawing layer drawn; a drawing with more is left off the page (and the page says so). */
   inkItems: 4_000,
+  /**
+   * Ink drawn, the drawing cells and the free ink together, in points (`inkWeight`: a stroke's points, twice for a
+   * pen's, a flat `INK_OBJECT` for any other object). A drawing cell past it is shown as if drawing.json had not got
+   * it (its snapshot picture, or its line), and free ink past it is left off. The object count alone did not bound
+   * the page: 3 999 strokes of 200 points were 39 MB of page and three seconds in the extension (review, 2026-10-17).
+   */
+  inkPoints: 100_000,
   /** Pictures attached (the rest are their placeholder line). */
   pictures: 60,
 } as const
+
+/** What any object but a stroke costs `PREVIEW_LIMITS.inkPoints`: about the points of its outline. */
+export const INK_OBJECT = 16
+
+/**
+ * What an object costs the page, in points of ink (`PREVIEW_LIMITS.inkPoints`). A pen's stroke (one with pressures)
+ * counts each point twice: where its width changes every segment is a path of its own (drawing.ts `strokeBody`).
+ */
+export function inkWeight(item: CanvasItem): number {
+  switch (item.kind) {
+    case "stroke": return Math.max(1, item.stroke.points.length) * (item.stroke.pressures ? 2 : 1)
+    case "connector": return INK_OBJECT + item.connector.bends.length
+    case "cell": return item.cell.items.reduce((sum, one) => sum + inkWeight(one), 0)
+    default: return INK_OBJECT
+  }
+}
 
 /** The pane the drawing is placed against (see the top): the core's own fallback. */
 export const PREVIEW_PANE = FALLBACK_PANE
@@ -67,7 +98,10 @@ export const PREVIEW_PANE = FALLBACK_PANE
 /** The app's dark page (renderer/app.css `--wm-page` in dark), which the dark half is `readableInk`-checked against. */
 export const DARK_PAPER_HEX = "#1E1F22"
 
-/** Inline style and the archive's own pictures; no script, no network, no fonts from anywhere, no frames, no forms. */
+/**
+ * Inline style and the archive's own pictures; no script, no network, no fonts from anywhere, no frames, no forms. NOT
+ * ENFORCED BY QUICK LOOK (see the top): written for anything else that shows the page, and relied on by nothing.
+ */
 export const PREVIEW_CSP = "default-src 'none'; img-src cid: data:; style-src 'unsafe-inline'; form-action 'none'; base-uri 'none'"
 
 export interface QuickLookInput {
@@ -245,25 +279,39 @@ function renderNote(input: QuickLookInput): QuickLookPage {
   const cellsCut = all.length > cells.length
   const extra = runGaps(text, cells)
 
-  // The drawing: drawing cells (always, however large the rest of it is) and the free ink (when there is not too much).
+  // The drawing: the drawing cells the shown cells point at, in order, while the ink lasts (`PREVIEW_LIMITS.inkPoints`;
+  // one past it is shown as if drawing.json had not got it), then the free ink, when there is not too much of it.
   const drawing = withPicturesThere(readDrawing(input.drawing ?? null), there)
+  let inkLeft: number = PREVIEW_LIMITS.inkPoints
+  let cellsTooBig = 0
+  const inkDrawn = cells.map((cell) => {
+    const block = cell.block
+    const one = block.kind === "picture" && block.ink ? inkCellOf(drawing, block.ink) : null
+    if (!one) return false
+    const weight = inkWeight({ kind: "cell", cell: one })
+    if (weight > inkLeft) { cellsTooBig++; return false }
+    inkLeft -= weight
+    return true
+  })
   const free = visibleItems(drawing)
-  const inkTooBig = free.length > PREVIEW_LIMITS.inkItems
   const lastCellShown = textCut || cellsCut
   const media: BlockMedia = { url: urlOf, ink: (id) => inkCellOf(drawing, id), column }
+  const noInk: BlockMedia = { ...media, ink: () => null }
 
   // Cut short, the drawing stops where the words do (anything lower would float over nothing). Where the shown cells
   // end is not known (nothing is measured), so it is estimated generously: a picture as tall as the column is wide, a
   // line of words every sixty characters.
   const reach = lastCellShown ? generousHeight(text, cells, extra, column) + pane.height : Infinity
-  const freeShown = inkTooBig ? [] : free.filter((item) => bounds(item, pane).y < reach)
+  const freeHere = free.length > PREVIEW_LIMITS.inkItems ? free : free.filter((item) => bounds(item, pane).y < reach)
+  const inkTooBig = free.length > PREVIEW_LIMITS.inkItems || freeHere.reduce((sum, item) => sum + inkWeight(item), 0) > inkLeft
+  const freeShown = inkTooBig ? [] : freeHere
   const fixed = freeShown.length > 0
 
   const sheet = (paper: string, theme: "light" | "dark"): string => {
     const blocks = cells.map((cell, index) => {
       const gap = extra[index] ?? 0
       const style = gap > 0 ? ` style="padding-top:${gap}px"` : gap < 0 ? ` style="margin-top:${gap}px"` : ""
-      return `<div class="blk"${style}>${cellHtml(cell.block, paper, media)}</div>`
+      return `<div class="blk"${style}>${cellHtml(cell.block, paper, inkDrawn[index] ? media : noInk)}</div>`
     }).join("")
     const ink = fixed ? inkPieces({ items: freeShown }, pane, { paper, mediaUrl: (file) => urlOf(file) ?? "" }) : []
     const bottom = ink.reduce((low, piece) => Math.max(low, piece.frame.y + piece.frame.height), 0)
@@ -282,6 +330,11 @@ function renderNote(input: QuickLookInput): QuickLookPage {
       + `(${Math.max(1, Math.round(total / 1024)).toLocaleString("en-US")} KB). Open it in WriteMind to see all of it.`)
   }
   if (inkTooBig) notes.push(`The drawing over the page (${free.length.toLocaleString("en-US")} objects) is too large for a preview.`)
+  if (cellsTooBig > 0) {
+    // (Each is shown as if drawing.json had not got it: its snapshot picture when the note has one, else its line.)
+    notes.push(cellsTooBig === 1 ? "A drawing cell is too large to draw in a preview."
+      : `${cellsTooBig} drawing cells are too large to draw in a preview.`)
+  }
   if (input.drawingSkipped) notes.push("The drawing is too large for a preview and is not shown.")
   if (picturesLeftOut) notes.push(`This preview shows the first ${PREVIEW_LIMITS.pictures} pictures.`)
   const foot = notes.length === 0 ? "" : `<div class="foot">${notes.map(escapeHtml).join("<br>")}</div>`

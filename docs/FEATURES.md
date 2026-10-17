@@ -534,9 +534,17 @@ bar and Finder's column view show a `.wm` note as its rendered page instead of a
 - **Light and dark as the app's page is:** it follows the system appearance, every pen and span colour read against the
   page it is on.
 - **Pictures come from the note itself** (Quick Look attachments); a picture on the web is its placeholder line — a
-  preview loads nothing from the network, and no script runs in it.
-- **A long note shows its start:** the first 400 cells (and at most 200 000 characters), with a line at the foot saying
-  so; a drawing of more than 4 000 objects is left out and said.
+  preview loads nothing from the network.
+- **Nothing in a note can run in it.** Quick Look runs a page's script and does not enforce the Content-Security-Policy
+  the page carries, so what keeps a note from someone else harmless is how the page is written: every word escaped, every
+  colour from the drawing written only when it is a colour (`paintHex`; a crafted one ran script in the first build,
+  found in review), every other attribute escaped. The tests read the page as a browser does and fail on any element,
+  handler or address that is not the renderer's own.
+- **A long note shows its start, quickly:** the first 400 cells (and at most 200 000 characters), with a line at the foot
+  saying so; a drawing of more than 4 000 objects, or more ink than 100 000 points (drawing cells first, then the ink
+  over the page), is left out and said. The extension's JavaScriptCore has no JIT, so every step of the writing is one
+  pass over what it reads: links, bold and the tags round a run of words are read by hand, which also keeps a crafted
+  note from stalling the PDF export.
 - **A note it cannot show is a sentence:** damaged (cut short, a bad checksum), hostile (an entry named `../x`), not
   a WriteMind note, or written by a newer WriteMind — "Open it in WriteMind to see it". A real Windows Media `.wm`
   (macOS calls every `.wm` file Windows Media) is handed back to Quick Look untouched.

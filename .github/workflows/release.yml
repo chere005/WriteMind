@@ -252,7 +252,9 @@ jobs:
       # The Quick Look extension (WriteMind.app/Contents/PlugIns/WriteMindPreview.appex: Spotlight's and Finder's preview of a
       # .wm note) is built here by tools/build-helpers.sh -> tools/build-quicklook.sh (swiftc from the runner's Xcode), and
       # electron-builder signs it through apps/desktop/scripts/sign-mac.cjs: with the Developer ID, the hardened runtime and
-      # a timestamp like the app, but its OWN sandbox entitlements - so notarization takes it with the app.
+      # a timestamp like the app, but its OWN sandbox entitlements - so notarization takes it with the app. The hook tries
+      # each signing again after a failure (3 retries, 5/10/15 s), as electron-builder's own signing does: a hook replaces
+      # that retry, and Apple's timestamp server fails now and then.
       - name: Build (the arm64 tablet helper and the Quick Look extension, tools/build-helpers.sh)
         run: npm run build
 

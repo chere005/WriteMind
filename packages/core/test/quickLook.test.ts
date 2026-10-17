@@ -4,15 +4,21 @@ import { itemHtml } from "../src/export/drawing"
 import { blockHtml } from "../src/export/blocks"
 import { positioned } from "../src/markdown/parser"
 import {
-  DARK_PAPER_HEX, PREVIEW_CSP, PREVIEW_LIMITS, PREVIEW_PANE, previewManifestRefusal, previewMessageHtml, previewNamesRefusal,
-  previewText, renderQuickLook, type QuickLookInput,
+  DARK_PAPER_HEX, INK_OBJECT, inkWeight, PREVIEW_CSP, PREVIEW_LIMITS, PREVIEW_PANE, previewManifestRefusal, previewMessageHtml,
+  previewNamesRefusal, previewText, renderQuickLook, type QuickLookInput,
 } from "../src/export/quickLook"
+import { RENDERER_ELEMENTS, unsafeParts, type SafePage } from "./htmlTags"
 
 /**
  * The Quick Look preview's page (export/quickLook.ts). Port-only: the Swift app has no preview extension, so there is
  * no XCTest file this was transcribed from. The page is the PDF's renderer laid out in flow; these check what the
- * preview adds — the cid: pictures, the cuts, the two appearances, the refusals — and that no script can run in it.
+ * preview adds — the cid: pictures, the cuts, the two appearances, the refusals — and that no script can run in it:
+ * read as a browser's tokenizer reads it (htmlTags.ts), because Quick Look does not enforce the page's policy
+ * (hostileDrawing.test.ts has the drawing's half of it).
  */
+
+/** What a preview page may hold: the renderer's own elements, pictures from the archive, links that run nothing. */
+const SAFE: SafePage = { elements: RENDERER_ELEMENTS, pictures: /^(cid:|data:image\/)/, links: /^(https?:|mailto:|(?![a-z][a-z0-9+.-]*:))/ }
 
 const MANIFEST = JSON.stringify({ format: "writemind-note", version: 1, id: "0b6f5c1e-8d4a-5c0e-9a77-2f1d3b6a9e10" })
 const NAMES = ["mimetype", "manifest.json", "note.mdwm"]
@@ -28,7 +34,7 @@ const stroke = (id: string, colorHex: string, points: [number, number][]): Canva
 })
 
 describe("the preview's page", () => {
-  it("is one complete document with a policy that lets no script run and nothing load but the note's own pictures", () => {
+  it("is one complete document, with a policy for whatever else shows it (Quick Look does not enforce one)", () => {
     const out = page("# Title\n\nWords.")
     expect(out.message).toBe(false)
     expect(out.html).toMatch(/^<!doctype html><html><head><meta charset="utf-8">/)
@@ -172,6 +178,48 @@ describe("a long note", () => {
     expect(out.html).toContain(`The drawing over the page (${(PREVIEW_LIMITS.inkItems + 1).toLocaleString("en-US")} objects) is too large for a preview.`)
   })
 
+  it("leaves free ink with more points than a preview draws off the page, however few its objects", () => {
+    const heavy = (id: string, points: number): CanvasItem =>
+      stroke(id, "#000000", Array.from({ length: points }, (_, i) => [0.1 + (i % 100) / 200, 0.1 + Math.floor(i / 100) / 400] as [number, number]))
+    expect(inkWeight(heavy("w", 250))).toBe(250)
+    const pen = heavy("p", 250) as Extract<CanvasItem, { kind: "stroke" }>
+    expect(inkWeight({ kind: "stroke", stroke: { ...pen.stroke, pressures: pen.stroke.points.map(() => 0.5) } })).toBe(500)
+    expect(inkWeight({ kind: "shape", shape: { id: "s", kind: "oval", center: { x: 0.5, y: 0.5 }, width: 0.1, aspect: 1, colorHex: "#000000", lineWidth: 1, fillHex: null, label: "", transform: noTransform(), group: null } })).toBe(INK_OBJECT)
+    const within = page("Words.", { drawing: writeDrawing({ items: [heavy("a", PREVIEW_LIMITS.inkPoints / 2), heavy("b", PREVIEW_LIMITS.inkPoints / 2)] }) })
+    expect(within.html).toContain('class="free-ink"')
+    expect(within.cut).toBe(false)
+    const over = page("Words.", { drawing: writeDrawing({ items: [heavy("a", PREVIEW_LIMITS.inkPoints / 2), heavy("b", PREVIEW_LIMITS.inkPoints / 2 + 1)] }) })
+    expect(over.html).not.toContain('class="free-ink"')
+    expect(over.cut).toBe(true)
+    expect(over.html).toContain("The drawing over the page (2 objects) is too large for a preview.")
+  })
+
+  it("draws the drawing cells first, in order, while the ink lasts; one past it is its snapshot, and the foot says so", () => {
+    const ids = ["0a2a9c1e-7b4d-4e8a-9c0f-1a2b3c4d5e6f", "1b2a9c1e-7b4d-4e8a-9c0f-1a2b3c4d5e6f", "2c2a9c1e-7b4d-4e8a-9c0f-1a2b3c4d5e6f"]
+    const cellOf = (id: string, points: number): CanvasItem => ({ kind: "cell", cell: { id, aspect: 0.25, items: [
+      stroke(`${id}-s`, "#2D7DD2", Array.from({ length: points }, (_, i) => [(i % 100) / 100, Math.floor(i / 100) / 1000] as [number, number])),
+    ] } })
+    const third = Math.floor(PREVIEW_LIMITS.inkPoints / 3)
+    // Two cells of a third each fit; the third cell (a half) does not, and is the snapshot the note carries.
+    const drawing = writeDrawing({ items: [cellOf(ids[0]!, third), cellOf(ids[1]!, third), cellOf(ids[2]!, PREVIEW_LIMITS.inkPoints / 2),
+      stroke("free", "#000000", [[0.1, 0.1], [0.2, 0.2]])] })
+    const text = ids.map((id) => `![ink](snapshots/ink-${id}.svg)`).join("\n\n")
+    const out = page(text, { drawing, names: [...NAMES, "drawing.json", `snapshots/ink-${ids[2]}.svg`] })
+    expect(light(out.html)).toContain(`data-ink-cell="${ids[0]}"`)
+    expect(light(out.html)).toContain(`data-ink-cell="${ids[1]}"`)
+    expect(out.html).not.toContain(`data-ink-cell="${ids[2]}"`)
+    expect(out.attachments).toEqual([{ cid: "wm0", entry: `snapshots/ink-${ids[2]}.svg` }])
+    expect(light(out.html)).toContain('<img src="cid:wm0" alt="ink"')
+    expect(out.html).toContain("A drawing cell is too large to draw in a preview.")
+    // (The free ink's two points fit in what the two cells left.)
+    expect(out.html).toContain('class="free-ink"')
+    // The page that was 39 MB at the object cap (3 999 strokes of 200 points) stays small.
+    const big = page("Words.", { drawing: writeDrawing({ items: Array.from({ length: 3_999 }, (_, i) => stroke(`s${i}`, "#000000",
+      Array.from({ length: 200 }, (_, j) => [((i * 7 + j) % 100) / 100, (j % 50) / 60] as [number, number]))) }) })
+    expect(big.html).not.toContain('class="free-ink"')
+    expect(big.html.length).toBeLessThan(100_000)
+  })
+
   it("says so when the extension could not read the drawing at all", () => {
     const out = page("Words.", { drawingSkipped: true })
     expect(out.html).toContain("The drawing is too large for a preview and is not shown.")
@@ -211,6 +259,8 @@ describe("hostile words", () => {
     expect(out.html).not.toMatch(/href="javascript:/i)
     expect(out.html).toContain("&lt;script&gt;alert(5)&lt;/script&gt;")
     expect(out.html).toContain("&lt;script&gt;alert(7)&lt;/script&gt;")
+    // And read as the browser reads it: nothing but the renderer's own elements, no handler, nothing loaded from away.
+    expect(unsafeParts(out.html, SAFE)).toEqual([])
   })
 
   it("takes out the one handler the PDF's picture writes, so the preview never carries it", () => {
