@@ -30,14 +30,29 @@ function takesTyping(element: Element | null): boolean {
   if (!element) return false
   if (element.closest(EDITOR)) return false
   if (element.closest("input, textarea, select")) return true
-  return element instanceof HTMLElement && element.isContentEditable
+  return (element as HTMLElement).isContentEditable === true
+}
+
+/** Something other than the notebook is meant to have the keyboard: a field typed into, or a popup that is up. */
+export function keyboardElsewhere(active: Element | null): boolean {
+  return takesTyping(active) || !!active?.closest(POPUPS)
+}
+
+/**
+ * Does a note that has just come to the front take the keyboard? One the PERSON opened does, always — a row, a tab, Enter
+ * on a search result: that is what opening it was for. One the APP opened by itself — at launch (the session's note in
+ * front, or the project's first note), or the next one when the note in front left the folder — takes it only when
+ * nothing else is meant to have it, as `returnFocus` asks. On a slow machine the launch's open came seconds after the
+ * rows were drawn, and the rest of a search being typed went into the note (e2e sidebar/05).
+ */
+export function openTakesKeyboard(byApp: boolean, active: Element | null): boolean {
+  return !byApp || !keyboardElsewhere(active)
 }
 
 /** Put the caret back in the notebook, unless something else is meant to have the keyboard. */
 export function returnFocus(): void {
   const active = document.activeElement
-  if (takesTyping(active)) return
-  if (active?.closest(POPUPS)) return
+  if (keyboardElsewhere(active)) return
   const editor = document.querySelector<HTMLElement>(EDITOR)
   // A hidden pane cannot take focus (Hide Notes Pane); nothing to return to.
   if (!editor || editor.offsetParent === null) return

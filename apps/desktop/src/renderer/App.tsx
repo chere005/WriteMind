@@ -280,6 +280,11 @@ export function App() {
 
   const openRef = useRef<string | null>(null)
   openRef.current = current
+  /**
+   * The note in front when the APP brought it there by itself — at launch, or as the next one when the note in front left
+   * the folder — and not the person: it does not take the keyboard from a field or a popup that has it (Notebook `byApp`).
+   */
+  const openedByApp = useRef<string | null>(null)
 
   /** The tree and the open note read again (the folder watcher said something moved; a save that was refused asks it too). */
   const reloadOpenRef = useRef<() => Promise<void>>(async () => undefined)
@@ -456,7 +461,7 @@ export function App() {
     return whole
   }, [writeDrawingNow, writeText])
 
-  const openNote = useCallback(async (note: Note) => {
+  const openNote = useCallback(async (note: Note, how: { byApp?: boolean } = {}) => {
     // Save what is in hand before letting go of it: the publisher fires in
     // willSet on the Mac and the same mistake is available here — reading
     // the new note and writing it over the old one. The drawing too: its save is
@@ -482,6 +487,7 @@ export function App() {
     // (The ref names the new note before its words go on the page, not at the next render: a read from disk still
     // in flight for the old note asks it — diskReload.ts — and two notes can hold the same words.)
     openRef.current = note.path
+    openedByApp.current = how.byApp === true ? note.path : null
     setCurrent(note.path)
     setDocument(contents)
     setDrawing(decoded.drawing)
@@ -1013,7 +1019,8 @@ export function App() {
     setOpen(left)
     if (!frontGone) return
     const next = left[0] ?? notesIn(tree)[0]
-    if (next) await openNote(next)
+    // (The app's choice, not the person's: someone typing in the search or a dialog when the file went keeps the keyboard.)
+    if (next) await openNote(next, { byApp: true })
     else {
       openRef.current = null
       setCurrent(null)
@@ -1856,7 +1863,8 @@ export function App() {
                         onViewState={onViewState} onLink={onLink} onFollow={onFollow}
                         readOnly={readOnly}
                         inkPainter={painter.current} onInsertInkCell={(offset) => insertInk(offset)}
-                        onCellsCopied={onCellsCopied} onDrawingPasted={pasteSheetCell} />
+                        onCellsCopied={onCellsCopied} onDrawingPasted={pasteSheetCell}
+                        byApp={openedByApp.current === current} />
               {/* The page drawing layer belongs to the rendered notebook: unmount it in source mode so its marks
                   are hidden and none of its pointer or keyboard handlers can take input from the Markdown editor. */}
               {rendered && <Canvas key={current ?? ""} note={current} drawing={drawing} onChange={changeDrawing} mode={mode} history={history}

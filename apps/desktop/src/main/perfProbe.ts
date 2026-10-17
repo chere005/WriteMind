@@ -3,6 +3,9 @@
  * sampling profile of the shell's own JavaScript. The page's side is measured over the DevTools protocol
  * (Performance.getMetrics, Profiler); the shell has no such door, so this is it — reached through
  * `window.wm.e2ePerf(...)` and used by `e2e/perf/*.mjs` (docs/PERF.md). Nothing here runs in a normal launch.
+ *
+ * And ONE way to be slow on purpose: `hold` makes the next call of a channel wait before it is answered, so a race a slow
+ * machine loses (the launch's note opening after a search has begun, e2e sidebar/05) is run on every machine.
  */
 
 import { Session } from "node:inspector"
@@ -18,9 +21,16 @@ interface ProfileNode {
 
 export function installPerfProbe(ipc: IpcMain): void {
   const stats = new Map<string, Stat>()
+  /** A channel's next call waits this many ms first (`hold`), once. */
+  const holds = new Map<string, number>()
   // Wrap what is registered already (the handlers are added before this runs), and count what is added later.
   const handlers = (ipc as unknown as { _invokeHandlers?: Map<string, (...args: unknown[]) => unknown> })._invokeHandlers
   const wrap = (channel: string, fn: (...args: unknown[]) => unknown) => async (...args: unknown[]) => {
+    const held = holds.get(channel)
+    if (held !== undefined) {
+      holds.delete(channel)
+      await new Promise((resolve) => setTimeout(resolve, held))
+    }
     const t = performance.now()
     try { return await fn(...args) } finally {
       const ms = performance.now() - t
@@ -46,6 +56,12 @@ export function installPerfProbe(ipc: IpcMain): void {
         return out
       }
       case "reset": stats.clear(); return true
+      case "hold": {
+        const { channel, ms } = arg as { channel: string; ms: number }
+        if (!handlers?.has(channel)) return false
+        holds.set(channel, ms)
+        return true
+      }
       case "cpu": return process.cpuUsage()
       case "mem": return process.memoryUsage()
       case "profile:start": {

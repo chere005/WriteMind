@@ -59,7 +59,8 @@ interface Options {
    */
   settle?(): void
   setOpen(notes: Note[]): void
-  openNote(note: Note): Promise<void>
+  /** `byApp`: the app opens it by itself, so a field or a popup that has the keyboard keeps it (Notebook `byApp`). */
+  openNote(note: Note, how?: { byApp?: boolean }): Promise<void>
   /** Let go of every open note (the one in front is written first). */
   closeAll(): Promise<void>
 }
@@ -131,7 +132,9 @@ export function useSession({
    * Bring a project's session back over `tree`: its notes that the project
    * still holds, in the order they were, the one in front in front. A project
    * with no session (or none that survives) opens its first note, as the Mac
-   * does (`selection = notes.first`).
+   * does (`selection = notes.first`). Either is the APP's open, not the
+   * person's: it can land seconds after the rows are drawn (3,000 notes on a
+   * slow disk), and a search being typed by then keeps the keyboard.
    */
   const restore = useCallback(async (tree: Section, file: string | null) => {
     try {
@@ -156,10 +159,10 @@ export function useSession({
           ?? { path: note.path, modified: Date.now(), title: stem(note.path), snippet: "" })
         setOpen(notes)
         const front = notes.find((note) => note.path === kept.active) ?? notes[notes.length - 1]!
-        await openNote(front)
+        await openNote(front, { byApp: true })
       } else {
         const first = flatten(tree)[0]
-        if (first) await openNote(first)
+        if (first) await openNote(first, { byApp: true })
       }
     } catch (error) {
       console.error("WriteMind: could not bring the session back", error)

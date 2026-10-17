@@ -26,6 +26,7 @@ import { FloatingMenu, type MenuItem } from "./FloatingMenu"
 import { runEditorCommand } from "./editorCommands"
 import { kindMenuItems, type KindPick } from "./kindMenu"
 import { modChord } from "../shared/chord"
+import { openTakesKeyboard } from "./focusReturn"
 import "./editor.css"
 
 export interface NotebookHandle { view: EditorView | null }
@@ -102,10 +103,15 @@ interface Props {
   onDrawingPasted?(data: DataTransfer): boolean
   /** This machine's platform, for the keys the menus print ("Cmd+X" on a Mac, "Ctrl+X" elsewhere). */
   platform?: string
+  /**
+   * The app opened this note by itself (a launch, the note in front gone from the folder), not the person: it takes the
+   * keyboard only when no field or popup has it (focusReturn.ts `openTakesKeyboard`).
+   */
+  byApp?: boolean
 }
 
 export function Notebook({ file, text, version, restore, readOnly, rendered: showRendered, markers: showMarkers, listStyle, codeLanguage, onChange, onReady,
-  onViewState, onLink, onFollow, inkPainter, onInsertInkCell, onCellsCopied, onDrawingPasted, platform = "win32" }: Props) {
+  onViewState, onLink, onFollow, inkPainter, onInsertInkCell, onCellsCopied, onDrawingPasted, platform = "win32", byApp }: Props) {
   const host = useRef<HTMLDivElement | null>(null)
   const view = useRef<EditorView | null>(null)
   const latest = useRef(onChange)
@@ -138,6 +144,8 @@ export function Notebook({ file, text, version, restore, readOnly, rendered: sho
   copiedRef.current = onCellsCopied
   const pastedRef = useRef(onDrawingPasted)
   pastedRef.current = onDrawingPasted
+  const byAppRef = useRef(byApp === true)
+  byAppRef.current = byApp === true
   // ONE painter object for the editor's whole life (the facet never changes); it asks whatever the app gives now.
   const painter = useRef<InkCellPainter>({
     aspect: (id) => painterRef.current?.aspect(id) ?? null,
@@ -273,7 +281,8 @@ export function Notebook({ file, text, version, restore, readOnly, rendered: sho
     })
     view.current = editor
     onReady(editor)
-    editor.focus()
+    // The person opened it: the keyboard is the note's. The app opened it by itself: only if nothing else has the keyboard.
+    if (openTakesKeyboard(byAppRef.current, document.activeElement)) editor.focus()
     return () => {
       // Leaving the note (another tab, a closed one): its place as it is now, while the page is still laid out (a note whose
       // tab was closed is not kept: the app drops what it is told about a note that is not open).

@@ -16,12 +16,10 @@ await reloadApp()
 await waitFor(`document.querySelectorAll('.note-row').length >= ${N}`, 60000)
 note(`${N} rows drawn ${Date.now() - started} ms after the reload`)
 ok("every note has a row", (await js(`document.querySelectorAll('.note-row').length`)) === N)
-// THE LAUNCH IS NOT OVER WITH THE ROWS: with no tab to bring back the app opens the project's first note and gives it the keyboard
-// (useSession.ts `restore`, as the Mac does). On the Windows runner that came seconds after the rows, after the first letter of the
-// search below, and the rest of the typing went into Note 2996. The search starts once that note is open.
-await waitFor(`!!document.querySelector('.cm-content')`, 60000)
-note(`the first note open ${Date.now() - started} ms after the reload`)
-await sleep(300)
+// THE LAUNCH IS NOT OVER WITH THE ROWS: with no tab to bring back the app opens the project's first note (useSession.ts `restore`,
+// as the Mac does), and on the Windows runner that came seconds after the rows, after the first letter of the search below. It
+// took the keyboard then, and the rest of the typing went into Note 2996; an open the app makes by itself leaves the keyboard
+// in a field that has it now (focusReturn.ts `openTakesKeyboard`; sidebar/05 runs that race on purpose). The search starts at once.
 
 const query = async (words) => {
   await js(`(() => { const i = document.querySelector('[data-sidebar=search]'); i.focus(); i.select() })()`)
@@ -42,6 +40,10 @@ note(`first search (reads ${N} notes): ${first.ms} ms`)
 ok("the first search finds the one note", first.hits === 1, `${first.hits} for “${first.typed}”: ${first.first}`)
 const frames = await js(`window.__frames`)
 ok("the page kept drawing frames while it ran", frames > first.ms / 200, `${frames} frames in ${first.ms} ms`)
+await waitFor(`!!document.querySelector('.cm-content')`, 60000)
+note(`the first note open ${Date.now() - started} ms after the reload`)
+const opened = await js(`document.querySelector('.cm-content').cmTile.view.state.doc.toString()`)
+ok("the launch's note is open, with none of the search's letters in it", /^# Note \d+\n/.test(opened), JSON.stringify(opened.slice(0, 40)))
 await js(`document.querySelector('[data-sidebar=search-clear]').click()`)
 await sleep(300)
 const second = await query("needle")
