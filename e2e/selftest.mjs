@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // The runner's own test: it runs the runner over a throw-away suite of scripts that pass, fail, crash, report nothing,
-// hang past their timeout, fail once and then pass (flaky), and checks that every one is reported the way it
-// should be, that the exit code is 1, and that no electron is left behind.
+// hang past their timeout, fail once and then pass (flaky), skip all they have, and checks that every one is reported the
+// way it should be, that the exit code is 1, and that no electron is left behind.
 //
 //   npm run e2e:selftest        (needs the app built: it starts a real instance)
 import { spawnSync } from "node:child_process"
@@ -30,6 +30,7 @@ write("g-skip.mjs", head + `import { skip } from ${JSON.stringify("file:///" + h
 // pid is written down here, and it must be gone once the run is over.
 const restarted = path.join(root, "restarted-pid").replace(/\\/g, "/")
 write("h-restart.mjs", `import fs from "node:fs"\n` + head + `import { restartApp } from ${JSON.stringify("file:///" + harness.replace(/^\//, ""))}\nconst inst = await restartApp()\nfs.writeFileSync(${JSON.stringify(restarted)}, String(inst.pid))\nok("the app came back", (await js("1 + 1")) === 2)\nfinish()\n`)
+write("i-all-skipped.mjs", head + `import { skip } from ${JSON.stringify("file:///" + harness.replace(/^\//, ""))}\nskip("the whole script", "not on this system")\nfinish()\n`)
 
 const results = path.join(root, "results")
 const run = spawnSync(process.execPath, [path.join(here, "run.mjs"), "--suites-dir", path.join(root, "suites"), "--results", results], { encoding: "utf8", timeout: 240000 })
@@ -52,6 +53,7 @@ if (dirs.length === 1) {
   ok("a hanging script is stopped at its timeout and FAILs", status("e-hang.mjs") === "fail" && /timed out/.test(scripts["e-hang.mjs"].reason), scripts["e-hang.mjs"]?.reason)
   ok("a flaky script that passes on the retry is FLAKY, not FAIL", status("f-flaky.mjs") === "flaky" && scripts["f-flaky.mjs"].attempts === 2, JSON.stringify([status("f-flaky.mjs"), scripts["f-flaky.mjs"]?.attempts]))
   ok("a skipped check is counted as skipped", status("g-skip.mjs") === "pass" && scripts["g-skip.mjs"].checks.some((c) => c.status === "skip"))
+  ok("a script that skipped everything it had is SKIPPED, saying why", status("i-all-skipped.mjs") === "skipped" && /not on this system/.test(scripts["i-all-skipped.mjs"].reason) && report.totals.scriptsSkipped === 1, JSON.stringify([status("i-all-skipped.mjs"), scripts["i-all-skipped.mjs"]?.reason, report.totals.scriptsSkipped]))
   ok("no electron process was left", report.leftoverProcesses === 0, String(report.leftoverProcesses))
   ok("a script that restarted the app passes", status("h-restart.mjs") === "pass", status("h-restart.mjs"))
   const pid = fs.existsSync(restarted) ? Number(fs.readFileSync(restarted, "utf8")) : 0

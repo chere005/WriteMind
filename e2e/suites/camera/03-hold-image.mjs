@@ -80,7 +80,8 @@ if (choice) await click(choice.x + choice.w / 2, choice.y + choice.h / 2)
 // The box goes once the capture is in (a box holding a closed outline is read for a chart first, which takes a moment).
 await waitFor(`!document.querySelector('.camera .box-clip .box')`, 15000)
 await sleep(300)
-const all = (await saved(file)).items
+// (read until the third picture is on disk: the drawing's save is debounced, and a slow runner read it before it landed)
+const all = (await saved(file, (d) => d.items.filter((i) => i.kind === "image").length === 3, 8000)).items
 ok("Writing from the box on the held frame came in", all.filter((i) => i.kind === "image").length === 3,
   JSON.stringify(all.map((i) => i.kind)) + " " + (await js(`(document.querySelector('.camera [data-toast=error]')?.textContent ?? '') + ' | ' + document.querySelector('.camera [data-camera=status]').innerText`)))
 await shot("held-writing")

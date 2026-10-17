@@ -283,8 +283,11 @@ function Results({ outcome, busy, query, openNote, active, onActive, onOpen, onM
     }
   }, [active])
   const hits = outcome?.hits ?? []
+  // (`data-query`: the words the rows shown are for — while newer words are being looked for, the rows of the older ones
+  // stay up, so a reader of the list can tell them apart.)
   return (
-    <div className="results" id="sidebar-results" ref={list} role="listbox" aria-label="Search results" aria-busy={busy} data-sidebar="results">
+    <div className="results" id="sidebar-results" ref={list} role="listbox" aria-label="Search results" aria-busy={busy} data-sidebar="results"
+         data-query={outcome?.query ?? ""}>
       {hits.map((hit, index) => (
         <div key={hit.path} role="option" id={`hit-${index}`} aria-selected={hit.path === active}
              className={`hit-row${hit.path === active ? " active" : ""}${hit.path === openNote ? " open" : ""}`}

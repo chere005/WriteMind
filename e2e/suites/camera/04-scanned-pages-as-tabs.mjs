@@ -33,7 +33,16 @@ const pictureBlock = (name) => js(`new Promise((res) => { const i = new Image();
   i.onload = () => { try { const c = document.createElement('canvas'); c.width = i.naturalWidth; c.height = i.naturalHeight; c.getContext('2d').drawImage(i, 0, 0)
     res({ w: c.width, h: c.height, x: (${BLOCK})(c) }) } catch (e) { res({ error: String(e) }) } }
   i.src = 'wm://media/' + encodeURIComponent(${JSON.stringify(name)}) })`)
-const rounded = (v) => JSON.stringify(v, (k, x) => (typeof x === "number" ? Math.round(x * 1000) / 1000 : x))
+/**
+ * A box or corners as the list keeps them: to FOUR places (scanSet.ts `serialiseScans`), so what comes back is within half of the
+ * fourth place of what went. (Rounding both to three places is not that: 0.31349 is kept as 0.3135, and the two then round to
+ * 0.313 and 0.314 — the Windows runner's box landed on exactly such a number.)
+ */
+const kept = (after, before) => {
+  if (after === null || before === null) return after === before
+  const a = Object.entries(after)
+  return a.length === Object.keys(before).length && a.every(([k, x]) => typeof x === "number" ? Math.abs(x - before[k]) <= 0.00005 + 1e-9 : kept(x, before[k]))
+}
 const near = (a, b, d = 3) => a != null && b != null && Math.abs(a - b) <= d
 
 const set = () => js(`window.__wmScans.set()`)
@@ -240,8 +249,8 @@ row = await tabs()
 ok("after a restart the pages are in the row, and the app starts on the camera", row.length === 3 && row[0].on && row[1].name === "Receipt" && row[2].name === "Page 2", JSON.stringify(row))
 ok("each page has everything it had: size, turn, box, corners, shape",
   s.pages.length === 2 && ["id", "width", "height", "rotation", "straighten"].every((k) => s.pages[0][k] === beforeRestart.pages[0][k] && s.pages[1][k] === beforeRestart.pages[1][k])
-  && rounded(s.pages[0].box) === rounded(beforeRestart.pages[0].box) && rounded(s.pages[1].quad) === rounded(beforeRestart.pages[1].quad) && Math.abs((s.pages[1].shape ?? 0) - (beforeRestart.pages[1].shape ?? 0)) < 1e-4,
-  JSON.stringify(s.pages))
+  && kept(s.pages[0].box, beforeRestart.pages[0].box) && kept(s.pages[1].quad, beforeRestart.pages[1].quad) && Math.abs((s.pages[1].shape ?? 0) - (beforeRestart.pages[1].shape ?? 0)) < 1e-4,
+  JSON.stringify({ before: beforeRestart.pages, after: s.pages }))
 await openTab(p2.id)
 await pageReady(p2.id)
 ok("Page 2's picture came back from its file: the same frame", near(await pageBlock(), block2, 1), `${await pageBlock()} vs ${block2}`)

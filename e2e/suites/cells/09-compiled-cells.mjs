@@ -1,9 +1,13 @@
 // C, C++ and Rust evaluation cells RUN FOR REAL in the app (Shift+Enter in the cell, the shell's runner, the machine's own
 // compilers), and the answer the note gets is right: a value printed, a compile error with the compiler's own words and
-// no scratch-folder path, a crash that names its signal (it used to read "[no output]"), a panic, an exit status. Each
+// no scratch-folder path, a crash that names its signal or Windows crash status (it used to read "[no output]"), a panic, an exit status. Each
 // language is skipped, said so, when this machine has no compiler for it (the report the Runs As menu uses says which).
 // Nothing here is Windows-specific and nothing proves Windows: it is whatever compiler this machine has.
-import { ok, skip, finish, js, sleep, setDoc, setRendered, focus, key, doc, shot, waitFor, freshNote, SHIFT } from "../../lib/harness.mjs"
+import { spawnSync } from "node:child_process"
+import fs from "node:fs"
+import os from "node:os"
+import path from "node:path"
+import { ok, skip, note, finish, js, sleep, setDoc, setRendered, focus, key, doc, shot, waitFor, freshNote, SHIFT } from "../../lib/harness.mjs"
 
 await freshNote()
 await setRendered(false)
@@ -11,18 +15,39 @@ await setRendered(false)
 const tools = JSON.parse(await js(`window.wm.evaluate.tools().then((t) => JSON.stringify(t))`))
 const FENCE = { c: "c", cpp: "c++", rust: "rust" }
 
+/**
+ * A COLD TOOLCHAIN IS NOT WHAT THE APP'S 20 s LIMIT IS FOR. Rust's compiler loads a driver library of a hundred-odd megabytes, and
+ * on a fresh Windows runner (from disk, through the virus scanner) its first compiles took 10 to over 20 s — the first Rust cells
+ * read "[the compiler timed out]", and once warm the same cells took a third of a second. So Rust compiles a program once here,
+ * outside the app and with no limit to speak of, before any cell runs.
+ */
+if (tools.rust?.path) {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "wm-e2e-rust-"))
+  fs.writeFileSync(path.join(dir, "warm.rs"), "fn main() { println!(\"warm\"); }\n")
+  const t0 = Date.now()
+  const built = spawnSync(tools.rust.path, ["-O", "-o", path.join(dir, "warm" + (process.platform === "win32" ? ".exe" : ".out")), path.join(dir, "warm.rs")],
+    { cwd: dir, stdio: "ignore", timeout: 180000 })
+  note(`rust: the toolchain warmed up in ${Date.now() - t0} ms (status ${built.status})`)
+  fs.rmSync(dir, { recursive: true, force: true })
+}
+
 /** Run one cell with a real Shift+Enter, wait for its answer, and return the whole note. */
 async function run(evaluator, source) {
   const before = "```eval " + FENCE[evaluator] + "\n" + source + "\n```\n"
   await setDoc(before, ("```eval " + FENCE[evaluator] + "\n").length + 1)
   await focus(); await sleep(300)
+  const t0 = Date.now()
   await key("Enter", { shift: true, wait: 200 })
   await waitFor(`${"document.querySelector('.cm-content').cmTile.view"}.state.doc.toString().includes('\`\`\`out')`, 60000)
+  note(`${evaluator}: compiled and ran in ${Date.now() - t0} ms`)
   await sleep(300)
   return doc()
 }
-const out = (note) => (note.match(/```out\n([\s\S]*?)\n```/) ?? [])[1] ?? null
-const SIGNAL = /\[stopped by SIG(SEGV|ABRT|BUS|ILL|TRAP) \(/
+const out = (text) => (text.match(/```out\n([\s\S]*?)\n```/) ?? [])[1] ?? null
+// A Mac or Linux program that crashes is stopped by a SIGNAL; a Windows one has no signals and ends with a crash STATUS (an
+// NTSTATUS such as 0xC0000005), which the Out cell words rather than printing an exit code of three billion (core
+// eval/output.ts `exitLine`).
+const SIGNAL = process.platform === "win32" ? /\[exit \d{10}: [a-z ]+\]/ : /\[stopped by SIG(SEGV|ABRT|BUS|ILL|TRAP) \(/
 
 const CASES = {
   c: {
@@ -64,7 +89,7 @@ for (const evaluator of ["c", "cpp", "rust"]) {
 
   if (c.crash) {
     answer = out(await run(evaluator, c.crash))
-    ok(`${evaluator}: a crash says which signal ended the program`, SIGNAL.test(answer ?? ""), JSON.stringify(answer))
+    ok(`${evaluator}: a crash says ${process.platform === "win32" ? "what kind of crash" : "which signal"} ended the program`, SIGNAL.test(answer ?? ""), JSON.stringify(answer))
   }
   if (c.panic) {
     answer = out(await run(evaluator, c.panic))

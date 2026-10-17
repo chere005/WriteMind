@@ -27,7 +27,9 @@ const typingBack = () => js(`document.activeElement?.classList.contains('cm-cont
 // ---- the menu's rows, in order
 await openMenuOn("Alpha")
 let rows = await menuRows()
-const want = ["Close Tab", "Close Other Tabs", "Move Tab Left", "Move Tab Right", "Rename…", "Duplicate", "Move to", "Reveal in Finder", process.platform === "darwin" ? "Move to Trash…" : "Move to Recycle Bin…"]
+// (the bin and the file manager in the system's own words, as the app says them: SidebarProject.tsx `trashWord`)
+const want = ["Close Tab", "Close Other Tabs", "Move Tab Left", "Move Tab Right", "Rename…", "Duplicate", "Move to",
+  `Reveal in ${process.platform === "darwin" ? "Finder" : process.platform === "win32" ? "Explorer" : "the file manager"}`, `Move to ${process.platform === "win32" ? "Recycle Bin" : "Trash"}…`]
 ok("the tab's menu: Close, Close Others, Move Tab Left / Right, Rename, Duplicate, Move to, Reveal, Move to Trash…", rows.length === want.length && want.every((t, i) => rows[i].text.startsWith(t)), JSON.stringify(rows.map((r) => r.text)))
 ok("Move to has a submenu, the trash is drawn as a warning", rows.find((r) => r.text.startsWith("Move to") && r.sub) && rows.at(-1).danger, JSON.stringify(rows))
 ok("Close Tab carries its key (no literal Ctrl on a Mac)", /W$/.test(rows[0].text) && (process.platform !== "darwin" || !/Ctrl/.test(rows[0].text)), rows[0].text)
