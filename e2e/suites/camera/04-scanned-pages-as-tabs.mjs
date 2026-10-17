@@ -227,9 +227,18 @@ ok("(that page closed again)", (await set()).pages.length === 2)
 await openTab(p1.id)
 
 // ---- KEPT ACROSS A RESTART
-await js(`window.__wmScans.flush()`)
-await sleep(600)
-const beforeRestart = await set()
+// The restart is a KILL, not a quit (no pagehide, no will-quit write), so what it can find is what reached disk: the list is
+// flushed, then given the main process's own quiet moment (main/sheets.ts, 300 ms) and more, and read again until it stops
+// changing — a page's corners can still be arriving (a slow runner) after the first flush, and would be in the list here but not
+// on disk.
+let beforeRestart = await set()
+for (let tries = 0; tries < 8; tries++) {
+  const was = rounded(beforeRestart.pages)
+  await js(`window.__wmScans.flush()`)
+  await sleep(900)
+  beforeRestart = await set()
+  if (rounded(beforeRestart.pages) === was) break
+}
 await restartApp()
 await showVideoPane()
 await pickCamera()
@@ -241,7 +250,7 @@ ok("after a restart the pages are in the row, and the app starts on the camera",
 ok("each page has everything it had: size, turn, box, corners, shape",
   s.pages.length === 2 && ["id", "width", "height", "rotation", "straighten"].every((k) => s.pages[0][k] === beforeRestart.pages[0][k] && s.pages[1][k] === beforeRestart.pages[1][k])
   && rounded(s.pages[0].box) === rounded(beforeRestart.pages[0].box) && rounded(s.pages[1].quad) === rounded(beforeRestart.pages[1].quad) && Math.abs((s.pages[1].shape ?? 0) - (beforeRestart.pages[1].shape ?? 0)) < 1e-4,
-  JSON.stringify(s.pages))
+  JSON.stringify({ before: beforeRestart.pages, after: s.pages }))
 await openTab(p2.id)
 await pageReady(p2.id)
 ok("Page 2's picture came back from its file: the same frame", near(await pageBlock(), block2, 1), `${await pageBlock()} vs ${block2}`)

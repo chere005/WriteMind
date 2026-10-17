@@ -125,9 +125,13 @@ ok("(the positions this script expects)", text.slice(eq1.start, eq1.end) === "`w
   const down = await js(`window.__down`)
   ok("a command-click on an equation is not the maths' press: it is not stopped and the caret does not go into its source",
     down === false && !(await ranges()).some(([from, to]) => from === eq1.start + 4 && to === eq1.start + 4), JSON.stringify({ down, ranges: await ranges() }))
-  // What the browser itself then does with the press differs by system: on a Windows page a Ctrl+click on a widget leaves the
-  // caret where it was, and a Mac's own click (the platform's, not the app's) puts it at the widget's edge, which shows the source.
-  if (process.platform !== "darwin") ok("Ctrl+click on an equation leaves the caret and the equation alone", same(await ranges(), [[0, 0]]) && (await inlineCount()) === 2, JSON.stringify(await ranges()))
+  // What the browser itself then does with the press is the browser's, not the app's, and it differs by machine: Sean's Windows
+  // page left the caret where it was, while a Mac and a Windows runner (2026-10-17) put it at the widget's edge, beside the
+  // equation and never inside its source. Either is a press the maths did not take.
+  const after = await ranges()
+  ok("Ctrl+click on an equation leaves the caret where it was or at the equation's edge, never in its source",
+    after.length === 1 && after[0][0] === after[0][1] && [0, eq1.start, eq1.end].includes(after[0][0]), JSON.stringify(after))
+  if (same(after, [[0, 0]])) ok("...and with the caret where it was, the equation is still typeset", (await inlineCount()) === 2, String(await inlineCount()))
 }
 
 // ---- a drag that starts on an equation selects

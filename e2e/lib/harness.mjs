@@ -227,6 +227,8 @@ export const seg = (x0, y0, x1, y1, n = 10) => line([x0, y0], [x1, y1], n)
 export const rectPts = (x, y, w, h, n = 8) => [...seg(x, y, x + w, y, n), ...seg(x + w, y, x + w, y + h, n).slice(1), ...seg(x + w, y + h, x, y + h, n).slice(1), ...seg(x, y + h, x, y, n).slice(1)]
 
 const MAC_EDITING = { a: "selectAll", c: "copy", x: "cut", v: "paste" }
+/** What Shift and a digit type on a US keyboard. */
+const SHIFTED_DIGIT = { 1: "!", 2: "@", 3: "#", 4: "$", 5: "%", 6: "^", 7: "&", 8: "*", 9: "(", 0: ")" }
 const VK = {
   Enter: 13, Backspace: 8, Tab: 9, Escape: 27, Delete: 46, Insert: 45, " ": 32, Space: 32,
   ArrowLeft: 37, ArrowUp: 38, ArrowRight: 39, ArrowDown: 40, Home: 36, End: 35, PageUp: 33, PageDown: 34,
@@ -260,8 +262,11 @@ export async function key(k, o = {}) {
   let acc = 0
   for (const [, name, c, v, bit] of chord) { acc |= bit; await send("Input.dispatchKeyEvent", { type: "rawKeyDown", key: name, code: c, windowsVirtualKeyCode: v, modifiers: acc }) }
   // With Shift down a keyboard reports the capital ("D"), never "d": CodeMirror's key names read the difference (on a Mac "Ctrl-d" is
-  // its delete-forward and "Ctrl-Shift-d" the app's Duplicate Cell, and only the capital tells them apart).
-  const shifted = (mods & SHIFT) && /^[a-z]$/.test(k) ? k.toUpperCase() : k
+  // its delete-forward and "Ctrl-Shift-d" the app's Duplicate Cell, and only the capital tells them apart). A digit is the same off a
+  // Mac: a PC's keyboard reports Ctrl+Shift+7 as "&" on the 7 key, and CodeMirror hears "Ctrl-Shift-7" (Markdown) only because the
+  // key it is handed is not the digit; handed "7" it reads "Ctrl-7" (Text). (US layout, the runner's; the Mac's chords are macKeys'.)
+  const shifted = (mods & SHIFT) && /^[a-z]$/.test(k) ? k.toUpperCase()
+    : (mods & SHIFT) && process.platform !== "darwin" && !o.raw && /^\d$/.test(k) ? SHIFTED_DIGIT[k] : k
   const text = o.text ?? (k === "Enter" ? "\r" : k.length === 1 && !(mods & (CTRL | ALT | META)) ? shifted : undefined)
   // On a Mac the editing chords (⌘A / C / X / V) are carried out by the key event's `commands`, as AppKit sends them.
   const editing = process.platform === "darwin" && (mods & META) && !(mods & (CTRL | ALT)) ? MAC_EDITING[k.toLowerCase()] : undefined

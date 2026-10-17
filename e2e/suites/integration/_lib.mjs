@@ -160,8 +160,17 @@ export async function clickTab(rel) {
 /** The items of the menu that is up, top level. */
 export const menuLabels = () => J(`[...document.querySelectorAll('.float-menu:not(.sub) > .float-row > button')].map(b => b.querySelector('.float-label').textContent)`)
 
+/**
+ * THE MENUS SAY THE SYSTEM'S OWN WORDS for the bin and the file manager (SidebarProject.tsx `trashWord`, the Reveal row): the
+ * scripts name the Mac's, and here they are read the way this system spells them ("Move to Recycle Bin…", "Reveal in Explorer").
+ */
+const BIN = process.platform === "win32" ? "Recycle Bin" : "Trash"
+const FILES = process.platform === "darwin" ? "Finder" : process.platform === "win32" ? "Explorer" : "the file manager"
+export const onThisSystem = (label) => label === "Move to Trash…" ? `Move to ${BIN}…` : label === "Reveal in Finder" ? `Reveal in ${FILES}` : label
+
 /** Click an item of the menu that is up, by the start of its label, with the real mouse. A `sub` first hovers the row that opens a submenu. */
 export async function menuItem(label, { sub = null } = {}) {
+  label = onThisSystem(label)
   const find = (inSub) => `(() => {
     const items = [...document.querySelectorAll(${JSON.stringify(inSub ? ".float-menu.sub [role=menuitem], .float-menu.sub [role=menuitemcheckbox]" : ".float-menu:not(.sub) [role=menuitem], .float-menu:not(.sub) [role=menuitemcheckbox]")})]
     const item = items.find(i => (i.querySelector('.float-label')?.textContent ?? i.textContent).trim() === ${JSON.stringify(inSub ? sub : label)})

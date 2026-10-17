@@ -16,6 +16,13 @@ on:
     branches: ["**"]
   pull_request:
   workflow_dispatch:
+    inputs:
+      e2e:
+        # `gh workflow run CI --ref <branch> -f e2e=cells/09-compiled-cells,format` runs only those (e2e/run.mjs --suite): a few
+        # minutes on the runner instead of an hour, for the scripts being fixed. Empty is every suite, as a push runs them.
+        description: "End-to-end suites or suite/script names to run (comma list); empty for all"
+        required: false
+        default: ""
 
 concurrency:
   group: ci-${{ github.ref }}
@@ -78,7 +85,9 @@ jobs:
       - name: Build
         run: npm run build
       - name: End-to-end suites
-        run: npm run e2e -- --snapshot
+        env:
+          ONLY: ${{ github.event.inputs.e2e }}
+        run: if ($env:ONLY) { npm run e2e -- --snapshot --suite "$env:ONLY" } else { npm run e2e -- --snapshot }
       - name: Report and screenshots
         if: always()
         uses: actions/upload-artifact@v4

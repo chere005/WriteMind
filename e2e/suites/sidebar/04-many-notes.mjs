@@ -21,14 +21,19 @@ const query = async (words) => {
   await js(`(() => { const i = document.querySelector('[data-sidebar=search]'); i.focus(); i.select() })()`)
   const t0 = Date.now()
   await typeText(words)
-  await waitFor(`(() => { const r = document.querySelector('.results'); return !!r && r.getAttribute('aria-busy') === 'false' && ![...r.querySelectorAll('[data-sidebar=searching]')].length })()`, 60000)
-  return { ms: Date.now() - t0, hits: await js(`document.querySelectorAll('.hit-row').length`) }
+  // Done is the list showing the answer FOR THESE WORDS: while a search is still on its way the rows of an earlier one (a few
+  // letters typed, on a slow runner) stay up, and they are not this search's answer.
+  await waitFor(`(() => { const r = document.querySelector('.results'); return !!r && r.getAttribute('aria-busy') === 'false' && r.dataset.query === ${JSON.stringify(words)} && ![...r.querySelectorAll('[data-sidebar=searching]')].length })()`, 60000)
+  return {
+    ms: Date.now() - t0, hits: await js(`document.querySelectorAll('.hit-row').length`),
+    typed: await js(`document.querySelector('[data-sidebar=search]').value`), first: await js(`[...document.querySelectorAll('.hit-row .title')].slice(0, 3).map((t) => t.textContent).join(' | ')`),
+  }
 }
 // a frame counter that runs while the search does: if the main process or the page blocked, it would stall
 await js(`window.__frames = 0; (function tick() { window.__frames++; requestAnimationFrame(tick) })()`)
 const first = await query("unique-token-2999")
 note(`first search (reads ${N} notes): ${first.ms} ms`)
-ok("the first search finds the one note", first.hits === 1, `${first.hits}`)
+ok("the first search finds the one note", first.hits === 1, `${first.hits} for “${first.typed}”: ${first.first}`)
 const frames = await js(`window.__frames`)
 ok("the page kept drawing frames while it ran", frames > first.ms / 200, `${frames} frames in ${first.ms} ms`)
 await js(`document.querySelector('[data-sidebar=search-clear]').click()`)

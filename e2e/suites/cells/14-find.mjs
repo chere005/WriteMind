@@ -120,9 +120,9 @@ for (const rendered of [false, true]) {
     ok("and the case switch still on", (await js(`document.querySelector('[data-find=case]').getAttribute('aria-pressed')`)) === "true")
     await js(`document.querySelector('[data-find=case]').click()`); await sleep(100)
     await closeFind()
-    // Find Next with the bar closed goes on from the selection
-    await setSel(0); await key("g", { ctrl: true }); await sleep(250)
-    ok("Find Next with the bar closed finds the next (Mac: ⌘G)", (await selText()).toLowerCase() === "alpha", JSON.stringify(await selText()))
+    // Find Next with the bar closed goes on from the selection: F3 on a PC (Ctrl+G is Group there), ⌘G on a Mac (commands.ts)
+    await setSel(0); await key("F3"); await sleep(250)
+    ok("Find Next with the bar closed finds the next (F3; ⌘G on a Mac)", (await selText()).toLowerCase() === "alpha", JSON.stringify(await selText()))
   })
 
   await test(`${side}: every match is marked where it is`, async () => {

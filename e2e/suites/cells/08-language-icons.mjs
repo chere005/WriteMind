@@ -32,7 +32,7 @@ const badges = () => J(`[...document.querySelectorAll('.wm-eval-badge')].map((b)
   return { which: b.dataset.evalBadge, letters: b.dataset.evalLetters ?? null, aria: b.getAttribute('aria-label'), title: b.title,
     shown: b.textContent.replace('▾', '').trim(), icon: svg?.dataset.evalIcon ?? null, paths: svg ? svg.querySelectorAll('path').length : 0,
     side: s ? Math.round(Math.min(s.width, s.height)) : 0, hidden: svg?.getAttribute('aria-hidden') ?? null,
-    left: r.left, right: r.right, top: r.top, bottom: r.bottom, colour: getComputedStyle(b).color, iconColour: svg ? getComputedStyle(svg).color : null,
+    missing: b.classList.contains('wm-eval-missing'), left: r.left, right: r.right, top: r.top, bottom: r.bottom, colour: getComputedStyle(b).color, iconColour: svg ? getComputedStyle(svg).color : null,
     painted: svg ? [...svg.querySelectorAll('path')].every((p) => (p.getAttribute('fill') === 'currentColor') !== (p.getAttribute('stroke') === 'currentColor')) : false,
     logoRed: svg ? [...svg.querySelectorAll('path')].every((p) => p.getAttribute('fill') === '#dd1100') : false } })`)
 
@@ -44,8 +44,11 @@ ok("the five marks name their languages in order", JSON.stringify(five.map((b) =
 for (const b of five) {
   ok(`${b.which}: the mark is an icon of that language`, b.icon === b.which && b.paths >= 1, JSON.stringify(b))
   ok(`${b.which}: no letters are drawn (the chevron is all the text there is)`, b.shown === "", JSON.stringify(b.shown))
-  ok(`${b.which}: its name and letters are the accessible name, and the tooltip says how to run it`,
-    b.aria === `${NAMES[b.which]} (${LETTERS[b.which]})` && b.letters === LETTERS[b.which] && b.title.includes(NAMES[b.which]) && b.title.includes("Shift+Enter"), JSON.stringify(b))
+  // A language this machine has no program for (Wolfram on a runner) is drawn amber, and its tooltip is the runner's own
+  // refusal instead — the sentence Shift+Enter would get, which says where WriteMind looked (eval/index.ts `choiceTitle`).
+  ok(`${b.which}: its name and letters are the accessible name, and the tooltip says how to run it${b.missing ? " (or where WriteMind looked for it)" : ""}`,
+    b.aria === `${NAMES[b.which]} (${LETTERS[b.which]})` && b.letters === LETTERS[b.which] && b.title.includes(NAMES[b.which])
+    && (b.missing ? b.title.startsWith(`${NAMES[b.which]} is not installed where WriteMind looks`) : b.title.includes("Shift+Enter")), JSON.stringify(b))
   ok(`${b.which}: the drawing is hidden from assistive technology, the button names it`, b.hidden === "true")
   ok(`${b.which}: the icon is at least 12 px`, b.side >= 12, String(b.side))
   if (b.which === "wolfram") ok("wolfram: the real logo, in its own red", b.logoRed, JSON.stringify(b))

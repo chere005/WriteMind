@@ -328,6 +328,14 @@ async function runSuite(suite, round) {
         sEntry.durationMs += result.durationMs
         const failedChecks = checks.filter((c) => c.status === "fail").length
         const passedChecks = checks.filter((c) => c.status === "pass").length
+        const skippedChecks = checks.filter((c) => c.status === "skip")
+        // A script that ran cleanly and SKIPPED everything it had (a Mac-only script on Windows) said why: it is a skipped
+        // script, not one that reported nothing.
+        if (!result.timedOut && !failedChecks && result.code === 0 && passedChecks === 0 && skippedChecks.length > 0) {
+          sEntry.status = "skipped"
+          sEntry.reason = skippedChecks.map((c) => c.detail ? `${c.name}: ${c.detail}` : c.name).join("; ")
+          break
+        }
         let bad = ""
         if (result.timedOut) bad = `timed out after ${Math.round(result.durationMs / 1000)}s`
         else if (failedChecks) bad = `${failedChecks} check(s) failed`
@@ -348,6 +356,7 @@ async function runSuite(suite, round) {
       report.totals.pass += p + xp; report.totals.fail += f; report.totals.skip += k; report.totals.known += xf; report.totals.fixed += xp
       if (sEntry.status === "fail" || sEntry.status === "error") report.totals.scriptsFailed++
       if (sEntry.status === "flaky") report.totals.scriptsFlaky++
+      if (sEntry.status === "skipped") report.totals.scriptsSkipped++
       log(`  ${statusMark[sEntry.status]} ${suite.name}/${script.file}  (${p} pass, ${f} fail${k ? `, ${k} skip` : ""}${xf ? `, ${xf} known issue(s)` : ""}${xp ? `, ${xp} FIXED` : ""}, ${(sEntry.durationMs / 1000).toFixed(1)}s)${sEntry.reason ? "  - " + sEntry.reason : ""}`)
       for (const c of sEntry.checks.filter((c) => c.status === "fail")) log(`        FAIL ${c.name}${c.detail ? "  " + c.detail.slice(0, 240) : ""}`)
       for (const c of sEntry.checks.filter((c) => c.status === "xpass")) log(`        FIXED ${c.name}  - remove it from e2e/known-issues.json`)

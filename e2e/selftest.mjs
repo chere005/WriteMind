@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // The runner's own test: it runs the runner over a throw-away suite of scripts that pass, fail, crash, report nothing,
-// hang past their timeout, fail once and then pass (flaky), and checks that every one is reported the way it
-// should be, that the exit code is 1, and that no electron is left behind.
+// hang past their timeout, fail once and then pass (flaky), skip all they have, and checks that every one is reported the
+// way it should be, that the exit code is 1, and that no electron is left behind.
 //
 //   npm run e2e:selftest        (needs the app built: it starts a real instance)
 import { spawnSync } from "node:child_process"
@@ -26,6 +26,7 @@ write("d-nochecks.mjs", head + `finish()\n`)
 write("e-hang.mjs", `// @e2e timeout=4\n` + head + `ok("started", true)\nawait new Promise(() => {})\n`)
 write("f-flaky.mjs", `// @e2e flaky\nimport fs from "node:fs"\n` + head + `const m = ${JSON.stringify(marker)}\nif (!fs.existsSync(m)) { fs.writeFileSync(m, "1"); ok("first try fails", false, "flaky on purpose") } else ok("second try passes", true)\nfinish()\n`)
 write("g-skip.mjs", head + `import { skip } from ${JSON.stringify("file:///" + harness.replace(/^\//, ""))}\nok("one", true)\nskip("a skipped check", "because")\nfinish()\n`)
+write("h-all-skipped.mjs", head + `import { skip } from ${JSON.stringify("file:///" + harness.replace(/^\//, ""))}\nskip("the whole script", "not on this system")\nfinish()\n`)
 
 const results = path.join(root, "results")
 const run = spawnSync(process.execPath, [path.join(here, "run.mjs"), "--suites-dir", path.join(root, "suites"), "--results", results], { encoding: "utf8", timeout: 240000 })
@@ -48,6 +49,7 @@ if (dirs.length === 1) {
   ok("a hanging script is stopped at its timeout and FAILs", status("e-hang.mjs") === "fail" && /timed out/.test(scripts["e-hang.mjs"].reason), scripts["e-hang.mjs"]?.reason)
   ok("a flaky script that passes on the retry is FLAKY, not FAIL", status("f-flaky.mjs") === "flaky" && scripts["f-flaky.mjs"].attempts === 2, JSON.stringify([status("f-flaky.mjs"), scripts["f-flaky.mjs"]?.attempts]))
   ok("a skipped check is counted as skipped", status("g-skip.mjs") === "pass" && scripts["g-skip.mjs"].checks.some((c) => c.status === "skip"))
+  ok("a script that skipped everything it had is SKIPPED, saying why", status("h-all-skipped.mjs") === "skipped" && /not on this system/.test(scripts["h-all-skipped.mjs"].reason) && report.totals.scriptsSkipped === 1, JSON.stringify([status("h-all-skipped.mjs"), scripts["h-all-skipped.mjs"]?.reason, report.totals.scriptsSkipped]))
   ok("no electron process was left", report.leftoverProcesses === 0, String(report.leftoverProcesses))
   ok("the text report and the markdown report exist", fs.existsSync(path.join(results, dirs[0], "report.txt")) && fs.existsSync(path.join(results, dirs[0], "report.md")))
 }
