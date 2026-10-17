@@ -13,6 +13,25 @@ end-to-end suites as a second job that may fail (`continue-on-error`) and always
 the `e2e-report` artifact. On pushes to main its mac-package job runs the same unit tests on macos-15, and they must
 pass there too: a test about Windows paths builds them with `path.win32` or picks this system's own, never assumes it.
 
+## Quick Look (the Mac's preview extension)
+
+Spotlight's and Finder's preview of a `.wm` note (`apps/desktop/quicklook`, docs/FEATURES.md "Quick Look") is checked
+three ways:
+
+| Check | Where | What it checks |
+|---|---|---|
+| The page | `packages/core/test/quickLook.test.ts` (`npm test`) | `renderQuickLook`: headings, MathML, lists, pictures as `cid:` attachments, drawing cells, the free ink and its fixed page, both appearances, the cuts of a long note (cells, characters, objects, ink points), the refusals (hostile names, another format, a newer version), and that no script can get into the page |
+| A crafted drawing | `packages/core/test/hostileDrawing.test.ts` (`npm test`) | every string a crafted `drawing.json` holds (colours, fills, labels, files, ids) set to values that try to end their attribute, run script or load from elsewhere, painted by every writer the drawing has — the preview, the PDF, each object as HTML and SVG, an ink cell's snapshot — and the output read as a browser's tokenizer reads it (`packages/core/test/htmlTags.ts`): only the renderer's own elements, no handler, no address that runs or loads anything. Quick Look does not enforce the page's CSP, so this is the guard |
+| One pass | `packages/core/test/inlineLinear.test.ts` (`npm test`) | links, bold and the inline tags read by hand give exactly the answers of the patterns they replaced (held to them on tens of thousands of generated strings), and lines that open and never close are read in one pass |
+| The script | `apps/desktop/test/quickLook.test.ts` (`npm test`) | the extension's bundle (`apps/desktop/scripts/build-quicklook.mjs`) run in a Node `vm` context holding the language and nothing else, as JavaScriptCore runs it; ON A MAC the same bundle in the system's JavaScriptCore (`jsc --useJIT=false --useRegExpJIT=false`, as the sandboxed extension runs it) drawing notes crafted to be slow, each under 2.5 s (they took 4 s to minutes before); the sample notes say what they show; the Info.plist, the entitlements, the signing hook's arguments and its retry, the build and verify scripts |
+| The bundle | `bash tools/verify-mac.sh` (after `package:mac:adhoc`, and in both Mac workflows) | the appex in `Contents/PlugIns`: arm64, minos 13.0, its script, every Info.plist key, signed, sandboxed, its own entitlements (no JIT), ad hoc or Developer ID + hardened runtime as the app is |
+| Quick Look drawing it | `sh tools/check-quicklook.sh` (by hand, on a Mac) | the packaged app's extension, registered from `dist-electron` for the run and unregistered after: sample notes (`apps/desktop/scripts/quicklook-samples.ts`, their words in `quicklook-sample-notes.ts`: plain, maths + pictures + drawing cell + free ink, 6 000 cells, hostile words and a hostile drawing, lines crafted to be slow, a newer format, cut short, a hostile entry name, a Windows Media file) shown in a `QLPreviewView` (Finder's own preview view) and photographed light and dark from Quick Look's own web view (`tools/quicklook/quicklook-shot.swift`) into a folder you then LOOK AT. It fails by itself when a page comes back marked by a script from the hostile drawing, when anything reaches the probe server it listens on (127.0.0.1, a port the system picks), or when `slow.wm` takes more than 10 s |
+
+`qlmanage -p -o <dir>` would be the obvious tool, and on macOS 26 it crashes before it asks any data-based extension (an
+uncaught `key cannot be nil` in ExtensionFoundation, Apple's own `.ips` preview included); `qlmanage -p <file>` opens a
+window, but a screenshot of it needs Screen Recording. The snapshot tool needs neither: the preview view runs in its
+own process, and `WKWebView.takeSnapshot` is an API, not a screen capture.
+
 ## Running the end-to-end suites
 
 ```

@@ -23,8 +23,14 @@
 #     and the three models/*.onnx that apps/desktop/scripts/ocr-models.json lists, each there, not empty, and (the
 #     models) exactly the pinned size (a worker thread cannot load a file out of an asar, and an app that lost them
 #     would silently read with another reader instead);
+#   - the Quick Look extension (apps/desktop/quicklook, tools/build-quicklook.sh) is in Contents/PlugIns/
+#     WriteMindPreview.appex: its executable arm64 with minos 13.0, its script (Resources/preview.js) there, its
+#     Info.plist a data-based Quick Look preview (com.apple.quicklook.preview, QLIsDataBasedPreview, the note's type and
+#     Windows Media's .wm, the principal class, the app's version, macOS 13.0); signed (`codesign --verify --strict`) with
+#     ITS OWN entitlements - the App Sandbox and read-only access, no JIT, no camera (apps/desktop/scripts/sign-mac.cjs) -
+#     ad hoc beside an ad-hoc app, the app's Developer ID and the hardened runtime beside a signed one;
 #   - the dmg passes `hdiutil verify`, and mounted read-only it holds a WriteMind.app whose signature verifies, whose
-#     Mach-O files are all arm64 too, and an Applications link.
+#     Mach-O files are all arm64 too, whose Quick Look extension is there, and an Applications link.
 #
 # Exits non-zero, saying what is missing, on any miss. Invoke it with bash
 # (it is not marked executable).
@@ -236,6 +242,97 @@ check_app() {
   scan_asar "$app" "$name"
 }
 
+# The Quick Look extension in one app (see the header). The app's own signature mode decides what its signature must be.
+check_quicklook() {
+  local app="$1"
+  local name="${app#"$dist"/}"
+  local appex="$app/Contents/PlugIns/WriteMindPreview.appex"
+  local exe="$appex/Contents/MacOS/WriteMindPreview"
+  local plist="$appex/Contents/Info.plist"
+  local label="$name: Quick Look extension"
+  if [ ! -d "$appex" ]; then
+    fail "$name: no Contents/PlugIns/WriteMindPreview.appex (tools/build-quicklook.sh builds it; was the build run on a Mac with swiftc?)"
+    return
+  fi
+  if [ -x "$exe" ]; then
+    [ "$(archs "$exe")" = "arm64" ] && ok "$label is arm64 (one slice)" || fail "$label: the executable is '$(archs "$exe")', expected arm64 alone"
+    local m
+    m="$(minos "$exe" arm64)"
+    if [ -z "$m" ]; then
+      echo "verify-mac: note: $label: no vtool / otool answer for its minos; not checked"
+    elif [ "$m" = "13.0" ]; then
+      ok "$label: minos 13.0"
+    else
+      fail "$label: minos is $m, expected 13.0"
+    fi
+  else
+    fail "$label: no executable Contents/MacOS/WriteMindPreview"
+  fi
+  [ -s "$appex/Contents/Resources/preview.js" ] && ok "$label: Resources/preview.js ($(wc -c < "$appex/Contents/Resources/preview.js" | tr -d ' ') bytes)" \
+    || fail "$label: no Resources/preview.js (the page renderer, apps/desktop/scripts/build-quicklook.mjs)"
+  if [ -f "$plist" ]; then
+    local key want got
+    while IFS='|' read -r key want; do
+      got="$(plist_value "$plist" "$key")"
+      [ "$got" = "$want" ] && ok "$label: $key $want" || fail "$label: Info.plist $key is '$got', expected '$want'"
+    done <<EOF_KEYS
+CFBundleIdentifier|com.seancheren.writemind.quicklook
+CFBundlePackageType|XPC!
+CFBundleExecutable|WriteMindPreview
+CFBundleShortVersionString|$version
+CFBundleVersion|$version
+LSMinimumSystemVersion|13.0
+NSExtension.NSExtensionPointIdentifier|com.apple.quicklook.preview
+NSExtension.NSExtensionPrincipalClass|WMPreviewProvider
+NSExtension.NSExtensionAttributes.QLIsDataBasedPreview|true
+EOF_KEYS
+    local types
+    types="$(plutil -extract NSExtension.NSExtensionAttributes.QLSupportedContentTypes json -o - "$plist" 2> /dev/null)"
+    case "$types" in
+      *'"com.seancheren.writemind.note"'*) ok "$label: previews com.seancheren.writemind.note" ;;
+      *) fail "$label: QLSupportedContentTypes does not name com.seancheren.writemind.note ($types)" ;;
+    esac
+    case "$types" in
+      *'"com.microsoft.windows-media-wm"'*) ok "$label: previews com.microsoft.windows-media-wm (what macOS calls every .wm)" ;;
+      *) fail "$label: QLSupportedContentTypes does not name com.microsoft.windows-media-wm, which is the type macOS gives a .wm file ($types)" ;;
+    esac
+  else
+    fail "$label: no Contents/Info.plist"
+  fi
+  if codesign --verify --strict "$appex" > /dev/null 2>&1; then
+    ok "$label: codesign --verify --strict"
+  else
+    fail "$label: its signature does not verify:"
+    codesign --verify --strict --verbose=2 "$appex" 2>&1 | sed 's/^/    /' >&2
+  fi
+  local entitlements
+  entitlements="$(codesign -d --entitlements - --xml "$appex" 2> /dev/null | plutil -convert json -o - - 2> /dev/null)"
+  case "$entitlements" in
+    *'"com.apple.security.app-sandbox":true'*) ok "$label: sandboxed (macOS loads no Quick Look extension that is not)" ;;
+    *) fail "$label: not signed with com.apple.security.app-sandbox (apps/desktop/scripts/sign-mac.cjs; got: ${entitlements:-none})" ;;
+  esac
+  case "$entitlements" in
+    *'"com.apple.security.files.user-selected.read-only":true'*) ok "$label: read-only file access" ;;
+    *) fail "$label: no com.apple.security.files.user-selected.read-only entitlement" ;;
+  esac
+  case "$entitlements" in
+    *allow-jit*|*unsigned-executable-memory*|*device.camera*|*disable-library-validation*)
+      fail "$label: carries the app's entitlements (JIT, camera, library validation), not its own" ;;
+    *) ok "$label: none of the app's entitlements (no JIT, no camera)" ;;
+  esac
+  local details flags
+  details="$(codesign -dv --verbose=2 "$appex" 2>&1)"
+  flags="$(printf '%s\n' "$details" | grep -E '^CodeDirectory .*flags=' | head -1)"
+  if [ "$signed" = 1 ]; then
+    printf '%s\n' "$details" | grep -q '^Authority=Developer ID Application:' \
+      && ok "$label: signed with the Developer ID" || fail "$label: not signed with a Developer ID Application certificate"
+    printf '%s\n' "$flags" | grep -q 'runtime' && ok "$label: hardened runtime" || fail "$label: the hardened runtime is off (notarization needs it)"
+  else
+    printf '%s\n' "$details" | grep -q '^Signature=adhoc$' && ok "$label: signed ad hoc" \
+      || fail "$label: the signature is not ad hoc ($(printf '%s\n' "$details" | grep -E '^(Signature|Authority)=' | head -1))"
+  fi
+}
+
 # The bundled OCR reader's files in one app (see the header). The model names and sizes come from the manifest the
 # build copies them by, so a model added there is checked here without an edit.
 ocr_manifest="apps/desktop/scripts/ocr-models.json"
@@ -274,7 +371,7 @@ if [ "${#apps[@]}" -eq 0 ]; then
 else
   for app in "${apps[@]}"; do
     case "$(basename "$(dirname "$app")")" in
-      mac-arm64) check_app "$app" "arm64"; check_ocr "$app" ;;
+      mac-arm64) check_app "$app" "arm64"; check_ocr "$app"; check_quicklook "$app" ;;
       *) fail "${app#"$dist"/}: this release is Apple silicon only; electron-builder must make mac-arm64/ and no other app folder ($(basename "$(dirname "$app")")/ is an Intel or universal build)" ;;
     esac
   done
@@ -308,6 +405,8 @@ else
         && ok "$label: its WriteMind.app verifies" || fail "$label: the WriteMind.app inside does not verify"
       # The app a person drags out of the dmg is the one that must hold no Intel code.
       scan_macho "$label: its WriteMind.app" "$mnt/WriteMind.app"
+      [ -x "$mnt/WriteMind.app/Contents/PlugIns/WriteMindPreview.appex/Contents/MacOS/WriteMindPreview" ] \
+        && ok "$label: its WriteMind.app carries the Quick Look extension" || fail "$label: its WriteMind.app has no Quick Look extension"
     else
       fail "$label: no WriteMind.app inside"
     fi

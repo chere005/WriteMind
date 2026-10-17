@@ -42,12 +42,13 @@ export function mathHtml(source: string, display: "inline" | "block"): string | 
   return tree === null ? null : `<span class="wm-math">${tree}</span>`
 }
 
-interface Style { underline: boolean; family?: string; size?: number; color?: string; mark?: boolean }
+/** What the tags round a run of words give it. */
+export interface InlineStyle { underline: boolean; family?: string; size?: number; color?: string; mark?: boolean }
 
 const SAFE_FAMILY = /^[\w\s,'"-]+$/
 
 /** `font-family: Georgia; font-size: 18px; color: #2D7DD2` read back from a tag; only what was recognised. */
-function styleFromTag(tag: string): Style {
+function styleFromTag(tag: string): InlineStyle {
   const found = /style="([^"]*)"/.exec(tag)
   return { underline: false, ...(found ? spanDeclarations(found[1]!) : {}) }
 }
@@ -76,32 +77,65 @@ export function spanDeclarations(css: string): { family?: string; size?: number;
   return style
 }
 
-type Token = { open: Style } | { close: true } | { text: string }
+export type InlineToken = { open: InlineStyle } | { close: true } | { text: string }
 
-/** `<u>`, `</u>`, `<span …>`, `</span>` and the anchors; everything else is text. */
-function tokenize(source: string): Token[] {
-  const tokens: Token[] = []
+/** `[A-Za-z0-9_]`, by code: what `\b` reads as a word's character. */
+const isWord = (code: number): boolean =>
+  (code >= 48 && code <= 57) || (code >= 65 && code <= 90) || (code >= 97 && code <= 122) || code === 95
+
+/**
+ * `<u>`, `</u>`, `<span …>`, `</span>` and the anchors; everything else is text. (Exported for its test,
+ * test/inlineLinear.test.ts, which holds it to the patterns it was first written with.)
+ *
+ * IN ONE PASS. A tag starts with `<` and an escape with `\`, so a run of anything else is words, taken whole; and a tag
+ * that is read up to its `>` (or an anchor up to its `"`) asks a reader that never goes back (`seeker`) where that is.
+ * Written first as a slice of the next 400 characters and four patterns at EVERY character, a long cell took seconds in
+ * the Quick Look extension, whose JavaScriptCore has no JIT, and a run of `<` took 4.5 s (review of the preview,
+ * 2026-10-17). A tag is still read only within 400 characters of its `<`, as it was.
+ */
+export function inlineTokens(source: string): InlineToken[] {
+  const tokens: InlineToken[] = []
+  const n = source.length
   let buffer = ""
   let index = 0
   const flush = () => { if (buffer) { tokens.push({ text: buffer }); buffer = "" } }
-  while (index < source.length) {
-    const rest = source.slice(index, index + 400)
-    let match: RegExpExecArray | null
-    // An escape (`\<`) is the character it escapes, never the start of a tag (plainText.ts).
-    if (source.charCodeAt(index) === 92 && index + 1 < source.length && ESCAPABLE.includes(source[index + 1]!)) {
-      buffer += source.slice(index, index + 2); index += 2; continue
+  const gt = seeker(n, (i) => source.charCodeAt(i) === 62)
+  const quote = seeker(n, (i) => source.charCodeAt(i) === 34)
+  /** Where `<span\b[^>]*>` or `<mark\b[^>]*>` (`name` is its first five characters) at `index` ends, or -1. */
+  const tagEnd = (name: string): number => {
+    if (!source.startsWith(name, index)) return -1
+    const after = index + name.length
+    if (after < n && isWord(source.charCodeAt(after))) return -1
+    const close = gt(after)
+    return close < n && close < index + 400 ? close + 1 : -1
+  }
+  /** Where `<a id="[^"]*"></a>` at `index` ends, or -1. */
+  const anchorEnd = (): number => {
+    if (!source.startsWith('<a id="', index)) return -1
+    const close = quote(index + 7)
+    return close < n && source.startsWith('"></a>', close) && close + 6 <= index + 400 ? close + 6 : -1
+  }
+  while (index < n) {
+    const code = source.charCodeAt(index)
+    if (code !== 60 && code !== 92) {
+      let next = index + 1
+      while (next < n && source.charCodeAt(next) !== 60 && source.charCodeAt(next) !== 92) next++
+      buffer += source.slice(index, next); index = next; continue
     }
-    if (rest.startsWith("<u>")) { flush(); tokens.push({ open: { underline: true } }); index += 3 }
-    else if (rest.startsWith("</u>")) { flush(); tokens.push({ close: true }); index += 4 }
-    else if (rest.startsWith("</span>")) { flush(); tokens.push({ close: true }); index += 7 }
-    else if ((match = /^<span\b[^>]*>/.exec(rest))) {
-      flush(); tokens.push({ open: styleFromTag(match[0]) }); index += match[0].length
-    } else if ((match = /^<a id="[^"]*"><\/a>/.exec(rest))) {
-      flush(); index += match[0].length
-    } else if ((match = /^<mark\b[^>]*>/.exec(rest))) {
-      flush(); tokens.push({ open: { underline: false, mark: true } }); index += match[0].length
-    } else if (rest.startsWith("</mark>")) { flush(); tokens.push({ close: true }); index += 7 }
-    else { buffer += source[index]; index += 1 }
+    // An escape (`\<`) is the character it escapes, never the start of a tag (plainText.ts).
+    if (code === 92) {
+      const escapes = index + 1 < n && ESCAPABLE.includes(source[index + 1]!)
+      buffer += source.slice(index, index + (escapes ? 2 : 1)); index += escapes ? 2 : 1; continue
+    }
+    let end: number
+    if (source.startsWith("<u>", index)) { flush(); tokens.push({ open: { underline: true } }); index += 3 }
+    else if (source.startsWith("</u>", index)) { flush(); tokens.push({ close: true }); index += 4 }
+    else if (source.startsWith("</span>", index)) { flush(); tokens.push({ close: true }); index += 7 }
+    else if ((end = tagEnd("<span")) >= 0) { flush(); tokens.push({ open: styleFromTag(source.slice(index, end)) }); index = end }
+    else if ((end = anchorEnd()) >= 0) { flush(); index = end }
+    else if ((end = tagEnd("<mark")) >= 0) { flush(); tokens.push({ open: { underline: false, mark: true } }); index = end }
+    else if (source.startsWith("</mark>", index)) { flush(); tokens.push({ close: true }); index += 7 }
+    else { buffer += "<"; index += 1 }
   }
   flush()
   return tokens
@@ -109,8 +143,8 @@ function tokenize(source: string): Token[] {
 
 // The inline patterns, the editor's own (`MarkdownSourceStyle.Patterns`): an opening mark is followed by
 // a non-space and the closing one preceded by one, so `2 * 3 * 4` is not a style; an underscore inside a
-// word (snake_case_name) is not emphasis.
-const BOLD = /\*\*(?=\S)(.*?\S)\*\*|(?<![A-Za-z0-9])__(?=\S)(.*?\S)__(?![A-Za-z0-9])/g
+// word (snake_case_name) is not emphasis. Bold and links are read by hand (`replaceBold`, `replaceLinks`), each to
+// exactly the answers of its pattern (test/inlineLinear.test.ts holds them to it).
 const ITALIC = /\*(?=\S)([^*_\n]*?[^\s*_])\*|(?<![A-Za-z0-9])_(?=\S)([^*_\n]*?[^\s*_])_(?![A-Za-z0-9])/g
 const STRIKE = /~~(?=\S)([^~\n]*?\S)~~/g
 
@@ -122,6 +156,94 @@ function linkTarget(href: string): string {
   const scheme = /^([a-z][a-z0-9+.-]*):/i.exec(href.trim())
   if (scheme && !/^(https?|mailto)$/i.test(scheme[1]!)) return ""
   return ` href="${escapeHtml(href.trim())}"`
+}
+
+/**
+ * The first place at or after `at` where `hit` holds (`length` when none), for a reader whose places never go back:
+ * what was read past is not read again, so a whole run costs one pass.
+ */
+function seeker(length: number, hit: (index: number) => boolean): (at: number) => number {
+  let found = -1
+  return (at) => {
+    if (at > found) { found = at; while (found < length && !hit(found)) found++ }
+    return found
+  }
+}
+
+/** `\s` in a regular expression, by code. */
+function isSpace(code: number): boolean {
+  return (code >= 9 && code <= 13) || code === 32 || code === 0xa0 || code === 0x1680 || (code >= 0x2000 && code <= 0x200a)
+    || code === 0x2028 || code === 0x2029 || code === 0x202f || code === 0x205f || code === 0x3000 || code === 0xfeff
+}
+
+/** `[A-Za-z0-9]`, by code (NaN, past either end, is not). */
+const isAlnum = (code: number): boolean => (code >= 48 && code <= 57) || (code >= 65 && code <= 90) || (code >= 97 && code <= 122)
+
+/** What `.` does not match: the line terminators. */
+const isLineEnd = (code: number): boolean => code === 10 || code === 13 || code === 0x2028 || code === 0x2029
+
+/**
+ * `text.replace(/\[([^\]\n]+)\]\(([^)\n]+)\)/g, (_, label, href) => link(label, href))`, read in one pass. The pattern
+ * gives the same answers and is quadratic: on a run of `[` with no `]` every `[` reads to the end of the run and back,
+ * and a markdown cell's lines are one run (they are joined), so a crafted note of a few thousand brackets held the
+ * Quick Look preview for seconds and two hundred thousand for minutes (review of the preview, 2026-10-17). Neither
+ * part can hold its own closing character, so there is never more than one way to read a link from a `[`.
+ */
+export function replaceLinks(text: string, link: (label: string, href: string) => string): string {
+  const n = text.length
+  const bracket = seeker(n, (i) => text.charCodeAt(i) === 93 || text.charCodeAt(i) === 10)
+  const paren = seeker(n, (i) => text.charCodeAt(i) === 41 || text.charCodeAt(i) === 10)
+  let out = ""
+  let copied = 0
+  let at = text.indexOf("[")
+  while (at >= 0) {
+    const close = bracket(at + 1)
+    if (close > at + 1 && text.charCodeAt(close) === 93 && text.charCodeAt(close + 1) === 40) {
+      const end = paren(close + 2)
+      if (end > close + 2 && text.charCodeAt(end) === 41) {
+        out += text.slice(copied, at) + link(text.slice(at + 1, close), text.slice(close + 2, end))
+        copied = end + 1
+        at = text.indexOf("[", copied)
+        continue
+      }
+    }
+    at = text.indexOf("[", at + 1)
+  }
+  return copied === 0 ? text : out + text.slice(copied)
+}
+
+/**
+ * `text.replace(/\*\*(?=\S)(.*?\S)\*\*|(?<![A-Za-z0-9])__(?=\S)(.*?\S)__(?![A-Za-z0-9])/g, (_, a, b) => bold(a ?? b))`,
+ * the editor's bold, read in one pass: each opening finds the first closing after it on its line, which the pattern
+ * finds by reading to the end of the line from EVERY opening that has none — a line of `**a ` was a minute's work in
+ * the Quick Look extension (`replaceLinks`).
+ */
+export function replaceBold(text: string, bold: (inner: string) => string): string {
+  const n = text.length
+  const code = (i: number) => text.charCodeAt(i)
+  const solid = (i: number) => i < n && !isSpace(code(i))
+  const lineEnd = seeker(n, (i) => isLineEnd(code(i)))
+  const stars = seeker(n, (i) => solid(i) && code(i + 1) === 42 && code(i + 2) === 42)
+  const unders = seeker(n, (i) => solid(i) && code(i + 1) === 95 && code(i + 2) === 95 && !isAlnum(code(i + 3)))
+  let out = ""
+  let copied = 0
+  let at = 0
+  while (at < n) {
+    const c = code(at)
+    let close = -1
+    if (c === 42 && code(at + 1) === 42 && solid(at + 2)) {
+      const found = stars(at + 2)
+      if (found < lineEnd(at + 2)) close = found
+    } else if (c === 95 && code(at + 1) === 95 && solid(at + 2) && !isAlnum(code(at - 1))) {
+      const found = unders(at + 2)
+      if (found < lineEnd(at + 2)) close = found
+    }
+    if (close < 0) { at++; continue }
+    out += text.slice(copied, at) + bold(text.slice(at + 2, close + 1))
+    copied = close + 3
+    at = copied
+  }
+  return copied === 0 ? text : out + text.slice(copied)
 }
 
 /** One run of markdown (no HTML tags in it) to HTML. */
@@ -140,14 +262,12 @@ function markdownRun(text: string): string {
   // Escapes next: `\*` is a star, and no pattern after this sees it.
   work = work.replace(/\\([\\`*_{}[\]()#+\-.!~<>|])/g, (_whole, character: string) => hold(escapeHtml(character)))
   // Links: the label is itself inline markdown; the destination is not.
-  work = work.replace(/\[([^\]\n]+)\]\(([^)\n]+)\)/g, (_whole, label: string, href: string) =>
-    hold(`<a class="link"${linkTarget(href)}>${emphasis(escapeHtml(label))}</a>`))
+  work = replaceLinks(work, (label, href) => hold(`<a class="link"${linkTarget(href)}>${emphasis(escapeHtml(label))}</a>`))
   return restore(emphasis(escapeHtml(work)), held)
 }
 
 function emphasis(escaped: string): string {
-  return escaped
-    .replace(BOLD, (_whole, star: string | undefined, under: string | undefined) => `<b>${star ?? under ?? ""}</b>`)
+  return replaceBold(escaped, (inner) => `<b>${inner}</b>`)
     .replace(ITALIC, (_whole, star: string | undefined, under: string | undefined) => `<i>${star ?? under ?? ""}</i>`)
     .replace(STRIKE, (_whole, inside: string) => `<s>${inside}</s>`)
 }
@@ -166,13 +286,13 @@ function restore(html: string, held: string[]): string {
  * `size` is the body size the maths is set at.
  */
 export function inlineHtml(source: string, paper: string = PAPER_HEX): string {
-  const stack: Style[] = []
+  const stack: InlineStyle[] = []
   let out = ""
-  for (const token of tokenize(source)) {
+  for (const token of inlineTokens(source)) {
     if ("open" in token) { stack.push(token.open); continue }
     if ("close" in token) { stack.pop(); continue }
     let html = markdownRun(token.text)
-    const merged = stack.reduce<Style>((into, next) => ({
+    const merged = stack.reduce<InlineStyle>((into, next) => ({
       underline: into.underline || next.underline,
       family: next.family ?? into.family,
       size: next.size ?? into.size,

@@ -11,8 +11,8 @@
 
 import { cellFrame } from "../drawing/inkCell"
 import { decodeDrawing, writeDrawing, type InkCell } from "../drawing/model"
-import { itemSvg, type WordBreaker } from "./drawing"
-import { PAPER_HEX } from "./inline"
+import { itemSvg, paintHex, type WordBreaker } from "./drawing"
+import { escapeHtml, PAPER_HEX } from "./inline"
 
 const n = (value: number): string => String(Math.round(value * 100) / 100)
 
@@ -58,10 +58,12 @@ export function inkCellSvg(cell: InkCell, width: number, options: InkSvgOptions)
   const ink = { mediaUrl: options.mediaUrl, paper: options.paper ?? PAPER_HEX, ...(options.words ? { words: options.words } : {}) }
   const body = cell.items.map((item) => itemSvg(item, size, ink)).join("")
   const meta = options.metadata ? `<metadata id="${INK_METADATA_ID}">${xmlText(inkCellJson(cell))}</metadata>` : ""
-  const ground = options.background ? `<rect width="100%" height="100%" fill="${options.background}"/>` : ""
+  // (The id and the colour are written as attributes, so each is made safe to be one: drawing.ts `paintHex`.)
+  const background = paintHex(options.background)
+  const ground = background ? `<rect width="100%" height="100%" fill="${background}"/>` : ""
   const shown = options.shown !== undefined && options.shown > 0 ? options.shown : w
   const tall = shown === w ? h : shown * h / w
-  return `<svg xmlns="http://www.w3.org/2000/svg" class="wm-ink-cell" data-ink-cell="${cell.id}" width="${n(shown)}" height="${n(tall)}" `
+  return `<svg xmlns="http://www.w3.org/2000/svg" class="wm-ink-cell" data-ink-cell="${escapeHtml(cell.id)}" width="${n(shown)}" height="${n(tall)}" `
     + `viewBox="0 0 ${n(w)} ${n(h)}" style="display:block;overflow:hidden">${meta}${ground}${body}</svg>`
 }
 

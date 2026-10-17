@@ -136,7 +136,7 @@ jobs:
       # They block here too: the seven that took Windows paths for granted now use this system's own (2026-10-05).
       - name: Unit tests
         run: npm test
-      - name: Build (the arm64 tablet helper, tools/build-helpers.sh)
+      - name: Build (the arm64 tablet helper and the Quick Look extension, tools/build-helpers.sh)
         run: npm run build
       - name: The arm64 dmg, signed ad hoc
         run: npm -w @writemind/desktop run package:mac:adhoc

@@ -72,6 +72,7 @@ this. Nothing else asks `process.platform`.
 |---|---|---|---|
 | The notebook, the drawing layer, the files | yes | yes | yes |
 | Export ▸ PDF | yes | yes | yes (Chromium prints the page) |
+| Spotlight and Finder show a note's rendered page (Quick Look) | yes: an extension inside the app (`apps/desktop/quicklook`, the PDF's renderer in JavaScriptCore) | no | no |
 | The camera, the box, and the ink lifted off the paper | yes | yes | yes |
 | Reading a picture's words | the bundled reader (PP-OCRv5 on WebAssembly, `docs/OCR-BUNDLED.md`) | the same | the same |
 | Finding the page in the frame by itself | `findPage` (plain arrays, `capture/findPage.ts`) - the Swift app keeps Vision | yes, the same code | yes, the same code |

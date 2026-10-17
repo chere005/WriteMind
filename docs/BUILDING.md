@@ -61,10 +61,20 @@ silicon only** (Sean, 2026-10-10: nothing built for Intel ships on a Mac).
 It packages the existing build, so:
 
 ```sh
-npm run build                                   # with the arm64 tablet helper (tools/build-helpers.sh)
+npm run build                                   # with the arm64 tablet helper and the Quick Look extension (tools/build-helpers.sh)
 npm -w @writemind/desktop run package:mac:adhoc
-bash tools/verify-mac.sh                        # the signature, every Mach-O arm64, the helper, the bundled OCR reader, Info.plist, the dmg
+bash tools/verify-mac.sh                        # the signature, every Mach-O arm64, the helper, the Quick Look extension, the bundled OCR reader, Info.plist, the dmg
 ```
+
+**The Quick Look extension** (Spotlight's and Finder's preview of a note, docs/FEATURES.md) is built by
+`tools/build-quicklook.sh` into `apps/desktop/build/quicklook/WriteMindPreview.appex` — `swiftc` (Xcode or its command
+line tools), arm64, macOS 13 — and `electron-builder.yml`'s `mac.extraFiles` puts it in `Contents/PlugIns`. electron-builder
+signs nothing under `PlugIns`, so `mac.sign` is `apps/desktop/scripts/sign-mac.cjs`: it signs the extension first, with
+the app's identity, keychain, hardened runtime and timestamp but the extension's own sandbox entitlements
+(`apps/desktop/quicklook/WriteMindPreview.entitlements`), then hands the app to electron-builder's own signer. Both are
+tried again after a failure (three retries, 5, 10 and 15 s apart), as electron-builder's own signing is: a hook replaces
+that, retry and all, and Apple's timestamp server fails now and then. A Mac without `swiftc` packages an app without it,
+and `verify-mac.sh` fails that package.
 
 They land in `dist-electron/`. `apps/desktop/electron-builder.yml` is the
 whole configuration. On Windows, `tools\build-installer.ps1` builds just the

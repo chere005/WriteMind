@@ -36,6 +36,10 @@ export const WELCOME_INTRO =
   "What WriteMind does, then the keys that matter, written for this computer. " +
   "Help ▸ Quick Reference opens this page again and brings it up to date, so keep your own words in notes of your own."
 
+/** The Quick Look extension (apps/desktop/quicklook), in the Quick Reference a Mac writes. */
+export const QUICK_LOOK_FEATURE =
+  "**Quick Look:** Finder's space bar, its column view and Spotlight show a note as its rendered page, maths, pictures and drawings included."
+
 /**
  * What the app has, in a line or two each (Sean's approved style: a bold lead, brief): kept to what is built. Menu
  * items and buttons are named as the menu bar and the panes name them.
@@ -76,6 +80,9 @@ export const welcomeFeatures = (mac: boolean): string[] => [
     "  - On Windows set the first button to Middle Click in Wacom Tablet Properties ▸ Pen (on Pan/Scroll the driver keeps it).\n" +
     "  - On a Mac the Tablet sheet reads both buttons from the tablet itself (macOS asks once for Input Monitoring).",
   "**Notes are files:** each note is a `.wm` file (a Note) holding `note.mdwm` (the MarkdownNote text), the drawing and the pictures; a project is a small JSON file.",
+  // Sean, 2026-10-17: "add a preview of rendered mode to macos spotlight" (apps/desktop/quicklook). A Mac's alone: a PC's page
+  // says nothing of it.
+  ...(mac ? [QUICK_LOOK_FEATURE] : []),
   "**Updates:** Help ▸ Check for Updates… looks now; an installed copy also looks at launch. Windows installs it; a Mac that cannot replace itself opens the release page.",
   "**About:** Help ▸ About WriteMind shows the version, the licence, the Wolfram statement and every library with its licence text.",
 ]

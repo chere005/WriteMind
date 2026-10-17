@@ -15,7 +15,8 @@ import { blocks, emptySession, isListBlock, kindOfBlock, listItemsOf, readSessio
 import { EVALUATORS, WM_TEXT, evaluatorTitle, formatExtension, formatTitle, offeredFormats } from "@writemind/core"
 import { COMMANDS, shown } from "../src/shared/commands"
 import {
-  WELCOME_FEATURES, WELCOME_FILE, WELCOME_GROUPS, WELCOME_INTRO, WELCOME_KEYS, chordFor, groupTitleCell, welcomeKeys, welcomeNote,
+  QUICK_LOOK_FEATURE, WELCOME_FEATURES, WELCOME_FILE, WELCOME_GROUPS, WELCOME_INTRO, WELCOME_KEYS, chordFor, groupTitleCell, welcomeFeatures,
+  welcomeKeys, welcomeNote,
 } from "../src/shared/welcome"
 import { ensureQuickReference, quickReferencePath, welcomeMarker, welcomeOnce, welcomeWanted } from "../src/main/welcome"
 import { PROJECT_EXTENSION } from "../src/main/project"
@@ -155,6 +156,21 @@ describe("the quick reference's keys come from the command table", () => {
     for (const one of WELCOME_FEATURES.filter((f) => !f.includes("\n"))) expect(one.length, one).toBeLessThan(170)
     for (const one of WELCOME_FEATURES) expect(one, one).toMatch(/^\*\*[^*]+:\*\*/)
     expect(new Set(WELCOME_FEATURES.map((one) => one.split(":**")[0])).size).toBe(WELCOME_FEATURES.length)
+  })
+
+  it("a Mac's page names the Quick Look extension it ships with, and a PC's page does not", () => {
+    // Sean, 2026-10-17: "add a preview of rendered mode to macos spotlight". The side that cannot do a thing shows nothing.
+    expect(welcomeFeatures(true)).toContain(QUICK_LOOK_FEATURE)
+    expect(welcomeFeatures(false)).not.toContain(QUICK_LOOK_FEATURE)
+    expect(welcomeNote("darwin")).toContain("**Quick Look:**")
+    expect(welcomeNote("win32")).not.toContain("Quick Look")
+    expect(QUICK_LOOK_FEATURE).toMatch(/^\*\*Quick Look:\*\* /)
+    expect(QUICK_LOOK_FEATURE.length).toBeLessThan(170)
+    // What it says is what the extension is: a Quick Look preview of the note's type, drawn as the rendered page.
+    const info = readFileSync(path.join(ROOT, "apps/desktop/quicklook/Info.plist"), "utf8")
+    expect(info).toContain("<string>com.apple.quicklook.preview</string>")
+    expect(info).toContain("<string>com.seancheren.writemind.note</string>")
+    expect(readFileSync(path.join(ROOT, "apps/desktop/src/quicklook/preview.ts"), "utf8")).toContain("renderQuickLook")
   })
 
   it("the intro is one plain line under the title (a text cell: nothing in it is markup), and says the page is the app's", () => {

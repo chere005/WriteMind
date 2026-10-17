@@ -20,8 +20,28 @@ import { connectorPaths, dashPattern, strokeCurve } from "../drawing/ink"
 import { visibleItems, type CanvasItem, type Drawing, type ShapeItem } from "../drawing/model"
 import { pressureScale } from "../drawing/pen"
 import { isClosed, polylines, type Point, type Rect } from "../drawing/shapes"
-import { readableInk, TEXT_BOX } from "../drawing/textBox"
+import { readableInk, rgbFromHex, TEXT_BOX } from "../drawing/textBox"
 import { escapeHtml, PAPER_HEX } from "./inline"
+
+/**
+ * A colour from the drawing as it may be WRITTEN into the page: `#` and the three, six or eight hex digits
+ * `rgbFromHex` reads, or null when the value is not one. `drawing.json` is the note's own file and a note can come from
+ * anyone: a "colour" that is not a colour went into `fill="…"` and `style="…"` as it stood, so a crafted one
+ * (`"><svg><image onerror=…`) ended the attribute and ran as script in Quick Look's preview, which does not enforce
+ * the page's Content-Security-Policy (review of the preview, 2026-10-17) — and in the PDF's window, and in an ink
+ * cell's snapshot file. The canvas ignores a colour it cannot read; so does paper: an unreadable fill is no fill, and
+ * an unreadable pen is the sidecar's own default ink (`INK_HEX`).
+ */
+export function paintHex(value: string | null | undefined): string | null {
+  if (typeof value !== "string" || rgbFromHex(value) === null) return null
+  return `#${value.trim().replace(/^#/, "")}`
+}
+
+/** The ink a stroke, a shape or a connector gets when its colour is missing (drawing/model.ts) or not a colour. */
+export const INK_HEX = "#1C1C1E"
+
+/** A pen's colour, made safe to write (`paintHex`) and then readable on `fill` (`readableInk`). */
+const inkOn = (colorHex: string, fill: string): string => readableInk(paintHex(colorHex) ?? INK_HEX, fill)
 
 export interface InkPiece {
   /** Where it sits, in document points. */
@@ -52,6 +72,12 @@ export interface InkOptions {
 const n = (value: number): string => String(Math.round(value * 100) / 100)
 
 const FONT = `"Segoe UI", -apple-system, "Helvetica Neue", Cantarell, "Noto Sans", Arial, sans-serif`
+/**
+ * The same, for inside a `style="…"` attribute: with its double quotes the attribute ENDED at the first family name, and
+ * everything after it — a text box's colour, its wrapping, its clipping — was silently dropped (found by the Quick Look
+ * preview, 2026-10-17, where a text box's dark words on its yellow card came out in the dark page's white).
+ */
+const FONT_IN_STYLE = FONT.replace(/"/g, "'")
 
 const svg = (size: Size, body: string): string =>
   `<svg class="ink" xmlns="http://www.w3.org/2000/svg" width="${n(size.width)}" height="${n(size.height)}" `
@@ -80,7 +106,7 @@ function strokeBody(item: Extract<CanvasItem, { kind: "stroke" }>, size: Size, p
   const place = matrixOf(item, size)
   const points = stroke.points.map((p) => place({ x: p.x * size.width, y: p.y * size.height }))
   if (points.length === 0) return ""
-  const colour = readableInk(stroke.colorHex, paper)
+  const colour = inkOn(stroke.colorHex, paper)
   const width = stroke.width * stroke.transform.scale
   const common = `fill="none" stroke="${colour}" stroke-linecap="round" stroke-linejoin="round"`
   const pressures = stroke.pressures
@@ -123,7 +149,7 @@ function connectorBody(item: Extract<CanvasItem, { kind: "connector" }>, size: S
   const placed = route(c).map((p) => place({ x: p.x * size.width, y: p.y * size.height }))
   const { line, heads } = connectorPaths(c, placed)
   if (line.length < 2) return ""
-  const colour = readableInk(c.colorHex, paper)
+  const colour = inkOn(c.colorHex, paper)
   const scale = c.transform.scale
   const dash = dashPattern(c).map((v) => v * scale)
   const body = `<path d="${polyline(line)}" fill="none" stroke="${colour}" stroke-width="${n(c.lineWidth * scale)}" `
@@ -206,7 +232,8 @@ function shapeText(shape: ShapeItem, box: Rect, colour: string, turn: string, wo
 function shapeBody(item: Extract<CanvasItem, { kind: "shape" }>, size: Size, paper: string, wordBreaker?: WordBreaker): string {
   const shape = item.shape
   const box = baseBounds(item, size)
-  const colour = readableInk(shape.colorHex, shape.fillHex ?? paper)
+  const fill = paintHex(shape.fillHex)
+  const colour = inkOn(shape.colorHex, fill ?? paper)
   const centre = baseCenter(item, size)
   const t = shape.transform
   const turn = `translate(${n(centre.x + t.dx * size.width)} ${n(centre.y + t.dy * size.height)}) `
@@ -215,14 +242,14 @@ function shapeBody(item: Extract<CanvasItem, { kind: "shape" }>, size: Size, pap
     + `height="${n(box.height)}" transform="${turn}"><div xmlns="http://www.w3.org/1999/xhtml" style="width:100%;height:100%;`
     + `box-sizing:border-box;${style}">${escapeHtml(shape.label)}</div></foreignObject>`
   if (shape.kind === "text") {
-    if (!shape.fillHex && shape.label === "") return ""
+    if (!fill && shape.label === "") return ""
     if (wordBreaker) {
       // The card (its fill and its corner) and then the words on it.
-      const card = shape.fillHex ? `<rect x="${n(box.x)}" y="${n(box.y)}" width="${n(box.width)}" height="${n(box.height)}" `
-        + `rx="${TEXT_BOX.cornerRadius}" fill="${shape.fillHex}" transform="${turn}"/>` : ""
+      const card = fill ? `<rect x="${n(box.x)}" y="${n(box.y)}" width="${n(box.width)}" height="${n(box.height)}" `
+        + `rx="${TEXT_BOX.cornerRadius}" fill="${fill}" transform="${turn}"/>` : ""
       return card + (shape.label === "" ? "" : shapeText(shape, box, colour, turn, wordBreaker))
     }
-    return words(`border-radius:${TEXT_BOX.cornerRadius}px;${shape.fillHex ? `background:${shape.fillHex};` : ""}`
+    return words(`border-radius:${TEXT_BOX.cornerRadius}px;${fill ? `background:${fill};` : ""}`
       + `padding:${TEXT_BOX.padding.height}px ${TEXT_BOX.padding.width}px;font:${TEXT_BOX.fontSize}px/${TEXT_BOX.lineHeight}px ${FONT.replace(/"/g, "'")};`
       + `color:${colour};white-space:pre-wrap;overflow-wrap:break-word;overflow:hidden`)
   }
@@ -232,7 +259,7 @@ function shapeBody(item: Extract<CanvasItem, { kind: "shape" }>, size: Size, pap
   const width = shape.lineWidth * shape.transform.scale
   let body = lines.map((line) => line.length === 0 ? "" :
     `<path d="${polyline(line, closed && lines.length === 1)}" `
-    + `fill="${shape.fillHex && closed && lines.length === 1 ? shape.fillHex : "none"}" stroke="${colour}" `
+    + `fill="${fill && closed && lines.length === 1 ? fill : "none"}" stroke="${colour}" `
     + `stroke-width="${n(width)}" stroke-linecap="round" stroke-linejoin="round"/>`).join("")
   if (shape.label) {
     body += wordBreaker ? shapeText(shape, box, colour, turn, wordBreaker)
@@ -245,16 +272,17 @@ function shapeBody(item: Extract<CanvasItem, { kind: "shape" }>, size: Size, pap
 function shapeHtml(item: Extract<CanvasItem, { kind: "shape" }>, size: Size, paper: string): string {
   const shape = item.shape
   const box = baseBounds(item, size)
-  const colour = readableInk(shape.colorHex, shape.fillHex ?? paper)
+  const fill = paintHex(shape.fillHex)
+  const colour = inkOn(shape.colorHex, fill ?? paper)
 
   if (shape.kind === "text") {
     // A text box: the card, then the words inside the same padding the editor types into. An EMPTY
     // box prints nothing but its fill — the outline and the grey word "Text" are there to be
     // clicked, and paper cannot be clicked.
-    if (!shape.fillHex && shape.label === "") return ""
+    if (!fill && shape.label === "") return ""
     return `<div style="${boxStyle(item, size, box, shape.transform)};box-sizing:border-box;`
-      + `border-radius:${TEXT_BOX.cornerRadius}px;${shape.fillHex ? `background:${shape.fillHex};` : ""}`
-      + `padding:${TEXT_BOX.padding.height}px ${TEXT_BOX.padding.width}px;font:${TEXT_BOX.fontSize}px/${TEXT_BOX.lineHeight}px ${FONT};`
+      + `border-radius:${TEXT_BOX.cornerRadius}px;${fill ? `background:${fill};` : ""}`
+      + `padding:${TEXT_BOX.padding.height}px ${TEXT_BOX.padding.width}px;font:${TEXT_BOX.fontSize}px/${TEXT_BOX.lineHeight}px ${FONT_IN_STYLE};`
       + `color:${colour};white-space:pre-wrap;overflow-wrap:break-word;overflow:hidden">${escapeHtml(shape.label)}</div>`
   }
 
@@ -264,12 +292,12 @@ function shapeHtml(item: Extract<CanvasItem, { kind: "shape" }>, size: Size, pap
   const width = shape.lineWidth * shape.transform.scale
   const paths = lines.map((line) => line.length === 0 ? "" :
     `<path d="${polyline(line, closed && lines.length === 1)}" `
-    + `fill="${shape.fillHex && closed && lines.length === 1 ? shape.fillHex : "none"}" stroke="${colour}" `
+    + `fill="${fill && closed && lines.length === 1 ? fill : "none"}" stroke="${colour}" `
     + `stroke-width="${n(width)}" stroke-linecap="round" stroke-linejoin="round"/>`).join("")
   let html = svg(size, paths)
   if (shape.label) {
     html += `<div style="${boxStyle(item, size, box, shape.transform)};display:flex;align-items:center;justify-content:center;`
-      + `padding:4px 6px;box-sizing:border-box;font:13px/16px ${FONT};color:${colour};text-align:center;`
+      + `padding:4px 6px;box-sizing:border-box;font:13px/16px ${FONT_IN_STYLE};color:${colour};text-align:center;`
       + `white-space:pre-wrap;overflow-wrap:break-word">${escapeHtml(shape.label)}</div>`
   }
   return html
@@ -277,7 +305,7 @@ function shapeHtml(item: Extract<CanvasItem, { kind: "shape" }>, size: Size, pap
 
 /** One object, as HTML positioned in document coordinates, or "" when it paints nothing. */
 export function itemHtml(item: CanvasItem, size: Size, options: InkOptions): string {
-  const paper = options.paper ?? PAPER_HEX
+  const paper = paintHex(options.paper) ?? PAPER_HEX
   switch (item.kind) {
     case "stroke": return strokeHtml(item, size, paper)
     case "connector": return connectorHtml(item, size, paper)
@@ -293,7 +321,7 @@ export function itemHtml(item: CanvasItem, size: Size, options: InkOptions): str
  * written as one svg, such as an ink cell (`inkSnapshot.ts`). A cell inside is nothing (a cell never holds one).
  */
 export function itemSvg(item: CanvasItem, size: Size, options: InkOptions): string {
-  const paper = options.paper ?? PAPER_HEX
+  const paper = paintHex(options.paper) ?? PAPER_HEX
   switch (item.kind) {
     case "stroke": return strokeBody(item, size, paper)
     case "connector": return connectorBody(item, size, paper)
