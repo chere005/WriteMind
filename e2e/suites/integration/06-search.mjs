@@ -46,7 +46,8 @@ await test("the sidebar's search: results while notes are made, renamed, trashed
 
   // a note made while the search is on appears once it has the words
   await clickEl("[data-bar=new-note]"); await sleep(1200)
-  ok("a new note is open (its tab in front) and the search is still on the screen", (await js(`document.querySelector('.tab.open')?.title.endsWith('Untitled.wm') ?? false`)) && (await searchState()).field === "needle", JSON.stringify(await searchState()))
+  const front = () => js(`JSON.stringify({ tab: document.querySelector('.tab.open')?.title ?? null, keyboard: document.activeElement?.closest('.cm-content') ? 'notes' : document.activeElement?.tagName ?? null })`)
+  ok("a new note is open (its tab in front) and the search is still on the screen", (await js(`document.querySelector('.tab.open')?.title.endsWith('Untitled.wm') ?? false`)) && (await searchState()).field === "needle", `${await front()} ${JSON.stringify(await searchState())}`)
   ok("…it has no words yet, so it is not a result", same(await files(), ["Cells.wm", "Demo.wm", "Sec/Deep.wm"]), JSON.stringify(await files()))
   await typeText("a needle too"); await sleep(1500)
   ok("once it has the words it is one", same(await poll(["Cells.wm", "Demo.wm", "Sec/Deep.wm", "Untitled.wm"]), ["Cells.wm", "Demo.wm", "Sec/Deep.wm", "Untitled.wm"]), JSON.stringify(await files()))
