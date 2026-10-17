@@ -26,6 +26,10 @@ write("d-nochecks.mjs", head + `finish()\n`)
 write("e-hang.mjs", `// @e2e timeout=4\n` + head + `ok("started", true)\nawait new Promise(() => {})\n`)
 write("f-flaky.mjs", `// @e2e flaky\nimport fs from "node:fs"\n` + head + `const m = ${JSON.stringify(marker)}\nif (!fs.existsSync(m)) { fs.writeFileSync(m, "1"); ok("first try fails", false, "flaky on purpose") } else ok("second try passes", true)\nfinish()\n`)
 write("g-skip.mjs", head + `import { skip } from ${JSON.stringify("file:///" + harness.replace(/^\//, ""))}\nok("one", true)\nskip("a skipped check", "because")\nfinish()\n`)
+// A script that restarts the app (restartApp: editor/06, editor/13) leaves a second electron the runner did not start; its
+// pid is written down here, and it must be gone once the run is over.
+const restarted = path.join(root, "restarted-pid").replace(/\\/g, "/")
+write("h-restart.mjs", `import fs from "node:fs"\n` + head + `import { restartApp } from ${JSON.stringify("file:///" + harness.replace(/^\//, ""))}\nconst inst = await restartApp()\nfs.writeFileSync(${JSON.stringify(restarted)}, String(inst.pid))\nok("the app came back", (await js("1 + 1")) === 2)\nfinish()\n`)
 
 const results = path.join(root, "results")
 const run = spawnSync(process.execPath, [path.join(here, "run.mjs"), "--suites-dir", path.join(root, "suites"), "--results", results], { encoding: "utf8", timeout: 240000 })
@@ -49,6 +53,11 @@ if (dirs.length === 1) {
   ok("a flaky script that passes on the retry is FLAKY, not FAIL", status("f-flaky.mjs") === "flaky" && scripts["f-flaky.mjs"].attempts === 2, JSON.stringify([status("f-flaky.mjs"), scripts["f-flaky.mjs"]?.attempts]))
   ok("a skipped check is counted as skipped", status("g-skip.mjs") === "pass" && scripts["g-skip.mjs"].checks.some((c) => c.status === "skip"))
   ok("no electron process was left", report.leftoverProcesses === 0, String(report.leftoverProcesses))
+  ok("a script that restarted the app passes", status("h-restart.mjs") === "pass", status("h-restart.mjs"))
+  const pid = fs.existsSync(restarted) ? Number(fs.readFileSync(restarted, "utf8")) : 0
+  const alive = (one) => { try { process.kill(one, 0); return true } catch { return false } }
+  ok("...and the app it started again was stopped with the rest", pid > 0 && !alive(pid), `pid ${pid}${pid > 0 && alive(pid) ? " still running" : ""}`)
+  if (pid > 0 && alive(pid)) { try { process.kill(pid, "SIGKILL") } catch { /* gone */ } }
   ok("the text report and the markdown report exist", fs.existsSync(path.join(results, dirs[0], "report.txt")) && fs.existsSync(path.join(results, dirs[0], "report.md")))
 }
 fs.rmSync(root, { recursive: true, force: true })

@@ -190,8 +190,11 @@ is how the code is put together.
   not a distance: so it holds when the window has changed size, when the
   note comes back on the other page (the same words at the top), when
   another program changed the note meanwhile, and while its pictures load.
-  A note opened for the first time opens at its top, and a link, Find and
-  the sidebar's search still take you to the place they name.
+  The note in front stays put too when another program changes it under
+  you (a line added at its end, lines above what you are reading), and a
+  quit while the page is still gliding keeps where it got to. A note opened
+  for the first time opens at its top, and a link, Find and the sidebar's
+  search still take you to the place they name.
 - **Sections of a note are cells.** A heading owns everything under it
   until the next heading of its rank, and the brackets down the right-hand
   side show the nesting the way a Wolfram notebook does. Click one to fold

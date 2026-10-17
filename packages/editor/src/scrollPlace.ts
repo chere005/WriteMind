@@ -14,7 +14,8 @@
  *   the place is put back again every time the page's heights or size change — until the person scrolls, clicks or
  *   types, something else moves the view on purpose (a link followed, Find, the other pane's own place), the note is
  *   edited, or `HOLD_MS` have passed. While it is held, the place IS the one held: a quit in the middle of it writes
- *   where the note was, not where the page had got to.
+ *   where the note was, not where the page had got to. A scroll or a click that comes before the place has been put
+ *   back at all (the frame the note is shown in) lets go only once it has been: the scrolling goes on from the place.
  *
  * Both are the scroller's own geometry (CodeMirror's `coordsAtPos`, the drawn runs' rectangles) and the scroller's
  * `scrollTop`: the page above and around the editor is never scrolled.
@@ -186,11 +187,25 @@ function topOf(view: EditorView, at: number): number {
   return (drawn ? drawnTop(drawn, at - block.from) : null) ?? child.getBoundingClientRect().top
 }
 
+/**
+ * How long a place is still held once the person has moved before it was put back (`Held.ending`): long enough for the
+ * page to draw the place's line and put it there exactly, short enough that a wheel still turning is never fought for long.
+ */
+const ENDING_MS = 400
+
 interface Held {
   place: ScrollPlace
   /** The `scrollTop` the page was last left at by this place or by CodeMirror's own measuring: anything else is someone else. */
   expected: number
   until: number
+  /** The place has been put back with its line drawn on the page (not where CodeMirror only estimated it to be). */
+  shown: boolean
+  /**
+   * The person scrolled or clicked before that: the place is put back once, exactly, and then let go, so their scrolling
+   * goes on FROM it. (Letting go at once left the page at its top — nothing had been put back yet — and that top was then
+   * read and kept as the note's place for good: reviewer, 2026-10-16, a wheel turned in the frame the tab was shown.)
+   */
+  ending: boolean
 }
 
 class PlaceKeeper {
@@ -202,7 +217,17 @@ class PlaceKeeper {
     for (const type of INPUT) window.addEventListener(type, this.letGo, true)
   }
 
-  readonly letGo = (): void => { this.held = null }
+  /** The person scrolled, clicked or typed: the place is theirs to move (once it has been put back). */
+  readonly letGo = (): void => {
+    const held = this.held
+    if (held && !held.shown) this.ending(held)
+    else this.held = null
+  }
+
+  private ending(held: Held): void {
+    held.ending = true
+    held.until = Math.min(held.until, Date.now() + ENDING_MS)
+  }
 
   /** The place held now: none once its time is up, even if nothing has happened since to say so. */
   current(): Held | null {
@@ -212,31 +237,35 @@ class PlaceKeeper {
 
   /** The scroller moved, and not to where this place or CodeMirror's measuring left it: a script or the person did it. */
   readonly scrolled = (event: Event): void => {
-    if (this.held && event.target === this.view.scrollDOM && Math.abs(this.view.scrollDOM.scrollTop - this.held.expected) > 1) {
-      this.held = null
-    }
+    const held = this.held
+    if (!held || event.target !== this.view.scrollDOM || Math.abs(this.view.scrollDOM.scrollTop - held.expected) <= 1) return
+    if (held.shown) this.held = null
+    else this.ending(held)
   }
 
   hold(place: ScrollPlace): void {
-    this.held = { place, expected: this.view.scrollDOM.scrollTop, until: Date.now() + HOLD_MS }
+    this.held = { place, expected: this.view.scrollDOM.scrollTop, until: Date.now() + HOLD_MS, shown: false, ending: false }
     this.apply()
   }
 
   /** Put the held place back: read where its line is now, then scroll by the difference. */
   apply(): void {
-    this.view.requestMeasure<number | null>({
+    this.view.requestMeasure<{ wanted: number; drawn: boolean } | null>({
       key: this,
       read: (view) => {
         const held = this.held
         if (!held || view.scrollDOM.clientHeight === 0) return null
         const wanted = view.scrollDOM.scrollTop + topOf(view, held.place.at) - (pageTop(view) - held.place.offset)
-        return Math.max(0, wanted)
+        // (Read off the drawn page when the line is in the part CodeMirror has drawn; an estimate from its height map before.)
+        return { wanted: Math.max(0, wanted), drawn: held.place.at >= view.viewport.from && held.place.at <= view.viewport.to }
       },
-      write: (wanted, view) => {
+      write: (measured, view) => {
         const held = this.held
-        if (!held || wanted === null) return
-        if (Math.abs(wanted - view.scrollDOM.scrollTop) >= 1) view.scrollDOM.scrollTop = wanted
+        if (!held || measured === null) return
+        if (Math.abs(measured.wanted - view.scrollDOM.scrollTop) >= 1) view.scrollDOM.scrollTop = measured.wanted
         held.expected = view.scrollDOM.scrollTop
+        if (measured.drawn) held.shown = true
+        if (held.ending && held.shown) this.held = null
       },
     })
   }

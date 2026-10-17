@@ -37,7 +37,7 @@ import { CameraPane, type Capture } from "./CameraPane"
 import { PaneDivider } from "./PaneDivider"
 import { TabBar } from "./TabBar"
 import { canStep, moveKeyed, stepKeyed } from "./tabOrder"
-import { Notebook, type ViewState } from "./Notebook"
+import { Notebook, keepPlaceNow, type ViewState } from "./Notebook"
 import { LinkBanner, type LinkRequest } from "./LinkBanner"
 import { FindBar, type FindRequest } from "./FindBar"
 import { chipLine, escapeStops, modeChip } from "./modeChip"
@@ -1139,6 +1139,8 @@ export function App() {
     projectFile: project ? project.file : undefined,
     buffer: () => (dirty.current && openRef.current
       ? { path: openRef.current, text: textRef.current, base: fingerprintOf(baseText.current) } : null),
+    // Where the note in front is scrolled to, read as the session is written (Notebook keepPlaceNow).
+    settle: () => keepPlaceNow(viewRef.current),
   })
   sessionRef.current = session
   touchBuffer.current = session.touchBuffer

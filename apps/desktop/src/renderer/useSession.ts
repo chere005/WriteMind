@@ -53,6 +53,11 @@ interface Options {
    * file it is an edit of: the session keeps it, so a kill mid-edit loses nothing (the Mac's hot exit).
    */
   buffer?(): { path: string; text: string; base: string } | null
+  /**
+   * Called as the session is about to be written, before `states` is read: the note in front puts in where its page is
+   * scrolled to NOW (Notebook's `keepPlaceNow`), so a quit or a reload while the page is still moving keeps where it got to.
+   */
+  settle?(): void
   setOpen(notes: Note[]): void
   openNote(note: Note): Promise<void>
   /** Let go of every open note (the one in front is written first). */
@@ -60,7 +65,7 @@ interface Options {
 }
 
 export function useSession({
-  root, open, current, states, projectFile, buffer, setOpen, openNote, closeAll,
+  root, open, current, states, projectFile, buffer, settle, setOpen, openNote, closeAll,
 }: Options) {
   const [ready, setReady] = useState(false)
   const started = useRef(false)
@@ -69,6 +74,8 @@ export function useSession({
   latest.current = { open, current, rootPath: latest.current.rootPath }
   const bufferRef = useRef(buffer)
   bufferRef.current = buffer
+  const settleRef = useRef(settle)
+  settleRef.current = settle
   // The project the tabs belong to. Taken from the prop once, at launch; after that
   // it is changed only by `switchTo` and `renamed`, so a render that happens in the
   // middle of a switch cannot send the new project's tabs to the old project's file.
@@ -76,6 +83,9 @@ export function useSession({
 
   /** Written under `key`, which is the project the tabs belong to. */
   const write = useCallback((into?: string | null): Promise<void> => {
+    // (The front note's place as it is now, not as it was when its scrolling last paused: reviewer, 2026-10-16, a quit while
+    // the page was still gliding kept the place from before the scroll. A note that cannot say leaves `states` as it was.)
+    try { settleRef.current?.() } catch (error) { console.error("WriteMind: could not read where the note is scrolled to", error) }
     const { open: notes, current: front, rootPath } = latest.current
     const session: Session = {
       root: rootPath,
