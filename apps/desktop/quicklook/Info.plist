@@ -1,0 +1,59 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!-- WriteMind's Quick Look preview extension (PreviewProvider.swift). tools/build-quicklook.sh writes the version in
+     place of @VERSION@ (apps/desktop/package.json's, the app's own) and tools/verify-mac.sh checks every key below. -->
+<plist version="1.0">
+<dict>
+  <key>CFBundleDevelopmentRegion</key>
+  <string>en</string>
+  <key>CFBundleDisplayName</key>
+  <string>WriteMind Preview</string>
+  <key>CFBundleExecutable</key>
+  <string>WriteMindPreview</string>
+  <key>CFBundleIdentifier</key>
+  <string>com.seancheren.writemind.quicklook</string>
+  <key>CFBundleInfoDictionaryVersion</key>
+  <string>6.0</string>
+  <key>CFBundleName</key>
+  <string>WriteMindPreview</string>
+  <key>CFBundlePackageType</key>
+  <string>XPC!</string>
+  <key>CFBundleShortVersionString</key>
+  <string>@VERSION@</string>
+  <key>CFBundleVersion</key>
+  <string>@VERSION@</string>
+  <key>CFBundleSupportedPlatforms</key>
+  <array>
+    <string>MacOSX</string>
+  </array>
+  <key>LSMinimumSystemVersion</key>
+  <string>13.0</string>
+  <key>NSHumanReadableCopyright</key>
+  <string>Copyright © 2026 Shahean Cheren</string>
+  <key>NSExtension</key>
+  <dict>
+    <key>NSExtensionAttributes</key>
+    <dict>
+      <!-- Data-based: the reply is HTML and its pictures (QLPreviewReply), drawn by Quick Look's own view. -->
+      <key>QLIsDataBasedPreview</key>
+      <true/>
+      <key>QLSupportedContentTypes</key>
+      <array>
+        <!-- The note's own type, exported by WriteMind.app (electron-builder.yml mac.extendInfo). -->
+        <string>com.seancheren.writemind.note</string>
+        <!-- AND WINDOWS MEDIA'S: macOS itself declares `.wm` as com.microsoft.windows-media-wm, and a system type wins
+             the extension over an app's, so every .wm file - a note included - IS that type to Finder and Spotlight
+             (mdls kMDItemContentType). Without it this extension is never asked. A real Windows Media file is told
+             apart by its first bytes (PreviewProvider.swift) and handed back to Quick Look untouched. -->
+        <string>com.microsoft.windows-media-wm</string>
+      </array>
+      <key>QLSupportsSearchableItems</key>
+      <false/>
+    </dict>
+    <key>NSExtensionPointIdentifier</key>
+    <string>com.apple.quicklook.preview</string>
+    <key>NSExtensionPrincipalClass</key>
+    <string>WMPreviewProvider</string>
+  </dict>
+</dict>
+</plist>

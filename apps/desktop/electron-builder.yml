@@ -102,6 +102,16 @@ mac:
       to: LICENSES.chromium.html
   entitlements: ../../packaging/entitlements.mac.plist
   entitlementsInherit: ../../packaging/entitlements.mac.plist
+  # THE QUICK LOOK EXTENSION (Sean, 2026-10-17: "add a preview of rendered mode to macos spotlight"): Spotlight's
+  # preview, Finder's space bar and its column view show a .wm note as its rendered page. tools/build-quicklook.sh
+  # (run by `npm run build` on a Mac) builds it into build/quicklook/; it rides in WriteMind.app/Contents/PlugIns.
+  # electron-builder signs nothing under PlugIns, so `sign` is scripts/sign-mac.cjs: the extension is signed first with
+  # the app's identity, runtime and timestamp but ITS OWN sandbox entitlements (apps/desktop/quicklook/
+  # WriteMindPreview.entitlements), then the app by electron-builder's own signer. tools/verify-mac.sh checks it.
+  extraFiles:
+    - from: build/quicklook/WriteMindPreview.appex
+      to: PlugIns/WriteMindPreview.appex
+  sign: ./scripts/sign-mac.cjs
   # APPLE SILICON ONLY (Sean, 2026-10-10: "make sure there are no usages of x86 code on macos, only silicon compatible
   # code should be shipping"): one dmg, WriteMind-<version>-mac-arm64.dmg, and for a signed build its zip (what the
   # updater installs from). Not x64, not universal: nothing built for Intel ships on a Mac, so tools/verify-mac.sh

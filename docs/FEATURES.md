@@ -517,6 +517,32 @@ is how the code is put together.
   file); the Live tab stays first and is not draggable. The pane's tools are
   the row under them, as the notebook's toolbar is under its tabs.
 
+## Quick Look: Spotlight and Finder show the rendered page (port-only, macOS, 2026-10-17)
+
+Sean: "add a preview of rendered mode to macos spotlight". WriteMind.app carries a Quick Look preview extension
+(`Contents/PlugIns/WriteMindPreview.appex`, source in `apps/desktop/quicklook/`), so Spotlight's preview, Finder's space
+bar and Finder's column view show a `.wm` note as its rendered page instead of a ZIP icon.
+
+- **It is the PDF's renderer.** The page is `renderQuickLook` (`packages/core/src/export/quickLook.ts`): every cell is the
+  export's `blockHtml` — headings, text and markdown cells, every kind of list, quotes, code with its colours, maths set
+  as MathML, runnable cells and their answers, tables, rules, pictures — and a drawing cell is drawn from the note's
+  `drawing.json`. The extension runs it in JavaScriptCore (`Resources/preview.js`); nothing in the app is duplicated.
+- **The drawing over the page is there, where it sits.** The drawing is stored against the editor pane it was drawn in,
+  and the file does not say how big that was, so the preview takes the core's own fallback pane, 900 × 600: ink drawn in
+  a pane of another size lands proportionally off, never the words. A note with such ink is a fixed 900-point page,
+  scaled down to fit a narrower preview; a note without is a column that wraps at the preview's width.
+- **Light and dark as the app's page is:** it follows the system appearance, every pen and span colour read against the
+  page it is on.
+- **Pictures come from the note itself** (Quick Look attachments); a picture on the web is its placeholder line — a
+  preview loads nothing from the network, and no script runs in it.
+- **A long note shows its start:** the first 400 cells (and at most 200 000 characters), with a line at the foot saying
+  so; a drawing of more than 4 000 objects is left out and said.
+- **A note it cannot show is a sentence:** damaged (cut short, a bad checksum), hostile (an entry named `../x`), not
+  a WriteMind note, or written by a newer WriteMind — "Open it in WriteMind to see it". A real Windows Media `.wm`
+  (macOS calls every `.wm` file Windows Media) is handed back to Quick Look untouched.
+- Spotlight finds notes by their file name; it does not index the words inside them (that would be an importer, a
+  separate extension).
+
 ## Wolfram notebooks (port-only)
 
 - **File ▸ Export… ▸ Wolfram Notebook** writes the note as a `.nb`: its headings, text, lists, to-dos, quotes, tables and rules

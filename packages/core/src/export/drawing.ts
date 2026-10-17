@@ -52,6 +52,12 @@ export interface InkOptions {
 const n = (value: number): string => String(Math.round(value * 100) / 100)
 
 const FONT = `"Segoe UI", -apple-system, "Helvetica Neue", Cantarell, "Noto Sans", Arial, sans-serif`
+/**
+ * The same, for inside a `style="…"` attribute: with its double quotes the attribute ENDED at the first family name, and
+ * everything after it — a text box's colour, its wrapping, its clipping — was silently dropped (found by the Quick Look
+ * preview, 2026-10-17, where a text box's dark words on its yellow card came out in the dark page's white).
+ */
+const FONT_IN_STYLE = FONT.replace(/"/g, "'")
 
 const svg = (size: Size, body: string): string =>
   `<svg class="ink" xmlns="http://www.w3.org/2000/svg" width="${n(size.width)}" height="${n(size.height)}" `
@@ -254,7 +260,7 @@ function shapeHtml(item: Extract<CanvasItem, { kind: "shape" }>, size: Size, pap
     if (!shape.fillHex && shape.label === "") return ""
     return `<div style="${boxStyle(item, size, box, shape.transform)};box-sizing:border-box;`
       + `border-radius:${TEXT_BOX.cornerRadius}px;${shape.fillHex ? `background:${shape.fillHex};` : ""}`
-      + `padding:${TEXT_BOX.padding.height}px ${TEXT_BOX.padding.width}px;font:${TEXT_BOX.fontSize}px/${TEXT_BOX.lineHeight}px ${FONT};`
+      + `padding:${TEXT_BOX.padding.height}px ${TEXT_BOX.padding.width}px;font:${TEXT_BOX.fontSize}px/${TEXT_BOX.lineHeight}px ${FONT_IN_STYLE};`
       + `color:${colour};white-space:pre-wrap;overflow-wrap:break-word;overflow:hidden">${escapeHtml(shape.label)}</div>`
   }
 
@@ -269,7 +275,7 @@ function shapeHtml(item: Extract<CanvasItem, { kind: "shape" }>, size: Size, pap
   let html = svg(size, paths)
   if (shape.label) {
     html += `<div style="${boxStyle(item, size, box, shape.transform)};display:flex;align-items:center;justify-content:center;`
-      + `padding:4px 6px;box-sizing:border-box;font:13px/16px ${FONT};color:${colour};text-align:center;`
+      + `padding:4px 6px;box-sizing:border-box;font:13px/16px ${FONT_IN_STYLE};color:${colour};text-align:center;`
       + `white-space:pre-wrap;overflow-wrap:break-word">${escapeHtml(shape.label)}</div>`
   }
   return html

@@ -8,7 +8,8 @@
 #                        its .blockmap and latest.yml into that draft. latest.yml on the newest release is the feed every
 #                        installed Windows copy's updater reads (apps/desktop/src/main/updater.ts).
 #   mac      (macos-15)  APPLE SILICON ONLY (macos-15 runners are arm64 Macs; nothing is built for Intel): build (the
-#                        arm64 tablet helper), then electron-builder makes the one WriteMind-<version>-mac-arm64.dmg,
+#                        arm64 tablet helper and the Quick Look extension, tools/build-quicklook.sh, with the runner's
+#                        Xcode), then electron-builder makes the one WriteMind-<version>-mac-arm64.dmg,
 #                        AD-HOC signed (without the Developer ID secrets nothing is notarized) and never published
 #                        by electron-builder; tools/verify-mac.sh checks it (every Mach-O arm64, the bundled OCR
 #                        reader's files unpacked from the asar included); gh uploads it into the draft.
@@ -248,7 +249,11 @@ jobs:
         run: node apps/desktop/scripts/fetch-ocr-models.mjs
         env:
           WM_REQUIRE_OCR_MODELS: "1"
-      - name: Build (the arm64 tablet helper, tools/build-helpers.sh)
+      # The Quick Look extension (WriteMind.app/Contents/PlugIns/WriteMindPreview.appex: Spotlight's and Finder's preview of a
+      # .wm note) is built here by tools/build-helpers.sh -> tools/build-quicklook.sh (swiftc from the runner's Xcode), and
+      # electron-builder signs it through apps/desktop/scripts/sign-mac.cjs: with the Developer ID, the hardened runtime and
+      # a timestamp like the app, but its OWN sandbox entitlements - so notarization takes it with the app.
+      - name: Build (the arm64 tablet helper and the Quick Look extension, tools/build-helpers.sh)
         run: npm run build
 
       - name: The arm64 dmg, not published by electron-builder
@@ -261,7 +266,7 @@ jobs:
             npm run package:mac:adhoc
           fi
 
-      - name: Check it (signature, every Mach-O arm64, helper, bundled reader, Info.plist, the dmg)
+      - name: Check it (signature, every Mach-O arm64, helper, Quick Look extension, bundled reader, Info.plist, the dmg)
         run: bash tools/verify-mac.sh
 
       # Signed: the zips and latest-mac.yml too, which a Mac copy's updater installs from (an ad-hoc build makes none).

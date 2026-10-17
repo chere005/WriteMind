@@ -3,8 +3,9 @@
 # Swift — this does nothing and says so, and the app simply does not offer what the helper would have done.
 #
 # APPLE SILICON ONLY (Sean, 2026-10-10: nothing built for Intel ships on a Mac): one arm64 slice per helper,
-# compiled for macOS 13 and newer, no x86_64 slice and no lipo. Today the only helper is wm-pen
-# (tools/pen/wm-pen.swift), which seizes the Wacom tablet's HID device while the Tablet sheet is in front.
+# compiled for macOS 13 and newer, no x86_64 slice and no lipo. The helper is wm-pen (tools/pen/wm-pen.swift), which
+# seizes the Wacom tablet's HID device while the Tablet sheet is in front; then tools/build-quicklook.sh builds the
+# Quick Look extension (apps/desktop/quicklook), which is not a helper but is a Mac build of the same kind.
 # tools/verify-mac.sh checks that every packaged Mach-O is arm64 and that wm-pen's minimum macOS is 13.0.
 set -e
 cd "$(dirname "$0")/.."
@@ -27,3 +28,6 @@ rm -f "$out/wm-vision"
 swiftc -O -target "arm64-apple-macos$min" -o "$out/wm-pen" tools/pen/wm-pen.swift -framework IOKit
 chmod +x "$out/wm-pen"
 echo "==> built $out/wm-pen ($(lipo -archs "$out/wm-pen"), macOS $min+)"
+# The Quick Look extension (Spotlight's and Finder's preview of a .wm note), beside the app rather than inside out/
+# (electron-builder.yml's mac.extraFiles puts it in Contents/PlugIns).
+sh tools/build-quicklook.sh
