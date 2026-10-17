@@ -1,8 +1,12 @@
 // C, C++ and Rust evaluation cells RUN FOR REAL in the app (Shift+Enter in the cell, the shell's runner, the machine's own
 // compilers), and the answer the note gets is right: a value printed, a compile error with the compiler's own words and
-// no scratch-folder path, a crash that names its signal (it used to read "[no output]"), a panic, an exit status. Each
+// no scratch-folder path, a crash that names its signal or Windows crash status (it used to read "[no output]"), a panic, an exit status. Each
 // language is skipped, said so, when this machine has no compiler for it (the report the Runs As menu uses says which).
 // Nothing here is Windows-specific and nothing proves Windows: it is whatever compiler this machine has.
+import { spawnSync } from "node:child_process"
+import fs from "node:fs"
+import os from "node:os"
+import path from "node:path"
 import { ok, skip, note, finish, js, sleep, setDoc, setRendered, focus, key, doc, shot, waitFor, freshNote, SHIFT } from "../../lib/harness.mjs"
 
 await freshNote()
@@ -10,6 +14,22 @@ await setRendered(false)
 
 const tools = JSON.parse(await js(`window.wm.evaluate.tools().then((t) => JSON.stringify(t))`))
 const FENCE = { c: "c", cpp: "c++", rust: "rust" }
+
+/**
+ * A COLD TOOLCHAIN IS NOT WHAT THE APP'S 20 s LIMIT IS FOR. Rust's compiler loads a driver library of a hundred-odd megabytes, and
+ * on a fresh Windows runner (from disk, through the virus scanner) its first compiles took 10 to over 20 s — the first Rust cells
+ * read "[the compiler timed out]", and once warm the same cells took a third of a second. So Rust compiles a program once here,
+ * outside the app and with no limit to speak of, before any cell runs.
+ */
+if (tools.rust?.path) {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "wm-e2e-rust-"))
+  fs.writeFileSync(path.join(dir, "warm.rs"), "fn main() { println!(\"warm\"); }\n")
+  const t0 = Date.now()
+  const built = spawnSync(tools.rust.path, ["-O", "-o", path.join(dir, "warm" + (process.platform === "win32" ? ".exe" : ".out")), path.join(dir, "warm.rs")],
+    { cwd: dir, stdio: "ignore", timeout: 180000 })
+  note(`rust: the toolchain warmed up in ${Date.now() - t0} ms (status ${built.status})`)
+  fs.rmSync(dir, { recursive: true, force: true })
+}
 
 /** Run one cell with a real Shift+Enter, wait for its answer, and return the whole note. */
 async function run(evaluator, source) {

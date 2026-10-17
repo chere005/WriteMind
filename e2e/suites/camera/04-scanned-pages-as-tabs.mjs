@@ -33,7 +33,16 @@ const pictureBlock = (name) => js(`new Promise((res) => { const i = new Image();
   i.onload = () => { try { const c = document.createElement('canvas'); c.width = i.naturalWidth; c.height = i.naturalHeight; c.getContext('2d').drawImage(i, 0, 0)
     res({ w: c.width, h: c.height, x: (${BLOCK})(c) }) } catch (e) { res({ error: String(e) }) } }
   i.src = 'wm://media/' + encodeURIComponent(${JSON.stringify(name)}) })`)
-const rounded = (v) => JSON.stringify(v, (k, x) => (typeof x === "number" ? Math.round(x * 1000) / 1000 : x))
+/**
+ * A box or corners as the list keeps them: to FOUR places (scanSet.ts `serialiseScans`), so what comes back is within half of the
+ * fourth place of what went. (Rounding both to three places is not that: 0.31349 is kept as 0.3135, and the two then round to
+ * 0.313 and 0.314 — the Windows runner's box landed on exactly such a number.)
+ */
+const kept = (after, before) => {
+  if (after === null || before === null) return after === before
+  const a = Object.entries(after)
+  return a.length === Object.keys(before).length && a.every(([k, x]) => typeof x === "number" ? Math.abs(x - before[k]) <= 0.00005 + 1e-9 : kept(x, before[k]))
+}
 const near = (a, b, d = 3) => a != null && b != null && Math.abs(a - b) <= d
 
 const set = () => js(`window.__wmScans.set()`)
@@ -227,18 +236,9 @@ ok("(that page closed again)", (await set()).pages.length === 2)
 await openTab(p1.id)
 
 // ---- KEPT ACROSS A RESTART
-// The restart is a KILL, not a quit (no pagehide, no will-quit write), so what it can find is what reached disk: the list is
-// flushed, then given the main process's own quiet moment (main/sheets.ts, 300 ms) and more, and read again until it stops
-// changing — a page's corners can still be arriving (a slow runner) after the first flush, and would be in the list here but not
-// on disk.
-let beforeRestart = await set()
-for (let tries = 0; tries < 8; tries++) {
-  const was = rounded(beforeRestart.pages)
-  await js(`window.__wmScans.flush()`)
-  await sleep(900)
-  beforeRestart = await set()
-  if (rounded(beforeRestart.pages) === was) break
-}
+await js(`window.__wmScans.flush()`)
+await sleep(600)
+const beforeRestart = await set()
 await restartApp()
 await showVideoPane()
 await pickCamera()
@@ -249,7 +249,7 @@ row = await tabs()
 ok("after a restart the pages are in the row, and the app starts on the camera", row.length === 3 && row[0].on && row[1].name === "Receipt" && row[2].name === "Page 2", JSON.stringify(row))
 ok("each page has everything it had: size, turn, box, corners, shape",
   s.pages.length === 2 && ["id", "width", "height", "rotation", "straighten"].every((k) => s.pages[0][k] === beforeRestart.pages[0][k] && s.pages[1][k] === beforeRestart.pages[1][k])
-  && rounded(s.pages[0].box) === rounded(beforeRestart.pages[0].box) && rounded(s.pages[1].quad) === rounded(beforeRestart.pages[1].quad) && Math.abs((s.pages[1].shape ?? 0) - (beforeRestart.pages[1].shape ?? 0)) < 1e-4,
+  && kept(s.pages[0].box, beforeRestart.pages[0].box) && kept(s.pages[1].quad, beforeRestart.pages[1].quad) && Math.abs((s.pages[1].shape ?? 0) - (beforeRestart.pages[1].shape ?? 0)) < 1e-4,
   JSON.stringify({ before: beforeRestart.pages, after: s.pages }))
 await openTab(p2.id)
 await pageReady(p2.id)

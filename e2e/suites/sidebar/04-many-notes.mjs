@@ -3,8 +3,12 @@
 // @e2e timeout=240
 import fs from "node:fs"
 import path from "node:path"
-import { ok, note, finish, js, sleep, typeText, notesDir, resetNotes, writeNoteFile, reloadApp, waitFor, key, shot } from "../../lib/harness.mjs"
+import { ok, note, finish, js, sleep, typeText, notesDir, resetNotes, writeNoteFile, reloadApp, waitFor, key, shot, closeAllTabs } from "../../lib/harness.mjs"
 
+// NOTHING OPEN FIRST. A note left open would go with the old folder, and in its place the app opens the project's first note and
+// gives it the keyboard (App.tsx `keepOnly`, Notebook.tsx): on the Windows runner that landed seconds after the 3,000 rows were
+// drawn, after the first letter of the search below, and the rest of the typing went into Note 2996.
+await closeAllTabs()
 await resetNotes({ reload: false })
 const N = 3000
 for (let i = 0; i < N; i++) {
