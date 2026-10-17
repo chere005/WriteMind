@@ -1,7 +1,7 @@
 /**
  * The session: which notes are open, which one is in front, where the caret
- * was and what was folded. Ported from `ProjectSession` in
- * `WriteMind/Notes/Project.swift`.
+ * was, what was folded and (the port's own) where each note was scrolled to.
+ * Ported from `ProjectSession` in `WriteMind/Notes/Project.swift`.
  *
  * It is NOT in the notes folder — that stays a folder of markdown — and it is
  * not in the project. On the Mac it is a JSON file in Application Support,
@@ -18,6 +18,78 @@ export interface SessionNote {
   caret: number
   /** The notebook sections that were closed in it. */
   collapsed: string[]
+  /** Where it was scrolled to (absent in a session written before 2026-10-16, or for a note never scrolled: the caret's place). */
+  scroll?: ScrollPlace
+}
+
+/**
+ * WHERE A NOTE WAS SCROLLED TO (Sean, 2026-10-16: "remember scroll position when switching tabs or reopening
+ * writemind"). Port-only: the Mac's `ProjectSession` keeps the caret and the folds and nothing of the scroll.
+ *
+ * It is the TEXT at the top of the page, not a pixel `scrollTop`: a scrollTop is only right for the very layout it was
+ * read from, and what changes between leaving a note and coming back is the layout — the window resized (a paragraph
+ * wraps to more lines), the other pane (the rendered page lays the same note out at another height), the note edited
+ * elsewhere (lines above came or went), pictures and typeset maths that take their height only once they have loaded.
+ * So the place is the offset of the first character on the top line of the page (`at`), how far that line's top is
+ * above the page's top edge (`offset`, in CSS pixels: a line half scrolled off is positive, the padding over the
+ * first line negative), and the first words from `at` on (`text`), which find the place again in a note that was
+ * changed while it was not open. The editor (packages/editor scrollPlace.ts) reads it off the page and puts it back.
+ */
+export interface ScrollPlace {
+  /** The offset of the first character on the top line of the page (the start of a picture or a drawn block there). */
+  at: number
+  /** How far above the page's top edge that line starts, in CSS pixels (negative: it starts below the edge). */
+  offset: number
+  /** The words from `at` to the end of its line (`placeWords`): what the place is, should `at` have moved. */
+  text: string
+}
+
+/** How many characters of the top line a place keeps (`ScrollPlace.text`): enough to tell one line from another. */
+export const PLACE_WORDS = 48
+
+/**
+ * The words a place keeps for `at` in `text`: from `at` to the end of its line, at most `PLACE_WORDS` characters. A
+ * blank line at the top (the gap between two cells) has no words of its own, so its words run on to the end of the
+ * next line that has some — still starting AT `at`, so they say where the blank line is too.
+ */
+export function placeWords(text: string, at: number): string {
+  const from = Math.min(Math.max(0, at), text.length)
+  const ahead = text.slice(from, from + PLACE_WORDS)
+  const first = ahead.search(/\S/)
+  if (first < 0) return ""
+  const end = ahead.indexOf("\n", first)
+  return end < 0 ? ahead : ahead.slice(0, end)
+}
+
+/**
+ * Where a remembered place is in `text` now. Its words still at `at`: there. Else the nearest place those words are
+ * (the note was changed while it was not open: lines above it came or went). Else `at`, kept inside the note. Blank
+ * words (an empty line, the end of the note) are not looked for: they are everywhere.
+ */
+export function placeIn(text: string, place: ScrollPlace): number {
+  const at = Math.min(Math.max(0, Math.floor(place.at)), text.length)
+  const words = place.text
+  if (words.trim().length === 0 || text.startsWith(words, at)) return at
+  let best = -1
+  for (let found = text.indexOf(words); found >= 0; found = text.indexOf(words, found + 1)) {
+    if (best < 0 || Math.abs(found - at) < Math.abs(best - at)) best = found
+    else if (found > at) break
+  }
+  return best >= 0 ? best : at
+}
+
+/** A place read back from a session file: anything that is not one is no place at all (the caret's place, as before it existed). */
+export function readPlace(raw: unknown): ScrollPlace | undefined {
+  if (!raw || typeof raw !== "object") return undefined
+  const { at, offset, text } = raw as Partial<ScrollPlace>
+  if (typeof at !== "number" || !Number.isFinite(at) || at < 0) return undefined
+  if (typeof offset !== "number" || !Number.isFinite(offset)) return undefined
+  // (An offset is a line's height or a picture's at most: a wild one is junk, and is clamped rather than trusted.)
+  return {
+    at: Math.floor(at),
+    offset: Math.max(-1e5, Math.min(1e5, offset)),
+    text: typeof text === "string" ? text.slice(0, PLACE_WORDS) : "",
+  }
 }
 
 /**
@@ -113,12 +185,15 @@ export function readSession(json: string | null, root = ""): Session {
         if (!item || typeof item !== "object") continue
         const one = item as Partial<SessionNote>
         if (typeof one.path !== "string" || one.path.length === 0) continue
-        open.push({
+        const note: SessionNote = {
           path: one.path,
           caret: typeof one.caret === "number" && one.caret >= 0 ? Math.floor(one.caret) : 0,
           collapsed: Array.isArray(one.collapsed)
             ? one.collapsed.filter((key): key is string => typeof key === "string") : [],
-        })
+        }
+        const scroll = readPlace(one.scroll)
+        if (scroll) note.scroll = scroll
+        open.push(note)
       }
     }
     const active = typeof raw.active === "string" && open.some((note) => note.path === raw.active)

@@ -20,7 +20,7 @@ import os from "node:os"
 import path from "node:path"
 import { fileURLToPath } from "node:url"
 import { connectCdp, sleep, until } from "./cdp.mjs"
-import { restartInstance, stopInstance } from "./instance.mjs"
+import { alive, readInstance, restartInstance, stopInstance } from "./instance.mjs"
 import { readWm, writeWm } from "./wm.mjs"
 import { macChord, shownKey } from "./macKeys.mjs"
 
@@ -563,6 +563,20 @@ export async function restartApp(overrides = {}) {
   await appReady()
   await sleep(500)
   return inst
+}
+/**
+ * QUIT the app the way a person does, not a kill: CDP's Browser.close quits it through the window's close, so the shell
+ * asks the page to flush first (main.ts askPageToFlush: the note, its drawing, the session) and the page's beforeunload
+ * runs. Resolves true once the process has ended; `restartApp()` then starts it again on the same profile. (restartApp
+ * alone SIGKILLs: a crash, which never runs that handshake.)
+ */
+export async function quitApp(ms = 8000) {
+  if (!INSTANCE_DIR) throw new Error("quitApp needs the runner (WM_INSTANCE_DIR)")
+  const { pid } = readInstance(INSTANCE_DIR)
+  try { await Promise.race([send("Browser.close"), sleep(3000)]) } catch { /* the page went with the app */ }
+  const end = Date.now() + ms
+  while (alive(pid) && Date.now() < end) await sleep(100)
+  return !alive(pid)
 }
 export { stopInstance }
 

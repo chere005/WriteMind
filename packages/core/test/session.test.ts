@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest"
 import {
-  closing, emptySession, readSession, remembering, sessionFileName, surviving, writeSession,
+  PLACE_WORDS, closing, emptySession, placeIn, placeWords, readPlace, readSession, remembering, sessionFileName, surviving, writeSession,
 } from "../src/notes/session"
 import { appending, isInside, placing } from "../src/notes/order"
 import { foldableKeys, setFolded, snap } from "../src/cells/folding"
@@ -59,6 +59,91 @@ describe("the session file", () => {
     expect(next.active).toBe("/c.md")
     expect(closing(session, "/c.md").active).toBe("/b.md")
     expect(closing(closing(closing(session, "/a.md"), "/b.md"), "/c.md").active).toBeNull()
+  })
+})
+
+/**
+ * Where each note was scrolled to (Sean, 2026-10-16: "remember scroll position when switching tabs or reopening
+ * writemind"). Port-only (the Mac's session has no scroll): the place is the text at the top of the page — an offset,
+ * how far its line is above the page's edge, and the words there — so it survives a resize, the other pane and an edit
+ * made elsewhere. The view's half (put back to the pixel on a tab switch and a restart) is e2e tabs/07 and editor/13.
+ */
+describe("where a note was scrolled to", () => {
+  const note = "# Title\n\nfirst paragraph\n\n## Results\n\nthe second run went well\n\nlast line"
+  const at = note.indexOf("the second run")
+  const place = { at, offset: 7.5, text: placeWords(note, at) }
+
+  it("round-trips beside the caret, and a note with no place has none", () => {
+    let session = emptySession("/notes")
+    session = remembering(session, { path: "/notes/a.wm", caret: 12, collapsed: ["One"], scroll: place })
+    session = remembering(session, { path: "/notes/b.wm", caret: 3, collapsed: [] })
+    session = { ...session, active: "/notes/a.wm" }
+    const back = readSession(writeSession(session))
+    expect(back).toEqual(session)
+    expect(back.open[0]!.scroll).toEqual({ at, offset: 7.5, text: "the second run went well" })
+    expect("scroll" in back.open[1]!).toBe(false)
+    // (written beside the caret, as the note's own field)
+    expect(JSON.parse(writeSession(session)).open[0].scroll).toEqual(place)
+  })
+
+  it("an older session file, with no scroll in it, reads as before: the caret's place", () => {
+    const old = readSession(JSON.stringify({ open: [{ path: "/a.wm", caret: 40, collapsed: [] }, "/b.wm"], active: "/a.wm" }))
+    expect(old.open).toEqual([{ path: "/a.wm", caret: 40, collapsed: [] }, { path: "/b.wm", caret: 0, collapsed: [] }])
+  })
+
+  it("junk is no place, and never costs the note its caret", () => {
+    for (const junk of [null, 7, "top", [], {}, { at: -1, offset: 0, text: "" }, { at: "12", offset: 0 }, { at: 12 },
+      { at: 12, offset: "3" }, { at: Number.NaN, offset: 0 }, { at: 12, offset: Number.POSITIVE_INFINITY }]) {
+      const read = readSession(JSON.stringify({ open: [{ path: "/a.wm", caret: 5, collapsed: [], scroll: junk }] }))
+      expect(read.open, JSON.stringify(junk)).toEqual([{ path: "/a.wm", caret: 5, collapsed: [] }])
+    }
+    // what is half right is made right: a fraction of a character, words that are not words, words too long, a wild offset
+    expect(readPlace({ at: 12.7, offset: 3, text: 9 })).toEqual({ at: 12, offset: 3, text: "" })
+    expect(readPlace({ at: 0, offset: -2e9, text: "x".repeat(500) })).toEqual({ at: 0, offset: -1e5, text: "x".repeat(PLACE_WORDS) })
+  })
+
+  it("keeps the words from the place to the end of its line, a line's start at most", () => {
+    expect(placeWords(note, at)).toBe("the second run went well")
+    expect(placeWords(note, note.indexOf("second"))).toBe("second run went well")
+    expect(placeWords("a".repeat(200), 10)).toHaveLength(PLACE_WORDS)
+    expect(placeWords(note, note.length)).toBe("")
+    expect(placeWords(note, 10_000)).toBe("")
+  })
+
+  it("a blank line at the top keeps the words of the line after it, from the blank line on", () => {
+    const blank = note.indexOf("\n\nlast") + 1
+    expect(placeWords(note, blank)).toBe("\nlast line")
+    expect(placeWords("a\n" + "\n".repeat(60) + "b", 2)).toBe("")
+    // and they find the blank line again in a note changed above it
+    const place = { at: blank, offset: 3, text: placeWords(note, blank) }
+    const changed = "A new first line.\n\n" + note
+    expect(placeIn(changed, place)).toBe(blank + "A new first line.\n\n".length)
+  })
+
+  it("is found where it was when the note is as it was", () => {
+    expect(placeIn(note, place)).toBe(at)
+  })
+
+  it("follows its words when the note was changed elsewhere: lines came or went above it", () => {
+    const more = "# Title\n\nA new line written in another editor.\n\nfirst paragraph\n\n## Results\n\nthe second run went well\n\nlast line"
+    expect(placeIn(more, place)).toBe(more.indexOf("the second run"))
+    const less = "# Title\n\n## Results\n\nthe second run went well\n\nlast line"
+    expect(placeIn(less, place)).toBe(less.indexOf("the second run"))
+  })
+
+  it("takes the nearest of words that are there twice", () => {
+    const twice = "the second run went well\n" + "x\n".repeat(30) + "the second run went well\n" + "y\n".repeat(30) + "the second run went well"
+    const middle = twice.indexOf("the second run", 10)
+    expect(placeIn(twice, { at: middle + 4, offset: 0, text: "the second run went well" })).toBe(middle)
+    expect(placeIn(twice, { at: twice.length, offset: 0, text: "the second run went well" })).toBe(twice.lastIndexOf("the second run"))
+    expect(placeIn(twice, { at: 0, offset: 0, text: "the second run went well" })).toBe(0)
+  })
+
+  it("stays inside the note when its words are gone, and does not look for blank words", () => {
+    expect(placeIn("short", place)).toBe(5)
+    expect(placeIn(note, { at: 3, offset: 0, text: "words that are nowhere" })).toBe(3)
+    expect(placeIn("a\n\n\nb", { at: 2, offset: 0, text: "" })).toBe(2)
+    expect(placeIn("a\n  \nb", { at: 99, offset: 0, text: "  " })).toBe(6)
   })
 })
 
