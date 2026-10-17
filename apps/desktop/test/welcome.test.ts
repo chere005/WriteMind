@@ -11,7 +11,7 @@ import { promises as fs } from "node:fs"
 import os from "node:os"
 import path from "node:path"
 import { afterEach, describe, expect, it } from "vitest"
-import { blocks, isListBlock, kindOfBlock, listItemsOf } from "@writemind/core"
+import { blocks, emptySession, isListBlock, kindOfBlock, listItemsOf, readSession, writeSession } from "@writemind/core"
 import { EVALUATORS, WM_TEXT, evaluatorTitle, formatExtension, formatTitle, offeredFormats } from "@writemind/core"
 import { COMMANDS, shown } from "../src/shared/commands"
 import {
@@ -142,7 +142,7 @@ describe("the quick reference's keys come from the command table", () => {
     const text = welcomeNote(process.platform)
     expect(text.startsWith("# WriteMind Quick Reference\n")).toBe(true)
     for (const name of [
-      "Cells", "Lists", "Mixed lists", "Text and markdown cells", "New line in a cell", "Maths cells", "Tables", "Rendered page", "Toolbar", "Pen", "Tabs", "Move tabs", "Search notes", "Sidebar", "Undo",
+      "Cells", "Lists", "Mixed lists", "Text and markdown cells", "New line in a cell", "Maths cells", "Tables", "Rendered page", "Toolbar", "Pen", "Tabs", "Move tabs", "Where you left off", "Search notes", "Sidebar", "Undo",
       "Drawing", "Runnable cells", "Language Setup", "Video pane", "Read words", "Pane tabs", "Wacom tablet", "Mathematica", "Wacom pen buttons", "Notes are files", "Updates", "About",
     ]) {
       expect(WELCOME_FEATURES.some((one) => one.startsWith(`**${name}:**`)), name).toBe(true)
@@ -341,6 +341,23 @@ describe("the feature list is true to the source", () => {
     expect(seams).toContain("export function typeAtTheBar")
     expect(seams).toContain('setArmedType.of({ kind: "list", style: "dots" })')
     expect(line).toContain("`*` typed at the insertion line starts a bullet list")
+  })
+
+  it("Where you left off: the session keeps where each open note was scrolled to, and the notebook puts it back", () => {
+    // (Sean, 2026-10-16: "remember scroll position when switching tabs or reopening writemind".) The place is in the session
+    // beside the caret (core session.ts), written for every open note and read back at launch (useSession.ts); a note shown
+    // again — a tab switch or a launch, whichever page is up — is put back there (Notebook.tsx, editor scrollPlace.ts).
+    const scroll = { at: 40, offset: 6, text: "Line 3" }
+    const session = { ...emptySession("/n"), open: [{ path: "/n/a.wm", caret: 2, collapsed: [], scroll }], active: "/n/a.wm" }
+    expect(readSession(writeSession(session)).open[0]!.scroll).toEqual(scroll)
+    const useSession = read("apps/desktop/src/renderer/useSession.ts")
+    expect(useSession).toContain("scroll: state.scroll")
+    expect(useSession).toContain("scroll: note.scroll")
+    const notebook = read("apps/desktop/src/renderer/Notebook.tsx")
+    expect(notebook).toContain("restoreScrollPlace(editor, back.scroll)")
+    expect(notebook).toContain("scrollPlaces,")
+    expect(read("packages/editor/src/scrollPlace.ts")).toContain('drawnIn(child)')
+    expect(features("Where you left off")).toContain("after a tab switch or a restart, on either page")
   })
 
   it("Tables, Mathematica and the rest name what the docs say is built", () => {

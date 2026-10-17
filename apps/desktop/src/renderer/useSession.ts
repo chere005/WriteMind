@@ -1,10 +1,10 @@
 /**
  * The session, in the window: which notes are open, which one is in front,
- * where the caret was and which sections were closed — restored on launch
- * and kept as it changes. The rules (what a session is, which notes
- * survive, what closing a tab does to the front one) are
- * `@writemind/core`'s `session`; the file is the main process's, in the
- * app's user-data folder and never beside the notes.
+ * where the caret was, which sections were closed and where each note was
+ * scrolled to — restored on launch and kept as it changes. The rules (what
+ * a session is, which notes survive, what closing a tab does to the front
+ * one) are `@writemind/core`'s `session`; the file is the main process's, in
+ * the app's user-data folder and never beside the notes.
  *
  * ONE SESSION PER PROJECT (`ProjectSession`): it is keyed by the project's
  * file (null for the untitled project), and the window names that key on
@@ -41,7 +41,7 @@ interface Options {
   root: Section | null
   open: Note[]
   current: string | null
-  /** The caret and folds per note, kept by the notebook as it changes. */
+  /** The caret, the folds and the scrolled-to place per note, kept by the notebook as they change. */
   states: MutableRefObject<Map<string, ViewState>>
   /**
    * The open project's file (its session's key); null is the untitled one,
@@ -81,7 +81,7 @@ export function useSession({
       root: rootPath,
       open: notes.map((note) => {
         const state = states.current.get(note.path)
-        return { path: note.path, caret: state?.caret ?? 0, collapsed: state?.collapsed ?? [] }
+        return { path: note.path, caret: state?.caret ?? 0, collapsed: state?.collapsed ?? [], ...(state?.scroll ? { scroll: state.scroll } : {}) }
       }),
       active: front,
       unsavedBuffers: {},
@@ -110,7 +110,7 @@ export function useSession({
     bufferTimer.current = window.setTimeout(() => { bufferTimer.current = null; write() }, bufferInterval(bufferChars.current))
   }, [ready, write])
 
-  /** A caret moved or a section closed: the session is written, shortly. */
+  /** A caret moved, a section closed or the page was scrolled: the session is written, shortly. */
   const touch = useCallback(() => {
     if (!ready) return
     if (timer.current) window.clearTimeout(timer.current)
@@ -138,7 +138,7 @@ export function useSession({
       const applied = await applyBuffers(kept.unsavedBuffers, window.wm)
       if (kept.open.length > 0) {
         for (const note of kept.open) {
-          states.current.set(note.path, { caret: note.caret, collapsed: note.collapsed })
+          states.current.set(note.path, { caret: note.caret, collapsed: note.collapsed, ...(note.scroll ? { scroll: note.scroll } : {}) })
         }
         // (a note whose unsaved text was just put back has the title of THAT text, not of the tree read before it)
         const notes = kept.open.map((note) => (applied.has(note.path)

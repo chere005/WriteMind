@@ -181,6 +181,17 @@ is how the code is put together.
   into one.
 - **The same place, whichever mode.** Switching between the markdown and
   the rendered page reopens on the cell you were looking at.
+- **Every note comes back where you left it** (Sean, 2026-10-16: "remember
+  scroll position when switching tabs or reopening writemind"). Switch to
+  another tab and back, or quit WriteMind and open it again, and each open
+  note is scrolled exactly where it was — the same line at the top of the
+  page, at the same height — on the markdown side and on the rendered page,
+  with its caret where it was. What is remembered is the words at the top,
+  not a distance: so it holds when the window has changed size, when the
+  note comes back on the other page (the same words at the top), when
+  another program changed the note meanwhile, and while its pictures load.
+  A note opened for the first time opens at its top, and a link, Find and
+  the sidebar's search still take you to the place they name.
 - **Sections of a note are cells.** A heading owns everything under it
   until the next heading of its rank, and the brackets down the right-hand
   side show the nesting the way a Wolfram notebook does. Click one to fold

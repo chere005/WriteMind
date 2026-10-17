@@ -57,6 +57,8 @@ export const welcomeFeatures = (mac: boolean): string[] => [
   `**Pen:** one button puts it down or up (${key("togglePen", mac)}); its menu picks Pen or Eraser, a colour and a width, and Pen always draws on a tablet.`,
   "**Tabs:** the row over the note has the sidebar, rendered page and video buttons, then your open notes; right-click a tab for Rename…, Duplicate and Move to.",
   `**Move tabs:** drag a tab along the row, in the notebook or the video pane; ${key("moveTabLeft", mac)} / ${key("moveTabRight", mac)} move the one in front.`,
+  // Sean, 2026-10-16: "remember scroll position when switching tabs or reopening writemind" (packages/editor scrollPlace.ts).
+  "**Where you left off:** each open note comes back scrolled to where you left it, after a tab switch or a restart, on either page.",
   `**Search notes:** ${key("searchNotes", mac)} searches every note of the project by title and words; Enter opens the match with Find on it.`,
   "**Sidebar:** a search field, + for a new note or section and the pencil for Edit; every row has a ⋯ menu, and a note dropped on a New note row moves there.",
   `**Undo:** ${key("undo", mac)} takes back your typing or one of the last three file steps (new, duplicate, rename, move, trash, Clean Up); Edit ▸ Undo names it.`,
